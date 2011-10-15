@@ -1,6 +1,7 @@
 
 from rdd import *
 from schedule import *
+from env import env
 
 class SparkContext:
     nextRddId = 0
@@ -12,6 +13,8 @@ class SparkContext:
         
     def init(self):
         #Broadcast.initialize(True)
+        env.create(True)
+        self.env = env
         if self.master.startswith('local'):
             n = 2
             self.scheduler = LocalScheduler(n)
@@ -26,7 +29,7 @@ class SparkContext:
         self.defaultParallelism = self.scheduler.defaultParallelism
         self.defaultMinSplits = min(self.defaultParallelism, 2)
         self.scheduler.start()
-    
+
     def newRddId(self):
         self.nextRddId += 1
         return self.nextRddId
@@ -45,11 +48,15 @@ class SparkContext:
             numSlices = self.defaultParallelism
         return self.parallelize(seq, numSlices)
     
-    def hadoopFile(self, path, minSplits=2):
-        return HadoopRDD(self, {}, minSplits)
-
-    def textFile(self, path, minSplits=2):
-        return self.hadoopFile(path, minSplits)
+    def textFile(self, path, numSplits=None, splitSize=None):
+        if not os.path.exists(path):
+            raise IOError("not exists")
+        if os.path.isdir(path):
+            rdds = [TextFileRDD(self, os.path.join(p, n),numSplits,splitSize) 
+             for p, _, ns in os.path.walk(path) for n in ns]
+            return self.union(rdds)
+        else:
+            return TextFileRDD(self, path, numSplits, splitSize)
 
     def sequenceFile(self, path, minSplits):
         return self.hadoopFile(path, format, minSplits).map(lambda k,v: (k,v))
@@ -70,9 +77,9 @@ class SparkContext:
 
     def stop(self):
         self.scheduler.stop()
-        #self.mapOutputTracker.stop()
-        #self.cacheTracker.stop()
-        #self.shuffleFetcher.stop()
+        self.env.mapOutputTracker.stop()
+        #self.env.cacheTracker.stop()
+        self.env.shuffleFetcher.stop()
 
     def waitForRegister(self):
         self.scheduler.waitForRegister()

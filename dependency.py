@@ -55,6 +55,7 @@ class Partitioner:
 class HashPartitioner(Partitioner):
     def __init__(self, partitions):
         self.partitions = partitions
+        
     @property
     def numPartitions(self):
         return self.partitions
@@ -67,7 +68,7 @@ class HashPartitioner(Partitioner):
 
 class ShuffleDependency(Dependency):
     isShuffle = True
-    def __init__(self, rdd, shuffleId, aggregator, partitioner):
+    def __init__(self, shuffleId, rdd, aggregator, partitioner):
         Dependency.__init__(self, rdd)
         self.shuffleId = shuffleId
         self.aggregator = aggregator

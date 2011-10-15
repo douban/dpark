@@ -11,19 +11,17 @@ class RDD:
         self.id = sc.newRddId()
         self.partitioner = None
         self.shouldCache = False
+        self._splits = []
+        self.dependencies = []
 
     @property
     def splits(self):
-        return []
+        return self._splits
 
     def compute(self, split):
-        pass
+        raise NotImplementedError
 
     def preferredLocations(self, split):
-        return []
-
-    @property
-    def dependencies(self):
         return []
 
     def cache(self):
@@ -91,8 +89,13 @@ class RDD:
         return reduce(f, sum(options, []))
 
     def count(self):
-        result = sc.runJob(self, lambda x: len(x))
-        return result.sum()
+        def ilen(x):
+            s = 0
+            for i in x:
+                s += 1
+            return s
+        result = self.sc.runJob(self, lambda x: ilen(x))
+        return sum(result)
 
     def toList(self):
         return self.collect()
@@ -118,6 +121,75 @@ class RDD:
 
     def saveAsObjectFile(self, path):
         return self.glom().map(lambda x: (None, dumps(x))).saveAsSequenceFile(path)
+
+    # Extra functions for (K,V) pairs RDD
+    def reduceByKeyToDriver(self, func):
+        def mergeMaps(m1, m2):
+            for k,v in m2.iteritems():
+                if k in m1:
+                    m1[k]=v
+                else:
+                    m1[k]=func(m1[k], v)
+            return m1
+        self.map(lambda x,y:dict(x=y)).reduce(mergeMaps)
+
+    def combineByKey(self, createCombiner, mergeValue, mergeCombiners, numSplits=None):
+        aggregator = Aggregator()
+        aggregator.createCombiner = createCombiner
+        aggregator.mergeValue = mergeValue
+        aggregator.mergeCombiners = mergeCombiners
+        partitioner = HashPartitioner(numSplits)
+        return ShuffledRDD(self, aggregator, partitioner)
+
+    def reduceByKey(self, func, numSplits=None):
+        return self.combineByKey(lambda x:x, func, func, numSplits)
+
+    def groupByKey(self, numSplits=None):
+        createCombiner = lambda x: [x]
+        mergeValue = lambda l, v: l+[v]
+        mergeCombiners = lambda l1, l2: l1 + l2
+        return self.combineByKey(createCombiner, mergeValue, mergeCombiners, numSplits)
+
+    def join(self, other, numSplits=None):
+        vs = self.map()
+        # TODO
+
+    def leftOuterJoin(self, other, numSplits=None):
+        pass # TODO
+
+    def rightOuterJoin(self, other, numSplits=None):
+        pass
+
+    def collectAsMap(self):
+        return dict(self.collect())
+
+    def mapValues(self, f):
+        return MappedValuesRDD(self, f)
+
+    def flatMapValues(self, f):
+        return FlatMappedValuesRDD(self, f)
+
+    def groupWith(self, other):
+        part = self.partitioner or HashPartitioner(self.defaultParallelism)
+        return CoGroupedRDD([self, other], part).map(lambda k,(vs,ws): k,(vs,ws))
+
+    def groupWith2(self, other1, other2):
+        pass # TODO
+
+    def lookup(self, key):
+        if self.partitioner:
+            self.partitioner.getPartition(key)
+            def process(it):
+                return [v for k,v in it if k == key]
+            return self.sc.runJob(self, process, [index], False)
+        else:
+            raise Exception("lookup() called on an RDD without a partitioner")
+            
+    def saveAsHadoopFile(self, path):
+        pass
+
+    def saveAsHadoopDataset(self, conf):
+        pass
 
 
 class MappedRDD(RDD):
@@ -173,6 +245,41 @@ class PipedRDD(MappedRDD):
         for line in p.stdout:
             yield line
 
+class MappedValuesRDD(MappedRDD):
+
+    @property
+    def partitioner(self):
+        return self.prev.partitioner
+
+    def compute(self, split):
+        return map(lambda k,v: (k,self.f(v)), self.prev.iterator(split))
+
+class FlatMappedValuesRDD(MappedValuesRDD):
+    def compute(self, split):
+        for k,v in self.prev.iterator(split):
+            for vv in self.f(v):
+                yield k,vv
+
+class ShuffledRDDSplit(Split):
+    def __hash__(self):
+        return self.index
+
+class ShuffledRDD(RDD):
+    def __init__(self, parent, aggregator, part):
+        RDD.__init__(self, parent.sc)
+        self.parent = parent
+        self.aggregator = aggregator
+        self.partitioner = part
+        self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
+        self.dependencies = [ShuffleDependency(self.sc.newShuffleId(), parent, aggregator, part)]
+    
+    def compute(self, split):
+        combiners = {}
+        def mergePair(k, c):
+            combiners[k] = self.aggregator.mergeCombiners(combiners[k], c) if k in combiners else c
+        fetcher = self.sc.env.shuffleFetcher
+        fetcher.fetch(self.dependencies[0].shuffleId, split.index, mergePair)
+        return combiners.iteritems()
 
 class CartesionSplit(Split):
     def __init__(self, idx, s1, s2):
@@ -190,10 +297,6 @@ class CartesionRDD(RDD):
             for s1 in rdd1.splits for s2 in rdd2.splits]
         self.dependencies = [CartesionDependency(rdd1, True, n),
                              CartesionDependency(rdd2, False, n)]
-
-    @property
-    def splits(self):
-        return self._splits
 
     def preferredLocations(self, split):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
@@ -255,15 +358,12 @@ class UnionRDD(RDD):
             for split in rdd.splits:
                 self._splits.append(UnionSplit(len(self._splits), rdd, split))
     
-    @property
-    def splits(self):
-        return self._splits
-
     def preferredLocations(self, split):
         return split.rdd.preferredLocations(split.split)
 
     def compute(self, split):
         return split.rdd.iterator(split.split)
+
 
 class ParallelCollectionSplit:
     def __init__(self, rddId, slice, values):
@@ -291,15 +391,8 @@ class ParallelCollection(RDD):
             for i in range(len(slices))]
         self.dependencies = []
 
-    @property
-    def splits(self):
-        return self._splits
-
     def compute(self, split):
         return split.values
-
-    def preferredLocations(self, split):
-        return []
 
     @classmethod
     def slice(cls, data, numSlices):
@@ -309,3 +402,44 @@ class ParallelCollection(RDD):
             n += 1
         data = list(data)
         return [data[i*n : i*n+n] for i in range(numSlices)]
+
+
+import os.path
+class TextFileRDD(RDD):
+    def __init__(self, sc, path, numSplits=None, splitSize=None):
+        RDD.__init__(self, sc)
+        self.path = path
+        if not os.path.exists(path):
+            raise IOError("not exists")
+        size = os.path.getsize(path)
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = 64*1024*1024
+            else:
+                splitSize = size / numSplits
+        
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.splitSize = splitSize
+        self._splits = [Split(i) for i in range(n)]
+
+    def compute(self, split):
+        f = open(self.path)
+        start = split.index * self.splitSize
+        end = start + self.splitSize
+        if start > 0:
+            f.seek(start-1)
+            byte = f.read(1)
+            skip = byte != '\n'
+        else:
+            f.seek(start)
+            skip = False
+        for line in f:
+            if start >= end: break
+            start += len(line)
+            if skip:
+                skip = False
+            else:
+                yield line
+        f.close()

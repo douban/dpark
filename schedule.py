@@ -5,6 +5,7 @@ import threading, Queue
 from dependency import *
 from accumulator import *
 from task import *
+from env import env
 
 class TaskEndReason:
     pass
@@ -32,7 +33,7 @@ class Stage:
         self.rdd = rdd
         self.shuffleDep = shuffleDep
         self.parents = parents
-        self.isSuffleMap = shuffleDep != None
+        self.isShuffleMap = shuffleDep != None
         self.numPartitions = len(rdd.splits)
         self.outputLocs = [[]] * self.numPartitions
         self.numAvailableOutputs = 0
@@ -87,10 +88,10 @@ class DAGScheduler(Scheduler):
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
         #self.cacheTracker = sc.cacheTracker
-        #self.mapOutputTracker = sc.mapOutputTracker
+        self.mapOutputTracker = env.mapOutputTracker
 
     def submitTasks(self, tasks):
-        pass
+        raise NotImplementedError
 
     def taskEnded(self, task, reason, result, accumUpdates):
         self.completionEvents.put(CompletionEvent(task, reason, result, accumUpdates))
@@ -108,6 +109,7 @@ class DAGScheduler(Scheduler):
     def newStage(self, rdd, shuffleDep):
         #self.cacheTracker.regiesterRDD(rdd.id, len(rdd.splits))
         id = self.newStageId()
+        #print 'newStage', rdd, shuffleDep
         stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
         self.idToStage[id] = stage
         return stage
@@ -172,9 +174,9 @@ class DAGScheduler(Scheduler):
 
         self.updateCacheLocs()
         
-        logging.error("Final stage: %s, %d", finalStage, numOutputParts)
-        logging.error("Parents of final stage: %s", finalStage.parents)
-        logging.error("Missing parents: %s", self.getMissingParentStages(finalStage))
+        logging.info("Final stage: %s, %d", finalStage, numOutputParts)
+        logging.info("Parents of final stage: %s", finalStage.parents)
+        logging.info("Missing parents: %s", self.getMissingParentStages(finalStage))
        
 #        if not finalStage.parents:
 #            rs = [func(TaskContext(finalStage.id, outputParts[i], i), 
@@ -188,6 +190,7 @@ class DAGScheduler(Scheduler):
             return list(func(taskContext, finalRdd.iterator(split)))
 
         def submitStage(stage):
+            logging.info("submit stage %s", stage)
             if stage not in waiting and stage not in running:
                 missing = self.getMissingParentStages(stage)
                 if not missing:
@@ -202,17 +205,18 @@ class DAGScheduler(Scheduler):
             myPending = pendingTasks.setdefault(stage, set())
             tasks = []
             if stage == finalStage:
-               for i in range(numOutputParts):
-                   if not finished[i]:
-                       part = outputParts[i]
-                       locs = self.getPreferredLocs(finalRdd, part)
-                       tasks.append(ResultTask(finalStage.id, finalRdd, func, part, locs, i))
+                for i in range(numOutputParts):
+                    if not finished[i]:
+                        part = outputParts[i]
+                        locs = self.getPreferredLocs(finalRdd, part)
+                        tasks.append(ResultTask(finalStage.id, finalRdd, func, part, locs, i))
             else:
-               for p in range(stage.numPartitions):
-                   if stage.outputLocs[p] is None:
-                       locs = self.getPreferredLocs(stage.rdd, p)
-                       tasks.append(ShuffleMapTask(stage.id, stage.rdd, stage.shuffleDep.get, p, locs))
-            logging.error("add to pending %r", tasks)
+                print 'add missing', stage, stage.numPartitions
+                for p in range(stage.numPartitions):
+                    if not stage.outputLocs[p]:
+                        locs = self.getPreferredLocs(stage.rdd, p)
+                        tasks.append(ShuffleMapTask(stage.id, stage.rdd, stage.shuffleDep, p, locs))
+            logging.info("add to pending %r", tasks)
             myPending |= set(t.id for t in tasks)
             self.submitTasks(tasks)
 
@@ -224,7 +228,7 @@ class DAGScheduler(Scheduler):
            if evt:
                task = evt.task
                stage = self.idToStage[task.stageId]
-               logging.error("remove from pedding %s %s", pendingTasks[stage], task)
+               logging.info("remove from pedding %s %s", pendingTasks[stage], task)
                pendingTasks[stage].remove(task.id)
                if isinstance(evt.reason, Success):
                    # ended
@@ -234,19 +238,20 @@ class DAGScheduler(Scheduler):
                        finished[task.outputId] = True
                        numFinished += 1
                    elif isinstance(task, ShuffleMapTask):
-                       stage = idToStage[task.stageId]
+                       stage = self.idToStage[task.stageId]
                        stage.addOutputLoc(task.partition, evt.result)
                        if not pendingTasks[stage]:
-                           logging.error("%s finished; looking for newly runnable stages", stage)
+                           logging.info("%s finished; looking for newly runnable stages", stage)
                            running.remove(stage)
-                           #if stage.shuffleDep != None:
-                               #self.mapOutputTracker.registerMapOutputs(
-                               #        stage.shuffleDep.get.shuffleId,
-                               #        [l[0] for l in stage.outputLocs])
+                           if stage.shuffleDep != None:
+                               self.mapOutputTracker.registerMapOutputs(
+                                       stage.shuffleDep.shuffleId,
+                                       [l[0] for l in stage.outputLocs])
                            self.updateCacheLocs()
-                           newlyRunnable = set(stage for stage in waiting if self.getMissingParentStages(stage))
+                           newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
                            waiting -= newlyRunnable
                            running |= newlyRunnable
+                           logging.info("newly runnable: %s, %s", waiting, newlyRunnable)
                            for stage in newlyRunnable:
                                submitMissingTasks(stage)
                else:
@@ -257,7 +262,7 @@ class DAGScheduler(Scheduler):
                        raise
 
            if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
-               logging.error("Resubmitting failed stages")
+               logging.info("Resubmitting failed stages")
                self.updateCacheLocs()
                for stage in failed:
                    submitStage(stage)
@@ -314,34 +319,36 @@ class LocalScheduler(DAGScheduler):
         return self.attemptId
     
     def submitTasks(self, tasks):
-        logging.error("submit tasks %s", tasks)
+        logging.info("submit tasks %s", tasks)
         for task in tasks:
             def func(task, aid):
-                logging.error("Running task %r", task)
+                logging.info("Running task %r", task)
                 try:
                     Accumulator.clear()
                     result = task.run(aid)
                     accumUpdates = Accumulator.values()
                     self.taskEnded(task, Success(), result, accumUpdates)
                 except Exception, e:
-                    logging.error("error in task %s", task)
-                    import tracback
-                    traceback.print_exec()
+                    logging.info("error in task %s", task)
+                    import traceback
+                    traceback.print_exc()
+                    raise
                     self.taskEnded(task, OtherFailure("exception:" + str(e)), None, None)
 
             aid = self.nextAttempId()
-            self.pool.submit(func, task, aid)
+            #self.pool.submit(func, task, aid)
+            func(task, aid)
 
 
 def process_worker(task, aid):
     try:
         Accumulator.clear()
-        logging.error("run task %s %d", task, aid)
+        logging.info("run task %s %d", task, aid)
         result = task.run(aid)
         accumUpdates = Accumulator.values()
         return (task, Success(), result, accumUpdates)
     except Exception, e:
-        logging.error("error in task %s", task)
+        logging.info("error in task %s", task)
         import tracback
         traceback.print_exec()
         return ((task, OtherFailure("exception:" + str(e)), None, None))
@@ -367,7 +374,7 @@ class LocalProcessScheduler(LocalScheduler):
 
         for task in tasks:
             aid = self.nextAttempId()
-            logging.error("put task async %s", task)
+            logging.info("put task async %s", task)
             self.pool.apply_async(process_worker, (task, aid), {}, callback)
 
     def stop(self):
@@ -408,7 +415,7 @@ class MesosScheduler(DAGScheduler):
             try:
                 ret = self.driver.run()
             except Exception:
-                logging.error("run failed")
+                logging.info("run failed")
         t = Thread(target=run)
         t.daemon = True
         t.start()
