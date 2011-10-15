@@ -141,7 +141,7 @@ class MappedRDD(RDD):
 
     def __setstate__(self, state):
         self.__dict__, code = state
-        self.f = load_func(code)
+        self.f = load_func(code, globals())
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):

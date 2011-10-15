@@ -20,7 +20,7 @@ class TestRDD(unittest.TestCase):
         
 
     def test_basic_operation(self):
-        sc = SparkContext("local", "test")
+        sc = SparkContext("process", "test")
         sc.init()
         pickle.dumps(sc)
         d = range(4)

@@ -9,7 +9,8 @@ from task import *
 class TaskEndReason:
     pass
 
-Success = TaskEndReason()
+class Success(TaskEndReason):
+    pass
 
 class FetchFailed:
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
@@ -225,7 +226,7 @@ class DAGScheduler(Scheduler):
                stage = self.idToStage[task.stageId]
                logging.error("remove from pedding %s %s", pendingTasks[stage], task)
                pendingTasks[stage].remove(task.id)
-               if evt.reason == Success:
+               if isinstance(evt.reason, Success):
                    # ended
                    Accumulator.add(evt.accumUpdates)
                    if isinstance(task, ResultTask):
@@ -279,6 +280,8 @@ class DAGScheduler(Scheduler):
                         return locs
         return []
 
+
+
 class ThreadPool:
     def __init__(self, nthreads):
         self.queue = Queue.Queue()
@@ -300,28 +303,11 @@ class ThreadPool:
     def stop(self):
         self.queue.join()
 
-def execute_func(code, *args):
-    func = load_func(code)
-    return func(*args)  
-
-class ProcessPool:
-    def __init__(self, nthreads):
-        from multiprocessing import Pool
-        self.pool = Pool(nthreads)
-
-    def submit(self, func, *args):
-        self.pool.apply_async(execute_func, dump_func(func), *args)
-
-    def stop(self):
-        self.pool.close()
-        self.pool.join()
-
 class LocalScheduler(DAGScheduler):
     attemptId = 0
     def __init__(self, threads):
         DAGScheduler.__init__(self)
-        #self.pool = ThreadPool(threads)
-        self.pool = ProcessPool(threads)
+        self.pool = ThreadPool(threads)
 
     def nextAttempId(self):
         self.attemptId += 1
@@ -329,28 +315,152 @@ class LocalScheduler(DAGScheduler):
     
     def submitTasks(self, tasks):
         logging.error("submit tasks %s", tasks)
-        def taskEnded(task, reason, result, update):
-            pass
-
         for task in tasks:
             def func(task, aid):
                 logging.error("Running task %r", task)
                 try:
                     Accumulator.clear()
-                    logging.error("dumps task: %r %s", task, task)
-                    #pickle.dumps(task.rdd)
-                    #bytes = pickle.dumps(task)
-                    #task = pickle.loads(bytes)
                     result = task.run(aid)
                     accumUpdates = Accumulator.values()
-                    taskEnded(task, Success, result, accumUpdates)
+                    self.taskEnded(task, Success(), result, accumUpdates)
                 except Exception, e:
                     logging.error("error in task %s", task)
                     import tracback
                     traceback.print_exec()
-                    taskEnded(task, OtherFailure("exception:" + str(e)), NOne, None)
+                    self.taskEnded(task, OtherFailure("exception:" + str(e)), None, None)
 
             aid = self.nextAttempId()
-            dump_func(func)
-            #self.pool.submit(func, task, aid)
-            func(task, aid)
+            self.pool.submit(func, task, aid)
+
+
+def process_worker(task, aid):
+    try:
+        Accumulator.clear()
+        logging.error("run task %s %d", task, aid)
+        result = task.run(aid)
+        accumUpdates = Accumulator.values()
+        return (task, Success(), result, accumUpdates)
+    except Exception, e:
+        logging.error("error in task %s", task)
+        import tracback
+        traceback.print_exec()
+        return ((task, OtherFailure("exception:" + str(e)), None, None))
+
+class LocalProcessScheduler(LocalScheduler):
+    def __init__(self, threads):
+        DAGScheduler.__init__(self)
+        from multiprocessing import Pool, Queue
+        self.reply = Queue()
+        self.pool = Pool(threads)
+        
+    def start(self):
+        def read_reply():
+            task, reason, result, update = self.reply.get()
+            self.taskEnded(task, reason, result, update)
+        self.t = threading.Thread(target=read_reply)
+        self.t.daemon = True
+        self.t.start()
+
+    def submitTasks(self, tasks):
+        def callback(args):
+            self.taskEnded(*args)
+
+        for task in tasks:
+            aid = self.nextAttempId()
+            logging.error("put task async %s", task)
+            self.pool.apply_async(process_worker, (task, aid), {}, callback)
+
+    def stop(self):
+        self.pool.close()
+        self.pool.join()
+
+
+class MesosScheduler(DAGScheduler):
+
+    nextJobId = 0
+    nextTaskId = 0
+
+    def __init__(self, sc, master, name='dpark'):
+        DAGScheduler.__init__(self, master, name)
+        self.sc = sc
+        self.isRegistered = False
+        self.activeJobs = {}
+        self.activeJobsQueue = []
+        self.taskIdToJobId = {}
+        self.taskIdToSlaveId = {}
+        self.jobTasks = {}
+        self.driver = None
+        self.slavesWithExecutors = {}
+
+    @classmethod
+    def newJobId(cls):
+        cls.nextJobId += 1
+        return cls.nextJobId
+    
+    @classmethod
+    def newTaskId(cls):
+        cls.nextTaskId += 1
+        return cls.nextTaskId
+
+    def start(self):
+        def run():
+            self.driver = MesosSchedulerDriver(self, self.master)
+            try:
+                ret = self.driver.run()
+            except Exception:
+                logging.error("run failed")
+        t = Thread(target=run)
+        t.daemon = True
+        t.start()
+
+    def getFrameworkName(self, driver):
+        return self.name
+
+    def getExecutorInfo(self, driver):
+        pass
+
+    def submitTasks(self, tasks):
+        logging.info("Got a job with %d tasks", len(tasks))
+        self.waitForRegister()
+        jobId = self.newJobId()
+        myJob = SimpleJob(self, tasks, jobId)
+        self.activeJobs[jobId] = myJob
+        self.activeJobsQueue.append(myJob)
+        logging.info("Adding job with ID %d", jobId)
+        self.jobTasks[jobId] = {}
+        driver.reviveOffers()
+
+    def jobFinished(self, job):
+        del self.activeJobs[job.getId]
+        #TODO
+
+    def registered(self, driver, fid):
+        self.isRegistered = True
+
+    def waitForRegister(self):
+        while not self.isRegistered:
+            time.sleep(0.1)
+
+    def resourceOffer(self, driver, oid, offers):
+        # TODO
+        pass
+
+    def getResource(self, res, name):
+        for r in res:
+            if r.name == name:
+                return r.scala.value
+
+    def isFinished(self, state):
+        return state == TaskState.TASK_FINISHED
+
+    def statusUpdate(self, driver, status):
+        pass # TODO
+
+    def error(self, driver, code, message):
+        pass # TODO
+
+    def stop(self):
+        self.driver.stop()
+
+    def defaultParallelism(self):
+        return 2

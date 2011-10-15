@@ -32,7 +32,7 @@ class Task:
 
     def __setstate__(self, state):
         self.__dict__, code = state
-        self.func = load_func(code)
+        self.func = load_func(code, globals())
 
 class DAGTask(Task):
     def __init__(self, stageId):

@@ -13,9 +13,12 @@ class SparkContext:
     def init(self):
         #Broadcast.initialize(True)
         if self.master.startswith('local'):
-            n = 1
+            n = 2
             self.scheduler = LocalScheduler(n)
             self.isLocal = True
+        elif self.master.startswith('process'):
+            self.scheduler = LocalProcessScheduler(2)
+            self.isLocal = False
         else:
             self.scheduler = MesosScheduler(self, self.master, "spark")
             self.isLocal = False
