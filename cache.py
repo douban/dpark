@@ -155,6 +155,9 @@ class CacheTrackerServer:
             elif isinstance(msg, StopCacheTracker):
                 reply('OK')
                 break
+            else:
+                logging.error("unexpected msg %s %s", msg, type(msg))
+                reply('ERROR')
         sock.close()
 
 class CacheTrackerClient:
@@ -162,24 +165,25 @@ class CacheTrackerClient:
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
 
-    def call(self, msg):
+    def call(self, msg, reply=True):
         self.sock.send(cPickle.dumps(msg, -1))
-        return cPickle.loads(self.sock.recv())
+        if reply:
+            return cPickle.loads(self.sock.recv())
 
 
 class CacheTracker:
     def __init__(self, isMaster, theCache, addr=None):
+        self.isMaster = isMaster
+        self.registeredRddIds = set()
+        self.cache = theCache.newKeySpace()
+        self.loading = set()
         if isMaster:
             self.server = CacheTrackerServer()
             self.server.start()
             addr = self.server.addr
-        
+        self.addr = addr 
         self.client = CacheTrackerClient(addr)
         
-        self.registeredRddIds = set()
-        self.cache = theCache.newKeySpace()
-        self.loading = set()
-
     def registerRDD(self, rddId, numPartitions):
         if rddId not in self.registeredRddIds:
             logging.info("Registering RDD ID %d with cache", rddId)
@@ -207,9 +211,10 @@ class CacheTracker:
         return r
 
     def stop(self):
-        self.client.call(StopCacheTracker())
+        self.client.call(StopCacheTracker(), False)
         self.registeredRddIds.clear()
-        self.server.stop()
+        if self.isMaster:
+            self.server.stop()
 
 def test():
     logging.basicConfig(level=logging.INFO)
