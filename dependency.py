@@ -1,4 +1,6 @@
 
+from utils import *
+
 class Dependency:
     def __init__(self, rdd):
         self.rdd = rdd
@@ -38,19 +40,25 @@ class RangeDependency(NarrowDependency):
 
 
 class Aggregator:
-    def createCombiner(self, v):
-        pass
-    def mergeValue(self, c, v):
-        pass
-    def mergeCombiners(self, c, v):
-        pass
+    def __init__(self, createCombiner, mergeValue, mergeCombiners):
+        self.createCombiner = createCombiner
+        self.mergeValue = mergeValue
+        self.mergeCombiners = mergeCombiners
+
+    def __getstate__(self):
+        return (dump_func(self.createCombiner), dump_func(self.mergeValue), dump_func(self.mergeCombiners))
+
+    def __setstate__(self, state):
+        c1, c2, c3 = state
+        g = globals()
+        self.createCombiner, self.mergeValue, self.mergeCombiners = load_func(c1, g), load_func(c2, g), load_func(c3, g)
 
 class Partitioner:
     @property
     def numPartitions(self):
-        pass
+        raise NotImplementedError
     def getPartition(self, key):
-        pass
+        raise NotImplementedError
 
 class HashPartitioner(Partitioner):
     def __init__(self, partitions):

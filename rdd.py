@@ -1,3 +1,5 @@
+import os, os.path
+
 from utils import load_func, dump_func
 from dependency import *
 
@@ -25,12 +27,12 @@ class RDD:
         return []
 
     def cache(self):
-        self.shouldCache = True
+        #self.shouldCache = True
         return self
 
     def iterator(self, split):
         if self.shouldCache:
-            for i in sc.cacheTracker.getOrCompute(self, split):
+            for i in self.sc.cacheTracker.getOrCompute(self, split):
                 yield i
         else:
             for i in self.compute(split):
@@ -59,7 +61,7 @@ class RDD:
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
-            numSplits = self.sc.defaultNumSplit
+            numSplits = self.sc.defaultMinSplits
         return self.map(lambda x: (f(x), x)).groupByKey(numSplits)
 
     def pipe(self, command):
@@ -117,27 +119,26 @@ class RDD:
         if r: return r[0]
 
     def saveAsTextFile(self, path):
-        return self.map(lambda x: (None, str(x))).saveAsHadoopFile(path)
+        return OutputTextFileRDD(self, path)
 
-    def saveAsObjectFile(self, path):
-        return self.glom().map(lambda x: (None, dumps(x))).saveAsSequenceFile(path)
+#    def saveAsBinaryFile(self, path):
+#        return OutputBinaryFile(self, path)
+
+ #   def saveAsObjectFile(self, path):
+ #       return self.glom().map(lambda x:pickle.dumps(x)).saveAsTextFile(path)
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):
             for k,v in m2.iteritems():
-                if k in m1:
-                    m1[k]=v
-                else:
-                    m1[k]=func(m1[k], v)
+                m1[k]=func(m1[k], v) if k in m1 else v
             return m1
-        self.map(lambda x,y:dict(x=y)).reduce(mergeMaps)
+        return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
 
     def combineByKey(self, createCombiner, mergeValue, mergeCombiners, numSplits=None):
-        aggregator = Aggregator()
-        aggregator.createCombiner = createCombiner
-        aggregator.mergeValue = mergeValue
-        aggregator.mergeCombiners = mergeCombiners
+        if numSplits is None:
+            numSplits = self.sc.defaultMinSplits
+        aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         partitioner = HashPartitioner(numSplits)
         return ShuffledRDD(self, aggregator, partitioner)
 
@@ -151,14 +152,59 @@ class RDD:
         return self.combineByKey(createCombiner, mergeValue, mergeCombiners, numSplits)
 
     def join(self, other, numSplits=None):
-        vs = self.map()
-        # TODO
+        vs = self.map(lambda k,v: (k,(1,v)))
+        ws = other.map(lambda k,v: (k,(2,v)))
+        def dispatch((k,seq)):
+            vbuf, wbuf = [], []
+            for n,v in seq:
+                if n == 1:
+                    vbuf.append(v)
+                elif n == 2:
+                    wbuf.append(v)
+                else:
+                    yield Exception("invalid n")
+            for vv in v:
+                for ww in w:
+                    yield (k, (vv, ww))
+        ws.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def leftOuterJoin(self, other, numSplits=None):
-        pass # TODO
+        vs = self.map(lambda k,v: (k,(1,v)))
+        ws = other.map(lambda k,v: (k,(2,v)))
+        def dispatch((k,seq)):
+            vbuf, wbuf = [], []
+            for n,v in seq:
+                if n == 1:
+                    vbuf.append(v)
+                elif n == 2:
+                    wbuf.append(v)
+                else:
+                    yield Exception("invalid n")
+            if not wbuf:
+                wbuf.append(None)
+            for vv in v:
+                for ww in w:
+                    yield (k, (vv, ww))
+        ws.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def rightOuterJoin(self, other, numSplits=None):
-        pass
+        vs = self.map(lambda k,v: (k,(1,v)))
+        ws = other.map(lambda k,v: (k,(2,v)))
+        def dispatch((k,seq)):
+            vbuf, wbuf = [], []
+            for n,v in seq:
+                if n == 1:
+                    vbuf.append(v)
+                elif n == 2:
+                    wbuf.append(v)
+                else:
+                    yield Exception("invalid n")
+            if not vbuf:
+                vbuf.append(None)
+            for vv in v:
+                for ww in w:
+                    yield (k, (vv, ww))
+        ws.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def collectAsMap(self):
         return dict(self.collect())
@@ -170,26 +216,27 @@ class RDD:
         return FlatMappedValuesRDD(self, f)
 
     def groupWith(self, other):
-        part = self.partitioner or HashPartitioner(self.defaultParallelism)
-        return CoGroupedRDD([self, other], part).map(lambda k,(vs,ws): k,(vs,ws))
+        part = self.partitioner or HashPartitioner(self.sc.defaultParallelism)
+        return CoGroupedRDD([self, other], part)
 
     def groupWith2(self, other1, other2):
-        pass # TODO
+        part = self.partitioner or HashPartitioner(self.sc.defaultParallelism)
+        return CoGroupedRDD([self, other1, other2], part)
 
     def lookup(self, key):
         if self.partitioner:
-            self.partitioner.getPartition(key)
+            index = self.partitioner.getPartition(key)
             def process(it):
                 return [v for k,v in it if k == key]
             return self.sc.runJob(self, process, [index], False)
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
             
-    def saveAsHadoopFile(self, path):
-        pass
+#    def saveAsHadoopFile(self, path):
+#        pass
 
-    def saveAsHadoopDataset(self, conf):
-        pass
+#   def saveAsHadoopDataset(self, conf):
+#        pass
 
 
 class MappedRDD(RDD):
@@ -404,7 +451,6 @@ class ParallelCollection(RDD):
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
-import os.path
 class TextFileRDD(RDD):
     def __init__(self, sc, path, numSplits=None, splitSize=None):
         RDD.__init__(self, sc)
@@ -443,3 +489,29 @@ class TextFileRDD(RDD):
             else:
                 yield line
         f.close()
+
+class OutputTextFileRDD(RDD):
+    def __init__(self, rdd, path):
+        RDD.__init__(self, rdd.sc)
+        self.rdd = rdd
+        self.path = path
+        if os.path.exists(path):
+            if not os.path.isdir(path):
+                raise Exception("output must be dir")
+        else:
+            os.makedirs(path)
+        self.dependencies = [OneToOneDependency(rdd)]
+
+    @property
+    def splits(self):
+        return self.rdd.splits
+
+    def compute(self, split):
+        path = os.path.join(self.path, str(split.index))
+        f = open(path,'w')
+        for line in self.rdd.iterator(split):
+            f.write(line)
+            if not line.endswith('\n'):
+                f.write('\n')
+        f.close()
+        yield path

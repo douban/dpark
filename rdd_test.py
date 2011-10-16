@@ -1,5 +1,6 @@
 import pickle
 import unittest
+import pprint
 from context import *
 from rdd import *
 
@@ -19,7 +20,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(slices[2], range(4, 5))
 
     def test_basic_operation(self):
-        return
         d = range(4)
         nums = self.sc.makeRDD(d, 2)
         self.assertEqual(len(nums.splits), 2)
@@ -37,22 +37,29 @@ class TestRDD(unittest.TestCase):
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
         nums = self.sc.makeRDD(d, 2)
-        print nums.groupByKey(2).collect()
+        self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
+        self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
+        self.assertEqual(nums.groupByKey(2).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
     def test_process(self):
         self.sc.stop()
         self.sc = SparkContext("process", "test")
         self.sc.init()
         self.test_basic_operation()
+        #self.test_pair_operation()
 
     def test_file(self):
-        return
         f = self.sc.textFile(__file__)
         n = len(open(__file__).read().split())
         self.assertEqual(f.flatMap(lambda x:x.split()).count(), n)
-        #.map(lambda x:1).reduce(lambda x,y:x+y)
+        self.assertEqual(f.flatMap(lambda x:x.split()).map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 6)
+        prefix = 'prefix:'
+        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout').collect(), ['/tmp/tout/0']) 
+        d = self.sc.textFile('/tmp/tout')
+        n = len(open(__file__).readlines())
+        self.assertEqual(d.count(), n)
 
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.DEBUG)
+    logging.basicConfig(level=logging.ERROR)
     unittest.main()

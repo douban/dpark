@@ -48,12 +48,14 @@ class SparkContext:
             numSlices = self.defaultParallelism
         return self.parallelize(seq, numSlices)
     
-    def textFile(self, path, numSplits=None, splitSize=None):
+    def textFile(self, path, numSplits=None, splitSize=None, ext=''):
         if not os.path.exists(path):
             raise IOError("not exists")
         if os.path.isdir(path):
-            rdds = [TextFileRDD(self, os.path.join(p, n),numSplits,splitSize) 
-             for p, _, ns in os.path.walk(path) for n in ns]
+            rdds = [TextFileRDD(self, os.path.join(path, n),numSplits,splitSize) 
+                     for n in os.listdir(path) 
+                         if not os.path.isdir(os.path.join(path, n))
+                             and n.endswith(ext)]
             return self.union(rdds)
         else:
             return TextFileRDD(self, path, numSplits, splitSize)

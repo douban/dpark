@@ -29,15 +29,6 @@ class Task:
     def generation(self):
         raise NotImplementedError
     
-    def __getstate__(self):
-        d = dict(self.__dict__)
-        del d['func']
-        return d, dump_func(self.func)
-
-    def __setstate__(self, state):
-        self.__dict__, code = state
-        self.func = load_func(code, globals())
-
 class DAGTask(Task):
     def __init__(self, stageId):
         self.id = self.newId()
@@ -69,6 +60,16 @@ class ResultTask(DAGTask):
 
     def __str__(self):
         return "ResultTask(%d, %d)" % (self.stageId, self.partition)
+    
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        del d['func']
+        return d, dump_func(self.func)
+
+    def __setstate__(self, state):
+        self.__dict__, code = state
+        self.func = load_func(code, globals())
+
 
 class ShuffleMapTask(DAGTask):
     def __init__(self, stageId, rdd, dep, partition, locs):

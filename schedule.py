@@ -211,7 +211,6 @@ class DAGScheduler(Scheduler):
                         locs = self.getPreferredLocs(finalRdd, part)
                         tasks.append(ResultTask(finalStage.id, finalRdd, func, part, locs, i))
             else:
-                print 'add missing', stage, stage.numPartitions
                 for p in range(stage.numPartitions):
                     if not stage.outputLocs[p]:
                         locs = self.getPreferredLocs(stage.rdd, p)
@@ -293,20 +292,31 @@ class ThreadPool:
 
         def worker(queue):
             while True:
-                func, args = queue.get()
+                r = queue.get()
+                if r is None:
+                    self.queue.task_done()
+                    break
+                func, args = r
                 func(*args)
                 self.queue.task_done()
-
+        self.threads = []
         for i in range(nthreads):
             t = threading.Thread(target=worker, args=[self.queue])
             t.daemon = True
             t.start()
+            self.threads.append(t)
 
     def submit(self, func, *args):
         self.queue.put((func, args))
 
     def stop(self):
+        for i in range(len(self.threads)):
+            self.queue.put(None)
         self.queue.join()
+        for t in self.threads:
+            t.join()
+        logging.info("all threads are stopped")
+
 
 class LocalScheduler(DAGScheduler):
     attemptId = 0
@@ -339,6 +349,9 @@ class LocalScheduler(DAGScheduler):
             #self.pool.submit(func, task, aid)
             func(task, aid)
 
+
+    def stop(self):
+        self.pool.stop()
 
 def process_worker(task, aid):
     try:
