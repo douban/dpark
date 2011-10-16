@@ -41,12 +41,12 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey(2).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
-    def test_process(self):
-        self.sc.stop()
-        self.sc = SparkContext("process", "test")
-        self.sc.init()
-        self.test_basic_operation()
-        #self.test_pair_operation()
+#    def test_process(self):
+#        self.sc.stop()
+#        self.sc = SparkContext("process", "test")
+#        self.sc.init()
+#        self.test_basic_operation()
+#        self.test_pair_operation()
 
     def test_file(self):
         f = self.sc.textFile(__file__)
@@ -62,5 +62,5 @@ class TestRDD(unittest.TestCase):
 
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.ERROR)
+    logging.basicConfig(level=logging.INFO)
     unittest.main()

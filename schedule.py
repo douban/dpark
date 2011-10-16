@@ -1,6 +1,7 @@
 import logging
 import pickle
 import threading, Queue
+import time
 
 from dependency import *
 from accumulator import *
@@ -87,8 +88,15 @@ class DAGScheduler(Scheduler):
         self.idToStage = {}
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
-        self.cacheTracker = env.cacheTracker
-        self.mapOutputTracker = env.mapOutputTracker
+#        self.cacheTracker = env.cacheTracker
+#        self.mapOutputTracker = env.mapOutputTracker
+    @property
+    def cacheTracker(self):
+        return env.cacheTracker
+
+    @property
+    def mapOutputTracker(self):
+        return env.mapOutputTracker
 
     def submitTasks(self, tasks):
         raise NotImplementedError
@@ -266,6 +274,9 @@ class DAGScheduler(Scheduler):
                    submitStage(stage)
                failed.clear()
 
+           #time.sleep(0.01)
+           #logging.info("sleep .")
+
         return results
 
     def getPreferredLocs(self, rdd, partition):
@@ -345,8 +356,8 @@ class LocalScheduler(DAGScheduler):
                     self.taskEnded(task, OtherFailure("exception:" + str(e)), None, None)
 
             aid = self.nextAttempId()
-            #self.pool.submit(func, task, aid)
-            func(task, aid)
+            self.pool.submit(func, task, aid)
+            #func(task, aid)
 
 
     def stop(self):
@@ -354,15 +365,18 @@ class LocalScheduler(DAGScheduler):
 
 def process_worker(task, aid):
     try:
+        env.stop()
+        env.start(False)
         Accumulator.clear()
-        logging.info("run task %s %d", task, aid)
+        logging.info("run task in process %s %d", task, aid)
         result = task.run(aid)
         accumUpdates = Accumulator.values()
         return (task, Success(), result, accumUpdates)
     except Exception, e:
-        logging.info("error in task %s", task)
+        logging.info("error in process task %s %s", task, e)
         import tracback
-        traceback.print_exec()
+        traceback.print_exc()
+        raise
         return ((task, OtherFailure("exception:" + str(e)), None, None))
 
 class LocalProcessScheduler(LocalScheduler):
@@ -388,6 +402,7 @@ class LocalProcessScheduler(LocalScheduler):
             aid = self.nextAttempId()
             logging.info("put task async %s", task)
             self.pool.apply_async(process_worker, (task, aid), {}, callback)
+            logging.info("put task async completed %s", task)
 
     def stop(self):
         self.pool.close()

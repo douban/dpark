@@ -19,7 +19,10 @@ class LocalFileShuffle:
         localDirRoot = "/tmp/spark/"
         shuffleDir = os.path.join(localDirRoot, str(os.getpid()), "shuffle")
         if not os.path.exists(shuffleDir):
-            os.makedirs(shuffleDir)
+            try:
+                os.makedirs(shuffleDir)
+            except:
+                pass
         else:
             pass # TODO: clean dir
 
@@ -87,6 +90,12 @@ class MapOutputTrackerServer(CacheTrackerServer):
     def __init__(self, serverUris):
         CacheTrackerServer.__init__(self)
         self.serverUris = serverUris
+    
+    def stop(self):
+        sock = ctx.socket(zmq.REQ)
+        sock.connect(self.addr)
+        sock.send(cPickle.dumps(StopMapOutputTracker(), -1))
+        self.t.join()
 
     def run(self):
         sock = ctx.socket(zmq.REP)
@@ -97,6 +106,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
             sock.send(cPickle.dumps(msg))
         while True:
             msg = cPickle.loads(sock.recv())
+            logging.info("MapOutputTrackerServer recv %s", msg)
             if isinstance(msg, GetMapOutputLocations):
                 reply(self.serverUris.get(msg.shuffleId))
             elif isinstance(msg, StopMapOutputTracker):
@@ -106,13 +116,13 @@ class MapOutputTrackerServer(CacheTrackerServer):
                 logging.error('unexpected mapOutputTracker msg: %s %s', msg, type(msg))
                 reply('ERROR')
         sock.close()
-        logging.info("MapOutputTrackerServer stopped")
+        logging.info("MapOutputTrackerServer stopped %s", self.addr)
 
 class MapOutputTrackerClient(CacheTrackerClient):
     pass
 
 class MapOutputTracker:
-    def __init__(self, isMaster, addr=None):
+    def __init__(self, isMaster):
         self.isMaster = isMaster
         self.serverUris = {}
         self.fetching = set()
@@ -121,7 +131,9 @@ class MapOutputTracker:
             self.server = MapOutputTrackerServer(self.serverUris)
             self.server.start()
             addr = self.server.addr
-        self.addr = addr
+            os.environ['MapOutputTracker'] = addr
+        else:
+            addr = os.environ['MapOutputTracker']
         self.client = MapOutputTrackerClient(addr)
 
     def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):
@@ -159,7 +171,7 @@ class MapOutputTracker:
 
     def stop(self):
         self.serverUris.clear()
-        self.client.call(StopMapOutputTracker(), False)
+        self.client.stop()
         if self.isMaster:
             self.server.stop()
 
@@ -180,7 +192,7 @@ def test():
     import logging
     logging.basicConfig(level=logging.INFO)
     from env import env
-    env.create(True)
+    env.start(True)
     
     path = LocalFileShuffle.getOutputFile(1, 0, 0) 
     f = open(path, 'w')
@@ -198,8 +210,7 @@ def test():
     tracker = MapOutputTracker(True)
     tracker.registerMapOutput(2, 5, 1, uri)
     assert tracker.getServerUris(2) == [None, uri, None, None, None]
-    addr = tracker.addr
-    ntracker = MapOutputTracker(False, addr)
+    ntracker = MapOutputTracker(False)
     assert ntracker.getServerUris(2) == [None, uri, None, None, None]
     ntracker.stop()
     tracker.stop()

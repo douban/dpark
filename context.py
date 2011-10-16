@@ -13,8 +13,6 @@ class SparkContext:
         
     def init(self):
         #Broadcast.initialize(True)
-        env.create(True)
-        self.env = env
         if self.master.startswith('local'):
             n = 2
             self.scheduler = LocalScheduler(n)
@@ -26,6 +24,8 @@ class SparkContext:
             self.scheduler = MesosScheduler(self, self.master, "spark")
             self.isLocal = False
         
+        env.start(True)
+        self.env = env
         self.defaultParallelism = self.scheduler.defaultParallelism
         self.defaultMinSplits = min(self.defaultParallelism, 2)
         self.scheduler.start()
@@ -79,9 +79,7 @@ class SparkContext:
 
     def stop(self):
         self.scheduler.stop()
-        self.env.mapOutputTracker.stop()
-        self.env.cacheTracker.stop()
-        self.env.shuffleFetcher.stop()
+        self.env.stop()
 
     def waitForRegister(self):
         self.scheduler.waitForRegister()
@@ -96,3 +94,5 @@ class SparkContext:
 
     def __setstate__(self, state):
         self.master, self.name = state
+        self.env = env
+        env.start(False)

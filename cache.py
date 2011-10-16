@@ -1,3 +1,4 @@
+import os
 import weakref
 import socket
 import threading
@@ -125,6 +126,9 @@ class CacheTrackerServer:
             time.sleep(0.01)
 
     def stop(self):
+        sock = ctx.socket(zmq.REQ)
+        sock.connect(self.addr)
+        sock.send(cPickle.dumps(StopCacheTracker(), -1))
         self.t.join()
 
     def run(self):
@@ -132,10 +136,12 @@ class CacheTrackerServer:
         sock = ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
+        logging.info("CacheTrackerServer started at %s", self.addr)
         def reply(msg):
             sock.send(cPickle.dumps(msg))
         while True:
             msg = cPickle.loads(sock.recv())
+            logging.info("CacheTracker recv %s", msg)
             if isinstance(msg, RegisterRDD):
                 locs[msg.rddId] = [[] for i in range(msg.numPartitions)]
                 reply('OK')
@@ -159,17 +165,23 @@ class CacheTrackerServer:
                 logging.error("unexpected msg %s %s", msg, type(msg))
                 reply('ERROR')
         sock.close()
+        logging.info("stop CacheTrackerServer %s", self.addr)
 
 class CacheTrackerClient:
     def __init__(self, addr):
+        self.addr = addr
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
+        logging.info("%s connect to %s", self.__class__, addr)
 
-    def call(self, msg, reply=True):
+    def call(self, msg):
+        logging.info("send to %s: %s", self.addr, msg)
         self.sock.send(cPickle.dumps(msg, -1))
-        if reply:
-            return cPickle.loads(self.sock.recv())
+        return cPickle.loads(self.sock.recv())
 
+    def stop(self):
+        self.sock.close()
+        logging.info("stop %s", self.__class__)
 
 class CacheTracker:
     def __init__(self, isMaster, theCache, addr=None):
@@ -181,7 +193,9 @@ class CacheTracker:
             self.server = CacheTrackerServer()
             self.server.start()
             addr = self.server.addr
-        self.addr = addr 
+            os.environ['CacheTracker'] = addr
+        else:
+            addr = os.environ['CacheTracker']
         self.client = CacheTrackerClient(addr)
         
     def registerRDD(self, rddId, numPartitions):
@@ -211,8 +225,7 @@ class CacheTracker:
         return r
 
     def stop(self):
-        self.client.call(StopCacheTracker(), False)
-        self.registeredRddIds.clear()
+        self.client.stop()
         if self.isMaster:
             self.server.stop()
 
