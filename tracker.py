@@ -40,10 +40,3 @@ class MapOutputTracker:
             logging.info("Updating generation to %d and clearing cache", newGen)
             self.generation = newGen
             self.serverUris.clear()
-
-
-class CacheTracker:
-    def __init__(self, isMaster, theCache):
-        self.cache = theCache.newKeySpace()
-        self.registeredRddIds = {}
-        self.loading = {}

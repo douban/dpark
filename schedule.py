@@ -87,7 +87,7 @@ class DAGScheduler(Scheduler):
         self.idToStage = {}
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
-        #self.cacheTracker = sc.cacheTracker
+        self.cacheTracker = env.cacheTracker
         self.mapOutputTracker = env.mapOutputTracker
 
     def submitTasks(self, tasks):
@@ -104,12 +104,11 @@ class DAGScheduler(Scheduler):
         return self.cacheLocs.get(rdd.id, {})
 
     def updateCacheLocs(self):
-        self.cacheLocs = {} #self.cacheTracker.getLocationsSnapshot()
+        self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
 
     def newStage(self, rdd, shuffleDep):
-        #self.cacheTracker.regiesterRDD(rdd.id, len(rdd.splits))
+        self.cacheTracker.registerRDD(rdd.id, len(rdd.splits))
         id = self.newStageId()
-        #print 'newStage', rdd, shuffleDep
         stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
         self.idToStage[id] = stage
         return stage
@@ -121,7 +120,7 @@ class DAGScheduler(Scheduler):
             if r.id in visited:
                 return
             visited.add(r.id)
-            #self.cacheTracker.regiesterRDD(r.id, len(r.splits))
+            self.cacheTracker.registerRDD(r.id, len(r.splits))
             for dep in r.dependencies:
                 if isinstance(dep, ShuffleDependency):
                     parents.add(self.getShuffleMapStage(dep))
@@ -270,7 +269,7 @@ class DAGScheduler(Scheduler):
         return results
 
     def getPreferredLocs(self, rdd, partition):
-        cached = self.getCacheLocs(rdd).get(partition, None)
+        cached = self.getCacheLocs(rdd)[partition]
         if cached is not None:
             return cached
         rddPrefs = rdd.preferredLocations(rdd.splits[partition])

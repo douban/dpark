@@ -80,7 +80,7 @@ class SparkContext:
     def stop(self):
         self.scheduler.stop()
         self.env.mapOutputTracker.stop()
-        #self.env.cacheTracker.stop()
+        self.env.cacheTracker.stop()
         self.env.shuffleFetcher.stop()
 
     def waitForRegister(self):

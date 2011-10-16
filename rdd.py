@@ -27,12 +27,12 @@ class RDD:
         return []
 
     def cache(self):
-        #self.shouldCache = True
+        self.shouldCache = True
         return self
 
     def iterator(self, split):
         if self.shouldCache:
-            for i in self.sc.cacheTracker.getOrCompute(self, split):
+            for i in self.sc.env.cacheTracker.getOrCompute(self, split):
                 yield i
         else:
             for i in self.compute(split):

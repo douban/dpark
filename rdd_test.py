@@ -51,8 +51,9 @@ class TestRDD(unittest.TestCase):
     def test_file(self):
         f = self.sc.textFile(__file__)
         n = len(open(__file__).read().split())
-        self.assertEqual(f.flatMap(lambda x:x.split()).count(), n)
-        self.assertEqual(f.flatMap(lambda x:x.split()).map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 6)
+        fs = f.flatMap(lambda x:x.split()).cache()
+        self.assertEqual(fs.count(), n)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 6)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout').collect(), ['/tmp/tout/0']) 
         d = self.sc.textFile('/tmp/tout')
