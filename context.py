@@ -10,10 +10,9 @@ class SparkContext:
     def __init__(self, master='local', name='spark'):
         self.master = master
         self.name = name
-        
+        self.init()
+
     def init(self):
-        env.start(True)
-        self.env = env
         #Broadcast.initialize(True)
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
@@ -30,6 +29,9 @@ class SparkContext:
         
         self.defaultParallelism = self.scheduler.defaultParallelism
         self.defaultMinSplits = min(self.defaultParallelism, 2)
+        
+        env.start(True)
+        self.env = env
         self.scheduler.start()
 
     def newRddId(self):
@@ -97,4 +99,3 @@ class SparkContext:
     def __setstate__(self, state):
         self.master, self.name = state
         self.env = env
-        env.start(False)

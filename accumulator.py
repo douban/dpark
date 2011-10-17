@@ -1,15 +1,33 @@
+import logging
 from threading import currentThread
+from utils import load_func, dump_func
+
+
+class AccumulatorParam:
+    def __init__(self, zero, addInPlace):
+        self.zero = zero
+        self.addInPlace = addInPlace
+
+    def __getstate__(self):
+        return dump_func(self.addInPlace), self.zero
+
+    def __setstate__(self, state):
+        add, self.zero = state
+        self.addInPlace = load_func(add)
+
+intAcc = AccumulatorParam(0, lambda x,y:x+y)
+listAcc = AccumulatorParam([], lambda x,y:x.extend(y) or x)
+mapAcc = AccumulatorParam({}, lambda x,y:x.update(y) or x)
+
 
 class Accumulator:
-    def __init__(self, initialValue, param=None):
+    def __init__(self, initialValue, param=intAcc):
         self.id = self.newId()
         if param is None:
             param = intAcc
         self.param = param
         self._value = initialValue
-        self.zero = param.zero(initialValue)
         self.deserialized = False
-
         self.register(self, True)
 
     def _get_value(self):
@@ -20,15 +38,12 @@ class Accumulator:
   
     def add(self, v):
         self._value = self.param.addInPlace(self._value, v)
+        self.register(self, not self.deserialized)
 
-    def __str__(self):
-        return str(self._value)
-
-    def __setstate(self, d):
+    def __setstate__(self, d):
         self.__dict__.update(d)
         self.deserialized = True
-        self._value = self.zero
-    #TODO when unpickle
+        self._value = self.param.zero
 
     nextId = 0
     originals = {}
@@ -44,7 +59,6 @@ class Accumulator:
             cls.originals[acc.id] = acc
         else:
             accums = cls.localAccums.setdefault(currentThread(), {})
-            # TODO
             accums[acc.id] = acc
 
     @classmethod
@@ -54,29 +68,11 @@ class Accumulator:
 
     @classmethod
     def values(cls):
-        accums = cls.localAccums.get(currentThread().name, {})
+        accums = cls.localAccums.get(currentThread(), {})
         return dict((id, accum.value) for id,accum in accums.items())
 
     @classmethod
-    def update(cls, values):
+    def merge(cls, values):
         for id, value in values.items():
             if id in cls.originals:
-                cls.originals[id].extend(value)
-         
-
-class AccumulatorParam:
-    def __init__(self, addInPlace, zero):
-        self.addInPlace = addInPlace
-        self.zero = zero
-
-    def __getstate__(self):
-        return dump_func(self.addInPlace), dump_func(self.zero)
-
-    def __setstate__(self, state):
-        add, zero = state
-        self.addInPlace = load_func(add, globals())
-        self.zero = load_func(zero, globals())
-
-intAcc = AccumulatorParam(lambda x,y:x+y, lambda x:0)
-listAcc = AccumulatorParam(lambda x,y:x+[y], lambda x: list(x))
-
+                cls.originals[id].add(value)

@@ -242,7 +242,7 @@ class DAGScheduler(Scheduler):
                pendingTasks[stage].remove(task.id)
                if isinstance(evt.reason, Success):
                    # ended
-                   Accumulator.update(evt.accumUpdates)
+                   Accumulator.merge(evt.accumUpdates)
                    if isinstance(task, ResultTask):
                        results[task.outputId] = evt.result
                        finished[task.outputId] = True
@@ -371,34 +371,43 @@ class MultiThreadScheduler(LocalScheduler):
             t.join()
         logging.info("all threads are stopped")
 
-
-def restart_env():
-    logging.info("restart env")
-    env.started = False
-    env.start(False)
+def run_task_in_process(task, aid, cacheAddr, outputAddr):
+    logging.info("run_task_in_process %s %s %s %s", 
+            task, aid, cacheAddr, outputAddr)
+    env.start(False, cacheAddr, outputAddr)
+    return run_task(task, aid) 
 
 class MultiProcessScheduler(LocalScheduler):
     def __init__(self, threads):
         LocalScheduler.__init__(self)
         self.threads = threads
+        from  multiprocessing import Pool
+        self.pool = Pool(threads)
 
     def start(self):
-        from  multiprocessing import Pool
-        self.pool = Pool(self.threads)
-        for i in range(self.threads):
-            self.pool.apply(restart_env)
+        pass
+#        logging.info("start processes")
+#        for i in range(self.threads*2):
+#            self.pool.apply_async(restart_env, [cacheAddr, outputAddr])
+#        logging.info("apply async done")
 
     def submitTasks(self, tasks):
         def callback(args):
             logging.info("got answer: %s", args)
             self.taskEnded(*args)
+        cacheAddr = env.cacheTracker.addr
+        outputAddr = env.mapOutputTracker.addr
         for task in tasks:
             logging.info("put task async: %s", task)
-            self.pool.apply_async(run_task, [task, self.nextAttempId()], callback=callback)
+            self.pool.apply_async(run_task_in_process, 
+                [task, self.nextAttempId(), cacheAddr, outputAddr],
+                callback=callback)
 
     def stop(self):
+        logging.info("try to stop process pool")
         self.pool.close()
         self.pool.join()
+        logging.info("process pool stopped")
 
 class MultiProcessScheduler2(LocalScheduler):
     def __init__(self, threads):

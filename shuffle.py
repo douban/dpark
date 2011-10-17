@@ -84,7 +84,6 @@ class GetMapOutputLocations:
         self.shuffleId = shuffleId
 class StopMapOutputTracker: pass        
 
-ctx = zmq.Context()
 
 class MapOutputTrackerServer(CacheTrackerServer):
     def __init__(self, serverUris):
@@ -92,12 +91,14 @@ class MapOutputTrackerServer(CacheTrackerServer):
         self.serverUris = serverUris
     
     def stop(self):
+        ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send(cPickle.dumps(StopMapOutputTracker(), -1))
         self.t.join()
 
     def run(self):
+        ctx = zmq.Context()
         sock = ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
@@ -122,7 +123,7 @@ class MapOutputTrackerClient(CacheTrackerClient):
     pass
 
 class MapOutputTracker:
-    def __init__(self, isMaster):
+    def __init__(self, isMaster, addr=None):
         self.isMaster = isMaster
         self.serverUris = {}
         self.fetching = set()
@@ -132,8 +133,9 @@ class MapOutputTracker:
             self.server.start()
             addr = self.server.addr
             os.environ['MapOutputTracker'] = addr
-        else:
+        elif addr is None:
             addr = os.environ['MapOutputTracker']
+        self.addr = addr
         self.client = MapOutputTrackerClient(addr)
 
     def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):

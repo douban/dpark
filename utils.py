@@ -1,46 +1,49 @@
 import marshal, new, pickle
 
 def dump_object(o):
+    if o is None:
+        return
+    if type(o) == type(marshal):
+        return 2, o.__name__
+    if isinstance(o, new.function) and o.__module__ == '__main__':
+        return 1, dump_func(o)
     try:
         return 3, pickle.dumps(o)
     except Exception:
         if isinstance(o, new.function):
             return 1, dump_func(o)
-        if type(o) == type(marshal):
-            return 2, o.__name__
         else:
             print 'error', o
             raise
 
-def load_object((t, d), globals):
-    if t == 0:
-        return d
-    elif t == 1:
-        return load_func(d, globals)
+def load_object((t, d)):
+    if t == 1:
+        return load_func(d)
     elif t == 2:
         return __import__(d)
-    else:
+    elif t == 3:
         return pickle.loads(d)
+    else:
+        raise Exception("invalid flag %d" % t)
 
 def dump_func(f):
     code = f.func_code
-    #glob = dict((n, dump_object(f.func_globals[n])) for n in code.co_names if n in f.func_globals)
-    #marshal.dumps(glob)
+    glob = {}
+    for n in code.co_names:
+        r = dump_object(f.func_globals.get(n))
+        if r is not None:
+            glob[n] = r
     closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None 
-    #print "closure", closure
-    return marshal.dumps((code, {}, f.func_name, f.func_defaults, closure))
+    return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
-def load_func(bytes, globals):
+def load_func(bytes, g={}):
     code, glob, name, defaults, closure = marshal.loads(bytes)
-    #glob = dict((k, load_object(v)) for k,v in glob.items())
-    closure = closure and reconstruct_closure([load_object(c, globals) for c in closure]) or None
-    #print 'closure2', closure
-    #globals().update(glob)
+    glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    return new.function(code, globals, name, defaults, closure)
+    closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
+    return new.function(code, glob, name, defaults, closure)
 
 def reconstruct_closure(values):
-    #print "values", values
     ns = range(len(values))
     src = ["def f(arg):"]
     src += [" _%d = arg[%d]" % (n, n) for n in ns]

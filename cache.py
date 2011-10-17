@@ -113,7 +113,6 @@ class GetCacheLocations(CacheTrackerMessage):
 class StopCacheTracker(CacheTrackerMessage):
     pass
 
-ctx = zmq.Context()
 class CacheTrackerServer:
     def __init__(self):
         self.addr = None
@@ -126,6 +125,7 @@ class CacheTrackerServer:
             time.sleep(0.01)
 
     def stop(self):
+        ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send(cPickle.dumps(StopCacheTracker(), -1))
@@ -133,6 +133,7 @@ class CacheTrackerServer:
 
     def run(self):
         locs = {}
+        ctx = zmq.Context()
         sock = ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
@@ -170,6 +171,7 @@ class CacheTrackerServer:
 class CacheTrackerClient:
     def __init__(self, addr):
         self.addr = addr
+        ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
         logging.info("%s connect to %s", self.__class__, addr)
@@ -177,7 +179,9 @@ class CacheTrackerClient:
     def call(self, msg):
         logging.info("send to %s: %s", self.addr, msg)
         self.sock.send(cPickle.dumps(msg, -1))
-        return cPickle.loads(self.sock.recv())
+        r = cPickle.loads(self.sock.recv())
+        logging.info("client recv %s: %s", self.addr, r)
+        return r
 
     def stop(self):
         self.sock.close()
@@ -194,10 +198,12 @@ class CacheTracker:
             self.server.start()
             addr = self.server.addr
             os.environ['CacheTracker'] = addr
-        else:
+        elif addr is None:
             addr = os.environ['CacheTracker']
+        self.addr = addr
         self.client = CacheTrackerClient(addr)
-        
+        logging.info("tracker started")
+
     def registerRDD(self, rddId, numPartitions):
         if rddId not in self.registeredRddIds:
             logging.info("Registering RDD ID %d with cache", rddId)
@@ -228,6 +234,9 @@ class CacheTracker:
         self.client.stop()
         if self.isMaster:
             self.server.stop()
+
+    def __getstate__(self):
+        raise Exception("!!!")
 
 def test():
     logging.basicConfig(level=logging.INFO)

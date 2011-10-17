@@ -81,6 +81,10 @@ class RDD:
     def collect(self):
         return sum(self.sc.runJob(self, lambda x:list(x)), [])
 
+    def __iter__(self):
+        for i in self.collect():
+            yield i
+
     def reduce(self, f):
         def reducePartition(it):
             if it:
@@ -487,6 +491,7 @@ class TextFileRDD(RDD):
             if skip:
                 skip = False
             else:
+                if line[-1] == '\n': line = line[:-1]
                 yield line
         f.close()
 
