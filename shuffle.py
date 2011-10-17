@@ -71,7 +71,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     url = "%s/%d/%d/%d" % (uri, shuffleId, id, reduceId)
                     logging.info("fetch %s", url)
                     for k,v in pickle.loads(urllib.urlopen(url).read()):
-                        logging.info("read %s : %s", k, v)
+#                        logging.info("read %s : %s", k, v)
                         func(k,v)
                 except IOError, e:
                     logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, i, url)

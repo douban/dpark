@@ -1,7 +1,11 @@
+import os, sys
+import socket
 import logging
 import pickle
 import threading, Queue
 import time
+import zmq
+
 
 from dependency import *
 from accumulator import *
@@ -238,7 +242,7 @@ class DAGScheduler(Scheduler):
                pendingTasks[stage].remove(task.id)
                if isinstance(evt.reason, Success):
                    # ended
-                   Accumulator.add(evt.accumUpdates)
+                   Accumulator.update(evt.accumUpdates)
                    if isinstance(task, ResultTask):
                        results[task.outputId] = evt.result
                        finished[task.outputId] = True
@@ -295,12 +299,44 @@ class DAGScheduler(Scheduler):
         return []
 
 
+def run_task(task, aid):
+    logging.info("Running task %r", task)
+    try:
+        Accumulator.clear()
+        result = task.run(aid)
+        accumUpdates = Accumulator.values()
+        return (task, Success(), result, accumUpdates)
+    except Exception, e:
+        logging.info("error in task %s", task)
+        import traceback
+        traceback.print_exc()
+        raise
+        return (task, OtherFailure("exception:" + str(e)), None, None)
 
-class ThreadPool:
-    def __init__(self, nthreads):
+
+class LocalScheduler(DAGScheduler):
+    attemptId = 0
+    def nextAttempId(self):
+        self.attemptId += 1
+        return self.attemptId
+
+    def submitTasks(self, tasks):
+        logging.info("submit tasks %s in LocalScheduler", tasks)
+        for task in tasks:
+            self.taskEnded(*run_task(task, self.nextAttempId()))
+    def stop(self):
+        pass
+
+class MultiThreadScheduler(LocalScheduler):
+    def __init__(self, threads):
+        LocalScheduler.__init__(self)
+        self.nthreads = threads
         self.queue = Queue.Queue()
 
+    def start(self):
         def worker(queue):
+            logging.info("worker thread started")
+            env.start(False)
             while True:
                 r = queue.get()
                 if r is None:
@@ -309,15 +345,23 @@ class ThreadPool:
                 func, args = r
                 func(*args)
                 self.queue.task_done()
+            env.stop()
+            logging.info("worker thread stopped")
+
         self.threads = []
-        for i in range(nthreads):
+        for i in range(self.nthreads):
             t = threading.Thread(target=worker, args=[self.queue])
             t.daemon = True
             t.start()
             self.threads.append(t)
 
-    def submit(self, func, *args):
-        self.queue.put((func, args))
+
+    def submitTasks(self, tasks):
+        logging.info("submit tasks %s in MultiThreadScheduler", tasks)
+        def func(task, aid):
+            self.taskEnded(*run_task(task, aid))
+        for task in tasks:
+            self.queue.put((func, (task, self.nextAttempId())))
 
     def stop(self):
         for i in range(len(self.threads)):
@@ -328,85 +372,78 @@ class ThreadPool:
         logging.info("all threads are stopped")
 
 
-class LocalScheduler(DAGScheduler):
-    attemptId = 0
+def restart_env():
+    logging.info("restart env")
+    env.started = False
+    env.start(False)
+
+class MultiProcessScheduler(LocalScheduler):
     def __init__(self, threads):
-        DAGScheduler.__init__(self)
-        self.pool = ThreadPool(threads)
+        LocalScheduler.__init__(self)
+        self.threads = threads
 
-    def nextAttempId(self):
-        self.attemptId += 1
-        return self.attemptId
-    
-    def submitTasks(self, tasks):
-        logging.info("submit tasks %s", tasks)
-        for task in tasks:
-            def func(task, aid):
-                logging.info("Running task %r", task)
-                try:
-                    Accumulator.clear()
-                    result = task.run(aid)
-                    accumUpdates = Accumulator.values()
-                    self.taskEnded(task, Success(), result, accumUpdates)
-                except Exception, e:
-                    logging.info("error in task %s", task)
-                    import traceback
-                    traceback.print_exc()
-                    raise
-                    self.taskEnded(task, OtherFailure("exception:" + str(e)), None, None)
-
-            aid = self.nextAttempId()
-            self.pool.submit(func, task, aid)
-            #func(task, aid)
-
-
-    def stop(self):
-        self.pool.stop()
-
-def process_worker(task, aid):
-    try:
-        env.stop()
-        env.start(False)
-        Accumulator.clear()
-        logging.info("run task in process %s %d", task, aid)
-        result = task.run(aid)
-        accumUpdates = Accumulator.values()
-        return (task, Success(), result, accumUpdates)
-    except Exception, e:
-        logging.info("error in process task %s %s", task, e)
-        import tracback
-        traceback.print_exc()
-        raise
-        return ((task, OtherFailure("exception:" + str(e)), None, None))
-
-class LocalProcessScheduler(LocalScheduler):
-    def __init__(self, threads):
-        DAGScheduler.__init__(self)
-        from multiprocessing import Pool, Queue
-        self.reply = Queue()
-        self.pool = Pool(threads)
-        
     def start(self):
-        def read_reply():
-            task, reason, result, update = self.reply.get()
-            self.taskEnded(task, reason, result, update)
-        self.t = threading.Thread(target=read_reply)
-        self.t.daemon = True
-        self.t.start()
+        from  multiprocessing import Pool
+        self.pool = Pool(self.threads)
+        for i in range(self.threads):
+            self.pool.apply(restart_env)
 
     def submitTasks(self, tasks):
         def callback(args):
+            logging.info("got answer: %s", args)
             self.taskEnded(*args)
-
         for task in tasks:
-            aid = self.nextAttempId()
-            logging.info("put task async %s", task)
-            self.pool.apply_async(process_worker, (task, aid), {}, callback)
-            logging.info("put task async completed %s", task)
+            logging.info("put task async: %s", task)
+            self.pool.apply_async(run_task, [task, self.nextAttempId()], callback=callback)
 
     def stop(self):
         self.pool.close()
         self.pool.join()
+
+class MultiProcessScheduler2(LocalScheduler):
+    def __init__(self, threads):
+        LocalScheduler.__init__(self)
+        self.threads = threads
+
+    def start(self):
+        import subprocess
+        ctx = zmq.Context()
+        self.cmd = ctx.socket(zmq.PUSH)
+        self.cmd_port = self.cmd.bind_to_random_port("tcp://0.0.0.0")
+        self.result_port = None
+
+        def read_reply():
+            result = ctx.socket(zmq.PUB)
+            self.result_port = result.bind_to_random_port("tcp://0.0.0.0")
+            task, reason, result, update = pickle.loads(result.recv())
+            self.taskEnded(task, reason, result, update)
+
+        self.t = threading.Thread(target=read_reply)
+        self.t.daemon = True
+        self.t.start()
+        while self.result_port is None:
+            time.sleep(0.01)
+
+        env = dict(os.environ)
+        env['COMMAND_ADDR'] = "tcp://%s:%d" % (socket.gethostname(), self.cmd_port)
+        env['RESULT_ADDR'] = "tcp://%s:%d" % (socket.gethostname(), self.result_port)
+        self.ps = [subprocess.Popen(["./executor.py"], stdin=sys.stdin, stdout=sys.stderr, stderr=sys.stderr, env=env)
+                    for i in range(self.threads)]
+
+    def submitTasks(self, tasks):
+        time.sleep(1)
+        for task in tasks:
+            aid = self.nextAttempId()
+            logging.info("put task async %s %s", task, self.cmd_port)
+            self.cmd.send(pickle.dumps((task, aid)))
+            logging.info("put task async completed %s", task)
+
+    def stop(self):
+        for i in range(self.threads*2):
+            self.cmd.send("")
+        for p in self.ps:
+            p.wait()
+            logging.info("stop child %s", p)
 
 
 class MesosScheduler(DAGScheduler):

@@ -41,6 +41,25 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey(2).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
+    def test_accumulater(self):
+        d = range(4)
+        nums = self.sc.makeRDD(d, 2)
+        
+        acc = self.sc.accumulator(0)
+        nums.map(lambda x: acc.add(x)).count()
+        self.assertEqual(acc.value, 6)
+        
+        acc = self.sc.accumulator([], listAcc)
+        nums.map(lambda x: acc.add(x)).count()
+        self.assertEqual(list(sorted(acc.value)), range(4))
+
+    def test_threads(self):
+        self.sc.stop()
+        self.sc = SparkContext("thread", "test")
+        self.sc.init()
+        self.test_basic_operation()
+        self.test_pair_operation()
+
 #    def test_process(self):
 #        self.sc.stop()
 #        self.sc = SparkContext("process", "test")
@@ -62,5 +81,5 @@ class TestRDD(unittest.TestCase):
 
 if __name__ == "__main__":
     import logging
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(format="%(process)d:%(threadName)s:%(levelname)s %(message)s", level=logging.INFO)
     unittest.main()

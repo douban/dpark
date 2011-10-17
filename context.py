@@ -12,20 +12,22 @@ class SparkContext:
         self.name = name
         
     def init(self):
+        env.start(True)
+        self.env = env
         #Broadcast.initialize(True)
         if self.master.startswith('local'):
-            n = 2
-            self.scheduler = LocalScheduler(n)
+            self.scheduler = LocalScheduler()
+            self.isLocal = True
+        elif self.master.startswith('thread'):
+            self.scheduler = MultiThreadScheduler(2)
             self.isLocal = True
         elif self.master.startswith('process'):
-            self.scheduler = LocalProcessScheduler(2)
+            self.scheduler = MultiProcessScheduler(2)
             self.isLocal = False
         else:
             self.scheduler = MesosScheduler(self, self.master, "spark")
             self.isLocal = False
         
-        env.start(True)
-        self.env = env
         self.defaultParallelism = self.scheduler.defaultParallelism
         self.defaultMinSplits = min(self.defaultParallelism, 2)
         self.scheduler.start()
@@ -71,8 +73,8 @@ class SparkContext:
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
-    def accumulator(self, init):
-        return Accumulator(init)
+    def accumulator(self, init, param=None):
+        return Accumulator(init, param)
 
     def broadcst(self, v):
         return newBroadcast(v, self.isLocal)

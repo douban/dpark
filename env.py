@@ -1,11 +1,12 @@
 import os, logging
+import threading
 
-class SparkEnv:
+class SparkEnv(threading.local):
     def __init__(self):
         self.started = False
 
     def start(self, isMaster):
-        if self.started:
+        if getattr(self, 'started', False):
             return
         logging.info("start env  in %s", os.getpid())
         from cache import BoundedMemoryCache, CacheTracker
@@ -17,7 +18,7 @@ class SparkEnv:
         self.started = True
 
     def stop(self):
-        if not self.started:
+        if not getattr(self, 'started', False):
             return
         logging.info("stop env  in %s", os.getpid())
         self.cacheTracker.stop()

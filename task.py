@@ -96,7 +96,7 @@ class ShuffleMapTask(DAGTask):
         for i in range(numOutputSplits):
             path = LocalFileShuffle.getOutputFile(self.dep.shuffleId, self.partition, i)
             f = open(path, 'w')
-            logging.info("dumping %s", buckets[i].items())
+#            logging.info("dumping %s", buckets[i].items())
             pickle.dump(buckets[i].items(), f)
             f.close()
         return LocalFileShuffle.getServerUri()
