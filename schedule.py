@@ -4,13 +4,18 @@ import logging
 import pickle
 import threading, Queue
 import time
-import zmq
 
+import zmq
+import mesos
+import mesos_pb2
 
 from dependency import *
 from accumulator import *
 from task import *
+from job import *
 from env import env
+
+EXECUTOR_MEMORY = 512
 
 class TaskEndReason:
     pass
@@ -265,10 +270,12 @@ class DAGScheduler(Scheduler):
                            for stage in newlyRunnable:
                                submitMissingTasks(stage)
                else:
-                   raise
+                   logging.error("unexpected task %s", task)
                    if isinstance(evt.reason, FetchFailed):
                        pass
                    else:
+                       logging.error("%s %s %s", evt.reason, type(evt.reason), isinstance(evt.reason, Success))
+                       raise evt.reason
                        raise
 
            if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
@@ -455,14 +462,12 @@ class MultiProcessScheduler2(LocalScheduler):
             logging.info("stop child %s", p)
 
 
-class MesosScheduler(DAGScheduler):
+class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
-    nextJobId = 0
-    nextTaskId = 0
-
-    def __init__(self, sc, master, name='dpark'):
-        DAGScheduler.__init__(self, master, name)
-        self.sc = sc
+    def __init__(self, master, name='dpark'):
+        DAGScheduler.__init__(self)
+        self.master = master
+        self.name = name
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -470,26 +475,20 @@ class MesosScheduler(DAGScheduler):
         self.taskIdToSlaveId = {}
         self.jobTasks = {}
         self.driver = None
-        self.slavesWithExecutors = {}
-
-    @classmethod
-    def newJobId(cls):
-        cls.nextJobId += 1
-        return cls.nextJobId
-    
-    @classmethod
-    def newTaskId(cls):
-        cls.nextTaskId += 1
-        return cls.nextTaskId
+        self.slavesWithExecutors = set()
 
     def start(self):
         def run():
-            self.driver = MesosSchedulerDriver(self, self.master)
             try:
+                env.start(False)
+                logging.info("driver thread started")
+                self.driver = mesos.MesosSchedulerDriver(self, self.master)
                 ret = self.driver.run()
-            except Exception:
-                logging.info("run failed")
-        t = Thread(target=run)
+            except Exception, e:
+                logging.info("run failed: %s", e)
+                raise
+                os._exit(1)
+        t = threading.Thread(target=run)
         t.daemon = True
         t.start()
 
@@ -497,50 +496,144 @@ class MesosScheduler(DAGScheduler):
         return self.name
 
     def getExecutorInfo(self, driver):
-        pass
+        path = os.path.abspath('./executor')
+        info = mesos_pb2.ExecutorInfo()
+        info.executor_id.value = "default"
+        info.uri = path
+        mem = info.resources.add()
+        mem.name = 'mem'
+        mem.type = mesos_pb2.Resource.SCALAR
+        mem.scalar.value = EXECUTOR_MEMORY
+        info.data = pickle.dumps(
+            (os.getcwd(), env.cacheTracker.addr, env.mapOutputTracker.addr))
+        return info
 
     def submitTasks(self, tasks):
         logging.info("Got a job with %d tasks", len(tasks))
         self.waitForRegister()
-        jobId = self.newJobId()
-        myJob = SimpleJob(self, tasks, jobId)
-        self.activeJobs[jobId] = myJob
-        self.activeJobsQueue.append(myJob)
-        logging.info("Adding job with ID %d", jobId)
-        self.jobTasks[jobId] = {}
-        driver.reviveOffers()
+        job = SimpleJob(self, tasks)
+        self.activeJobs[job.id] = job
+        self.activeJobsQueue.append(job)
+        logging.info("Adding job with ID %d", job.id)
+        self.jobTasks[job.id] = set()
+        self.driver.reviveOffers()
 
     def jobFinished(self, job):
-        del self.activeJobs[job.getId]
-        #TODO
+        logging.info("job %s finished", job.id)
+        del self.activeJobs[job.id]
+        self.activeJobsQueue.remove(job) 
+        for id in self.jobTasks[job.id]:
+            del self.taskIdToJobId[id]
+            del self.taskIdToSlaveId[id]
+        del self.jobTasks[job.id]
 
     def registered(self, driver, fid):
         self.isRegistered = True
+        logging.info("is registered")
 
     def waitForRegister(self):
         while not self.isRegistered:
             time.sleep(0.1)
 
     def resourceOffer(self, driver, oid, offers):
-        # TODO
-        pass
+        tasks = []
+        availableCpus = [self.getResource(o.resources, 'cpus')
+                            for o in offers]
+        enoughMem = [self.getResource(o.resources, 'mem')>EXECUTOR_MEMORY
+                    or o.slave_id.value in self.slavesWithExecutors
+                        for o in offers]
+        launchedTask = False
+        for job in self.activeJobsQueue:
+            while True:
+                launchedTask = False
+                for i,o in enumerate(offers):
+                    if not enoughMem[i]: continue
+                    t = job.slaveOffer(o.hostname, availableCpus[i])
+                    if not t: continue
+                    task = mesos_pb2.TaskDescription()
+                    task.name = "task %s:%s" % (job.id, t.id)
+                    task.task_id.value = str(t.id)
+                    task.slave_id.value = o.slave_id.value
+                    task.data = pickle.dumps((t, 1))
+                    cpu = task.resources.add()
+                    cpu.name = 'cpus'
+                    cpu.type = mesos_pb2.Resource.SCALAR
+                    cpu.scalar.value = 1
+                    mem = task.resources.add()
+                    mem.name = 'mem'
+                    mem.type = mesos_pb2.Resource.SCALAR
+                    mem.scalar.value = EXECUTOR_MEMORY
+                    tasks.append(task)
+
+                    logging.info("dispatch %s into %s", t, o.hostname)
+                    self.jobTasks[job.id].add(t.id)
+                    self.taskIdToJobId[t.id] = job.id
+                    self.taskIdToSlaveId[t.id] = o.slave_id.value
+                    self.slavesWithExecutors.add(o.slave_id.value)
+                    availableCpus[i] -= 1
+                    launchedTask = True
+
+                if not launchedTask:
+                    break
+
+        driver.replyToOffer(oid, tasks, {"timeout": "1"})
 
     def getResource(self, res, name):
         for r in res:
             if r.name == name:
-                return r.scala.value
+                return r.scalar.value
 
     def isFinished(self, state):
-        return state == TaskState.TASK_FINISHED
+        return state >= mesos_pb2.TASK_FINISHED
 
     def statusUpdate(self, driver, status):
-        pass # TODO
+        tid = int(status.task_id.value)
+        state = status.state
+        logging.info("status update: %s %s", tid, state)
+        if state == mesos_pb2.TASK_LOST and tid in self.taskIdToSlaveId:
+            self.slavesWithExecutors.remove(self.taskIdToSlaveId[tid])
+        jid = self.taskIdToJobId.get(tid)
+        if jid in self.activeJobs:
+            if self.isFinished(state):
+#                print self.taskIdToJobId
+                del self.taskIdToJobId[tid]
+                del self.taskIdToSlaveId[tid]
+                if tid in self.jobTasks[jid]:
+                    self.jobTasks[jid].remove(tid)
+            if status.data:
+                _,reason,result,accUpdate = pickle.loads(status.data)
+                self.activeJobs[jid].statusUpdate(tid, state, 
+                    reason, result, accUpdate)
+            else:
+                self.activeJobs[jid].statusUpdate(tid, state)
+        else:
+            logging.error("Ignoring update from TID %s " +
+                "because its job is gone", tid)
 
     def error(self, driver, code, message):
-        pass # TODO
+        logging.error("Mesos error: %s (code: %s)", message, code)
+        if self.activeJobs:
+            for id, job in self.activeJobs.items():
+                try:
+                    job.error(code, message)
+                except Exception:
+                    raise
+        else:
+            os._exit(1)
 
     def stop(self):
-        self.driver.stop()
+        if self.driver:
+            self.driver.stop()
 
     def defaultParallelism(self):
-        return 2
+        return 8
+
+    def frameworkMessage(self, driver, slave, executor, data):
+        logging.info("got message from slave %s %s %s", 
+                slave.value, executor.name, data)
+
+    def slaveLost(self, driver, slave):
+        self.slavesWithExecutors.remove(slave.value)
+
+    def offerRescinded(self, driver, offer):
+        pass

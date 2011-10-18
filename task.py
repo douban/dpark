@@ -17,6 +17,9 @@ class TaskResult:
 
 class Task:
     nextId = 0
+    def __init__(self):
+        self.id = self.newId()
+
     @classmethod
     def newId(cls):
         cls.nextId += 1
@@ -25,7 +28,7 @@ class Task:
     def run(self, id):
         raise NotImplementedError
     def preferredLocations(self):
-        raise NotImplementedError
+        return []
     def generation(self):
         raise NotImplementedError
     

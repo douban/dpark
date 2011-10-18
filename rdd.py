@@ -499,7 +499,7 @@ class OutputTextFileRDD(RDD):
     def __init__(self, rdd, path):
         RDD.__init__(self, rdd.sc)
         self.rdd = rdd
-        self.path = path
+        self.path = os.path.abspath(path)
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")

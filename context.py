@@ -23,8 +23,9 @@ class SparkContext:
         elif self.master.startswith('process'):
             self.scheduler = MultiProcessScheduler(2)
             self.isLocal = False
-        else:
-            self.scheduler = MesosScheduler(self, self.master, "spark")
+        elif (self.master.startswith('mesos://')
+              or self.master.startswith('zoo://')):
+            self.scheduler = MesosScheduler(self.master, "spark")
             self.isLocal = False
         
         self.defaultParallelism = self.scheduler.defaultParallelism
