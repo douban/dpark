@@ -20,6 +20,7 @@ class SparkContext:
         self.name = name
 
         #Broadcast.initialize(True)
+        shuffleDir = '/tmp/dpark'
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
             self.isLocal = True
@@ -34,16 +35,12 @@ class SparkContext:
             self.scheduler = MesosScheduler(self.master, "spark")
             self.isLocal = False
             if os.path.exists('/mfs/tmp'):
-                dir = os.path.join('/mfs/tmp', 'dpark') # TODO uuid
-                if not os.path.exists(dir):
-                    os.makedirs(dir)
-                LocalFileShuffle.initializeIfNeeded(dir)
+                shuffleDir = os.path.join('/mfs/tmp', 'dpark') # TODO uuid
         
         self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
         
-        env.start(True)
-        self.env = env
+        env.start(True, shuffleDir=shuffleDir)
         self.scheduler.start()
         self.started = True
 
@@ -99,7 +96,7 @@ class SparkContext:
     def stop(self):
         if self.started:
             self.scheduler.stop()
-            self.env.stop()
+            env.stop()
             self.started = False
 
     def waitForRegister(self):
@@ -115,7 +112,6 @@ class SparkContext:
 
     def __setstate__(self, state):
         self.master, self.name = state
-        self.env = env
 
 def parse_options():
     parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")

@@ -3,20 +3,22 @@ import random
 import logging
 import urllib
 import logging
-import pickle
+import marshal
+import cPickle
+import struct
+import socket
+
 import zmq
 
 from env import env
 from cache import *
 
 class LocalFileShuffle:
-    initialized = False
-
+    localDirRoot = None
+    serverUri = None
     @classmethod
-    def initializeIfNeeded(cls, localDirRoot="/tmp/spark/"):
-        if cls.initialized:
-            return
-        shuffleDir = os.path.join(localDirRoot, str(os.getpid()), "shuffle")
+    def initialize(cls, localDirRoot):
+        shuffleDir = os.path.join(localDirRoot, socket.gethostname(), str(os.getpid()))
         if not os.path.exists(shuffleDir):
             try:
                 os.makedirs(shuffleDir)
@@ -25,15 +27,14 @@ class LocalFileShuffle:
         else:
             pass # TODO: clean dir
 
-        logging.info("shuffle dir: %s", shuffleDir)
+        logging.debug("shuffle dir: %s", shuffleDir)
 
+        cls.localDirRoot = localDirRoot
         cls.shuffleDir = shuffleDir
         cls.serverUri = "file:///" + shuffleDir
-        cls.initialized = True
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId):
-        cls.initializeIfNeeded()
         path = os.path.join(cls.shuffleDir, str(shuffleId), str(inputId))
         if not os.path.exists(path):
             os.makedirs(path)
@@ -41,7 +42,6 @@ class LocalFileShuffle:
 
     @classmethod
     def getServerUri(cls):
-        cls.initializeIfNeeded()
         return cls.serverUri
 
     nextShuffleId = 0
@@ -69,9 +69,17 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                 try:
                     url = "%s/%d/%d/%d" % (uri, shuffleId, id, reduceId)
                     logging.info("fetch %s", url)
-                    for k,v in pickle.loads(urllib.urlopen(url).read()):
-#                        logging.info("read %s : %s", k, v)
+                    f = open(url[6:], 'rb')
+                    for k,v in marshal.load(f):
+                    #while True:
+                    #    size = f.read(2)
+                    #    if not size:
+                    #        break
+                    #    size = struct.unpack('h', size)[0]
+                    #    v = f.read(size)
+                    #    k, v = marshal.loads(v)
                         func(k,v)
+                    f.close()
                 except IOError, e:
                     logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, i, url)
                     raise 
@@ -197,7 +205,7 @@ def test():
     
     path = LocalFileShuffle.getOutputFile(1, 0, 0) 
     f = open(path, 'w')
-    f.write(pickle.dumps([('key','value')]))
+    f.write(cPickle.dumps([('key','value')]))
     f.close()
     
     uri = LocalFileShuffle.getServerUri()

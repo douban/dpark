@@ -27,6 +27,8 @@ def load_object((t, d)):
         raise Exception("invalid flag %d" % t)
 
 def dump_func(f):
+    if not isinstance(f, new.function):
+        return 1, cPickle.dumps(f)
     code = f.func_code
     glob = {}
     for n in code.co_names:
@@ -34,9 +36,11 @@ def dump_func(f):
         if r is not None:
             glob[n] = r
     closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None 
-    return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
+    return 0, marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
-def load_func(bytes, g={}):
+def load_func((flag, bytes), g={}):
+    if flag == 1:
+        return cPickle.loads(bytes)
     code, glob, name, defaults, closure = marshal.loads(bytes)
     glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__

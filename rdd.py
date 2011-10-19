@@ -2,6 +2,7 @@ import os, os.path
 
 from utils import load_func, dump_func
 from dependency import *
+from env import env
 
 class Split:
     def __init__(self, idx):
@@ -32,7 +33,7 @@ class RDD:
 
     def iterator(self, split):
         if self.shouldCache:
-            for i in self.sc.env.cacheTracker.getOrCompute(self, split):
+            for i in env.cacheTracker.getOrCompute(self, split):
                 yield i
         else:
             for i in self.compute(split):
@@ -61,7 +62,7 @@ class RDD:
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
-            numSplits = self.sc.defaultMinSplits
+            numSplits = min(self.sc.defaultMinSplits, len(self.splits))
         return self.map(lambda x: (f(x), x)).groupByKey(numSplits)
 
     def pipe(self, command):
@@ -93,6 +94,9 @@ class RDD:
                 return []
         options = self.sc.runJob(self, reducePartition)
         return reduce(f, sum(options, []))
+
+    def uniq(self):
+        return self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None).map(lambda (x,y):x)
 
     def count(self):
         def ilen(x):
@@ -141,7 +145,7 @@ class RDD:
 
     def combineByKey(self, createCombiner, mergeValue, mergeCombiners, numSplits=None):
         if numSplits is None:
-            numSplits = self.sc.defaultMinSplits
+            numSplits = min(self.sc.defaultMinSplits, len(self.splits))
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         partitioner = HashPartitioner(numSplits)
         return ShuffledRDD(self, aggregator, partitioner)
@@ -326,9 +330,14 @@ class ShuffledRDD(RDD):
     
     def compute(self, split):
         combiners = {}
+        mergeCombiners = self.aggregator.mergeCombiners
         def mergePair(k, c):
-            combiners[k] = self.aggregator.mergeCombiners(combiners[k], c) if k in combiners else c
-        fetcher = self.sc.env.shuffleFetcher
+            o = combiners.get(k, None)
+            if o is None:
+                combiners[k] = c
+            else:
+                combiners[k] = mergeCombiners(o, c)
+        fetcher = env.shuffleFetcher
         fetcher.fetch(self.dependencies[0].shuffleId, split.index, mergePair)
         return combiners.iteritems()
 

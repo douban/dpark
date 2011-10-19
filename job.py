@@ -135,7 +135,7 @@ class SimpleJob(Job):
         i = self.tidToIndex[tid]
         if not self.finished[i]:
             self.finished[i] = True
-            logging.info("Finished TID %s (progress: %d/%d)", tid, self.tasksFinished, self.numTasks)
+            logging.error("Finished TID %s (progress: %d/%d)", tid, self.tasksFinished, self.numTasks)
             from schedule import Success
             self.sched.taskEnded(self.tasks[i], Success(), result, update)
             if self.tasksFinished == self.numTasks:

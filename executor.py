@@ -32,16 +32,18 @@ def run_task(task, aid):
         msg = traceback.format_exc()
         return mesos_pb2.TASK_FAIED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
 
-def init_env(cacheAddr, mapOutputAddr):
-    env.env.start(False, cacheAddr, mapOutputAddr)
+def init_env(*args):
+    env.env.start(False, *args)
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, self.cacheAddr, self.mapOutputAddr = cPickle.loads(args.data)
-        os.chdir(cwd)
-        self.pool = multiprocessing.Pool(16, init_env, [self.cacheAddr, self.mapOutputAddr])
+        cwd, args = cPickle.loads(args.data)
+        try: os.chdir(cwd)
+        except: pass
+        self.pool = multiprocessing.Pool(16, init_env, args)
 
     def launchTask(self, driver, task):
+
         reply_status(driver, task, mesos_pb2.TASK_RUNNING)
         def callback((state, data)):
             reply_status(driver, task, state, data)
@@ -52,7 +54,11 @@ class MyExecutor(mesos.Executor):
         pass
 
     def shutdown(self, driver):
-        pass
+        self.pool.close()
+        self.pool.join()
+        mesos.Executor(self, driver)
+        driver.stop()
+        sys.exit()
 
     def error(self, driver, code, message):
         logging.error("error: %s, %s", code, message)
@@ -62,4 +68,6 @@ class MyExecutor(mesos.Executor):
 
 if __name__ == '__main__':
     executor = MyExecutor()
-    mesos.MesosExecutorDriver(executor).run()
+    driver = mesos.MesosExecutorDriver(executor)
+    executor.driver = driver
+    driver.run()

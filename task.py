@@ -1,5 +1,6 @@
-import pickle
+import marshal
 import logging
+import struct
 
 from utils import load_func, dump_func
 from shuffle import LocalFileShuffle
@@ -89,17 +90,24 @@ class ShuffleMapTask(DAGTask):
         partitioner = self.dep.partitioner
         numOutputSplits = partitioner.numPartitions
         buckets = [{} for i in range(numOutputSplits)]
+        getPartition = partitioner.getPartition
+        mergeValue = aggregator.mergeValue
+        createCombiner = aggregator.createCombiner
         for k,v in self.rdd.iterator(self.split):
-            bucketId = partitioner.getPartition(k)
+            bucketId = getPartition(k)
             bucket = buckets[bucketId]
             if k in bucket:
-                bucket[k] = aggregator.mergeValue(bucket[k], v)
+                bucket[k] = mergeValue(bucket[k], v)
             else:
-                bucket[k] = aggregator.createCombiner(v)
+                bucket[k] = createCombiner(v)
         for i in range(numOutputSplits):
             path = LocalFileShuffle.getOutputFile(self.dep.shuffleId, self.partition, i)
-            f = open(path, 'w')
-#            logging.info("dumping %s", buckets[i].items())
-            pickle.dump(buckets[i].items(), f)
+            f = open(path, 'w', 1024*16)
+            #for v in buckets[i].iteritems():
+            #    v = marshal.dumps(v)
+            #    f.write(struct.pack('h', len(v)))
+            #    f.write(v)
+            #marshal.dump(buckets[i], f)
+            marshal.dump(buckets[i].items(), f)
             f.close()
         return LocalFileShuffle.getServerUri()

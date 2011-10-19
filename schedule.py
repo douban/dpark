@@ -378,10 +378,10 @@ class MultiThreadScheduler(LocalScheduler):
             t.join()
         logging.info("all threads are stopped")
 
-def run_task_in_process(task, aid, cacheAddr, outputAddr):
-    logging.info("run_task_in_process %s %s %s %s", 
-            task, aid, cacheAddr, outputAddr)
-    env.start(False, cacheAddr, outputAddr)
+def run_task_in_process(task, aid, *args):
+    logging.debug("run_task_in_process %s %s %s %s %s", 
+            task, aid, *args)
+    env.start(False, *args)
     return run_task(task, aid) 
 
 class MultiProcessScheduler(LocalScheduler):
@@ -407,7 +407,7 @@ class MultiProcessScheduler(LocalScheduler):
         for task in tasks:
             logging.info("put task async: %s", task)
             self.pool.apply_async(run_task_in_process, 
-                [task, self.nextAttempId(), cacheAddr, outputAddr],
+                [task, self.nextAttempId(), cacheAddr, outputAddr, env.shuffleDir],
                 callback=callback)
 
     def stop(self):
@@ -478,9 +478,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.slavesWithExecutors = set()
 
     def start(self):
+        shuffleDir = env.shuffleDir
         def run():
             try:
-                env.start(False)
+                env.start(False, shuffleDir=shuffleDir)
                 logging.info("driver thread started")
                 self.driver = mesos.MesosSchedulerDriver(self, self.master)
                 ret = self.driver.run()
@@ -504,8 +505,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps(
-            (os.getcwd(), env.cacheTracker.addr, env.mapOutputTracker.addr))
+        info.data = cPickle.dumps((os.getcwd(),
+            (env.cacheTracker.addr, env.mapOutputTracker.addr, env.shuffleDir)))
         return info
 
     def submitTasks(self, tasks):
@@ -631,6 +632,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def stop(self):
         if self.driver:
             self.driver.stop()
+            self.driver.join()
+            print 'stopped'
 
     def defaultParallelism(self):
         return 16
