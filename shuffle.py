@@ -116,7 +116,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
             msg = cPickle.loads(sock.recv())
             logging.info("MapOutputTrackerServer recv %s", msg)
             if isinstance(msg, GetMapOutputLocations):
-                reply(self.serverUris.get(msg.shuffleId))
+                reply(self.serverUris.get(msg.shuffleId, []))
             elif isinstance(msg, StopMapOutputTracker):
                 reply('OK')
                 break

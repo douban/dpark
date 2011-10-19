@@ -160,8 +160,8 @@ class RDD:
         return self.combineByKey(createCombiner, mergeValue, mergeCombiners, numSplits)
 
     def join(self, other, numSplits=None):
-        vs = self.map(lambda k,v: (k,(1,v)))
-        ws = other.map(lambda k,v: (k,(2,v)))
+        vs = self.map(lambda (k,v): (k,(1,v)))
+        ws = other.map(lambda (k,v): (k,(2,v)))
         def dispatch((k,seq)):
             vbuf, wbuf = [], []
             for n,v in seq:
@@ -171,10 +171,10 @@ class RDD:
                     wbuf.append(v)
                 else:
                     yield Exception("invalid n")
-            for vv in v:
-                for ww in w:
+            for vv in vbuf:
+                for ww in wbuf:
                     yield (k, (vv, ww))
-        ws.union(ws).groupByKey(numSplits).flatMap(dispatch)
+        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def leftOuterJoin(self, other, numSplits=None):
         vs = self.map(lambda k,v: (k,(1,v)))

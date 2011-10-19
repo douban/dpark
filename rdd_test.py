@@ -39,6 +39,9 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey(2).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
+        nums2 = self.sc.makeRDD(zip([2,3,4], [1,2,3]), 2)
+        self.assertEqual(nums.join(nums2).collect(), 
+            [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
     def test_accumulater(self):
         d = range(4)
@@ -65,9 +68,9 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(d.count(), n)
 
 
-class TestRDDInThread(TestRDD):
-    def setUp(self):
-        self.sc = SparkContext("thread", "test")
+#class TestRDDInThread(TestRDD):
+#    def setUp(self):
+#        self.sc = SparkContext("thread", "test")
 
 
 if __name__ == "__main__":
