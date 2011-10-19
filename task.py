@@ -38,7 +38,10 @@ class DAGTask(Task):
         self.id = self.newId()
         self.stageId = stageId
         #self.gen = env.mapOutputTracker.getGeneration
-    
+
+    def __str__(self):
+        return '<task %d:%d>'%(self.stageId, self.id)
+
     def generation(self):
         return self.gen
 
@@ -63,7 +66,7 @@ class ResultTask(DAGTask):
         return self.rdd.id * 99999 + self.partition
 
     def __str__(self):
-        return "ResultTask(%d, %d)" % (self.stageId, self.partition)
+        return "<ResultTask(%d, %d) of %s" % (self.stageId, self.partition, self.rdd)
     
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -85,7 +88,11 @@ class ShuffleMapTask(DAGTask):
         self.split = rdd.splits[partition]
         self.locs = locs
 
+    def __str__(self):
+        return '<shuffletask(%d,%d) of %s>' % (self.stageId, self.partition, self.rdd)
+
     def run(self, attempId):
+        logging.info("shuffling %d of %s", self.partition, self.rdd)
         aggregator= self.dep.aggregator
         partitioner = self.dep.partitioner
         numOutputSplits = partitioner.numPartitions

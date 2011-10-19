@@ -62,7 +62,7 @@ class Partitioner:
 
 class HashPartitioner(Partitioner):
     def __init__(self, partitions):
-        self.partitions = partitions
+        self.partitions = int(partitions)
         
     @property
     def numPartitions(self):
@@ -71,8 +71,10 @@ class HashPartitioner(Partitioner):
     def getPartition(self, key):
         return hash(key) % self.partitions
 
-    def __equal__(self, other):
-        return other.numPartitions == self.numPartitions
+    def __eq__(self, other):
+        if isinstance(other, Partitioner):
+            return other.numPartitions == self.numPartitions
+        return False
 
 class ShuffleDependency(Dependency):
     isShuffle = True

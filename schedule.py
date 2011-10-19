@@ -48,6 +48,9 @@ class Stage:
         self.outputLocs = [[]] * self.numPartitions
         self.numAvailableOutputs = 0
 
+    def __str__(self):
+        return '<stage(%d) %s>' % (self.id, self.rdd)
+
     @property
     def isAvailable(self):
         if not self.parents and not self.isShuffleMap:
@@ -78,7 +81,8 @@ class Scheduler:
     def waitForRegister(self): pass
     def runJob(self, rdd, func, partitions, allowLocal): pass
     def stop(self): pass
-    def defaultParallelism(self):pass
+    def defaultParallelism(self):
+        return 2
 
 class CompletionEvent:
     def __init__(self, task, reason, result, accumUpdates):
@@ -97,8 +101,7 @@ class DAGScheduler(Scheduler):
         self.idToStage = {}
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
-#        self.cacheTracker = env.cacheTracker
-#        self.mapOutputTracker = env.mapOutputTracker
+    
     @property
     def cacheTracker(self):
         return env.cacheTracker
@@ -128,6 +131,7 @@ class DAGScheduler(Scheduler):
         id = self.newStageId()
         stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
         self.idToStage[id] = stage
+        logging.debug("new stage: %s", stage) 
         return stage
 
     def getParentStages(self, rdd):
@@ -194,14 +198,8 @@ class DAGScheduler(Scheduler):
         logging.info("Parents of final stage: %s", finalStage.parents)
         logging.info("Missing parents: %s", self.getMissingParentStages(finalStage))
        
-#        if not finalStage.parents:
-#            rs = [func(TaskContext(finalStage.id, outputParts[i], i), 
-#                         finalRdd.iterator(finalRdd.splits[outputParts[i]]))
-#                    for i in range(numOutputParts)]
-#            return rs
-#
         if allowLocal and not finalStage.parents and numOutputParts == 1:
-            split = finalRdd.Splits[outputParts[0]]
+            split = finalRdd.splits[outputParts[0]]
             taskContext = TaskContext(finalStage.id, outputParts[0], 0)
             return list(func(taskContext, finalRdd.iterator(split)))
 
@@ -239,7 +237,6 @@ class DAGScheduler(Scheduler):
 
         while numFinished != numOutputParts:
            evt = self.completionEvents.get(POLL_TIMEOUT)
-           # FIXME
            if evt:
                task = evt.task
                stage = self.idToStage[task.stageId]
@@ -285,9 +282,6 @@ class DAGScheduler(Scheduler):
                    submitStage(stage)
                failed.clear()
 
-           #time.sleep(0.01)
-           #logging.info("sleep .")
-
         return results
 
     def getPreferredLocs(self, rdd, partition):
@@ -307,7 +301,7 @@ class DAGScheduler(Scheduler):
 
 
 def run_task(task, aid):
-    logging.info("Running task %r", task)
+    logging.debug("Running task %r", task)
     try:
         Accumulator.clear()
         result = task.run(aid)

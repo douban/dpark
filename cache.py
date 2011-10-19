@@ -142,7 +142,7 @@ class CacheTrackerServer:
             sock.send(cPickle.dumps(msg))
         while True:
             msg = cPickle.loads(sock.recv())
-            logging.info("CacheTracker recv %s", msg)
+            #logging.info("CacheTracker recv %s", msg)
             if isinstance(msg, RegisterRDD):
                 locs[msg.rddId] = [[] for i in range(msg.numPartitions)]
                 reply('OK')
@@ -174,13 +174,13 @@ class CacheTrackerClient:
         ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
-        logging.info("%s connect to %s", self.__class__, addr)
+        #logging.info("%s connect to %s", self.__class__, addr)
 
     def call(self, msg):
-        logging.info("send to %s: %s", self.addr, msg)
+        #logging.info("send to %s: %s", self.addr, msg)
         self.sock.send(cPickle.dumps(msg, -1))
         r = cPickle.loads(self.sock.recv())
-        logging.info("client recv %s: %s", self.addr, r)
+        #logging.info("client recv %s: %s", self.addr, r)
         return r
 
     def stop(self):
@@ -202,7 +202,7 @@ class CacheTracker:
             addr = os.environ['CacheTracker']
         self.addr = addr
         self.client = CacheTrackerClient(addr)
-        logging.info("tracker started")
+        #logging.info("tracker started")
 
     def registerRDD(self, rddId, numPartitions):
         if rddId not in self.registeredRddIds:

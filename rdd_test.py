@@ -31,18 +31,38 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.cartesion(nums).map(lambda (x,y):x*y).reduce(lambda x,y:x+y), 36)
         self.assertEqual(nums.glom().map(lambda x:list(x)).collect(),[[0,1],[2,3]])
         self.assertEqual(nums.mapPartitions(lambda x:[sum(x)]).collect(),[1, 5])
-        self.assertEqual(nums.map(lambda x:str(x)).map(lambda x:x+"/").reduce(lambda x,y:x+y), "0/1/2/3/")
+        self.assertEqual(nums.map(lambda x:str(x)+"/").reduce(lambda x,y:x+y),
+            "0/1/2/3/")
 
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
         nums = self.sc.makeRDD(d, 2)
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
-        self.assertEqual(nums.groupByKey(2).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
+        self.assertEqual(nums.groupByKey().collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
+        
+        # join
         nums2 = self.sc.makeRDD(zip([2,3,4], [1,2,3]), 2)
         self.assertEqual(nums.join(nums2).collect(), 
-            [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
+                [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
+        self.assertEqual(sorted(nums.leftOuterJoin(nums2).collect()),
+                [(1, (4,None)), (2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
+        self.assertEqual(sorted(nums.rightOuterJoin(nums2).collect()),
+                [(2, (5,1)), (3, (6,2)), (3, (7,2)), (4,(None,3))])
 
+        self.assertEqual(nums.mapValue(lambda x:x+1).collect(), 
+                [(1, 5), (2, 6), (3, 7), (3, 8)])
+        self.assertEqual(nums.flatMapValue(lambda x:range(x)).count(), 22)
+        self.assertEqual(nums.groupByKey().lookup(3), [6,7])
+
+        # group with
+        self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
+                [(1, [[4],[]]), (2, [[5],[1]]), (3,[[6,7],[2]]), (4,[[],[3]])])
+        nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2)
+        self.assertEqual(sorted(nums.groupWith(nums2, nums3).collect()),
+                [(1, [[4],[],[3]]), (2, [[5],[1],[]]), (3,[[6,7],[2],[]]), 
+                (4,[[],[3],[1]]), (5,[[],[],[2]])])
+    
     def test_accumulater(self):
         d = range(4)
         nums = self.sc.makeRDD(d, 2)
