@@ -30,7 +30,7 @@ def run_task(task, aid):
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAIED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
 
 def init_env(*args):
     env.env.start(False, *args)
@@ -56,8 +56,8 @@ class MyExecutor(mesos.Executor):
     def shutdown(self, driver):
         self.pool.close()
         self.pool.join()
-        mesos.Executor(self, driver)
-        driver.stop()
+        mesos.Executor.shutdown(self, driver)
+        #self.driver.stop()
         sys.exit()
 
     def error(self, driver, code, message):

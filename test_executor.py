@@ -1,5 +1,6 @@
 import os, sys, time
 import multiprocessing
+import pickle
 
 import logging
 sys.path.append('/Users/davies/work/mesos/lib/python')
@@ -13,6 +14,7 @@ class TestTask:
         import logging
         import time
         logging.info("run task %s", self)
+        raise Exception("")
         time.sleep(2)
 #            logging.info("task %s complete", self.id)
 
@@ -34,7 +36,7 @@ if __name__ == '__main__':
     args.executor_id.value = "test-id"
     args.slave_id.value = "test-slave"
     args.hostname = socket.gethostname()
-    args.data = pickle.dumps(("./", "tcp://localhost:5555", "tcp://localhost:5556"))
+    args.data = pickle.dumps(("./", ("tcp://localhost:5555", "tcp://localhost:5556", "/tmp")))
     executor.init(driver, args)
 
 
