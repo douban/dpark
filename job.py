@@ -161,7 +161,7 @@ class SimpleJob(Job):
             if status in (TASK_FAILED, TASK_LOST):
                 self.numFailures[index] += 1
                 if self.numFailures[index] > MAX_TASK_FAILURES:
-                    logging.error("Task %d:%d failed more than %d times; aborting job", index, MAX_TASK_FAILURES)
+                    logging.error("Task %d failed more than %d times; aborting job", index, MAX_TASK_FAILURES)
                     self.abort("Task %d failed more than %d times" % (index, MAX_TASK_FAILURES))
 
         else:

@@ -4,6 +4,7 @@ import os, sys, time
 import threading
 import pickle
 import socket
+import multiprocessing
 
 import mesos
 import mesos_pb2
@@ -20,37 +21,32 @@ def reply_status(driver, task, status, data=None):
         update.data = data
     driver.sendStatusUpdate(update)
 
-def run_task(task, driver, cacheAddr, mapOutputAddr):
-    reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-
+def run_task(task, aid):
     try:
-        env.env.start(False, cacheAddr, mapOutputAddr)
         Accumulator.clear()
-        t, aid = pickle.loads(task.data)
-        result = t.run(aid)
+        result = task.run(aid)
         accUpdate = Accumulator.values()
-        data = pickle.dumps((t.id, Success(), result, accUpdate))
-        reply_status(driver, task, mesos_pb2.TASK_FINISHED, data)
+        return mesos_pb2.TASK_FINISHED, pickle.dumps((task.id, Success(), result, accUpdate))
     except Exception, e:
-        raise
         import traceback
         msg = traceback.format_exc()
-        data = pickle.dumps((t.id, OtherFailure(msg), None, None))
-        reply_status(driver, task, mesos_pb2.TASK_FAILED, data)
+        return mesos_pb2.TASK_FAIED, pickle.dumps((task.id, OtherFailure(msg), None, None))
+
+def init_env(cacheAddr, mapOutputAddr):
+    env.env.start(False, cacheAddr, mapOutputAddr)
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
         cwd, self.cacheAddr, self.mapOutputAddr = pickle.loads(args.data)
         os.chdir(cwd)
-        # TODO broadcast
-        self.tasks = {}
+        self.pool = multiprocessing.Pool(16, init_env, [self.cacheAddr, self.mapOutputAddr])
 
     def launchTask(self, driver, task):
-        t = threading.Thread(target=run_task, 
-            args=[task, driver, self.cacheAddr, self.mapOutputAddr])
-        t.daemon = True
-        t.start()
-        self.tasks[task.task_id.value] = t
+        reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+        def callback((state, data)):
+            reply_status(driver, task, state, data)
+        t, aid = pickle.loads(task.data)
+        self.pool.apply_async(run_task, [t, aid], callback=callback)
 
     def killTask(self, driver, taskId):
         pass

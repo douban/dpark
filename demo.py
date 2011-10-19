@@ -13,7 +13,7 @@ spark = SparkContext()
 nums = spark.parallelize(range(100), 4)
 print nums.count()
 print nums.reduce(lambda x,y:x+y)
-
+raise
 # text search
 f = spark.textFile("./", ext='py').map(lambda x:x.strip())
 log = f.filter(lambda line: 'logging' in line).cache()
