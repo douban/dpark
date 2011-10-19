@@ -1,9 +1,6 @@
 import marshal
 import logging
 import struct
-import random
-import time
-random.seed(time.time())
 
 from utils import load_func, dump_func
 from shuffle import LocalFileShuffle
@@ -89,8 +86,6 @@ class ShuffleMapTask(DAGTask):
         self.locs = locs
 
     def run(self, attempId):
-#        if random.randint(0,3) == 1:
-        raise Exception("exp")
         aggregator= self.dep.aggregator
         partitioner = self.dep.partitioner
         numOutputSplits = partitioner.numPartitions

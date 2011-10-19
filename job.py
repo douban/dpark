@@ -141,22 +141,22 @@ class SimpleJob(Job):
             if self.tasksFinished == self.numTasks:
                 self.sched.jobFinished(self)
         else:
-            logging.info("Ignoring task-finished event for TID %d because task %d is already finished", tid, i)
+            logging.warning("Ignoring task-finished event for TID %d because task %d is already finished", tid, i)
 
     def taskLost(self, tid, status, reason):
         index = self.tidToIndex[tid]
         if not self.finished[index]:
-            logging.info("Lost TID %s (task %d:%d)", tid, self.id, index)
+            logging.warning("Lost TID %s (task %d:%d)", tid, self.id, index)
             self.launched[index] = False
             from schedule import FetchFailed
             if isinstance(reason, FetchFailed):
-                logging.info("Loss was due to fetch failure from %s", reason.serverUri)
+                logging.warning("Loss was due to fetch failure from %s", reason.serverUri)
                 self.sched.taskEnded(self.tasks[index], reason, None, None)
                 self.finished[index] = True
                 if self.tasksFinished == self.numTasks:
                     self.sched.jobFinished(self)
                 return
-            logging.info("re-enqueue the task as pending for a max number of retries")
+            logging.warning("re-enqueue the task as pending for a max number of retries")
             self.addPendingTask(index)
             if status in (TASK_FAILED, TASK_LOST):
                 self.numFailures[index] += 1
@@ -165,7 +165,7 @@ class SimpleJob(Job):
                     self.abort("Task %d failed more than %d times" % (index, MAX_TASK_FAILURES))
 
         else:
-            logging.info("Ignoring task-lost event for TID %d because task %d is already finished")
+            logging.warning("Ignoring task-lost event for TID %d because task %d is already finished")
 
     def error(self, code, message):
         self.abort("Mesos error: %s (error code: %d)" % (message, code))

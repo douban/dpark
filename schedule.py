@@ -633,7 +633,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         if self.driver:
             self.driver.stop()
             self.driver.join()
-            print 'stopped'
 
     def defaultParallelism(self):
         return 16
