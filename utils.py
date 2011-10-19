@@ -1,4 +1,4 @@
-import marshal, new, pickle
+import marshal, new, cPickle
 
 def dump_object(o):
     if o is None:
@@ -8,7 +8,7 @@ def dump_object(o):
     if isinstance(o, new.function) and o.__module__ == '__main__':
         return 1, dump_func(o)
     try:
-        return 3, pickle.dumps(o)
+        return 3, cPickle.dumps(o)
     except Exception:
         if isinstance(o, new.function):
             return 1, dump_func(o)
@@ -22,7 +22,7 @@ def load_object((t, d)):
     elif t == 2:
         return __import__(d)
     elif t == 3:
-        return pickle.loads(d)
+        return cPickle.loads(d)
     else:
         raise Exception("invalid flag %d" % t)
 

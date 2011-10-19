@@ -2,7 +2,7 @@
 import logging
 import os, sys, time
 import threading
-import pickle
+import cPickle
 import socket
 import multiprocessing
 
@@ -26,18 +26,18 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
-        return mesos_pb2.TASK_FINISHED, pickle.dumps((task.id, Success(), result, accUpdate))
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate))
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAIED, pickle.dumps((task.id, OtherFailure(msg), None, None))
+        return mesos_pb2.TASK_FAIED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
 
 def init_env(cacheAddr, mapOutputAddr):
     env.env.start(False, cacheAddr, mapOutputAddr)
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, self.cacheAddr, self.mapOutputAddr = pickle.loads(args.data)
+        cwd, self.cacheAddr, self.mapOutputAddr = cPickle.loads(args.data)
         os.chdir(cwd)
         self.pool = multiprocessing.Pool(16, init_env, [self.cacheAddr, self.mapOutputAddr])
 
@@ -45,7 +45,7 @@ class MyExecutor(mesos.Executor):
         reply_status(driver, task, mesos_pb2.TASK_RUNNING)
         def callback((state, data)):
             reply_status(driver, task, state, data)
-        t, aid = pickle.loads(task.data)
+        t, aid = cPickle.loads(task.data)
         self.pool.apply_async(run_task, [t, aid], callback=callback)
 
     def killTask(self, driver, taskId):

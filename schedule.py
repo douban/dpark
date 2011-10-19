@@ -1,7 +1,7 @@
 import os, sys
 import socket
 import logging
-import pickle
+import cPickle
 import threading, Queue
 import time
 
@@ -431,7 +431,7 @@ class MultiProcessScheduler2(LocalScheduler):
         def read_reply():
             result = ctx.socket(zmq.PUB)
             self.result_port = result.bind_to_random_port("tcp://0.0.0.0")
-            task, reason, result, update = pickle.loads(result.recv())
+            task, reason, result, update = cPickle.loads(result.recv())
             self.taskEnded(task, reason, result, update)
 
         self.t = threading.Thread(target=read_reply)
@@ -451,7 +451,7 @@ class MultiProcessScheduler2(LocalScheduler):
         for task in tasks:
             aid = self.nextAttempId()
             logging.info("put task async %s %s", task, self.cmd_port)
-            self.cmd.send(pickle.dumps((task, aid)))
+            self.cmd.send(cPickle.dumps((task, aid)))
             logging.info("put task async completed %s", task)
 
     def stop(self):
@@ -504,7 +504,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = pickle.dumps(
+        info.data = cPickle.dumps(
             (os.getcwd(), env.cacheTracker.addr, env.mapOutputTracker.addr))
         return info
 
@@ -558,7 +558,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     task.name = "task %s:%s" % (job.id, t.id)
                     task.task_id.value = str(t.id)
                     task.slave_id.value = o.slave_id.value
-                    task.data = pickle.dumps((t, 1))
+                    task.data = cPickle.dumps((t, 1))
                     cpu = task.resources.add()
                     cpu.name = 'cpus'
                     cpu.type = mesos_pb2.Resource.SCALAR
@@ -608,7 +608,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 if tid in self.jobTasks[jid]:
                     self.jobTasks[jid].remove(tid)
             if status.data:
-                _,reason,result,accUpdate = pickle.loads(status.data)
+                _,reason,result,accUpdate = cPickle.loads(status.data)
                 self.activeJobs[jid].statusUpdate(tid, state, 
                     reason, result, accUpdate)
             else:

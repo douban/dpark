@@ -129,7 +129,7 @@ class RDD:
 #        return OutputBinaryFile(self, path)
 
  #   def saveAsObjectFile(self, path):
- #       return self.glom().map(lambda x:pickle.dumps(x)).saveAsTextFile(path)
+ #       return self.glom().map(lambda x:cPickle.dumps(x)).saveAsTextFile(path)
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
