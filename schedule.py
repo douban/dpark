@@ -510,12 +510,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def submitTasks(self, tasks):
         logging.info("Got a job with %d tasks", len(tasks))
-        self.waitForRegister()
         job = SimpleJob(self, tasks)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         logging.info("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
+        
+        self.waitForRegister()
         self.driver.reviveOffers()
 
     def jobFinished(self, job):
@@ -536,6 +537,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             time.sleep(0.1)
 
     def resourceOffer(self, driver, oid, offers):
+        logging.info("get  %d offers, %d jobs", len(offers), len(self.activeJobs))
+        while not len(self.activeJobs):
+            time.sleep(0.1)
         tasks = []
         availableCpus = [self.getResource(o.resources, 'cpus')
                             for o in offers]
@@ -575,7 +579,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
                 if not launchedTask:
                     break
-
+        
+        logging.info("reply to %s with %d tasks", oid, len(tasks))
         driver.replyToOffer(oid, tasks, {"timeout": "1"})
 
     def getResource(self, res, name):
@@ -590,7 +595,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         tid = int(status.task_id.value)
         state = status.state
         logging.info("status update: %s %s", tid, state)
-        if state == mesos_pb2.TASK_LOST and tid in self.taskIdToSlaveId:
+        if (state == mesos_pb2.TASK_LOST 
+            and tid in self.taskIdToSlaveId 
+            and self.taskIdToSlaveId[tid] in self.slavesWithExecutors):
             self.slavesWithExecutors.remove(self.taskIdToSlaveId[tid])
         jid = self.taskIdToJobId.get(tid)
         if jid in self.activeJobs:
@@ -626,7 +633,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             self.driver.stop()
 
     def defaultParallelism(self):
-        return 8
+        return 16
 
     def frameworkMessage(self, driver, slave, executor, data):
         logging.info("got message from slave %s %s %s", 

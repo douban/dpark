@@ -34,13 +34,13 @@ class SparkContext:
             self.scheduler = MesosScheduler(self.master, "spark")
             self.isLocal = False
             if os.path.exists('/mfs/tmp'):
-                dir = os.path.join('/mfs/tmp', dpark) # TODO uuid
+                dir = os.path.join('/mfs/tmp', 'dpark') # TODO uuid
                 if not os.path.exists(dir):
                     os.makedirs(dir)
                 LocalFileShuffle.initializeIfNeeded(dir)
         
-        self.defaultParallelism = self.scheduler.defaultParallelism
-        self.defaultMinSplits = min(self.defaultParallelism, 2)
+        self.defaultParallelism = self.scheduler.defaultParallelism()
+        self.defaultMinSplits = max(self.defaultParallelism, 2)
         
         env.start(True)
         self.env = env
