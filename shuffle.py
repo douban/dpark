@@ -13,10 +13,9 @@ class LocalFileShuffle:
     initialized = False
 
     @classmethod
-    def initializeIfNeeded(cls):
+    def initializeIfNeeded(cls, localDirRoot="/tmp/spark/"):
         if cls.initialized:
             return
-        localDirRoot = "/tmp/spark/"
         shuffleDir = os.path.join(localDirRoot, str(os.getpid()), "shuffle")
         if not os.path.exists(shuffleDir):
             try:

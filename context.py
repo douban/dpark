@@ -1,3 +1,5 @@
+import atexit
+import optparse
 
 from rdd import *
 from schedule import *
@@ -7,26 +9,35 @@ class SparkContext:
     nextRddId = 0
     nextShuffleId = 0
 
-    def __init__(self, master='local', name='spark'):
+    def __init__(self, master=None, name=None):
+        options = parse_options()
+        if master is None:
+            master = options.master
+        if name is None:
+            name = options.name
+
         self.master = master
         self.name = name
-        self.init()
 
-    def init(self):
         #Broadcast.initialize(True)
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
             self.isLocal = True
         elif self.master.startswith('thread'):
-            self.scheduler = MultiThreadScheduler(2)
+            self.scheduler = MultiThreadScheduler(options.parallel)
             self.isLocal = True
         elif self.master.startswith('process'):
-            self.scheduler = MultiProcessScheduler(2)
-            self.isLocal = False
+            self.scheduler = MultiProcessScheduler(options.parallel)
+            self.isLocal = True
         elif (self.master.startswith('mesos://')
               or self.master.startswith('zoo://')):
             self.scheduler = MesosScheduler(self.master, "spark")
             self.isLocal = False
+            if os.path.exists('/mfs/tmp'):
+                dir = os.path.join('/mfs/tmp', dpark) # TODO uuid
+                if not os.path.exists(dir):
+                    os.makedirs(dir)
+                LocalFileShuffle.initializeIfNeeded(dir)
         
         self.defaultParallelism = self.scheduler.defaultParallelism
         self.defaultMinSplits = min(self.defaultParallelism, 2)
@@ -34,6 +45,9 @@ class SparkContext:
         env.start(True)
         self.env = env
         self.scheduler.start()
+        self.started = True
+
+        atexit.register(self.stop)
 
     def newRddId(self):
         self.nextRddId += 1
@@ -83,8 +97,10 @@ class SparkContext:
         return newBroadcast(v, self.isLocal)
 
     def stop(self):
-        self.scheduler.stop()
-        self.env.stop()
+        if self.started:
+            self.scheduler.stop()
+            self.env.stop()
+            self.started = False
 
     def waitForRegister(self):
         self.scheduler.waitForRegister()
@@ -100,3 +116,19 @@ class SparkContext:
     def __setstate__(self, state):
         self.master, self.name = state
         self.env = env
+
+def parse_options():
+    parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
+    parser.allow_interspersed_args=False
+    parser.add_option("-m", "--master", type="string", default="local")
+    parser.add_option("-n", "--name", type="string", default="dpark")
+    parser.add_option("-p", "--parallel", type="int", default=2)
+    parser.add_option("-q", "--quiet", action="store_true")
+    parser.add_option("-v", "--verbose", action="store_true")
+    options, args = parser.parse_args()
+    
+    logging.basicConfig(format='[dpark] %(asctime)-15s %(message)s',
+        level=options.quiet and logging.ERROR
+              or options.verbose and logging.DEBUG or logging.WARNING)
+    
+    return options
