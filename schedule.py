@@ -15,7 +15,7 @@ from task import *
 from job import *
 from env import env
 
-EXECUTOR_MEMORY = 512
+EXECUTOR_MEMORY = 1
 
 class TaskEndReason:
     pass
@@ -628,15 +628,25 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def stop(self):
         if self.driver:
+            slave = mesos_pb2.SlaveID()
+            executor = mesos_pb2.ExecutorID()
+            executor.value = 'default'
+            for id in self.slavesWithExecutors:
+                slave.value = id
+                #print 'send', slave, executor
+                #print self.driver.sendFrameworkMessage(slave, executor, "shutdown")
             self.driver.stop()
             self.driver.join()
+            #print 'stopped'
+        else:
+            raise
 
     def defaultParallelism(self):
         return 16
 
     def frameworkMessage(self, driver, slave, executor, data):
-        logging.info("got message from slave %s %s %s", 
-                slave.value, executor.name, data)
+        logging.warning("got message from slave %s %s %s", 
+                slave.value, executor.value, data)
 
     def slaveLost(self, driver, slave):
         self.slavesWithExecutors.remove(slave.value)

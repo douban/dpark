@@ -25,6 +25,9 @@ class MockExecutorDriver:
     def sendStatusUpdate(self, update):
         logging.info("recv status update %s", update)
 
+    def sendFrameworkMessage(self, data):
+        logging.info("recv msg: %s", data)
+
 if __name__ == '__main__':
 
     logging.basicConfig(level=logging.DEBUG)
