@@ -4,6 +4,7 @@ import optparse
 from rdd import *
 from schedule import *
 from env import env
+from broadcast import Broadcast
 
 class SparkContext:
     nextRddId = 0
@@ -19,7 +20,6 @@ class SparkContext:
         self.master = master
         self.name = name
 
-        #Broadcast.initialize(True)
         shuffleDir = '/tmp/dpark'
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
@@ -91,7 +91,7 @@ class SparkContext:
         return Accumulator(init, param)
 
     def broadcast(self, v):
-        return newBroadcast(v, self.isLocal)
+        return Brodcast.newBroadcast(v, self.isLocal)
 
     def stop(self):
         if self.started:

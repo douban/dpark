@@ -11,16 +11,21 @@ class SparkEnv(threading.local):
         logging.debug("start env in %s: %s %s %s %s", os.getpid(),
                 isMaster, cacheAddr, outputAddr, shuffleDir)
         from cache import CacheTracker
-        from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
         self.cacheTracker = CacheTracker(isMaster, cacheAddr)
-        self.mapOutputTracker = MapOutputTracker(isMaster, outputAddr)
         
+        from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
+        self.mapOutputTracker = MapOutputTracker(isMaster, outputAddr)
         if shuffleDir:
             LocalFileShuffle.initialize(shuffleDir)
             self.shuffleDir = shuffleDir
         self.shuffleFetcher = SimpleShuffleFetcher()
+
+        from broadcast import Broadcast
+        Broadcast.initialize(isMaster)
+
         self.started = True
 
+    
     def stop(self):
         if not getattr(self, 'started', False):
             return
