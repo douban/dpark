@@ -6,10 +6,10 @@ from dependency import *
 from env import env
 
 def ilen(x):
-    s = 0
-    for i in x:
-        s += 1
-    return s
+    try:
+        return len(x)
+    except TypeError:
+        return sum(1 for i in x)
 
 class Split:
     def __init__(self, idx):
