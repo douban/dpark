@@ -9,6 +9,10 @@ import time
 
 import zmq
 
+import shareddict
+
+mmapCache = shareddict.SharedDicts(512)
+
 class Cache:
     map = {}
 
@@ -51,31 +55,6 @@ manager = multiprocessing.Manager()
 class ProcessCache(Cache):
     map = manager.dict()
 
-#class WeakReferenceCache(Cache):
-#    def __init__(self):
-#        self.map = {}
-#
-#    def get(self, key):
-#        return self.map.get(key)
-#
-#    def put(self, key, value):
-#        self.map[key] = value 
-#
-class BoundedMemoryCache(Cache):
-    def __init__(self, cache, maxBytes=512*1024*1024):
-        self.maxBytes = maxBytes
-        self.currentBytes = 0
-        self.cache = cache
-
-    def get(self, key):
-        return self.cache.get(key)
-
-    def put(self, key, value):
-        self.cache.put(key, value)
-
-#class DiskSplillingCache(BoundedMemoryCache):
-#    pass 
-#
 class SerializingCache(Cache):
     def __init__(self, cache):
         self.map = cache
@@ -90,6 +69,8 @@ class SerializingCache(Cache):
             self.map.put(key, v)
         except Exception, e:
             logging.error("cache key %s err", key)
+
+
 
 
 class CacheTrackerMessage:pass
@@ -174,13 +155,10 @@ class CacheTrackerClient:
         ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
-        #logging.debug("%s connect to %s", self.__class__, addr)
 
     def call(self, msg):
-        #logging.debug("send to %s: %s", self.addr, msg)
         self.sock.send(cPickle.dumps(msg, -1))
         r = cPickle.loads(self.sock.recv())
-        #logging.debug("client recv %s: %s", self.addr, r)
         return r
 
     def stop(self):
@@ -188,11 +166,13 @@ class CacheTrackerClient:
         logging.debug("stop %s", self.__class__)
 
 class CacheTracker:
-    def __init__(self, isMaster, theCache, addr=None):
+    def __init__(self, isMaster, addr=None):
         self.isMaster = isMaster
         self.registeredRddIds = set()
-        self.cache = theCache#.newKeySpace()
-        self.loading = set()
+        if isMaster:
+            self.cache = Cache()
+        else:
+            self.cache = SerializingCache(mmapCache) #.newKeySpace()
         if isMaster:
             self.server = CacheTrackerServer()
             self.server.start()
@@ -213,18 +193,18 @@ class CacheTracker:
         return self.client.call(GetCacheLocations())
 
     def getOrCompute(self, rdd, split):
-        key = (rdd.id, split.index)
-        while key in self.loading:
-            time.sleep(0.01)
+        key = "%s:%s" % (rdd.id, split.index)
         cachedVal = self.cache.get(key)
+        while cachedVal == 'loading':
+            time.sleep(0.01)
+            cachedVal = self.cache.get(key)
         if cachedVal is not None:
             logging.debug("Found partition in cache! %s", key)
             return cachedVal
         logging.debug("partition not in cache, %s", key)
-        self.loading.add(key)
+        self.cache.put(key, 'loading')
         r = list(rdd.compute(split))
         self.cache.put(key, r)
-        self.loading.remove(key)
         host = socket.gethostname()
         self.client.call(AddedToCache(rdd.id, split.index, host))
         return r
