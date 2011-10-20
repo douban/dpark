@@ -203,7 +203,7 @@ class DAGScheduler(Scheduler):
         if allowLocal and not finalStage.parents and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
             taskContext = TaskContext(finalStage.id, outputParts[0], 0)
-            return list(func(taskContext, finalRdd.iterator(split)))
+            return [func(taskContext, finalRdd.iterator(split))]
 
         def submitStage(stage):
             logging.info("submit stage %s", stage)
@@ -413,51 +413,6 @@ class MultiProcessScheduler(LocalScheduler):
         self.pool.join()
         logging.info("process pool stopped")
 
-class MultiProcessScheduler2(LocalScheduler):
-    def __init__(self, threads):
-        LocalScheduler.__init__(self)
-        self.threads = threads
-
-    def start(self):
-        import subprocess
-        ctx = zmq.Context()
-        self.cmd = ctx.socket(zmq.PUSH)
-        self.cmd_port = self.cmd.bind_to_random_port("tcp://0.0.0.0")
-        self.result_port = None
-
-        def read_reply():
-            result = ctx.socket(zmq.PUB)
-            self.result_port = result.bind_to_random_port("tcp://0.0.0.0")
-            task, reason, result, update = cPickle.loads(result.recv())
-            self.taskEnded(task, reason, result, update)
-
-        self.t = threading.Thread(target=read_reply)
-        self.t.daemon = True
-        self.t.start()
-        while self.result_port is None:
-            time.sleep(0.01)
-
-        env = dict(os.environ)
-        env['COMMAND_ADDR'] = "tcp://%s:%d" % (socket.gethostname(), self.cmd_port)
-        env['RESULT_ADDR'] = "tcp://%s:%d" % (socket.gethostname(), self.result_port)
-        self.ps = [subprocess.Popen(["./executor.py"], stdin=sys.stdin, stdout=sys.stderr, stderr=sys.stderr, env=env)
-                    for i in range(self.threads)]
-
-    def submitTasks(self, tasks):
-        time.sleep(1)
-        for task in tasks:
-            aid = self.nextAttempId()
-            logging.info("put task async %s %s", task, self.cmd_port)
-            self.cmd.send(cPickle.dumps((task, aid)))
-            logging.info("put task async completed %s", task)
-
-    def stop(self):
-        for i in range(self.threads*2):
-            self.cmd.send("")
-        for p in self.ps:
-            p.wait()
-            logging.info("stop child %s", p)
-
 
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
@@ -532,12 +487,15 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def waitForRegister(self):
         while not self.isRegistered:
-            time.sleep(0.1)
+            time.sleep(0.01)
 
     def resourceOffer(self, driver, oid, offers):
-        logging.info("get  %d offers, %d jobs", len(offers), len(self.activeJobs))
-        while not len(self.activeJobs):
-            time.sleep(0.1)
+        logging.info("get %d offers, %d jobs", len(offers), len(self.activeJobs))
+        for o in offers:
+            logging.debug("offers: %s", o)
+        if not self.activeJobs:
+            return driver.replyToOffer(oid, [], {"timeout": "0.1"})
+        
         tasks = []
         availableCpus = [self.getResource(o.resources, 'cpus')
                             for o in offers]

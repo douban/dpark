@@ -94,7 +94,6 @@ class SimpleJob(Job):
         noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs)
         if noPrefTask is not None:
             return noPrefTask
-#        raise self.pendingTasksWithNoPrefs
         if not localOnly:
             return self.findTaskFromList(self.allPendingTasks)
 

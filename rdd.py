@@ -118,9 +118,11 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self.splits):
-            left = n - len(r)
-            res = self.sc.runJob(self, lambda x: islice(x, left), [p], True)
-            r.extend(res[0])
+            res = self.sc.runJob(self, lambda x: islice(x, n - len(r)), [p], True)
+            if res[0]:
+                r.extend(res[0])
+            else:
+                break 
             if len(r) == n: break
             p += 1
         return r

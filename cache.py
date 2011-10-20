@@ -71,8 +71,6 @@ class SerializingCache(Cache):
             logging.error("cache key %s err", key)
 
 
-
-
 class CacheTrackerMessage:pass
 class AddedToCache(CacheTrackerMessage):
     def __init__(self, rddId, partition, host):
@@ -200,8 +198,10 @@ class CacheTracker:
             cachedVal = self.cache.get(key)
         if cachedVal is not None:
             logging.debug("Found partition in cache! %s", key)
+            #self.client.call("found " + key) 
             return cachedVal
         logging.debug("partition not in cache, %s", key)
+        #self.client.call("not found " + key)
         self.cache.put(key, 'loading')
         r = list(rdd.compute(split))
         self.cache.put(key, r)
