@@ -10,9 +10,10 @@ class SparkEnv(threading.local):
             return
         logging.debug("start env in %s: %s %s %s %s", os.getpid(),
                 isMaster, cacheAddr, outputAddr, shuffleDir)
-        from cache import BoundedMemoryCache, CacheTracker
+        from cache import ProcessCache, BoundedMemoryCache, CacheTracker
         from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        self.cache = BoundedMemoryCache()
+        self.cache = ProcessCache()
+#        self.cache = BoundedMemoryCache()
         self.cacheTracker = CacheTracker(isMaster, self.cache, cacheAddr)
         self.mapOutputTracker = MapOutputTracker(isMaster, outputAddr)
         

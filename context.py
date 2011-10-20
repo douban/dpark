@@ -90,7 +90,7 @@ class SparkContext:
     def accumulator(self, init, param=None):
         return Accumulator(init, param)
 
-    def broadcst(self, v):
+    def broadcast(self, v):
         return newBroadcast(v, self.isLocal)
 
     def stop(self):

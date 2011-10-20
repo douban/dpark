@@ -121,13 +121,14 @@ class DAGScheduler(Scheduler):
         return self.nextStageId
 
     def getCacheLocs(self, rdd):
-        return self.cacheLocs.get(rdd.id, {})
+        return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd.splits))])
 
     def updateCacheLocs(self):
         self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
 
     def newStage(self, rdd, shuffleDep):
-        self.cacheTracker.registerRDD(rdd.id, len(rdd.splits))
+        if rdd.shouldCache:
+            self.cacheTracker.registerRDD(rdd.id, len(rdd.splits))
         id = self.newStageId()
         stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
         self.idToStage[id] = stage
@@ -141,7 +142,8 @@ class DAGScheduler(Scheduler):
             if r.id in visited:
                 return
             visited.add(r.id)
-            self.cacheTracker.registerRDD(r.id, len(r.splits))
+            if r.shouldCache:
+                self.cacheTracker.registerRDD(r.id, len(r.splits))
             for dep in r.dependencies:
                 if isinstance(dep, ShuffleDependency):
                     parents.add(self.getShuffleMapStage(dep))
@@ -166,7 +168,7 @@ class DAGScheduler(Scheduler):
             visited.add(r.id)
             locs = self.getCacheLocs(r)
             for i in range(len(r.splits)):
-                #if not locs[i]:
+                if not locs[i]:
                     for dep in r.dependencies:
                         if isinstance(dep, ShuffleDependency):
                             stage = self.getShuffleMapStage(dep)
@@ -285,9 +287,10 @@ class DAGScheduler(Scheduler):
         return results
 
     def getPreferredLocs(self, rdd, partition):
-        cached = self.getCacheLocs(rdd)[partition]
-        if cached is not None:
-            return cached
+        if rdd.shouldCache:
+            cached = self.getCacheLocs(rdd)[partition]
+            if cached:
+                return cached
         rddPrefs = rdd.preferredLocations(rdd.splits[partition])
         if rddPrefs:
             return rddPrefs

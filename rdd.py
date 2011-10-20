@@ -25,6 +25,9 @@ class RDD:
         self.partitioner = None
         self.shouldCache = False
 
+    def __len__(self):
+        return len(self.splits)
+
     def compute(self, split):
         raise NotImplementedError
 
@@ -238,10 +241,10 @@ class RDD:
             
 
 class MappedRDD(RDD):
-    def __init__(self, prev, f=lambda x:x):
+    def __init__(self, prev, func=lambda x:x):
         RDD.__init__(self, prev.sc)
         self.prev = prev
-        self.f = f
+        self.func = func
         self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
@@ -249,16 +252,17 @@ class MappedRDD(RDD):
         return '<mapped %s>' % self.prev
 
     def compute(self, split):
-        return map(self.f, self.prev.iterator(split))
+        for v in self.prev.iterator(split):
+            yield self.func(v)
 
     def __getstate__(self):
         d = dict(self.__dict__)
-        del d['f']
-        return d, dump_func(self.f)
+        del d['func']
+        return d, dump_func(self.func)
 
     def __setstate__(self, state):
         self.__dict__, code = state
-        self.f = load_func(code, globals())
+        self.func = load_func(code, globals())
 
 class FlatMappedRDD(MappedRDD):
     def __str__(self):
@@ -266,7 +270,7 @@ class FlatMappedRDD(MappedRDD):
 
     def compute(self, split):
         for i in self.prev.iterator(split):
-            for j in self.f(i):
+            for j in self.func(i):
                 yield j
 
 class FilteredRDD(MappedRDD):
@@ -274,21 +278,29 @@ class FilteredRDD(MappedRDD):
         return '<filtered %s>' % self.prev
 
     def compute(self, split):
-        return filter(self.f, self.prev.iterator(split))
+        for i in self.prev.iterator(split):
+            if self.func(i):
+                yield i
            
-class GlommedRDD(MappedRDD):
+class GlommedRDD(RDD):
+    def __init__(self, prev):
+        RDD.__init__(self, prev.sc)
+        self.prev = prev
+        self.splits = self.prev.splits
+        self.dependencies = [OneToOneDependency(prev)]
+
     def __str__(self):
         return '<glommed %s>' % self.prev
 
     def compute(self, split):
-        return [list(self.prev.iterator(split))]
+        yield [list(self.prev.iterator(split))]
 
 class MapPartitionsRDD(MappedRDD):
     def __str__(self):
         return '<mappartition %s>' % self.prev
 
     def compute(self, split):
-        return self.f(self.prev.iterator(split))
+        yield self.func(self.prev.iterator(split))
 
 class PipedRDD(RDD):
     def __init__(self, prev, command):
@@ -479,8 +491,11 @@ class UnionRDD(RDD):
                 for rdd in rdds for split in rdd.splits]
         for i,split in enumerate(self.splits):
             split.index = i
-        self.dependencies = [OneToOneDependency(rdd)
-                for rdd in rdds]
+        self.dependencies = []
+        pos = 0
+        for rdd in rdds:
+            self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
+            pos += len(rdd)
 
     def __str__(self):
         return '<union of %s>' % (','.join(str(rdd) for rdd in self.rdds))
