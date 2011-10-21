@@ -16,7 +16,8 @@ from job import *
 from env import env
 from broadcast import Broadcast
 
-EXECUTOR_MEMORY = 1
+EXECUTOR_MEMORY = 512
+TASK_MEMORY = 50
 
 class TaskEndReason:
     pass
@@ -458,7 +459,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps((os.getcwd(),
+        info.data = cPickle.dumps((os.getcwd(), self.defaultParallelism(),
             (env.cacheTracker.addr, env.mapOutputTracker.addr, env.shuffleDir)))
         return info
 
@@ -523,7 +524,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     mem = task.resources.add()
                     mem.name = 'mem'
                     mem.type = mesos_pb2.Resource.SCALAR
-                    mem.scalar.value = EXECUTOR_MEMORY
+                    mem.scalar.value = TASK_MEMORY
                     tasks.append(task)
 
                     logging.info("dispatch %s into %s", t, o.hostname)
@@ -537,7 +538,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 if not launchedTask:
                     break
         
-        logging.info("reply to %s with %d tasks", oid, len(tasks))
+        if not tasks:
+            logging.warning("reply to %s with %d tasks", oid, len(tasks))
         driver.replyToOffer(oid, tasks, {"timeout": "1"})
 
     def getResource(self, res, name):
@@ -608,7 +610,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 slave.value, executor.value, data)
 
     def slaveLost(self, driver, slave):
+        logging.warning("slave %s lost", slave.value)
         self.slavesWithExecutors.remove(slave.value)
 
     def offerRescinded(self, driver, offer):
-        pass
+        logging.warning("offer rescinded: %s", offer)
+
