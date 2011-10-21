@@ -81,7 +81,7 @@ class FileBroadcast(Broadcast):
         if isMaster:
             cls.cache = cache.Cache()
         else:
-            cls.cache = cahce.SerializeCache(cache.mmapCache)
+            cls.cache = cache.SerializingCache(cache.mmapCache)
         if os.path.exists('/mfs/tmp'):
             cls.workdir = '/mfs/tmp/dpark'
         else:
