@@ -295,14 +295,14 @@ class GlommedRDD(RDD):
         return '<glommed %s>' % self.prev
 
     def compute(self, split):
-        yield [list(self.prev.iterator(split))]
+        yield self.prev.iterator(split)
 
 class MapPartitionsRDD(MappedRDD):
     def __str__(self):
         return '<mappartition %s>' % self.prev
 
     def compute(self, split):
-        yield self.func(self.prev.iterator(split))
+        return self.func(self.prev.iterator(split))
 
 class PipedRDD(RDD):
     def __init__(self, prev, command):
@@ -338,7 +338,7 @@ class MappedValuesRDD(MappedRDD):
 
     def compute(self, split):
         for k, v in self.prev.iterator(split):
-            yield k,self.f(v)
+            yield k,self.func(v)
 
 class FlatMappedValuesRDD(MappedValuesRDD):
     def __str__(self):
@@ -346,7 +346,7 @@ class FlatMappedValuesRDD(MappedValuesRDD):
 
     def compute(self, split):
         for k,v in self.prev.iterator(split):
-            for vv in self.f(v):
+            for vv in self.func(v):
                 yield k,vv
 
 class ShuffledRDDSplit(Split):

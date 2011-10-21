@@ -28,6 +28,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.filter(lambda x:x>1).collect(), [2, 3])
         self.assertEqual(nums.flatMap(lambda x:range(x)).collect(), [0, 0,1, 0,1,2])
         self.assertEqual(nums.union(nums).collect(), d + d)
+        self.assertEqual(nums.split()[1].collect(), d[2:4])
         self.assertEqual(nums.cartesion(nums).map(lambda (x,y):x*y).reduce(lambda x,y:x+y), 36)
         self.assertEqual(nums.glom().map(lambda x:list(x)).collect(),[[0,1],[2,3]])
         self.assertEqual(nums.mapPartitions(lambda x:[sum(x)]).collect(),[1, 5])
