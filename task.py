@@ -42,8 +42,8 @@ class DAGTask(Task):
     def __str__(self):
         return '<task %d:%d>'%(self.stageId, self.id)
 
-    def generation(self):
-        return self.gen
+#    def generation(self):
+#        return self.gen
 
 class ResultTask(DAGTask):
     def __init__(self, stageId, rdd, func, partition, locs, outputId):

@@ -65,7 +65,7 @@ class MyExecutor(mesos.Executor):
     def frameworkMessage(self, driver, data):
         driver.sendFrameworkMessage('got message: %s' % str(data))
         if data == 'shutdown':
-            self.shutdown()
+            self.shutdown(driver)
             os._exit(0)
 
 if __name__ == '__main__':

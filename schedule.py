@@ -53,6 +53,9 @@ class Stage:
     def __str__(self):
         return '<stage(%d) %s>' % (self.id, self.rdd)
 
+    def __hash__(self):
+        return self.id
+
     @property
     def isAvailable(self):
         if not self.parents and not self.isShuffleMap:
@@ -70,12 +73,6 @@ class Stage:
         self.outputLocs[partition] = [h for h in prev if h != host]
         if prev and not self.outputLocs[partition]:
             self.numAvailableOutputs -= 1
-
-    def __str__(self):
-        return "Stage %d" % self.id
-
-    def __hash__(self):
-        return self.id
 
 
 class Scheduler:

@@ -239,7 +239,7 @@ def test():
     from context import SparkContext
     sc = SparkContext("local")
     nums = sc.parallelize(range(100), 10)
-    cache = BoundedMemoryCache(cache)
+    cache = mmapCache
     tracker = CacheTracker(True, cache)
     tracker.registerRDD(nums.id, len(nums.splits))
     split = nums.splits[0]

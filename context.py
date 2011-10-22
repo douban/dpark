@@ -76,13 +76,10 @@ class SparkContext:
         else:
             return TextFileRDD(self, path, numSplits, splitSize)
 
-    def sequenceFile(self, path, minSplits):
-        return self.hadoopFile(path, format, minSplits).map(lambda k,v: (k,v))
-
-    def objectFile(self, path, minSplits=None):
-        if minSplits is None:
-            minSplits = self.defaultMinSplits
-        return self.sequenceFile(path, minSplits).flatMap(lambda x: loads(x))
+#    def objectFile(self, path, minSplits=None):
+#        if minSplits is None:
+#            minSplits = self.defaultMinSplits
+#        return self.sequenceFile(path, minSplits).flatMap(lambda x: loads(x))
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
@@ -91,7 +88,7 @@ class SparkContext:
         return Accumulator(init, param)
 
     def broadcast(self, v):
-        return Brodcast.newBroadcast(v, self.isLocal)
+        return Broadcast.newBroadcast(v, self.isLocal)
 
     def stop(self):
         if self.started:

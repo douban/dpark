@@ -1,4 +1,5 @@
 import os, os.path
+import threading
 from itertools import *
 
 from utils import load_func, dump_func
@@ -19,17 +20,25 @@ class RDD:
     def __init__(self, sc):
         self.sc = sc
         self.id = sc.newRddId()
-        self.splits = []
+        self._splits = []
         self.dependencies = []
         self.aggregator = None
-        self.partitioner = None
+        self._partitioner = None
         self.shouldCache = False
 
     def __len__(self):
         return len(self.splits)
+    
+    @property
+    def splits(self):
+        return self._split
 
     def compute(self, split):
         raise NotImplementedError
+
+    @property
+    def partitioner(self):
+        return self._partitioner
 
     def preferredLocations(self, split):
         return []
@@ -74,8 +83,8 @@ class RDD:
 
     def pipe(self, command):
         if isinstance(command, str):
-            command = comand.split(' ')
-        return PipedRDD(this, command)
+            command = command.split(' ')
+        return PipedRDD(self, command)
 
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
@@ -247,11 +256,14 @@ class MappedRDD(RDD):
         RDD.__init__(self, prev.sc)
         self.prev = prev
         self.func = func
-        self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
     def __str__(self):
-        return '<mapped %s>' % self.prev
+        return '<%s %s>' % (self.__class__.__name__, self.prev)
+    
+    @property
+    def splits(self):
+        return self.prev.splits
 
     def compute(self, split):
         for v in self.prev.iterator(split):
@@ -267,18 +279,12 @@ class MappedRDD(RDD):
         self.func = load_func(code, globals())
 
 class FlatMappedRDD(MappedRDD):
-    def __str__(self):
-        return '<flatmapped %s>' % self.prev
-
     def compute(self, split):
         for i in self.prev.iterator(split):
             for j in self.func(i):
                 yield j
 
 class FilteredRDD(MappedRDD):
-    def __str__(self):
-        return '<filtered %s>' % self.prev
-
     def compute(self, split):
         for i in self.prev.iterator(split):
             if self.func(i):
@@ -291,16 +297,10 @@ class GlommedRDD(RDD):
         self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
-    def __str__(self):
-        return '<glommed %s>' % self.prev
-
     def compute(self, split):
         yield self.prev.iterator(split)
 
 class MapPartitionsRDD(MappedRDD):
-    def __str__(self):
-        return '<mappartition %s>' % self.prev
-
     def compute(self, split):
         return self.func(self.prev.iterator(split))
 
@@ -308,30 +308,28 @@ class PipedRDD(RDD):
     def __init__(self, prev, command):
         RDD.__init__(self, prev.sc)
         self.prev = prev
-        if isinstance(command, str):
-            command = command.split(' ')
         self.command = command
-        self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
     def __str__(self):
-        return '<piped %s %s>' % (' '.join(self.command), self.prev)
+        return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
+
+    @property
+    def splits(self):
+        return self.prev.splits
 
     def compute(self, split):
         import subprocess
-        p = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        p = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         def read():
             for i in self.prev.iterator(split):
-                p.stdin.write(str(i))
+                p.stdin.write("%s\n" % (i,))
             p.stdin.close()
-        Thread(target=read).start()
+        threading.Thread(target=read).start()
         for line in p.stdout:
-            yield line
+            yield line[:-1] # drop \n
 
 class MappedValuesRDD(MappedRDD):
-    def __str__(self):
-        return '<mappedvalue %s>' % self.prev
-
     @property
     def partitioner(self):
         return self.prev.partitioner
@@ -341,9 +339,6 @@ class MappedValuesRDD(MappedRDD):
             yield k,self.func(v)
 
 class FlatMappedValuesRDD(MappedValuesRDD):
-    def __str__(self):
-        return '<flatmappedvalue %s>' % self.prev
-
     def compute(self, split):
         for k,v in self.prev.iterator(split):
             for vv in self.func(v):
@@ -358,13 +353,13 @@ class ShuffledRDD(RDD):
         RDD.__init__(self, parent.sc)
         self.parent = parent
         self.aggregator = aggregator
-        self.partitioner = part
-        self.splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
+        self._partitioner = part
+        self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
         self.dependencies = [ShuffleDependency(self.sc.newShuffleId(),
                 parent, aggregator, part)]
     
     def __str__(self):
-        return '<shuffled %s>' % self.parent
+        return '<ShuffledRDD %s>' % self.parent
 
     def compute(self, split):
         combiners = {}
@@ -529,26 +524,37 @@ class ParallelCollectionSplit:
 class ParallelCollection(RDD):
     def __init__(self, sc, data, numSlices):
         RDD.__init__(self, sc)
-        self.data = data
-        self.numSlices = numSlices
+        self.size = len(data)
         slices = self.slice(data, numSlices)
-        self.splits = [ParallelCollectionSplit(self.id, i, slices[i]) 
+        self._splits = [ParallelCollectionSplit(self.id, i, slices[i]) 
                 for i in range(len(slices))]
         self.dependencies = []
 
     def __str__(self):
-        return '<parallelized %s>' % self.data
+        return '<ParallelCollection %d>' % self.size
 
     def compute(self, split):
         return split.values
 
     @classmethod
     def slice(cls, data, numSlices):
+        if numSlices <= 0:
+            raise ValueError("invalid numSlices %d" % numSlices)
         m = len(data)
+        if not m:
+            return [[]]
         n = m / numSlices
         if m % numSlices != 0:
             n += 1
-        data = list(data)
+        if isinstance(data, xrange):
+            first = data[0]
+            last = data[n-1]
+            step = (last - first) / (m-1)
+            nstep = step * n
+            return [xrange(first+i*nstep, first+(i+1)*nstep, nstep)
+                for i in range(numSlices)]
+        if not isinstance(data, list):
+            data = list(data)
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
@@ -569,10 +575,10 @@ class TextFileRDD(RDD):
         if size % splitSize > 0:
             n += 1
         self.splitSize = splitSize
-        self.splits = [Split(i) for i in range(n)]
+        self._splits = [Split(i) for i in range(n)]
 
     def __str__(self):
-        return '<textfile %s>' % self.path
+        return '<TextFileRDD %s>' % self.path
 
     def compute(self, split):
         f = open(self.path)
@@ -605,11 +611,15 @@ class OutputTextFileRDD(RDD):
                 raise Exception("output must be dir")
         else:
             os.makedirs(path)
-        self.splits = self.rdd.splits
+        self._splits = self.rdd.splits
         self.dependencies = [OneToOneDependency(rdd)]
 
     def __str__(self):
-        return '<outputfile %s>' % self.path
+        return '<OutputTextFileRDD %s>' % self.path
+
+    @property
+    def splits(self):
+        return self.rdd.splits
 
     def compute(self, split):
         path = os.path.join(self.path, str(split.index))

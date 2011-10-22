@@ -11,8 +11,9 @@ def parse(line):
     if r == 'None':
         r = defaults[f]
     return (sid, (uid, float(r)))
-rating = spark.textFile(name, numSplits=2).map(parse).groupByKey().cache()
+rating = spark.textFile(name, numSplits=2).map(parse).groupByKey(2)#.cache()
 #print 'us', rating.first()
+print rating.count()
 
 def reverse(it):
     s = {}
@@ -22,6 +23,7 @@ def reverse(it):
     return s
 
 def vsum(a, b):
+#    return 1
     if len(a) < len(b):
         a, b = b, a
     d = dict(a)
@@ -33,6 +35,7 @@ def vsum(a, b):
 def cos((l1, l2)):
     l1 = list(l1)
     l2 = list(l2)
+    print len(l1), len(l2)
     d2 = dict(l2)
     u2 = reverse(l2)
     for sid1, us1 in l1:
@@ -47,7 +50,9 @@ def cos((l1, l2)):
 #            if sid2!=sid1], reverse=True)[:5]
         yield sid1, sim
 
-final = rating.glom().cartesion(rating.glom()).flatMap(cos)
+final = rating.glom().cartesion(rating.glom())
+print final.count()
+final = final.flatMap(cos)
 #print 'sim', final.first()
 final = final.reduceByKey(lambda x,y:x+y).mapValue(lambda x:sorted(x,reverse=True)[:5])
 print 'final',final.count()
