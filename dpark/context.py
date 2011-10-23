@@ -6,7 +6,7 @@ from schedule import *
 from env import env
 from broadcast import Broadcast
 
-class SparkContext:
+class DparkContext:
     nextRddId = 0
     nextShuffleId = 0
 

@@ -430,7 +430,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return self.name
 
     def getExecutorInfo(self, driver):
-        path = os.path.abspath('./executor')
+        dir = os.path.basename(__FILE__)
+        path = os.path.abspath(os.path.join(dir, 'executor'))
         info = mesos_pb2.ExecutorInfo()
         info.executor_id.value = "default"
         info.uri = path

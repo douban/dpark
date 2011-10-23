@@ -1,7 +1,8 @@
+import sys
+sys.path.append('../')
+from dpark import DparkContext
 
-from context import SparkContext
-
-dpark = SparkContext()
+dpark = DparkContext()
 
 name = '/mfs/tmp/weblog-pre-20111019.csv'
 name = '/mfs/tmp/weblog-20111019.csv'

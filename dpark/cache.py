@@ -247,9 +247,9 @@ def test():
     pool.join()
     assert cache.get('a') == 'b'
     
-    from context import SparkContext
-    sc = SparkContext("local")
-    nums = sc.parallelize(range(100), 10)
+    from context import DparkContext
+    dc = DparkContext("local")
+    nums = dc.parallelize(range(100), 10)
     cache = mmapCache
     tracker = CacheTracker(True, cache)
     tracker.registerRDD(nums.id, len(nums.splits))

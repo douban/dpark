@@ -17,9 +17,9 @@ class Split:
         self.index = idx
 
 class RDD:
-    def __init__(self, sc):
-        self.sc = sc
-        self.id = sc.newRddId()
+    def __init__(self, ctx):
+        self.ctx = ctx
+        self.id = ctx.newRddId()
         self._splits = []
         self.dependencies = []
         self.aggregator = None
@@ -68,7 +68,7 @@ class RDD:
         return SampleRDD(self, withReplacement, faction, seed)
 
     def union(self, rdd):
-        return UnionRDD(self.sc, [self, rdd])
+        return UnionRDD(self.ctx, [self, rdd])
 
     def glom(self):
         return GlommedRDD(self)
@@ -78,7 +78,7 @@ class RDD:
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
-            numSplits = min(self.sc.defaultMinSplits, len(self.splits))
+            numSplits = min(self.ctx.defaultMinSplits, len(self.splits))
         return self.map(lambda x: (f(x), x)).groupByKey(numSplits)
 
     def pipe(self, command):
@@ -93,10 +93,10 @@ class RDD:
         def mf(it):
             for i in it:
                 f(i)
-        return self.sc.runJob(self, mf)
+        return self.ctx.runJob(self, mf)
 
     def collect(self):
-        return sum(self.sc.runJob(self, lambda x:list(x)), [])
+        return sum(self.ctx.runJob(self, lambda x:list(x)), [])
 
     def __iter__(self):
         for i in self.collect():
@@ -108,7 +108,7 @@ class RDD:
                 return [reduce(f, it)]
             else:
                 return []
-        options = self.sc.runJob(self, reducePartition)
+        options = self.ctx.runJob(self, reducePartition)
         return reduce(f, sum(options, []))
 
     def uniq(self):
@@ -116,7 +116,7 @@ class RDD:
         return g.map(lambda (x,y):x)
 
     def count(self):
-        result = self.sc.runJob(self, lambda x: ilen(x))
+        result = self.ctx.runJob(self, lambda x: ilen(x))
         return sum(result)
 
     def toList(self):
@@ -127,7 +127,7 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self.splits):
-            res = self.sc.runJob(self, lambda x: islice(x, n - len(r)), [p], True)
+            res = self.ctx.runJob(self, lambda x: islice(x, n - len(r)), [p], True)
             if res[0]:
                 r.extend(res[0])
             else:
@@ -159,7 +159,7 @@ class RDD:
 
     def combineByKey(self, createCombiner, mergeValue, mergeCombiners, numSplits=None):
         if numSplits is None:
-            numSplits = min(self.sc.defaultMinSplits, len(self.splits))
+            numSplits = min(self.ctx.defaultMinSplits, len(self.splits))
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         partitioner = HashPartitioner(numSplits)
         return ShuffledRDD(self, aggregator, partitioner)
@@ -236,7 +236,7 @@ class RDD:
         return FlatMappedValuesRDD(self, f)
 
     def groupWith(self, *others):
-        part = self.partitioner or HashPartitioner(self.sc.defaultParallelism)
+        part = self.partitioner or HashPartitioner(self.ctx.defaultParallelism)
         return CoGroupedRDD([self]+list(others), part)
 
     def lookup(self, key):
@@ -246,14 +246,14 @@ class RDD:
                 for k,v in it:
                     if k == key:
                         return v
-            return self.sc.runJob(self, process, [index], False)[0]
+            return self.ctx.runJob(self, process, [index], False)[0]
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
             
 
 class MappedRDD(RDD):
     def __init__(self, prev, func=lambda x:x):
-        RDD.__init__(self, prev.sc)
+        RDD.__init__(self, prev.ctx)
         self.prev = prev
         self.func = func
         self.dependencies = [OneToOneDependency(prev)]
@@ -292,7 +292,7 @@ class FilteredRDD(MappedRDD):
            
 class GlommedRDD(RDD):
     def __init__(self, prev):
-        RDD.__init__(self, prev.sc)
+        RDD.__init__(self, prev.ctx)
         self.prev = prev
         self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
@@ -306,7 +306,7 @@ class MapPartitionsRDD(MappedRDD):
 
 class PipedRDD(RDD):
     def __init__(self, prev, command):
-        RDD.__init__(self, prev.sc)
+        RDD.__init__(self, prev.ctx)
         self.prev = prev
         self.command = command
         self.dependencies = [OneToOneDependency(prev)]
@@ -350,12 +350,12 @@ class ShuffledRDDSplit(Split):
 
 class ShuffledRDD(RDD):
     def __init__(self, parent, aggregator, part):
-        RDD.__init__(self, parent.sc)
+        RDD.__init__(self, parent.ctx)
         self.parent = parent
         self.aggregator = aggregator
         self._partitioner = part
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
-        self.dependencies = [ShuffleDependency(self.sc.newShuffleId(),
+        self.dependencies = [ShuffleDependency(self.ctx.newShuffleId(),
                 parent, aggregator, part)]
     
     def __str__(self):
@@ -382,7 +382,7 @@ class CartesionSplit(Split):
 
 class CartesionRDD(RDD):
     def __init__(self, rdd1, rdd2):
-        RDD.__init__(self, rdd1.sc)
+        RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
         self.numSplitsInRdd2 = n = len(rdd2.splits)
@@ -429,13 +429,13 @@ class CoGroupAggregator:
 
 class CoGroupedRDD(RDD):
     def __init__(self, rdds, partitioner):
-        RDD.__init__(self, rdds[0].sc)
+        RDD.__init__(self, rdds[0].ctx)
         self.rdds = rdds
         self.aggregator = CoGroupAggregator()
         self.partitioner = partitioner
         self.dependencies = dep = [rdd.partitioner == partitioner
                 and OneToOneDependency(rdd)
-                or ShuffleDependency(self.sc.newShuffleId(), 
+                or ShuffleDependency(self.ctx.newShuffleId(), 
                     rdd, self.aggregator, partitioner)
                 for i,rdd in enumerate(rdds)]
         self.splits = [CoGroupSplit(j, 
@@ -469,7 +469,7 @@ class SampledRDDSplit(Split):
 
 class SampleRDD(RDD):
     def __init__(self, prev, withReplacement, frac, seed):
-        RDD.__init__(self, prev.sc)
+        RDD.__init__(self, prev.ctx)
         self.prev = prev
         raise NotImplementedError
         # TODO
@@ -481,8 +481,8 @@ class UnionSplit:
         self.split = split
 
 class UnionRDD(RDD):
-    def __init__(self, sc, rdds):
-        RDD.__init__(self, sc)
+    def __init__(self, ctx, rdds):
+        RDD.__init__(self, ctx)
         self.rdds = rdds
         self.splits = [UnionSplit(0, rdd, split) 
                 for rdd in rdds for split in rdd.splits]
@@ -522,8 +522,8 @@ class ParallelCollectionSplit:
 
 
 class ParallelCollection(RDD):
-    def __init__(self, sc, data, numSlices):
-        RDD.__init__(self, sc)
+    def __init__(self, ctx, data, numSlices):
+        RDD.__init__(self, ctx)
         self.size = len(data)
         slices = self.slice(data, numSlices)
         self._splits = [ParallelCollectionSplit(self.id, i, slices[i]) 
@@ -559,8 +559,8 @@ class ParallelCollection(RDD):
 
 
 class TextFileRDD(RDD):
-    def __init__(self, sc, path, numSplits=None, splitSize=None):
-        RDD.__init__(self, sc)
+    def __init__(self, ctx, path, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
         self.path = path
         if not os.path.exists(path):
             raise IOError("not exists")
@@ -603,7 +603,7 @@ class TextFileRDD(RDD):
 
 class OutputTextFileRDD(RDD):
     def __init__(self, rdd, path):
-        RDD.__init__(self, rdd.sc)
+        RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
         self.path = os.path.abspath(path)
         if os.path.exists(path):

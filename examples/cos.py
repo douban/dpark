@@ -1,7 +1,9 @@
+import sys
+sys.path.append('../')
 import logging
-from context import SparkContext
+from dpark import DparkContext
 
-spark = SparkContext()
+dpark = DparkContext()
 
 name = 'rating.txt'
 
@@ -11,7 +13,7 @@ def parse(line):
     if r == 'None':
         r = defaults[f]
     return (sid, (uid, float(r)))
-rating = spark.textFile(name, numSplits=2).map(parse).groupByKey(2)#.cache()
+rating = dpark.textFile(name, numSplits=2).map(parse).groupByKey(2)#.cache()
 #print 'us', rating.first()
 print rating.count()
 
@@ -32,10 +34,10 @@ def vsum(a, b):
         s += r * d.get(u, 0)
     return s
 
+# should replace this function with c extension for best performance.
 def cos((l1, l2)):
     l1 = list(l1)
     l2 = list(l2)
-    print len(l1), len(l2)
     d2 = dict(l2)
     u2 = reverse(l2)
     for sid1, us1 in l1:

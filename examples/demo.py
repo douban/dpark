@@ -1,16 +1,17 @@
 import math
 import random
-import os
+import os, sys
 from pprint import pprint
-from context import SparkContext
+sys.path.append('../')
+from dpark import DparkContext
 #import logging
 #logging.basicConfig(level=logging.ERROR,
 #    format="%(process)d:%(threadName)s:%(levelname)s %(message)s")
 
-spark = SparkContext()
+ctx = DparkContext()
 
 # range
-nums = spark.parallelize(range(100), 4)
+nums = ctx.parallelize(range(100), 4)
 print nums.count()
 print nums.reduce(lambda x,y:x+y)
 raise

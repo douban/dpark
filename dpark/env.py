@@ -1,7 +1,7 @@
 import os, logging
 import threading
 
-class SparkEnv:
+class DparkEnv:
     environ = {}
     @classmethod
     def register(cls, name, value):
@@ -43,4 +43,4 @@ class SparkEnv:
         self.shuffleFetcher.stop()
         self.started = False
 
-env = SparkEnv()
+env = DparkEnv()
