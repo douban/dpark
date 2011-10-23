@@ -112,17 +112,17 @@ class SimpleJob(Job):
             task = self.tasks[i]
             preferred = self.isPreferredLocation(task, host)
             prefStr = preferred and "preferred" or "non-preferred"
-            logging.info("Starting task %d:%d as TID %s on slave %s (%s)", 
+            logging.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
                 self.id, i, task, host, prefStr)
             self.tidToIndex[task.id] = i
             self.launched[i] = True
             if preferred:
                 self.lastPreferredLaunchTime = now
             return task
-        logging.info("no task found %s", localOnly)
+        logging.debug("no task found %s", localOnly)
 
     def statusUpdate(self, tid, status, reason=None, result=None, update=None):
-        logging.info("job status update %s %s %s %s %s", tid, status,
+        logging.debug("job status update %s %s %s %s %s", tid, status,
             result, update, reason)
         if status == TASK_FINISHED:
             self.taskFinished(tid, result, update)

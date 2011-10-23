@@ -31,7 +31,7 @@ class RDD:
     
     @property
     def splits(self):
-        return self._split
+        return self._splits
 
     def compute(self, split):
         raise NotImplementedError

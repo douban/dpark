@@ -5,8 +5,8 @@ dpark = SparkContext()
 
 name = '/mfs/tmp/weblog-pre-20111019.csv'
 name = '/mfs/tmp/weblog-20111019.csv'
-#name = '/mfs/tmp/weblog-20111019.csv.small'
-name = '/tmp/weblog-20111019.csv.medium'
+name = '/tmp/weblog-20111019.csv.small'
+#name = '/tmp/weblog-20111019.csv.medium'
 pv = dpark.textFile(name)
 pv = pv.map(lambda x:x.split(',')).map(lambda l:(l[3],l[7]))
 pv = pv.flatMap(lambda (i,u):(u.startswith('/movie') and [(i,2)] 

@@ -56,6 +56,7 @@ class ResultTask(DAGTask):
         self.outputId = outputId
 
     def run(self, attemptId):
+        logging.debug("run task %s with %d", self, attemptId)
         context = TaskContext(self.stageId, self.partition, attemptId)
         return self.func(context, self.rdd.iterator(self.split))
 
@@ -92,7 +93,7 @@ class ShuffleMapTask(DAGTask):
         return '<shuffletask(%d,%d) of %s>' % (self.stageId, self.partition, self.rdd)
 
     def run(self, attempId):
-        logging.info("shuffling %d of %s", self.partition, self.rdd)
+        logging.debug("shuffling %d of %s", self.partition, self.rdd)
         aggregator= self.dep.aggregator
         partitioner = self.dep.partitioner
         numOutputSplits = partitioner.numPartitions

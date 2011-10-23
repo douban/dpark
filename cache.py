@@ -10,6 +10,7 @@ import time
 import zmq
 
 import shareddict
+from env import env
 
 mmapCache = shareddict.SharedDicts(512)
 
@@ -30,12 +31,6 @@ class Cache:
     
     def put(self, key, value):
         self.map[key] = value
-
-    def pop(self, key, default=None):
-        return self.map.pop(key, default)
-
-    def clear(self):
-        return self.map.clear()
 
 class KeySpace(Cache):
     def __init__(self, cache, id):
@@ -69,6 +64,24 @@ class SerializingCache(Cache):
             self.map.put(key, v)
         except Exception, e:
             logging.error("cache key %s err", key)
+
+class LocalCache(Cache):
+    '''cache obj in current process'''
+    def __init__(self, cache):
+        self.cache = cache
+        self.map = {}
+
+    def get(self, key):
+        r = self.map.get(key)
+        if r is None:
+            r = self.cache.get(key)
+            if r is not None:
+                self.map[key] = r
+        return r
+
+    def put(self, key, value):
+        self.map[key] = value
+        self.cache.put(key, value)
 
 
 class CacheTrackerMessage:pass
@@ -107,7 +120,7 @@ class CacheTrackerServer:
         ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
         sock.connect(self.addr)
-        sock.send(cPickle.dumps(StopCacheTracker(), -1))
+        sock.send_pyobj(StopCacheTracker())
         self.t.join()
 
     def run(self):
@@ -118,10 +131,9 @@ class CacheTrackerServer:
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logging.debug("CacheTrackerServer started at %s", self.addr)
         def reply(msg):
-            sock.send(cPickle.dumps(msg))
+            sock.send_pyobj(msg)
         while True:
-            msg = cPickle.loads(sock.recv())
-            #logging.debug("CacheTracker recv %s", msg)
+            msg = sock.recv_pyobj()
             if isinstance(msg, RegisterRDD):
                 locs[msg.rddId] = [[] for i in range(msg.numPartitions)]
                 reply('OK')
@@ -149,36 +161,35 @@ class CacheTrackerServer:
 
 class CacheTrackerClient:
     def __init__(self, addr):
-        self.addr = addr
         ctx = zmq.Context()
         self.sock = ctx.socket(zmq.REQ)
         self.sock.connect(addr)
 
     def call(self, msg):
-        self.sock.send(cPickle.dumps(msg, -1))
-        r = cPickle.loads(self.sock.recv())
-        return r
+        self.sock.send_pyobj(msg)
+        return self.sock.recv_pyobj()
 
     def stop(self):
         self.sock.close()
-        logging.debug("stop %s", self.__class__)
+        #logging.debug("stop %s", self.__class__)
 
 class CacheTracker:
-    def __init__(self, isMaster, addr=None):
+    def __init__(self, isMaster):
         self.isMaster = isMaster
         self.registeredRddIds = set()
         if isMaster:
             self.cache = Cache()
         else:
-            self.cache = SerializingCache(mmapCache) #.newKeySpace()
+            self.cache = LocalCache(SerializingCache(mmapCache)) #.newKeySpace()
+
         if isMaster:
             self.server = CacheTrackerServer()
             self.server.start()
             addr = self.server.addr
-            os.environ['CacheTracker'] = addr
-        elif addr is None:
-            addr = os.environ['CacheTracker']
-        self.addr = addr
+            env.register('CacheTrackerAddr', addr)
+        else:
+            addr = env.get('CacheTrackerAddr')
+
         self.client = CacheTrackerClient(addr)
 
     def registerRDD(self, rddId, numPartitions):

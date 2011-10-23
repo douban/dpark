@@ -4,7 +4,6 @@ import logging
 import urllib
 import logging
 import marshal
-import cPickle
 import struct
 import socket
 
@@ -14,11 +13,14 @@ from env import env
 from cache import *
 
 class LocalFileShuffle:
-    localDirRoot = None
     serverUri = None
     @classmethod
-    def initialize(cls, localDirRoot):
-        shuffleDir = os.path.join(localDirRoot, socket.gethostname(), str(os.getpid()))
+    def initialize(cls):
+        root = '/tmp/dpark'
+        if os.path.exists('/mfs/tmp'):
+            root = '/mfs/tmp/dpark'
+        shuffleDir = os.path.join(root, socket.gethostname(),
+            str(os.getpid()))
         if not os.path.exists(shuffleDir):
             try:
                 os.makedirs(shuffleDir)
@@ -28,10 +30,8 @@ class LocalFileShuffle:
             pass # TODO: clean dir
 
         logging.debug("shuffle dir: %s", shuffleDir)
-
-        cls.localDirRoot = localDirRoot
         cls.shuffleDir = shuffleDir
-        cls.serverUri = "file:///" + shuffleDir
+        cls.serverUri = shuffleDir
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId):
@@ -44,12 +44,6 @@ class LocalFileShuffle:
     def getServerUri(cls):
         return cls.serverUri
 
-    nextShuffleId = 0
-    @classmethod
-    def newShuffleId(cls):
-        cls.nextShuffleId += 1
-        return cls.nextShuffleId
-
 
 class ShuffleFetcher:
     def fetch(self, shuffleId, reduceId, func):
@@ -59,18 +53,17 @@ class ShuffleFetcher:
 
 class SimpleShuffleFetcher(ShuffleFetcher):
     def fetch(self, shuffleId, reduceId, func):
-        logging.info("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
+        logging.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
         splitsByUri = {}
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
         for i, uri in enumerate(serverUris):
             splitsByUri.setdefault(uri, []).append(i)
-        for uri, ids in splitsByUri.items():
-            for id in ids:
+        for uri, parts in splitsByUri.items():
+            for part in parts:
                 try:
-                    url = "%s/%d/%d/%d" % (uri, shuffleId, id, reduceId)
-                    logging.info("fetch %s", url)
-                    f = open(url[6:], 'rb')
-                    for k,v in marshal.load(f):
+                    url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
+                    logging.debug("fetch %s", url)
+                    f = open(url, 'rb')
                     #while True:
                     #    size = f.read(2)
                     #    if not size:
@@ -78,10 +71,11 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     #    size = struct.unpack('h', size)[0]
                     #    v = f.read(size)
                     #    k, v = marshal.loads(v)
+                    for k,v in marshal.load(f):
                         func(k,v)
                     f.close()
                 except IOError, e:
-                    logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, i, url)
+                    logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, part, url)
                     raise 
 
 
@@ -101,7 +95,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
         ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
         sock.connect(self.addr)
-        sock.send(cPickle.dumps(StopMapOutputTracker(), -1))
+        sock.send_pyobj(StopMapOutputTracker())
         self.t.join()
 
     def run(self):
@@ -109,12 +103,14 @@ class MapOutputTrackerServer(CacheTrackerServer):
         sock = ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
-        logging.info("MapOutputTrackerServer started at %s", self.addr)
+        logging.debug("MapOutputTrackerServer started at %s", self.addr)
+
         def reply(msg):
-            sock.send(cPickle.dumps(msg))
+            sock.send_pyobj(msg)
+
         while True:
-            msg = cPickle.loads(sock.recv())
-            logging.info("MapOutputTrackerServer recv %s", msg)
+            msg = sock.recv_pyobj()
+            #logging.debug("MapOutputTrackerServer recv %s", msg)
             if isinstance(msg, GetMapOutputLocations):
                 reply(self.serverUris.get(msg.shuffleId, []))
             elif isinstance(msg, StopMapOutputTracker):
@@ -124,7 +120,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
                 logging.error('unexpected mapOutputTracker msg: %s %s', msg, type(msg))
                 reply('ERROR')
         sock.close()
-        logging.info("MapOutputTrackerServer stopped %s", self.addr)
+        logging.debug("MapOutputTrackerServer stopped %s", self.addr)
 
 class MapOutputTrackerClient(CacheTrackerClient):
     pass
@@ -139,11 +135,11 @@ class MapOutputTracker:
             self.server = MapOutputTrackerServer(self.serverUris)
             self.server.start()
             addr = self.server.addr
-            os.environ['MapOutputTracker'] = addr
-        elif addr is None:
-            addr = os.environ['MapOutputTracker']
-        self.addr = addr
+            env.register('MapOutputTrackerAddr', addr)
+        else:
+            addr = env.get('MapOutputTrackerAddr')
         self.client = MapOutputTrackerClient(addr)
+        logging.debug("MapOutputTracker started")
 
     def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):
         self.serverUris.setdefault(shuffleId, [None] * numMaps)[mapId] = serverUri
@@ -161,16 +157,16 @@ class MapOutputTracker:
 
     def getServerUris(self, shuffleId):
         while shuffleId in self.fetching:
-            logging.info("wait for fetching mapOutput of %s", shuffleId)
+            logging.debug("wait for fetching mapOutput of %s", shuffleId)
             time.sleep(0.01)
         locs = self.serverUris.get(shuffleId)
         if locs:
-            logging.info("got mapOutput in cache: %s", locs)
+            logging.debug("got mapOutput in cache: %s", locs)
             return locs
-        logging.info("Don't have map outputs for %d, fetching them", shuffleId)
+        logging.debug("Don't have map outputs for %d, fetching them", shuffleId)
         self.fetching.add(shuffleId)
         locs = self.client.call(GetMapOutputLocations(shuffleId))
-        logging.info("Fetch done: %s", locs)
+        logging.debug("Fetch done: %s", locs)
         self.serverUris[shuffleId] = locs
         self.fetching.remove(shuffleId)
         return locs
@@ -192,7 +188,7 @@ class MapOutputTracker:
 
     def updateGeneration(self, newGen):
         if newGen > self.generation:
-            logging.info("Updating generation to %d and clearing cache", newGen)
+            logging.debug("Updating generation to %d and clearing cache", newGen)
             self.generation = newGen
             self.serverUris.clear()
 
@@ -201,6 +197,7 @@ def test():
     import logging
     logging.basicConfig(level=logging.INFO)
     from env import env
+    import cPickle
     env.start(True)
     
     path = LocalFileShuffle.getOutputFile(1, 0, 0) 

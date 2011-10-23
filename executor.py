@@ -32,15 +32,15 @@ def run_task(task, aid):
         msg = traceback.format_exc()
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
 
-def init_env(*args):
-    env.env.start(False, *args)
+def init_env(args):
+    env.env.start(False, args)
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
         cwd, paralell, args = cPickle.loads(args.data)
         try: os.chdir(cwd)
         except: pass
-        self.pool = multiprocessing.Pool(paralell, init_env, args)
+        self.pool = multiprocessing.Pool(paralell, init_env, [args])
         #driver.sendFrameworkMessage('inited %d' % os.getpid() )
 
     def launchTask(self, driver, task):

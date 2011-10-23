@@ -195,9 +195,9 @@ class DAGScheduler(Scheduler):
 
         self.updateCacheLocs()
         
-        logging.info("Final stage: %s, %d", finalStage, numOutputParts)
-        logging.info("Parents of final stage: %s", finalStage.parents)
-        logging.info("Missing parents: %s", self.getMissingParentStages(finalStage))
+        logging.debug("Final stage: %s, %d", finalStage, numOutputParts)
+        logging.debug("Parents of final stage: %s", finalStage.parents)
+        logging.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
        
         if allowLocal and not finalStage.parents and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
@@ -205,7 +205,7 @@ class DAGScheduler(Scheduler):
             return [func(taskContext, finalRdd.iterator(split))]
 
         def submitStage(stage):
-            logging.info("submit stage %s", stage)
+            logging.debug("submit stage %s", stage)
             if stage not in waiting and stage not in running:
                 missing = self.getMissingParentStages(stage)
                 if not missing:
@@ -230,7 +230,7 @@ class DAGScheduler(Scheduler):
                     if not stage.outputLocs[p]:
                         locs = self.getPreferredLocs(stage.rdd, p)
                         tasks.append(ShuffleMapTask(stage.id, stage.rdd, stage.shuffleDep, p, locs))
-            logging.info("add to pending %r", tasks)
+            logging.debug("add to pending %r", tasks)
             myPending |= set(t.id for t in tasks)
             self.submitTasks(tasks)
 
@@ -241,7 +241,7 @@ class DAGScheduler(Scheduler):
            if evt:
                task = evt.task
                stage = self.idToStage[task.stageId]
-               logging.info("remove from pedding %s %s", pendingTasks[stage], task)
+               logging.debug("remove from pedding %s %s", pendingTasks[stage], task)
                pendingTasks[stage].remove(task.id)
                if isinstance(evt.reason, Success):
                    # ended
@@ -254,7 +254,7 @@ class DAGScheduler(Scheduler):
                        stage = self.idToStage[task.stageId]
                        stage.addOutputLoc(task.partition, evt.result)
                        if not pendingTasks[stage]:
-                           logging.info("%s finished; looking for newly runnable stages", stage)
+                           logging.debug("%s finished; looking for newly runnable stages", stage)
                            running.remove(stage)
                            if stage.shuffleDep != None:
                                self.mapOutputTracker.registerMapOutputs(
@@ -264,7 +264,7 @@ class DAGScheduler(Scheduler):
                            newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
                            waiting -= newlyRunnable
                            running |= newlyRunnable
-                           logging.info("newly runnable: %s, %s", waiting, newlyRunnable)
+                           logging.debug("newly runnable: %s, %s", waiting, newlyRunnable)
                            for stage in newlyRunnable:
                                submitMissingTasks(stage)
                else:
@@ -277,7 +277,7 @@ class DAGScheduler(Scheduler):
                        raise
 
            if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
-               logging.info("Resubmitting failed stages")
+               logging.debug("Resubmitting failed stages")
                self.updateCacheLocs()
                for stage in failed:
                    submitStage(stage)
@@ -310,10 +310,9 @@ def run_task(task, aid):
         accumUpdates = Accumulator.values()
         return (task, Success(), result, accumUpdates)
     except Exception, e:
-        logging.info("error in task %s", task)
+        logging.error("error in task %s", task)
         import traceback
         traceback.print_exc()
-        raise
         return (task, OtherFailure("exception:" + str(e)), None, None)
 
 
@@ -324,7 +323,7 @@ class LocalScheduler(DAGScheduler):
         return self.attemptId
 
     def submitTasks(self, tasks):
-        logging.info("submit tasks %s in LocalScheduler", tasks)
+        logging.debug("submit tasks %s in LocalScheduler", tasks)
         for task in tasks:
             self.taskEnded(*run_task(task, self.nextAttempId()))
     def stop(self):
@@ -338,8 +337,8 @@ class MultiThreadScheduler(LocalScheduler):
 
     def start(self):
         def worker(queue):
-            logging.info("worker thread started")
-            env.start(False)
+            logging.debug("worker thread started")
+            #env.start(False)
             while True:
                 r = queue.get()
                 if r is None:
@@ -349,7 +348,7 @@ class MultiThreadScheduler(LocalScheduler):
                 func(*args)
                 self.queue.task_done()
             env.stop()
-            logging.info("worker thread stopped")
+            logging.debug("worker thread stopped")
 
         self.threads = []
         for i in range(self.nthreads):
@@ -360,25 +359,26 @@ class MultiThreadScheduler(LocalScheduler):
 
 
     def submitTasks(self, tasks):
-        logging.info("submit tasks %s in MultiThreadScheduler", tasks)
+        logging.debug("submit tasks %s in MultiThreadScheduler", tasks)
         def func(task, aid):
             self.taskEnded(*run_task(task, aid))
         for task in tasks:
             self.queue.put((func, (task, self.nextAttempId())))
 
     def stop(self):
-        for i in range(len(self.threads)):
+        for i in range(len(self.threads)*2):
             self.queue.put(None)
-        self.queue.join()
+        #self.queue.join()
         for t in self.threads:
             t.join()
-        logging.info("all threads are stopped")
+        logging.debug("all threads are stopped")
 
-def run_task_in_process(task, aid, *args):
-    logging.debug("run_task_in_process %s %s %s %s %s", 
-            task, aid, *args)
-    env.start(False, *args)
-    return run_task(task, aid) 
+def run_task_in_process(task, tid, environ):
+    logging.debug("run task in process %s %s %s",
+        task, tid, environ)
+    from env import env
+    env.start(False, environ)
+    return run_task(task, tid)
 
 class MultiProcessScheduler(LocalScheduler):
     def __init__(self, threads):
@@ -389,28 +389,21 @@ class MultiProcessScheduler(LocalScheduler):
 
     def start(self):
         pass
-#        logging.info("start processes")
-#        for i in range(self.threads*2):
-#            self.pool.apply_async(restart_env, [cacheAddr, outputAddr])
-#        logging.info("apply async done")
 
     def submitTasks(self, tasks):
         def callback(args):
-            logging.info("got answer: %s", args)
+            logging.debug("got answer: %s", args)
             self.taskEnded(*args)
-        cacheAddr = env.cacheTracker.addr
-        outputAddr = env.mapOutputTracker.addr
         for task in tasks:
-            logging.info("put task async: %s", task)
-            self.pool.apply_async(run_task_in_process, 
-                [task, self.nextAttempId(), cacheAddr, outputAddr, env.shuffleDir],
+            logging.debug("put task async: %s", task)
+            self.pool.apply_async(run_task_in_process,
+                [task, self.nextAttempId(), env.environ],
                 callback=callback)
 
     def stop(self):
-        logging.info("try to stop process pool")
         self.pool.close()
         self.pool.join()
-        logging.info("process pool stopped")
+        logging.debug("process pool stopped")
 
 
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
@@ -429,20 +422,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.slavesWithExecutors = set()
 
     def start(self):
-        shuffleDir = env.shuffleDir
-        def run():
-            try:
-                env.start(False, shuffleDir=shuffleDir)
-                logging.info("driver thread started")
-                self.driver = mesos.MesosSchedulerDriver(self, self.master)
-                ret = self.driver.run()
-            except Exception, e:
-                logging.info("run failed: %s", e)
-                raise
-                os._exit(1)
-        t = threading.Thread(target=run)
-        t.daemon = True
-        t.start()
+        self.driver = mesos.MesosSchedulerDriver(self, self.master)
+        self.driver.start()
+        logging.debug("Mesos Scheudler driver started")
 
     def getFrameworkName(self, driver):
         return self.name
@@ -456,23 +438,23 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps((os.getcwd(), self.defaultParallelism(),
-            (env.cacheTracker.addr, env.mapOutputTracker.addr, env.shuffleDir)))
+        info.data = cPickle.dumps((os.getcwd(),
+            self.defaultParallelism(), env.environ))
         return info
 
     def submitTasks(self, tasks):
-        logging.info("Got a job with %d tasks", len(tasks))
+        logging.debug("Got a job with %d tasks", len(tasks))
         job = SimpleJob(self, tasks)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
-        logging.info("Adding job with ID %d", job.id)
+        logging.debug("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
         
         self.waitForRegister()
         self.driver.reviveOffers()
 
     def jobFinished(self, job):
-        logging.info("job %s finished", job.id)
+        logging.debug("job %s finished", job.id)
         del self.activeJobs[job.id]
         self.activeJobsQueue.remove(job) 
         for id in self.jobTasks[job.id]:
@@ -482,14 +464,14 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def registered(self, driver, fid):
         self.isRegistered = True
-        logging.info("is registered")
+        logging.debug("is registered: %s", fid)
 
     def waitForRegister(self):
         while not self.isRegistered:
             time.sleep(0.01)
 
     def resourceOffer(self, driver, oid, offers):
-        logging.info("get %d offers, %d jobs", len(offers), len(self.activeJobs))
+        logging.debug("get %d offers, %d jobs", len(offers), len(self.activeJobs))
         for o in offers:
             logging.debug("offers: %s", o)
         if not self.activeJobs:
@@ -524,7 +506,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     mem.scalar.value = TASK_MEMORY
                     tasks.append(task)
 
-                    logging.info("dispatch %s into %s", t, o.hostname)
+                    logging.debug("dispatch %s into %s", t, o.hostname)
                     self.jobTasks[job.id].add(t.id)
                     self.taskIdToJobId[t.id] = job.id
                     self.taskIdToSlaveId[t.id] = o.slave_id.value
@@ -550,7 +532,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def statusUpdate(self, driver, status):
         tid = int(status.task_id.value)
         state = status.state
-        logging.info("status update: %s %s", tid, state)
+        logging.debug("status update: %s %s", tid, state)
         if (state == mesos_pb2.TASK_LOST 
             and tid in self.taskIdToSlaveId 
             and self.taskIdToSlaveId[tid] in self.slavesWithExecutors):
@@ -581,23 +563,17 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     job.error(code, message)
                 except Exception:
                     raise
-        else:
-            os._exit(1)
 
     def stop(self):
         if self.driver:
-            slave = mesos_pb2.SlaveID()
-            executor = mesos_pb2.ExecutorID()
-            executor.value = 'default'
-            for id in self.slavesWithExecutors:
-                slave.value = id
-                #print 'send', slave, executor
-                #print self.driver.sendFrameworkMessage(slave, executor, "shutdown")
+            #slave = mesos_pb2.SlaveID()
+            #executor = mesos_pb2.ExecutorID()
+            #executor.value = 'default'
+            #for id in self.slavesWithExecutors:
+            #    slave.value = id
+            #    self.driver.sendFrameworkMessage(slave, executor, "shutdown")
             self.driver.stop()
             self.driver.join()
-            #print 'stopped'
-        else:
-            raise
 
     def defaultParallelism(self):
         return 16

@@ -20,7 +20,6 @@ class SparkContext:
         self.master = master
         self.name = name
 
-        shuffleDir = '/tmp/dpark'
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
             self.isLocal = True
@@ -34,16 +33,13 @@ class SparkContext:
               or self.master.startswith('zoo://')):
             self.scheduler = MesosScheduler(self.master, "spark")
             self.isLocal = False
-            if os.path.exists('/mfs/tmp'):
-                shuffleDir = os.path.join('/mfs/tmp', 'dpark') # TODO uuid
         
         self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
         
-        env.start(True, shuffleDir=shuffleDir)
+        env.start(True)
         self.scheduler.start()
         self.started = True
-
         atexit.register(self.stop)
 
     def newRddId(self):
@@ -122,6 +118,6 @@ def parse_options():
     
     logging.basicConfig(format='[dpark] %(asctime)-15s %(message)s',
         level=options.quiet and logging.ERROR
-              or options.verbose and logging.DEBUG or logging.WARNING)
+              or options.verbose and logging.DEBUG or logging.INFO)
     
     return options
