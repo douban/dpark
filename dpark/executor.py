@@ -1,6 +1,7 @@
 #/usr/bin/env python
 import logging
 import os, sys, time
+import os.path
 import threading
 import cPickle
 import socket
@@ -9,9 +10,10 @@ import multiprocessing
 import mesos
 import mesos_pb2
 
-from accumulator import Accumulator
-from schedule import Success, OtherFailure
-import env
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from dpark.accumulator import Accumulator
+from dpark.schedule import Success, OtherFailure
+from dpark.env import env
 
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()
@@ -33,7 +35,7 @@ def run_task(task, aid):
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
 
 def init_env(args):
-    env.env.start(False, args)
+    env.start(False, args)
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
