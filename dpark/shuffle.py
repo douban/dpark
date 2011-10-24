@@ -71,7 +71,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     #    size = struct.unpack('h', size)[0]
                     #    v = f.read(size)
                     #    k, v = marshal.loads(v)
-                    for k,v in marshal.load(f):
+                    for k,v in cPickle.load(f):
                         func(k,v)
                     f.close()
                 except IOError, e:

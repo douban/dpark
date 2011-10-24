@@ -1,4 +1,5 @@
 import marshal
+import cPickle
 import logging
 import struct
 
@@ -116,6 +117,6 @@ class ShuffleMapTask(DAGTask):
             #    f.write(struct.pack('h', len(v)))
             #    f.write(v)
             #marshal.dump(buckets[i], f)
-            marshal.dump(buckets[i].items(), f)
+            cPickle.dump(buckets[i].items(), f)
             f.close()
         return LocalFileShuffle.getServerUri()

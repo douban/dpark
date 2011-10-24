@@ -448,13 +448,13 @@ class CoGroupedRDD(RDD):
     def compute(self, split):
         m = {}
         def getSeq(k):
-            return m.setdefault(k, [[] for i in self.rdds])
+            return m.setdefault(k, tuple([[] for i in self.rdds]))
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
-                if dep.rdd.aggregator:
-                    for k,vs in dep.rdd.iterator(dep.split):
-                        getSeq(k)[i].extend(vs)
-                else:
+#                if dep.rdd.aggregator:
+#                    for k,vs in dep.rdd.iterator(dep.split):
+#                        getSeq(k)[i].extend(vs)
+#                else:
                     for k,v in dep.rdd.iterator(dep.split):
                         getSeq(k)[i].append(v)
             elif isinstance(dep, ShuffleCoGroupSplitDep):
