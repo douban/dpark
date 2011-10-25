@@ -432,7 +432,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def getExecutorInfo(self, driver):
         dir = os.path.dirname(__file__)
         path = os.path.abspath(os.path.join(dir, 'executor'))
-        print path
         info = mesos_pb2.ExecutorInfo()
         info.executor_id.value = "default"
         info.uri = path
@@ -520,7 +519,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     break
         
         if not tasks:
-            logging.warning("reply to %s with %d tasks", oid, len(tasks))
+            logging.debug("reply to %s with %d tasks", oid, len(tasks))
         driver.replyToOffer(oid, tasks, {"timeout": "1"})
 
     def getResource(self, res, name):
@@ -586,7 +585,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)
-        self.slavesWithExecutors.remove(slave.value)
+        if slave.value in self.slavesWithExecutors:
+            self.slavesWithExecutors.remove(slave.value)
 
     def offerRescinded(self, driver, offer):
         logging.warning("offer rescinded: %s", offer)
