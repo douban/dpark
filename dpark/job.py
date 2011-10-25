@@ -70,6 +70,11 @@ class SimpleJob(Job):
     def tasksFinished(self):
         return self.finished.count(True)
 
+    @property
+    def taskEverageTime(self):
+        s = sum(task.used for i,task in enumerate(self.tasks) if self.finished[i])
+        return s / self.tasksFinished
+
     def addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
         if not loc:
@@ -103,13 +108,30 @@ class SimpleJob(Job):
 
     # Respond to an offer of a single slave from the scheduler by finding a task
     def slaveOffer(self, host, availableCpus): 
-        if self.tasksLaunched >= self.numTasks or availableCpus < CPUS_PER_TASK:
+        if availableCpus < CPUS_PER_TASK:
+            return
+        if self.tasksLaunched >= self.numTasks:
+            if (self.tasksFinished < self.numTasks 
+                    and self.tasksFinished > self.numTasks *.75):
+                # re-submit timeout task
+                avg = self.taskEverageTime
+                now = time.time()
+                oldest = sorted((task.start, task) 
+                    for i,task in enumerate(self.tasks) 
+                    if not self.finished[i])[0][1]
+                used = time.time() - oldest.start
+                if used > avg * 1.5:
+                    logging.warning("re-submit task %s for timeout %s",
+                        oldest, used)
+                    oldest.start = time.time()
+                    return oldest
             return
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
         i =  self.findTask(host, localOnly)
         if i is not None:
             task = self.tasks[i]
+            task.start = now
             preferred = self.isPreferredLocation(task, host)
             prefStr = preferred and "preferred" or "non-preferred"
             logging.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
@@ -134,9 +156,11 @@ class SimpleJob(Job):
         i = self.tidToIndex[tid]
         if not self.finished[i]:
             self.finished[i] = True
+            task = self.tasks[i]
+            task.used = time.time() - task.start
             logging.error("Finished TID %s (progress: %d/%d)", tid, self.tasksFinished, self.numTasks)
             from schedule import Success
-            self.sched.taskEnded(self.tasks[i], Success(), result, update)
+            self.sched.taskEnded(task, Success(), result, update)
             if self.tasksFinished == self.numTasks:
                 self.sched.jobFinished(self)
         else:
