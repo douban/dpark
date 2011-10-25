@@ -1,3 +1,4 @@
+import os
 import atexit
 import optparse
 
@@ -11,6 +12,11 @@ class DparkContext:
     nextShuffleId = 0
 
     def __init__(self, master=None, name=None):
+        if 'MESOS_SLAVE_PID' in os.environ:
+            from executor import run
+            run()
+            sys.exit(0)
+        
         options = parse_options()
         if master is None:
             master = options.master
@@ -31,10 +37,11 @@ class DparkContext:
             self.isLocal = True
         elif (self.master.startswith('mesos://')
               or self.master.startswith('zoo://')):
-            self.scheduler = MesosScheduler(self.master, "spark")
+            self.scheduler = MesosScheduler(self.master, options.self) 
             self.isLocal = False
         
-        self.defaultParallelism = self.scheduler.defaultParallelism()
+        #self.scheduler.defaultParallelism()
+        self.defaultParallelism = options.parallel 
         self.defaultMinSplits = max(self.defaultParallelism, 2)
         
         env.start(True)
@@ -111,7 +118,10 @@ def parse_options():
     parser.allow_interspersed_args=False
     parser.add_option("-m", "--master", type="string", default="local")
     parser.add_option("-n", "--name", type="string", default="dpark")
-    parser.add_option("-p", "--parallel", type="int", default=2)
+    parser.add_option("-p", "--parallel", type="int", default=1)
+    parser.add_option("--self", action="store_true",
+        help="user self as exectuor")
+
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
     options, args = parser.parse_args()

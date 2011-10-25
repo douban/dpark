@@ -70,8 +70,11 @@ class MyExecutor(mesos.Executor):
             self.shutdown(driver)
             os._exit(0)
 
-if __name__ == '__main__':
+def run():
     executor = MyExecutor()
     driver = mesos.MesosExecutorDriver(executor)
     executor.driver = driver
     driver.run()
+
+if __name__ == '__main__':
+    run()

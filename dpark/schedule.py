@@ -408,10 +408,10 @@ class MultiProcessScheduler(LocalScheduler):
 
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
-    def __init__(self, master, name='dpark'):
+    def __init__(self, master, use_self_as_exec=False):
         DAGScheduler.__init__(self)
         self.master = master
-        self.name = name
+        self.use_self_as_exec = use_self_as_exec
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -427,15 +427,19 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logging.debug("Mesos Scheudler driver started")
 
     def getFrameworkName(self, driver):
-        return self.name
+        return 'dpark: ' + sys.argv[0]
 
     def getExecutorInfo(self, driver):
-        dir = os.path.dirname(__file__)
-        path = os.path.abspath(os.path.join(dir, 'executor'))
-        print path
         info = mesos_pb2.ExecutorInfo()
-        info.executor_id.value = "default"
-        info.uri = path
+
+        if self.use_self_as_exec:
+            info.uri = os.path.abspath(sys.argv[0])
+            info.executor_id.value = sys.argv[0]
+        else:
+            dir = os.path.dirname(__file__)
+            info.uri = os.path.abspath(os.path.join(dir, 'executor'))
+            info.executor_id.value = "default"
+        
         mem = info.resources.add()
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
@@ -491,7 +495,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 launchedTask = False
                 for i,o in enumerate(offers):
                     if not enoughMem[i]: continue
-                    t = job.slaveOffer(o.hostname, availableCpus[i])
+                    t = job.slaveOffer(str(o.hostname), availableCpus[i])
                     if not t: continue
                     task = mesos_pb2.TaskDescription()
                     task.name = "task %s:%s" % (job.id, t.id)

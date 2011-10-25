@@ -1,5 +1,6 @@
 import time 
 import logging
+import socket
 
 TASK_STARTING = 0
 TASK_RUNNING  = 1
@@ -85,7 +86,9 @@ class SimpleJob(Job):
         self.allPendingTasks.append(i)
 
     def getPendingTasksForHost(self, host):
-        return self.pendingTasksForHost.setdefault(host, [])
+        h, hs, ips = socket.gethostbyname_ex(host)
+        return sum((self.pendingTasksForHost.setdefault(h, []) 
+            for h in [h] + hs), [])
 
     def findTaskFromList(self, l):
         for i in l:
@@ -101,6 +104,8 @@ class SimpleJob(Job):
             return noPrefTask
         if not localOnly:
             return self.findTaskFromList(self.allPendingTasks)
+        else:
+            print repr(host), self.pendingTasksForHost
 
     def isPreferredLocation(self, task, host):
         locs = task.preferredLocations()

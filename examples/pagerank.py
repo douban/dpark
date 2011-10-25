@@ -1,6 +1,6 @@
-
-import sys
-sys.path.append('../')
+#!/usr/bin/env python
+import sys, os.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark import DparkContext
 from dpark.bagel import Vertex, Edge, Message, Bagel

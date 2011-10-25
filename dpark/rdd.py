@@ -157,21 +157,22 @@ class RDD:
             return m1
         return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
 
-    def combineByKey(self, createCombiner, mergeValue, mergeCombiners, numSplits=None):
+    def combineByKey(self,  aggregator, numSplits=None):
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self.splits))
-        aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         partitioner = HashPartitioner(numSplits)
         return ShuffledRDD(self, aggregator, partitioner)
 
     def reduceByKey(self, func, numSplits=None):
-        return self.combineByKey(lambda x:x, func, func, numSplits)
+        aggregator = Aggregator(lambda x:x, func, func)
+        return self.combineByKey(aggregator, numSplits)
 
     def groupByKey(self, numSplits=None):
         createCombiner = lambda x: [x]
         mergeValue = lambda l, v: l+[v]
         mergeCombiners = lambda l1, l2: l1 + l2
-        return self.combineByKey(createCombiner, mergeValue, mergeCombiners, numSplits)
+        aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
+        return self.combineByKey(aggregator, numSplits)
 
     def join(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
@@ -276,7 +277,11 @@ class MappedRDD(RDD):
 
     def __setstate__(self, state):
         self.__dict__, code = state
-        self.func = load_func(code, globals())
+        try:
+            self.func = load_func(code, globals())
+        except:
+            print self.__class__, code
+            raise
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):

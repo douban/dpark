@@ -1,8 +1,6 @@
 import marshal, new, cPickle
 
 def dump_object(o):
-    if o is None:
-        return
     if type(o) == type(marshal):
         return 2, o.__name__
     if isinstance(o, new.function) and o.__module__ == '__main__':
@@ -32,9 +30,9 @@ def dump_func(f):
     code = f.func_code
     glob = {}
     for n in code.co_names:
-        r = dump_object(f.func_globals.get(n))
+        r = f.func_globals.get(n)
         if r is not None:
-            glob[n] = r
+            glob[n] = dump_object(r)
     closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None 
     return 0, marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
@@ -44,7 +42,13 @@ def load_func((flag, bytes), g={}):
     code, glob, name, defaults, closure = marshal.loads(bytes)
     glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
+    try:
+        closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
+    except:
+        print flag, name
+        for c in closure:
+            print c
+        raise
     return new.function(code, glob, name, defaults, closure)
 
 def reconstruct_closure(values):

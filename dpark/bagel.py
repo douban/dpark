@@ -21,7 +21,7 @@ class Edge:
 
 class Combiner:
     def createCombiner(self, msg): raise NotImplementedError
-    def mergeMsg(self, combiner, msg): raise NotImplementedError
+    def mergeValue(self, combiner, msg): raise NotImplementedError
     def mergeCombiners(self, a, b): raise NotImplementedError
 
 class Aggregator:
@@ -31,7 +31,7 @@ class Aggregator:
 class DefaultListCombiner(Combiner):
     def createCombiner(self, msg):
         return [msg]
-    def mergeMsg(self, combiner, msg):
+    def mergeValue(self, combiner, msg):
         return combiner+[msg]
     def mergeCombiners(self, a, b):
         return a + b
@@ -39,7 +39,7 @@ class DefaultListCombiner(Combiner):
 class DefaultValueCombiner(Combiner):
     def createCombiner(self, msg):
         return msg.value
-    def mergeMsg(self, combiner, msg):
+    def mergeValue(self, combiner, msg):
         return combiner + msg.value
     def mergeCombiners(self, a, b):
         return a + b
@@ -61,8 +61,7 @@ class Bagel:
             logging.info("Starting superstep %d", superstep)
             start = time.time()
             aggregated = cls.agg(verts, aggregator)
-            combinedMsgs = msgs.combineByKey(combiner.createCombiner,
-                combiner.mergeMsg, combiner.mergeCombiners, numSplits)
+            combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs)
             processed, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
                 lambda v, ms: compute(v, ms, aggregated, superstep))

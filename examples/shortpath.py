@@ -1,5 +1,6 @@
-import sys
-sys.path.append('../')
+#!/usr/bin/env python
+import sys, os.path
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark import Bagel, DparkContext
 
@@ -29,7 +30,7 @@ class SPMessage:
 
 class MinCombiner:
     def createCombiner(self, msg): return msg.value
-    def mergeMsg(self, comb, msg): return min(comb, msg.value)
+    def mergeValue(self, comb, msg): return min(comb, msg.value)
     def mergeCombiners(self, a, b): return min(a,b)
 
 def to_vertex((id, lines)):
