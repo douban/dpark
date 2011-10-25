@@ -3,17 +3,21 @@ import logging
 from pprint import pprint
 
 class Vertex:
-    @property
-    def id(self): raise NotImplementedError
-    @property
-    def active(self): raise NotImplementedError
-    
-class Message:
-    @property
-    def target_id(self):
-        raise NotImplementedError
+    def __init__(self, id, value, outEdges, active):
+        self.id = id
+        self.value = value
+        self.outEdges = outEdges
+        self.active = active
 
-class Edge: pass
+class Message:
+    def __init__(self, target_id, value):
+        self.target_id = target_id
+        self.value = value
+
+class Edge:
+    def __init__(self, target_id, value=0):
+        self.target_id = target_id
+        self.value = value
 
 class Combiner:
     def createCombiner(self, msg): raise NotImplementedError
@@ -24,13 +28,22 @@ class Aggregator:
     def createAggregator(self, vert): raise NotImplementedError
     def mergeAggregator(self, a, b): raise NotImplementedError
 
-class DefaultCombiner(Combiner):
+class DefaultListCombiner(Combiner):
     def createCombiner(self, msg):
         return [msg]
     def mergeMsg(self, combiner, msg):
         return combiner+[msg]
     def mergeCombiners(self, a, b):
         return a + b
+
+class DefaultValueCombiner(Combiner):
+    def createCombiner(self, msg):
+        return msg.value
+    def mergeMsg(self, combiner, msg):
+        return combiner + msg.value
+    def mergeCombiners(self, a, b):
+        return a + b
+
 
 class NullAggregator(Aggregator):
     def createAggregator(self, vert):
@@ -41,7 +54,7 @@ class NullAggregator(Aggregator):
 class Bagel:
     @classmethod
     def run(cls, ctx, verts, msgs, compute,
-            combiner=DefaultCombiner(), aggregator=NullAggregator(),
+            combiner=DefaultValueCombiner(), aggregator=NullAggregator(),
             superstep=0, numSplits=None):
 
         while True:
@@ -81,7 +94,7 @@ class Bagel:
             newVert, newMsgs = compute(vs[0], cs)
             numMsgs.add(len(newMsgs))
             if newVert.active:
-                numActiveVerts += 1
+                numActiveVerts.add(1)
             return [(newVert, newMsgs)]
         processed = grouped.flatMapValue(proc).cache()
         # force evaluation of processed RDD for accurate performance measurements

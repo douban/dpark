@@ -1,6 +1,7 @@
 import sys
+sys.path.append('../')
 
-from bagel import Bagel
+from dpark import Bagel, DparkContext
 
 class SPVertex:
     def __init__(self, id, value, outEdges, active):
@@ -46,7 +47,6 @@ def compute(self, vs, agg, superstep):
     return SPVertex(self.id, newValue, self.outEdges, False), outbox
 
 if __name__ == '__main__':
-    from context import DparkContext
     ctx = DparkContext()
     lines = ctx.textFile('graph.txt').map(lambda line:line.split(' '))
     vertices = lines.filter(lambda x:len(x)==3).groupBy(
