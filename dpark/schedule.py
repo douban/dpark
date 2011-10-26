@@ -524,7 +524,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     break
         
         if not tasks:
-            logging.warning("reply to %s with %d tasks", oid, len(tasks))
+            logging.debug("reply to %s with %d tasks", oid, len(tasks))
         driver.replyToOffer(oid, tasks, {"timeout": "1"})
 
     def getResource(self, res, name):
@@ -590,7 +590,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)
-        self.slavesWithExecutors.remove(slave.value)
+        if slave.value in self.slavesWithExecutors:
+            self.slavesWithExecutors.remove(slave.value)
 
     def offerRescinded(self, driver, offer):
         logging.warning("offer rescinded: %s", offer)
