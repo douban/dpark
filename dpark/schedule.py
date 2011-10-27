@@ -16,7 +16,7 @@ from job import *
 from env import env
 from broadcast import Broadcast
 
-EXECUTOR_MEMORY = 512
+EXECUTOR_MEMORY = 1024
 TASK_MEMORY = 50
 
 class TaskEndReason:
@@ -478,28 +478,28 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def resourceOffer(self, driver, oid, offers):
         logging.debug("get %d offers, %d jobs", len(offers), len(self.activeJobs))
-        for o in offers:
-            logging.debug("offers: %s", o)
         if not self.activeJobs:
             return driver.replyToOffer(oid, [], {"timeout": "0.1"})
         
         tasks = []
         availableCpus = [self.getResource(o.resources, 'cpus')
                             for o in offers]
-        enoughMem = [self.getResource(o.resources, 'mem')>EXECUTOR_MEMORY
-                    or o.slave_id.value in self.slavesWithExecutors
-                        for o in offers]
+        availableMem = [self.getResource(o.resources, 'mem')
+                            for o in offers]
         launchedTask = False
         for job in self.activeJobsQueue:
             while True:
                 launchedTask = False
                 for i,o in enumerate(offers):
-                    if not enoughMem[i]: continue
+                    if availableMem[i] <= TASK_MEMORY or availableCpus[i] <= 1:
+                        continue
                     t = job.slaveOffer(str(o.hostname), availableCpus[i])
-                    if not t: continue
+                    if not t:
+                        continue
                     task = mesos_pb2.TaskDescription()
-                    task.name = "task %s:%s" % (job.id, t.id)
-                    task.task_id.value = str(t.id)
+                    tid = "%s:%s:%s" % (job.id, t.id, t.tried)
+                    task.name = "task %s" % tid
+                    task.task_id.value = tid
                     task.slave_id.value = o.slave_id.value
                     task.data = cPickle.dumps((t, 1))
                     cpu = task.resources.add()
@@ -516,16 +516,20 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     self.jobTasks[job.id].add(t.id)
                     self.taskIdToJobId[t.id] = job.id
                     self.taskIdToSlaveId[t.id] = o.slave_id.value
-                    self.slavesWithExecutors.add(o.slave_id.value)
                     availableCpus[i] -= 1
+                    availableMem[i] -= TASK_MEMORY
+                    if o.slave_id.value not in self.slavesWithExecutors:
+                        availableMem[i] -= EXECUTOR_MEMORY
+                    self.slavesWithExecutors.add(o.slave_id.value)
                     launchedTask = True
 
                 if not launchedTask:
                     break
         
+        driver.replyToOffer(oid, tasks, {"timeout": "1"})
         if not tasks:
             logging.debug("reply to %s with %d tasks", oid, len(tasks))
-        driver.replyToOffer(oid, tasks, {"timeout": "1"})
+            self.driver.reviveOffers()
 
     def getResource(self, res, name):
         for r in res:
@@ -536,13 +540,20 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return state >= mesos_pb2.TASK_FINISHED
 
     def statusUpdate(self, driver, status):
-        tid = int(status.task_id.value)
+        tid = status.task_id.value.split(':')
+        if len(tid) != 3 or not tid[1].isdigit():
+            logging.warning("invalid task id: %s", status.task_id.value)
+            return
+        tid = int(tid[1])
         state = status.state
         logging.debug("status update: %s %s", tid, state)
+
         if (state == mesos_pb2.TASK_LOST 
             and tid in self.taskIdToSlaveId 
             and self.taskIdToSlaveId[tid] in self.slavesWithExecutors):
+            logging.warning("slave %s lost", self.taskIdToSlaveId[tid])
             self.slavesWithExecutors.remove(self.taskIdToSlaveId[tid])
+
         jid = self.taskIdToJobId.get(tid)
         if jid in self.activeJobs:
             if self.isFinished(state):
@@ -563,12 +574,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def error(self, driver, code, message):
         logging.error("Mesos error: %s (code: %s)", message, code)
-        if self.activeJobs:
-            for id, job in self.activeJobs.items():
-                try:
-                    job.error(code, message)
-                except Exception:
-                    raise
+        self.driver.reviveOffers()
+#        if self.activeJobs:
+#            for id, job in self.activeJobs.items():
+#                try:
+#                    job.error(code, message)
+#                except Exception:
+#                    raise
 
     def stop(self):
         if self.driver:
@@ -593,6 +605,14 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         if slave.value in self.slavesWithExecutors:
             self.slavesWithExecutors.remove(slave.value)
 
+    def killTask(self, task):
+        jid = self.taskIdToJobId.get(task.id)
+        if jid :
+            tid = mesos_pb2.TaskID()
+            tid.value = "%s:%s:%s" % (jid, task.id, task.tried)
+            self.driver.killTask(tid)
+        else:
+            logging.warning("can not kill %s because of job had gone", task)
+
     def offerRescinded(self, driver, offer):
         logging.warning("offer rescinded: %s", offer)
-

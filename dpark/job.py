@@ -1,4 +1,5 @@
 import time 
+import os
 import logging
 import socket
 
@@ -113,8 +114,6 @@ class SimpleJob(Job):
 
     # Respond to an offer of a single slave from the scheduler by finding a task
     def slaveOffer(self, host, availableCpus): 
-        if availableCpus < CPUS_PER_TASK:
-            return
         if self.tasksLaunched >= self.numTasks:
             if (self.tasksFinished < self.numTasks 
                     and self.tasksFinished > self.numTasks *.75):
@@ -125,18 +124,21 @@ class SimpleJob(Job):
                     for i,task in enumerate(self.tasks) 
                     if not self.finished[i])[0][1]
                 used = time.time() - oldest.start
-                if used > avg * 1.5:
+                if used > avg * 2:
                     logging.warning("re-submit task %s for timeout %s",
-                        oldest, used)
+                        oldest.id, used)
                     oldest.start = time.time()
+                    oldest.tried += 1
                     return oldest
             return
+
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
         i =  self.findTask(host, localOnly)
         if i is not None:
             task = self.tasks[i]
             task.start = now
+            task.tried = 0
             preferred = self.isPreferredLocation(task, host)
             prefStr = preferred and "preferred" or "non-preferred"
             logging.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
@@ -163,13 +165,19 @@ class SimpleJob(Job):
             self.finished[i] = True
             task = self.tasks[i]
             task.used = time.time() - task.start
-            logging.error("Finished TID %s (progress: %d/%d)", tid, self.tasksFinished, self.numTasks)
+            logging.error("Finished TID %s (progress: %d/%d) in %.2fs",
+                tid, self.tasksFinished, self.numTasks, task.used)
             from schedule import Success
             self.sched.taskEnded(task, Success(), result, update)
             if self.tasksFinished == self.numTasks:
+                ts = [t.used for t in self.tasks]
+                tried = [t.tried for t in self.tasks]
+                logging.info("job %d finished: min=%s, avg=%s, max=%s, maxtry=%s",
+                    self.id, min(ts), sum(ts)/len(ts), max(ts), max(tried))
                 self.sched.jobFinished(self)
         else:
-            logging.warning("Ignoring task-finished event for TID %d because task %d is already finished", tid, i)
+            logging.warning("Ignoring task-finished event for TID %d "
+                + "because task %d is already finished", tid, i)
 
     def taskLost(self, tid, status, reason):
         index = self.tidToIndex[tid]
@@ -178,22 +186,28 @@ class SimpleJob(Job):
             self.launched[index] = False
             from schedule import FetchFailed
             if isinstance(reason, FetchFailed):
-                logging.warning("Loss was due to fetch failure from %s", reason.serverUri)
+                logging.warning("Loss was due to fetch failure from %s",
+                    reason.serverUri)
                 self.sched.taskEnded(self.tasks[index], reason, None, None)
                 self.finished[index] = True
                 if self.tasksFinished == self.numTasks:
                     self.sched.jobFinished(self)
                 return
             logging.warning("re-enqueue the task as pending for a max number of retries")
+            if status == TASK_FAILED:
+                logging.warning("task %s failed with: %s", 
+                    self.tasks[index], reason.message) 
             self.addPendingTask(index)
             if status in (TASK_FAILED, TASK_LOST):
                 self.numFailures[index] += 1
                 if self.numFailures[index] > MAX_TASK_FAILURES:
                     logging.error("Task %d failed more than %d times; aborting job", index, MAX_TASK_FAILURES)
-                    self.abort("Task %d failed more than %d times" % (index, MAX_TASK_FAILURES))
+                    self.abort("Task %d failed more than %d times" 
+                        % (index, MAX_TASK_FAILURES))
 
         else:
-            logging.warning("Ignoring task-lost event for TID %d because task %d is already finished")
+            logging.warning("Ignoring task-lost event for TID %d "
+                +"because task %d is already finished")
 
     def error(self, code, message):
         self.abort("Mesos error: %s (error code: %d)" % (message, code))
@@ -202,3 +216,5 @@ class SimpleJob(Job):
         self.failed = True
         self.causeOfFailure = message
         self.sched.jobFinished(self)
+        self.sched.stop()
+        os._exit(1)

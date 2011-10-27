@@ -69,7 +69,7 @@ class DparkContext:
     
     def textFile(self, path, numSplits=None, splitSize=None, ext=''):
         if not os.path.exists(path):
-            raise IOError("not exists")
+            raise IOError("not exists: %s" % path)
         if os.path.isdir(path):
             rdds = [TextFileRDD(self, os.path.join(path, n),numSplits,splitSize) 
                      for n in os.listdir(path) 

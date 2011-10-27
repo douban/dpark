@@ -1,5 +1,6 @@
 import os, os.path
 import threading
+import socket
 from itertools import *
 
 from utils import load_func, dump_func
@@ -28,7 +29,10 @@ class RDD:
 
     def __len__(self):
         return len(self.splits)
-    
+   
+    def __getslice__(self, i,j):
+        return SliceRDD(self, i, j)
+
     @property
     def splits(self):
         return self._splits
@@ -489,9 +493,9 @@ class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
         self.rdds = rdds
-        self.splits = [UnionSplit(0, rdd, split) 
+        self._splits = [UnionSplit(0, rdd, split) 
                 for rdd in rdds for split in rdd.splits]
-        for i,split in enumerate(self.splits):
+        for i,split in enumerate(self._splits):
             split.index = i
         self.dependencies = []
         pos = 0
@@ -507,6 +511,24 @@ class UnionRDD(RDD):
 
     def compute(self, split):
         return split.rdd.iterator(split.split)
+
+class SliceRDD(RDD):
+    def __init__(self, rdd, i, j):
+        RDD.__init__(self, rdd.ctx)
+        self.rdd = rdd
+        self.i = i
+        self.j = j
+        self._splits = rdd.splits[i:j]
+        self.dependencies = [RangeDependency(rdd, i, 0, j-i)]
+
+    def __str__(self):
+        return '<SliceRDD [%d:%d] of %s>' % (self.i, self.j, self.rdd)
+
+    def preferredLocations(self, split):
+        return self.rdd.preferredLocations(split)
+    
+    def compute(self, split):
+        return self.rdd.iterator(split)
 
 
 class ParallelCollectionSplit:
@@ -586,7 +608,7 @@ class TextFileRDD(RDD):
         return '<TextFileRDD %s>' % self.path
 
     def compute(self, split):
-        f = open(self.path)
+        f = open(self.path, 'r', 4096 * 1024)
         start = split.index * self.splitSize
         end = start + self.splitSize
         if start > 0:
@@ -607,10 +629,13 @@ class TextFileRDD(RDD):
         f.close()
 
 class OutputTextFileRDD(RDD):
-    def __init__(self, rdd, path):
+    def __init__(self, rdd, path, ext=''):
         RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
         self.path = os.path.abspath(path)
+        if ext and not ext.startswith('.'):
+            ext = '.' + ext
+        self.ext=ext
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
@@ -627,11 +652,15 @@ class OutputTextFileRDD(RDD):
         return self.rdd.splits
 
     def compute(self, split):
-        path = os.path.join(self.path, str(split.index))
-        f = open(path,'w')
-        for line in self.rdd.iterator(split):
-            f.write(line)
-            if not line.endswith('\n'):
-                f.write('\n')
-        f.close()
+        path = os.path.join(self.path, 
+            "%04d%s" % (split.index, self.ext))
+        if not os.path.exists(path):
+            tpath = path + "%s.%d" % (socket.gethostname(), os.getpid())
+            f = open(tpath,'w', 4096 * 1024)
+            for line in self.rdd.iterator(split):
+                f.write(line)
+                if not line.endswith('\n'):
+                    f.write('\n')
+            f.close()
+            os.rename(tpath, path)
         yield path
