@@ -79,6 +79,17 @@ class DparkContext:
         else:
             return TextFileRDD(self, path, numSplits, splitSize)
 
+    def csvFile(self, path, numSplits=None, splitSize=None):
+        if not os.path.exists(path):
+            raise IOError("not exists: %s" % path)
+        if os.path.isdir(path):
+            rdds = [CSVFileRDD(self, os.path.join(path, n),numSplits,splitSize) 
+                     for n in os.listdir(path) 
+                     if not os.path.isdir(os.path.join(path, n))]
+            return self.union(rdds)
+        else:
+            return CSVFileRDD(self, path, numSplits, splitSize)
+
 #    def objectFile(self, path, minSplits=None):
 #        if minSplits is None:
 #            minSplits = self.defaultMinSplits

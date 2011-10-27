@@ -272,7 +272,7 @@ class DAGScheduler(Scheduler):
                    if isinstance(evt.reason, FetchFailed):
                        pass
                    else:
-                       logging.error("%s %s %s", evt.reason, type(evt.reason), isinstance(evt.reason, Success))
+                       logging.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
                        raise evt.reason
                        raise
 

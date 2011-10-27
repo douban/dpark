@@ -1,7 +1,9 @@
 import os, os.path
 import threading
 import socket
-from itertools import *
+import csv
+import cStringIO
+from itertools import islice
 
 from utils import load_func, dump_func
 from dependency import *
@@ -608,25 +610,78 @@ class TextFileRDD(RDD):
         return '<TextFileRDD %s>' % self.path
 
     def compute(self, split):
-        f = open(self.path, 'r', 4096 * 1024)
         start = split.index * self.splitSize
         end = start + self.splitSize
+
+        f = open(self.path, 'r', 4096 * 1024)
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
-            skip = byte != '\n'
-        else:
-            f.seek(start)
-            skip = False
+            while byte != '\n':
+                byte = f.read(1)
+                start += 1
+
         for line in f:
             if start >= end: break
             start += len(line)
-            if skip:
-                skip = False
-            else:
-                if line[-1] == '\n': line = line[:-1]
-                yield line
+            if line[-1] == '\n': line = line[:-1]
+            yield line
         f.close()
+
+
+class CSVFileRDD(RDD):
+    def __init__(self, ctx, path, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
+        if not os.path.exists(path):
+            raise IOError("not exists")
+        self.path = os.path.abspath(path)
+        self.size = size = os.path.getsize(path)
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = 64*1024*1024
+            else:
+                splitSize = size / numSplits
+        
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.splitSize = splitSize
+        self._splits = [Split(i) for i in range(n)]
+
+    def __str__(self):
+        return '<CSVFileRDD %s>' % self.path
+
+    def compute(self, split):
+        if len(self.splits) == 1:
+            f = open(self.path, 'r', 4096 * 1024)
+        else:
+            f = cStringIO.StringIO(self.read_block(split))
+        for rows in csv.reader(f):
+            yield rows
+        f.close()
+
+    def read_block(self, split):
+        start = split.index * self.splitSize
+        end = start + self.splitSize
+        f = open(self.path, 'r', 4096 * 1024)
+        if start > 0:
+            f.seek(start-1)
+            byte = f.read(1)
+            while byte != '\n':
+                byte = f.read(1)
+                start += 1
+
+        block = f.read(end-start)
+        if len(block) == end-start and block[-1] != '\n':
+            ahead = f.read(1)
+            while ahead[-1] != '\n':
+                c = f.read(1)
+                ahead += c 
+                if not c:
+                    break
+            block += ahead
+        return block
+
 
 class OutputTextFileRDD(RDD):
     def __init__(self, rdd, path, ext=''):
@@ -656,7 +711,7 @@ class OutputTextFileRDD(RDD):
             "%04d%s" % (split.index, self.ext))
         if not os.path.exists(path):
             tpath = path + "%s.%d" % (socket.gethostname(), os.getpid())
-            f = open(tpath,'w', 4096 * 1024)
+            f = open(tpath,'w', 4096 * 1024 * 4)
             for line in self.rdd.iterator(split):
                 f.write(line)
                 if not line.endswith('\n'):
