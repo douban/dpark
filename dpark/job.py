@@ -13,6 +13,7 @@ TASK_LOST     = 5
 class Job:
     def __init__(self):
         self.id = self.newJobId()
+        self.start = time.time()
 
     def slaveOffer(self, s, availableCpus):
         raise NotImplementedError
@@ -47,6 +48,10 @@ class SimpleJob(Job):
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
         self.tidToIndex = {}
+        self.numTasks = len(tasks)
+        self.tasksLaunched = 0
+        self.tasksFinished = 0
+        self.total_used = 0
 
         self.lastPreferredLaunchTime = time.time()
 
@@ -61,21 +66,8 @@ class SimpleJob(Job):
             self.addPendingTask(i)
 
     @property
-    def numTasks(self):
-        return len(self.tasks)
-
-    @property
-    def tasksLaunched(self):
-        return self.launched.count(True)
-
-    @property
-    def tasksFinished(self):
-        return self.finished.count(True)
-
-    @property
     def taskEverageTime(self):
-        s = sum(task.used for i,task in enumerate(self.tasks) if self.finished[i])
-        return s / self.tasksFinished
+        return self.total_used / self.tasksFinished
 
     def addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
@@ -145,6 +137,7 @@ class SimpleJob(Job):
                 self.id, i, task, host, prefStr)
             self.tidToIndex[task.id] = i
             self.launched[i] = True
+            self.tasksLaunched += 1
             if preferred:
                 self.lastPreferredLaunchTime = now
             return task
@@ -163,8 +156,10 @@ class SimpleJob(Job):
         i = self.tidToIndex[tid]
         if not self.finished[i]:
             self.finished[i] = True
+            self.tasksFinished += 1
             task = self.tasks[i]
             task.used = time.time() - task.start
+            self.total_used += task.used
             logging.error("Finished TID %s (progress: %d/%d) in %.2fs",
                 tid, self.tasksFinished, self.numTasks, task.used)
             from schedule import Success
@@ -172,8 +167,9 @@ class SimpleJob(Job):
             if self.tasksFinished == self.numTasks:
                 ts = [t.used for t in self.tasks]
                 tried = [t.tried for t in self.tasks]
-                logging.info("job %d finished: min=%s, avg=%s, max=%s, maxtry=%s",
-                    self.id, min(ts), sum(ts)/len(ts), max(ts), max(tried))
+                logging.info("job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
+                    self.id, time.time()-self.start, 
+                    min(ts), sum(ts)/len(ts), max(ts), max(tried))
                 self.sched.jobFinished(self)
         else:
             logging.warning("Ignoring task-finished event for TID %d "
@@ -184,12 +180,15 @@ class SimpleJob(Job):
         if not self.finished[index]:
             logging.warning("Lost TID %s (task %d:%d)", tid, self.id, index)
             self.launched[index] = False
+            self.tasksLaunched -= 1
+
             from schedule import FetchFailed
             if isinstance(reason, FetchFailed):
                 logging.warning("Loss was due to fetch failure from %s",
                     reason.serverUri)
                 self.sched.taskEnded(self.tasks[index], reason, None, None)
                 self.finished[index] = True
+                self.tasksFinished += 1
                 if self.tasksFinished == self.numTasks:
                     self.sched.jobFinished(self)
                 return

@@ -35,13 +35,19 @@ class DparkContext:
         elif self.master.startswith('process'):
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.isLocal = True
-        elif (self.master.startswith('mesos://')
-              or self.master.startswith('zoo://')):
+        elif (self.master.startswith('mesos')
+              or self.master.startswith('zoo')):
+            if '://' not in self.master:
+                self.master = os.environ.get('MESOS_MASTER')
+                if not self.master:
+                    raise ValueError("mesos master url needed")
             self.scheduler = MesosScheduler(self.master, options.self) 
             self.isLocal = False
         
-        #self.scheduler.defaultParallelism()
-        self.defaultParallelism = options.parallel 
+        if options.parallel:
+            self.defaultParallelism = options.parallel
+        else:
+            self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
         
         env.start(True)
@@ -129,7 +135,7 @@ def parse_options():
     parser.allow_interspersed_args=False
     parser.add_option("-m", "--master", type="string", default="local")
     parser.add_option("-n", "--name", type="string", default="dpark")
-    parser.add_option("-p", "--parallel", type="int", default=1)
+    parser.add_option("-p", "--parallel", type="int", default=0)
     parser.add_option("--self", action="store_true",
         help="user self as exectuor")
 

@@ -8,7 +8,7 @@ dpark = DparkContext()
 
 today = date.today()
 day = date.today().strftime("%Y%m%d")
-for i in range(60):
+for i in range(1):
     day = today - timedelta(days=i)
     theday = day - timedelta(days=1)
     path = '/mfs/log/weblog/%s/' % theday.strftime("%Y/%m/%d")
@@ -26,6 +26,7 @@ for i in range(60):
         if len(alllog) < 500:
             continue
         weblog = alllog.pipe('/mfs/log/nginx-log/format_access_log --stream')
+        print weblog.first()
         weblog.saveAsTextFile(path).collect()
     except IOError:
         pass

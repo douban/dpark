@@ -506,7 +506,7 @@ class UnionRDD(RDD):
             pos += len(rdd)
 
     def __str__(self):
-        return '<union of %s>' % (','.join(str(rdd) for rdd in self.rdds))
+        return '<union %d %s>' % (len(self.rdds), ','.join(str(rdd) for rdd in self.rdds[:2]))
 
     def preferredLocations(self, split):
         return split.rdd.preferredLocations(split.split)
@@ -710,7 +710,9 @@ class OutputTextFileRDD(RDD):
         path = os.path.join(self.path, 
             "%04d%s" % (split.index, self.ext))
         if not os.path.exists(path):
-            tpath = path + "%s.%d" % (socket.gethostname(), os.getpid())
+            tpath = os.path.join(self.path, 
+                ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+                socket.gethostname(), os.getpid()))
             f = open(tpath,'w', 4096 * 1024 * 4)
             for line in self.rdd.iterator(split):
                 f.write(line)

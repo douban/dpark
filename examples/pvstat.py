@@ -14,19 +14,17 @@ path = '/mfs/log/weblog/%s/' % theday.strftime("%Y/%m/%d")
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
 
 weblog = dpark.csvFile(path)
-#print weblog.first()
 bad_ip = weblog.filter(
-        lambda line:not line[BID]
+        lambda line:len(line) > BID and not line[BID]
     ).map(
         lambda line:(line[IP], 1)
     ).reduceByKey(
         lambda x,y:x+y
     ).filter(
-        lambda (ip,c): c > 200
+        lambda (ip,c): c > 600
     ).collectAsMap()
 
 #print sorted(bad_ip.iteritems(), key=itemgetter(1), reverse=True)[:10]
-bad_ip = set(ip for ip,c in bad_ip.iteritems() if c > 200)
 print len(bad_ip)
 
 def gen_data(line):
@@ -36,7 +34,7 @@ def gen_data(line):
             return
         upv, apv = (1, 0) if uid else (0, 1)
         pt = pt and float(pt) or 0.1
-        if pt > 3: pt = 0
+        if pt > 3: pt = 0.1
         bid = '' if uid else bid
         aip = '' if uid else ip
         v = (upv,apv,pt,uid,bid,ip,aip)
@@ -67,7 +65,7 @@ weblog = weblog.flatMap(gen_data)
 print weblog.first()
 
 pvstat = weblog.combineByKey(agg).filter(
-        lambda (_,vs): vs[0] > 10000
+        lambda (_,vs): vs[0] > 1000000
     ).mapValue(
         lambda (upv,apv,pt,uid,bid,ip,aip):
             (upv,apv,pt/(upv+apv),len(uid),len(bid),len(ip),len(aip))
