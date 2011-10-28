@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys, os, os.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date,timedelta
 from dpark import DparkContext
 from operator import itemgetter
@@ -8,7 +8,7 @@ from dpark.dependency import Aggregator
 
 dpark = DparkContext()
 
-theday = date.today() - timedelta(days=1)
+theday = date.today() - timedelta(days=3)
 path = '/mfs/log/weblog/%s/' % theday.strftime("%Y/%m/%d")
 
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
@@ -65,7 +65,7 @@ weblog = weblog.flatMap(gen_data)
 print weblog.first()
 
 pvstat = weblog.combineByKey(agg).filter(
-        lambda (_,vs): vs[0] > 1000000
+        lambda (_,vs): vs[0] > 10000
     ).mapValue(
         lambda (upv,apv,pt,uid,bid,ip,aip):
             (upv,apv,pt/(upv+apv),len(uid),len(bid),len(ip),len(aip))

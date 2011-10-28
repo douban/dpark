@@ -6,7 +6,7 @@ def dump_object(o):
     if isinstance(o, new.function) and o.__module__ == '__main__':
         return 1, dump_func(o)
     try:
-        return 3, cPickle.dumps(o)
+        return 3, cPickle.dumps(o, -1)
     except Exception:
         if isinstance(o, new.function):
             return 1, dump_func(o)
@@ -26,7 +26,7 @@ def load_object((t, d)):
 
 def dump_func(f):
     if not isinstance(f, new.function):
-        return 1, cPickle.dumps(f)
+        return 1, cPickle.dumps(f, -1)
     code = f.func_code
     glob = {}
     for n in code.co_names:
@@ -36,7 +36,7 @@ def dump_func(f):
     closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None 
     return 0, marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
-def load_func((flag, bytes), g={}):
+def load_func((flag, bytes)):
     if flag == 1:
         return cPickle.loads(bytes)
     code, glob, name, defaults, closure = marshal.loads(bytes)
@@ -80,7 +80,7 @@ if __name__ == "__main__":
 #    glob_func = load_func(dump_func(glob_func))
 #    get_closure = load_func(dump_func(get_closure))
     f = get_closure(10)
-    ff = load_func(dump_func(f), globals())
+    ff = load_func(dump_func(f))
     #print globals()
     print f(2)
     print ff(2)

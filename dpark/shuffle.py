@@ -202,7 +202,7 @@ def test():
     
     path = LocalFileShuffle.getOutputFile(1, 0, 0) 
     f = open(path, 'w')
-    f.write(cPickle.dumps([('key','value')]))
+    f.write(cPickle.dumps([('key','value')], -1))
     f.close()
     
     uri = LocalFileShuffle.getServerUri()

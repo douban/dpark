@@ -5,6 +5,9 @@ class Dependency:
     def __init__(self, rdd):
         self.rdd = rdd
 
+    def __getstate__(self):
+        raise ValueError("Should not pickle dependency: %r" % self)
+
 class NarrowDependency(Dependency):
     isShuffle = False
     def getParents(self, outputPartition):
@@ -40,18 +43,22 @@ class RangeDependency(NarrowDependency):
 
 
 class Aggregator:
-    def __init__(self, createCombiner, mergeValue, mergeCombiners):
+    def __init__(self, createCombiner, mergeValue,
+            mergeCombiners):
         self.createCombiner = createCombiner
         self.mergeValue = mergeValue
         self.mergeCombiners = mergeCombiners
 
     def __getstate__(self):
-        return (dump_func(self.createCombiner), dump_func(self.mergeValue), dump_func(self.mergeCombiners))
+        return (dump_func(self.createCombiner),
+            dump_func(self.mergeValue),
+            dump_func(self.mergeCombiners))
 
     def __setstate__(self, state):
         c1, c2, c3 = state
-        g = globals()
-        self.createCombiner, self.mergeValue, self.mergeCombiners = load_func(c1, g), load_func(c2, g), load_func(c3, g)
+        self.createCombiner = load_func(c1)
+        self.mergeValue = load_func(c2)
+        self.mergeCombiners = load_func(c3)
 
 class Partitioner:
     @property
@@ -83,4 +90,3 @@ class ShuffleDependency(Dependency):
         self.shuffleId = shuffleId
         self.aggregator = aggregator
         self.partitioner = partitioner
-

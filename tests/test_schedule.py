@@ -1,8 +1,10 @@
+import sys
+sys.path.insert(0, './')
 import pickle
 
-from task import *
-from schedule import *
-from env import env
+from dpark.task import *
+from dpark.schedule import *
+from dpark.env import env
 
 class MockDriver():
     def reviveOffers(self):
@@ -41,15 +43,15 @@ if __name__ == '__main__':
     
     status = mesos_pb2.TaskStatus()
     status.state = 3
-    status.task_id.value = "1"
-    status.data = pickle.dumps((1, '', [], {}))
+    status.task_id.value = ":1:"
+    status.data = pickle.dumps((1, OtherFailure("failed"), [], {}))
     sched.statusUpdate(driver, status)
     
     sched.resourceOffer(driver, "2", [offer])
 
     status.state = 2
     for i in range(10):
-        status.task_id.value = str(tasks[i].id)
+        status.task_id.value = ":%s:" % str(tasks[i].id)
         sched.statusUpdate(driver, status)
 
     sched.error(driver, 1, 'error')

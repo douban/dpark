@@ -102,7 +102,7 @@ class DparkContext:
 #        return self.sequenceFile(path, minSplits).flatMap(lambda x: loads(x))
 
     def union(self, rdds):
-        return UnionRDD(self, rdds)
+        return UnionRDD(rdds)
 
     def accumulator(self, init, param=None):
         return Accumulator(init, param)
@@ -121,14 +121,11 @@ class DparkContext:
 
     def runJob(self, rdd, func, partitions=None, allowLocal=False):
         if partitions is None:
-            partitions = range(len(rdd.splits))
-        return self.scheduler.runJob(rdd, lambda _,it: func(it), partitions, allowLocal)
+            partitions = range(len(rdd))
+        return self.scheduler.runJob(rdd, func, partitions, allowLocal)
 
     def __getstate__(self):
-        return (self.master, self.name)
-
-    def __setstate__(self, state):
-        self.master, self.name = state
+        raise ValueError("should not pickle ctx")
 
 def parse_options():
     parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")

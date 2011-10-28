@@ -60,7 +60,7 @@ class SerializingCache(Cache):
 
     def put(self, key, value):
         try:
-            v = cPickle.dumps(value)
+            v = cPickle.dumps(value, -1)
             self.map.put(key, v)
         except Exception, e:
             logging.error("cache key %s err", key)
@@ -252,7 +252,7 @@ def test():
     nums = dc.parallelize(range(100), 10)
     cache = mmapCache
     tracker = CacheTracker(True, cache)
-    tracker.registerRDD(nums.id, len(nums.splits))
+    tracker.registerRDD(nums.id, len(nums))
     split = nums.splits[0]
     print tracker.getOrCompute(nums, split)
     print tracker.getOrCompute(nums, split)

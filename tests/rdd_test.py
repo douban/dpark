@@ -1,12 +1,14 @@
-import pickle
+import sys
+sys.path.insert(0, './')
+import cPickle
 import unittest
 import pprint
-from context import *
-from rdd import *
+from dpark.context import *
+from dpark.rdd import *
 
 class TestRDD(unittest.TestCase):
     def setUp(self):
-        self.sc = SparkContext("local", "test")
+        self.sc = DparkContext("local", "test")
 
     def tearDown(self):
         self.sc.stop()
@@ -14,9 +16,9 @@ class TestRDD(unittest.TestCase):
     def test_parallel_collection(self):
         slices = ParallelCollection.slice(xrange(5), 3)
         self.assertEqual(len(slices), 3)
-        self.assertEqual(slices[0], range(2))
-        self.assertEqual(slices[1], range(2, 4))
-        self.assertEqual(slices[2], range(4, 5))
+        self.assertEqual(list(slices[0]), range(2))
+        self.assertEqual(list(slices[1]), range(2, 4))
+        self.assertEqual(list(slices[2]), range(4, 5))
 
     def test_basic_operation(self):
         d = range(4)
@@ -58,11 +60,11 @@ class TestRDD(unittest.TestCase):
 
         # group with
         self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
-                [(1, [[4],[]]), (2, [[5],[1]]), (3,[[6,7],[2]]), (4,[[],[3]])])
+                [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
         nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2)
         self.assertEqual(sorted(nums.groupWith(nums2, nums3).collect()),
-                [(1, [[4],[],[3]]), (2, [[5],[1],[]]), (3,[[6,7],[2],[]]), 
-                (4,[[],[3],[1]]), (5,[[],[],[2]])])
+                [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
+                (4,([],[3],[1])), (5,([],[],[2]))])
     
     def test_accumulater(self):
         d = range(4)
@@ -81,9 +83,10 @@ class TestRDD(unittest.TestCase):
         n = len(open(__file__).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 6)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 7)
         prefix = 'prefix:'
-        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout').collect(), ['/tmp/tout/0']) 
+        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True).collect(),
+            ['/tmp/tout/0000']) 
         d = self.sc.textFile('/tmp/tout')
         n = len(open(__file__).readlines())
         self.assertEqual(d.count(), n)
@@ -97,5 +100,5 @@ class TestRDD(unittest.TestCase):
 if __name__ == "__main__":
     import logging
     #logging.basicConfig(format="%(process)d:%(threadName)s:%(levelname)s %(message)s", level=logging.INFO)
-    psc = SparkContext("process")
+    #psc = DparkContext("process")
     unittest.main()

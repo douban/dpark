@@ -6,16 +6,16 @@ import struct
 from utils import load_func, dump_func
 from shuffle import LocalFileShuffle
 
-class TaskContext:
-    def __init__(self, stageId, splitId, attemptId):
-        self.stageId = stageId
-        self.splitId = splitId
-        self.attemptId = attemptId
-
-class TaskResult:
-    def __init__(self, value, accumUpdates):
-        self.value = value
-        self.accumUpdates = accumUpdates
+#class TaskContext:
+#    def __init__(self, stageId, splitId, attemptId):
+#        self.stageId = stageId
+#        self.splitId = splitId
+#        self.attemptId = attemptId
+#
+#class TaskResult:
+#    def __init__(self, value, accumUpdates):
+#        self.value = value
+#        self.accumUpdates = accumUpdates
 
 class Task:
     nextId = 0
@@ -58,14 +58,10 @@ class ResultTask(DAGTask):
 
     def run(self, attemptId):
         logging.debug("run task %s with %d", self, attemptId)
-        context = TaskContext(self.stageId, self.partition, attemptId)
-        return self.func(context, self.rdd.iterator(self.split))
+        return self.func(self.rdd.iterator(self.split))
 
     def preferredLocations(self):
         return self.locs
-
-    def __hash__(self):
-        return self.rdd.id * 99999 + self.partition
 
     def __str__(self):
         return "<ResultTask(%d, %d) of %s" % (self.stageId, self.partition, self.rdd)
@@ -77,31 +73,34 @@ class ResultTask(DAGTask):
 
     def __setstate__(self, state):
         self.__dict__, code = state
-        self.func = load_func(code, globals())
-
+        self.func = load_func(code)
+        
 
 class ShuffleMapTask(DAGTask):
     def __init__(self, stageId, rdd, dep, partition, locs):
         DAGTask.__init__(self, stageId)
         self.stageId = stageId
-        self.dep = dep
+        self.rdd = rdd
+        self.shuffleId = dep.shuffleId
+        self.aggregator = dep.aggregator
+        self.partitioner = dep.partitioner
         self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
 
     def __str__(self):
-        return '<shuffletask(%d,%d) of %s>' % (self.stageId, self.partition, self.dep.rdd)
+        return '<shuffletask(%d,%d) of %s>' % (self.stageId, self.partition, self.rdd)
 
     def run(self, attempId):
-        logging.debug("shuffling %d of %s", self.partition, self.dep.rdd)
-        aggregator= self.dep.aggregator
-        partitioner = self.dep.partitioner
+        logging.debug("shuffling %d of %s", self.partition, self.rdd)
+        aggregator= self.aggregator
+        partitioner = self.partitioner
         numOutputSplits = partitioner.numPartitions
         buckets = [{} for i in range(numOutputSplits)]
         getPartition = partitioner.getPartition
         mergeValue = aggregator.mergeValue
         createCombiner = aggregator.createCombiner
-        for k,v in self.dep.rdd.iterator(self.split):
+        for k,v in self.rdd.iterator(self.split):
             bucketId = getPartition(k)
             bucket = buckets[bucketId]
             if k in bucket:
@@ -109,7 +108,7 @@ class ShuffleMapTask(DAGTask):
             else:
                 bucket[k] = createCombiner(v)
         for i in range(numOutputSplits):
-            path = LocalFileShuffle.getOutputFile(self.dep.shuffleId, self.partition, i)
+            path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
             f = open(path, 'w', 1024*4096)
             #for v in buckets[i].iteritems():
             #    v = marshal.dumps(v)

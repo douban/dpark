@@ -28,11 +28,11 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate))
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None))
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
 
 def init_env(args):
     env.start(False, args)

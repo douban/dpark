@@ -16,7 +16,7 @@ from job import *
 from env import env
 from broadcast import Broadcast
 
-EXECUTOR_MEMORY = 1024
+EXECUTOR_MEMORY = 512
 TASK_MEMORY = 50
 TASK_CPUS = 1
 
@@ -47,7 +47,7 @@ class Stage:
         self.shuffleDep = shuffleDep
         self.parents = parents
         self.isShuffleMap = shuffleDep != None
-        self.numPartitions = len(rdd.splits)
+        self.numPartitions = len(rdd)
         self.outputLocs = [[]] * self.numPartitions
         self.numAvailableOutputs = 0
 
@@ -121,14 +121,14 @@ class DAGScheduler(Scheduler):
         return self.nextStageId
 
     def getCacheLocs(self, rdd):
-        return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd.splits))])
+        return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd))])
 
     def updateCacheLocs(self):
         self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
 
     def newStage(self, rdd, shuffleDep):
         if rdd.shouldCache:
-            self.cacheTracker.registerRDD(rdd.id, len(rdd.splits))
+            self.cacheTracker.registerRDD(rdd.id, len(rdd))
         id = self.newStageId()
         stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
         self.idToStage[id] = stage
@@ -143,7 +143,7 @@ class DAGScheduler(Scheduler):
                 return
             visited.add(r.id)
             if r.shouldCache:
-                self.cacheTracker.registerRDD(r.id, len(r.splits))
+                self.cacheTracker.registerRDD(r.id, len(r))
             for dep in r.dependencies:
                 if isinstance(dep, ShuffleDependency):
                     parents.add(self.getShuffleMapStage(dep))
@@ -167,7 +167,7 @@ class DAGScheduler(Scheduler):
                 return
             visited.add(r.id)
             locs = self.getCacheLocs(r)
-            for i in range(len(r.splits)):
+            for i in range(len(r)):
                 if not locs[i]:
                     for dep in r.dependencies:
                         if isinstance(dep, ShuffleDependency):
@@ -202,8 +202,7 @@ class DAGScheduler(Scheduler):
        
         if allowLocal and not finalStage.parents and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
-            taskContext = TaskContext(finalStage.id, outputParts[0], 0)
-            return [func(taskContext, finalRdd.iterator(split))]
+            return [func(finalRdd.iterator(split))]
 
         def submitStage(stage):
             logging.debug("submit stage %s", stage)
@@ -310,12 +309,12 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accumUpdates = Accumulator.values()
-        return (task, Success(), result, accumUpdates)
+        return (task.id, Success(), result, accumUpdates)
     except Exception, e:
         logging.error("error in task %s", task)
         import traceback
         traceback.print_exc()
-        return (task, OtherFailure("exception:" + str(e)), None, None)
+        return (task.id, OtherFailure("exception:" + str(e)), None, None)
 
 
 class LocalScheduler(DAGScheduler):
@@ -327,7 +326,9 @@ class LocalScheduler(DAGScheduler):
     def submitTasks(self, tasks):
         logging.debug("submit tasks %s in LocalScheduler", tasks)
         for task in tasks:
-            self.taskEnded(*run_task(task, self.nextAttempId()))
+            task = cPickle.loads(cPickle.dumps(task, -1))
+            _, reason, result, update = run_task(task, self.nextAttempId())
+            self.taskEnded(task, reason, result, update)
     def stop(self):
         pass
 
@@ -387,7 +388,8 @@ class MultiProcessScheduler(LocalScheduler):
         LocalScheduler.__init__(self)
         self.threads = threads
         from  multiprocessing import Pool
-        self.pool = Pool(threads)
+        self.pool = Pool(threads or 2)
+        self.tasks = {}
 
     def start(self):
         pass
@@ -395,9 +397,13 @@ class MultiProcessScheduler(LocalScheduler):
     def submitTasks(self, tasks):
         def callback(args):
             logging.debug("got answer: %s", args)
-            self.taskEnded(*args)
+            tid, reason, result, update = args
+            task = self.tasks.pop(tid)
+            self.taskEnded(task, reason, result, update)
+
         for task in tasks:
             logging.debug("put task async: %s", task)
+            self.tasks[task.id] = task
             self.pool.apply_async(run_task_in_process,
                 [task, self.nextAttempId(), env.environ],
                 callback=callback)
@@ -448,7 +454,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
         info.data = cPickle.dumps((os.getcwd(),
-            self.defaultParallelism(), env.environ))
+            self.defaultParallelism(), env.environ), -1)
         return info
 
     def submitTasks(self, tasks):
@@ -493,10 +499,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
          
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem') 
-                - (o.slave_id.value not in self.slavesWithExecutors)
-                    and EXECUTOR_MEMORY or 0
+                - (o.slave_id.value not in self.slavesWithExecutors
+                    and EXECUTOR_MEMORY or 0)
                 for o in offers]
-        logging.debug("get %d offers (%s cups, %s mem), %d jobs", 
+        logging.debug("get %d offers (%s cpus, %s mem), %d jobs", 
             len(offers), sum(cpus), sum(mems), len(self.activeJobs))
         
         tasks = []

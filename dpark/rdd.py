@@ -29,6 +29,13 @@ class RDD:
         self._partitioner = None
         self.shouldCache = False
 
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        d.pop('dependencies', None)
+        d.pop('_splits', None)
+        d.pop('ctx', None)
+        return d
+
     def __len__(self):
         return len(self.splits)
    
@@ -74,7 +81,7 @@ class RDD:
         return SampleRDD(self, withReplacement, faction, seed)
 
     def union(self, rdd):
-        return UnionRDD(self.ctx, [self, rdd])
+        return UnionRDD([self, rdd])
 
     def glom(self):
         return GlommedRDD(self)
@@ -84,7 +91,7 @@ class RDD:
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
-            numSplits = min(self.ctx.defaultMinSplits, len(self.splits))
+            numSplits = min(self.ctx.defaultMinSplits, len(self))
         return self.map(lambda x: (f(x), x)).groupByKey(numSplits)
 
     def pipe(self, command):
@@ -132,7 +139,7 @@ class RDD:
         if n == 0: return []
         r = []
         p = 0
-        while len(r) < n and p < len(self.splits):
+        while len(r) < n and p < len(self):
             res = self.ctx.runJob(self, lambda x: islice(x, n - len(r)), [p], True)
             if res[0]:
                 r.extend(res[0])
@@ -146,14 +153,8 @@ class RDD:
         r = self.take(1)
         if r: return r[0]
 
-    def saveAsTextFile(self, path):
-        return OutputTextFileRDD(self, path)
-
-#    def saveAsBinaryFile(self, path):
-#        return OutputBinaryFile(self, path)
-
- #   def saveAsObjectFile(self, path):
- #       return self.glom().map(lambda x:cPickle.dumps(x)).saveAsTextFile(path)
+    def saveAsTextFile(self, path, ext='', overwrite=False):
+        return OutputTextFileRDD(self, path, ext, overwrite)
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -165,7 +166,7 @@ class RDD:
 
     def combineByKey(self,  aggregator, numSplits=None):
         if numSplits is None:
-            numSplits = min(self.ctx.defaultMinSplits, len(self.splits))
+            numSplits = min(self.ctx.defaultMinSplits, len(self))
         partitioner = HashPartitioner(numSplits)
         return ShuffledRDD(self, aggregator, partitioner)
 
@@ -277,14 +278,14 @@ class MappedRDD(RDD):
             yield self.func(v)
 
     def __getstate__(self):
-        d = dict(self.__dict__)
+        d = RDD.__getstate__(self)
         del d['func']
         return d, dump_func(self.func)
 
     def __setstate__(self, state):
         self.__dict__, code = state
         try:
-            self.func = load_func(code, globals())
+            self.func = load_func(code)
         except:
             print self.__class__, code
             raise
@@ -307,6 +308,10 @@ class GlommedRDD(RDD):
         self.prev = prev
         self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
+
+    @property
+    def splits(self):
+        return self.prev.splits
 
     def compute(self, split):
         yield self.prev.iterator(split)
@@ -366,11 +371,18 @@ class ShuffledRDD(RDD):
         self.aggregator = aggregator
         self._partitioner = part
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
-        self.dependencies = [ShuffleDependency(self.ctx.newShuffleId(),
+        self.shuffleId = self.ctx.newShuffleId()
+        self.dependencies = [ShuffleDependency(self.shuffleId,
                 parent, aggregator, part)]
-    
+        self.name = '<ShuffledRDD %s>' % self.parent
+
     def __str__(self):
-        return '<ShuffledRDD %s>' % self.parent
+        return self.name
+
+    def __getstate__(self):
+        d = RDD.__getstate__(self)
+        d.pop('parent', None)
+        return d
 
     def compute(self, split):
         combiners = {}
@@ -382,7 +394,7 @@ class ShuffledRDD(RDD):
             else:
                 combiners[k] = mergeCombiners(o, c)
         fetcher = env.shuffleFetcher
-        fetcher.fetch(self.dependencies[0].shuffleId, split.index, mergePair)
+        fetcher.fetch(self.shuffleId, split.index, mergePair)
         return combiners.iteritems()
 
 class CartesionSplit(Split):
@@ -396,8 +408,8 @@ class CartesionRDD(RDD):
         RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
-        self.numSplitsInRdd2 = n = len(rdd2.splits)
-        self.splits = [CartesionSplit(s1.index*n+s2.index, s1, s2)
+        self.numSplitsInRdd2 = n = len(rdd2)
+        self._splits = [CartesionSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
         self.dependencies = [CartesionDependency(rdd1, True, n),
                              CartesionDependency(rdd2, False, n)]
@@ -441,7 +453,7 @@ class CoGroupAggregator:
 class CoGroupedRDD(RDD):
     def __init__(self, rdds, partitioner):
         RDD.__init__(self, rdds[0].ctx)
-        self.rdds = rdds
+        self.len = len(rdds)
         self.aggregator = CoGroupAggregator()
         self.partitioner = partitioner
         self.dependencies = dep = [rdd.partitioner == partitioner
@@ -449,7 +461,7 @@ class CoGroupedRDD(RDD):
                 or ShuffleDependency(self.ctx.newShuffleId(), 
                     rdd, self.aggregator, partitioner)
                 for i,rdd in enumerate(rdds)]
-        self.splits = [CoGroupSplit(j, 
+        self._splits = [CoGroupSplit(j, 
                           [isinstance(dep[i],ShuffleDependency)
                             and ShuffleCoGroupSplitDep(dep[i].shuffleId)
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
@@ -459,13 +471,13 @@ class CoGroupedRDD(RDD):
     def compute(self, split):
         m = {}
         def getSeq(k):
-            return m.setdefault(k, tuple([[] for i in self.rdds]))
+            return m.setdefault(k, tuple([[] for i in range(self.len)]))
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
-#                if dep.rdd.aggregator:
-#                    for k,vs in dep.rdd.iterator(dep.split):
-#                        getSeq(k)[i].extend(vs)
-#                else:
+                if dep.rdd.partitioner:
+                    for k,vs in dep.rdd.iterator(dep.split):
+                        getSeq(k)[i].extend(vs)
+                else:
                     for k,v in dep.rdd.iterator(dep.split):
                         getSeq(k)[i].append(v)
             elif isinstance(dep, ShuffleCoGroupSplitDep):
@@ -492,9 +504,8 @@ class UnionSplit:
         self.split = split
 
 class UnionRDD(RDD):
-    def __init__(self, ctx, rdds):
-        RDD.__init__(self, ctx)
-        self.rdds = rdds
+    def __init__(self, rdds):
+        RDD.__init__(self, rdds[0].ctx)
         self._splits = [UnionSplit(0, rdd, split) 
                 for rdd in rdds for split in rdd.splits]
         for i,split in enumerate(self._splits):
@@ -504,9 +515,10 @@ class UnionRDD(RDD):
         for rdd in rdds:
             self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
+        self.name = '<union %d %s>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:2]))
 
     def __str__(self):
-        return '<union %d %s>' % (len(self.rdds), ','.join(str(rdd) for rdd in self.rdds[:2]))
+        return self.name
 
     def preferredLocations(self, split):
         return split.rdd.preferredLocations(split.split)
@@ -532,30 +544,17 @@ class SliceRDD(RDD):
     def compute(self, split):
         return self.rdd.iterator(split)
 
-
 class ParallelCollectionSplit:
-    def __init__(self, rddId, slice, values):
-        self.rddId = rddId
-        self.index = self.slice = slice
+    def __init__(self, index, values):
+        self.index = index
         self.values = values
-
-    def iterator(self):
-        return self.values
-
-    def __hash__(self):
-        return 41 * (41 + self.rddId) + slice
-
-    def __equal__(self, other):
-        return (isinstance(other, ParallelCollectionSplit) and 
-            self.rddId == other.rddId and self.slice == other.slice)
-
 
 class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices):
         RDD.__init__(self, ctx)
         self.size = len(data)
         slices = self.slice(data, numSlices)
-        self._splits = [ParallelCollectionSplit(self.id, i, slices[i]) 
+        self._splits = [ParallelCollectionSplit(i, slices[i]) 
                 for i in range(len(slices))]
         self.dependencies = []
 
@@ -577,11 +576,14 @@ class ParallelCollection(RDD):
             n += 1
         if isinstance(data, xrange):
             first = data[0]
-            last = data[n-1]
+            last = data[m-1]
             step = (last - first) / (m-1)
             nstep = step * n
-            return [xrange(first+i*nstep, first+(i+1)*nstep, nstep)
-                for i in range(numSlices)]
+            slices = [xrange(first+i*nstep, first+(i+1)*nstep, step)
+                for i in range(numSlices-1)]
+            slices.append(xrange(first+(numSlices-1)*nstep, 
+                min(last+step, first+numSlices*nstep), step))
+            return slices
         if not isinstance(data, list):
             data = list(data)
         return [data[i*n : i*n+n] for i in range(numSlices)]
@@ -590,10 +592,10 @@ class ParallelCollection(RDD):
 class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
-        self.path = path
         if not os.path.exists(path):
             raise IOError("not exists")
-        size = os.path.getsize(path)
+        self.path = path
+        self.size = size = os.path.getsize(path)
         if splitSize is None:
             if numSplits is None:
                 splitSize = 64*1024*1024
@@ -604,7 +606,11 @@ class TextFileRDD(RDD):
         if size % splitSize > 0:
             n += 1
         self.splitSize = splitSize
-        self._splits = [Split(i) for i in range(n)]
+        self.len = n
+
+    @property
+    def splits(self):
+        return [Split(i) for i in range(self.len)]
 
     def __str__(self):
         return '<TextFileRDD %s>' % self.path
@@ -629,30 +635,12 @@ class TextFileRDD(RDD):
         f.close()
 
 
-class CSVFileRDD(RDD):
-    def __init__(self, ctx, path, numSplits=None, splitSize=None):
-        RDD.__init__(self, ctx)
-        if not os.path.exists(path):
-            raise IOError("not exists")
-        self.path = os.path.abspath(path)
-        self.size = size = os.path.getsize(path)
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = 64*1024*1024
-            else:
-                splitSize = size / numSplits
-        
-        n = size / splitSize
-        if size % splitSize > 0:
-            n += 1
-        self.splitSize = splitSize
-        self._splits = [Split(i) for i in range(n)]
-
+class CSVFileRDD(TextFileRDD):
     def __str__(self):
         return '<CSVFileRDD %s>' % self.path
 
     def compute(self, split):
-        if len(self.splits) == 1:
+        if self.len == 1:
             f = open(self.path, 'r', 4096 * 1024)
         else:
             f = cStringIO.StringIO(self.read_block(split))
@@ -684,19 +672,19 @@ class CSVFileRDD(RDD):
 
 
 class OutputTextFileRDD(RDD):
-    def __init__(self, rdd, path, ext=''):
-        RDD.__init__(self, rdd.ctx)
-        self.rdd = rdd
-        self.path = os.path.abspath(path)
-        if ext and not ext.startswith('.'):
-            ext = '.' + ext
-        self.ext=ext
+    def __init__(self, rdd, path, ext='', overwrite=False):
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
         else:
             os.makedirs(path)
-        self._splits = self.rdd.splits
+        RDD.__init__(self, rdd.ctx)
+        self.rdd = rdd
+        self.path = os.path.abspath(path)
+        if ext and not ext.startswith('.'):
+            ext = '.' + ext
+        self.ext = ext
+        self.overwrite = overwrite
         self.dependencies = [OneToOneDependency(rdd)]
 
     def __str__(self):
@@ -709,7 +697,7 @@ class OutputTextFileRDD(RDD):
     def compute(self, split):
         path = os.path.join(self.path, 
             "%04d%s" % (split.index, self.ext))
-        if not os.path.exists(path):
+        if not os.path.exists(path) or self.overwrite:
             tpath = os.path.join(self.path, 
                 ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
                 socket.gethostname(), os.getpid()))
