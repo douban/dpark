@@ -34,7 +34,7 @@ class DparkContext:
             self.isLocal = True
         elif self.master.startswith('process'):
             self.scheduler = MultiProcessScheduler(options.parallel)
-            self.isLocal = True
+            self.isLocal = False
         elif (self.master.startswith('mesos')
               or self.master.startswith('zoo')):
             if '://' not in self.master:

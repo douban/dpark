@@ -314,7 +314,7 @@ class TreeBroadcast(FileBroadcast):
         if (master_addr == SourceInfo.TxOverGoToHDFS
             or master_addr == SourceInfo.TxNotStartedRetry):
             return False
-        if self.serverAddr is None:
+        while self.serverAddr is None:
             time.sleep(0.01)
         
         ctx = zmq.Context()
@@ -382,14 +382,14 @@ class TreeBroadcast(FileBroadcast):
             ctx = zmq.Context()
             sock = ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
-            #sock.bind("tcp://0.0.0.0:10555")
-            #port = 10555
             cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
             logging.debug("TreeBroadcast tracker started at %s", 
                     cls.master_addr)
             while True:
                 uuid = sock.recv_pyobj()
                 guide = cls.guides.get(uuid, '')
+                if not guide:
+                    logging.warning("broadcast %s is not registered", uuid)
                 sock.send_pyobj(guide)
             sock.close()
             logging.debug("TreeBroadcast tracker stopped")
@@ -403,7 +403,7 @@ class TreeBroadcast(FileBroadcast):
             env.register('TreeBroadcastTrackerAddr', cls.master_addr)
         else:
             cls.master_addr = env.get('TreeBroadcastTrackerAddr')
-
+            
         logging.debug("TreeBroadcast initialized")
 
     @classmethod
@@ -441,7 +441,6 @@ if __name__ == '__main__':
 
     v = range(1000*1000)
     b = Broadcast.newBroadcast(v, False)
-    #print b, isinstance(b, Broadcast)
     b = cPickle.loads(cPickle.dumps(b, -1))
     assert len(b.value) == len(v), b.value
 

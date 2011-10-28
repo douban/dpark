@@ -13,7 +13,7 @@ path = '/mfs/log/weblog/%s/' % theday.strftime("%Y/%m/%d")
 
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
 
-weblog = dpark.csvFile(path)
+weblog = dpark.csvFile(path)[:2]
 bad_ip = weblog.filter(
         lambda line:len(line) > BID and not line[BID]
     ).map(
@@ -26,6 +26,7 @@ bad_ip = weblog.filter(
 
 #print sorted(bad_ip.iteritems(), key=itemgetter(1), reverse=True)[:10]
 print len(bad_ip)
+#bad_ip = dpark.broadcast(bad_ip)
 
 def gen_data(line):
     try:
