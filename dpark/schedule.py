@@ -18,6 +18,7 @@ from broadcast import Broadcast
 
 EXECUTOR_MEMORY = 1024
 TASK_MEMORY = 50
+TASK_CPUS = 1
 
 class TaskEndReason:
     pass
@@ -36,7 +37,7 @@ class OtherFailure:
     def __init__(self, message):
         self.message = message
 
-POLL_TIMEOUT = 1
+POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
 class Stage:
@@ -230,58 +231,59 @@ class DAGScheduler(Scheduler):
                     if not stage.outputLocs[p]:
                         locs = self.getPreferredLocs(stage.rdd, p)
                         tasks.append(ShuffleMapTask(stage.id, stage.rdd, stage.shuffleDep, p, locs))
-            logging.debug("add to pending %r", tasks)
+            logging.debug("add to pending %s tasks", len(tasks))
             myPending |= set(t.id for t in tasks)
             self.submitTasks(tasks)
 
         submitStage(finalStage)
 
         while numFinished != numOutputParts:
-           evt = self.completionEvents.get(POLL_TIMEOUT)
-           if evt:
-               task = evt.task
-               stage = self.idToStage[task.stageId]
-               logging.debug("remove from pedding %s %s", pendingTasks[stage], task)
-               pendingTasks[stage].remove(task.id)
-               if isinstance(evt.reason, Success):
-                   # ended
-                   Accumulator.merge(evt.accumUpdates)
-                   if isinstance(task, ResultTask):
-                       results[task.outputId] = evt.result
-                       finished[task.outputId] = True
-                       numFinished += 1
-                   elif isinstance(task, ShuffleMapTask):
-                       stage = self.idToStage[task.stageId]
-                       stage.addOutputLoc(task.partition, evt.result)
-                       if not pendingTasks[stage]:
-                           logging.debug("%s finished; looking for newly runnable stages", stage)
-                           running.remove(stage)
-                           if stage.shuffleDep != None:
-                               self.mapOutputTracker.registerMapOutputs(
-                                       stage.shuffleDep.shuffleId,
-                                       [l[0] for l in stage.outputLocs])
-                           self.updateCacheLocs()
-                           newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
-                           waiting -= newlyRunnable
-                           running |= newlyRunnable
-                           logging.debug("newly runnable: %s, %s", waiting, newlyRunnable)
-                           for stage in newlyRunnable:
-                               submitMissingTasks(stage)
+           evt = self.completionEvents.get(0.1)
+           if not evt:
+               if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
+                   logging.debug("Resubmitting failed stages")
+                   self.updateCacheLocs()
+                   for stage in failed:
+                       submitStage(stage)
+                   failed.clear()
                else:
-                   logging.error("unexpected task %s", task)
-                   if isinstance(evt.reason, FetchFailed):
-                       pass
-                   else:
-                       logging.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
-                       raise evt.reason
-                       raise
-
-           if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
-               logging.debug("Resubmitting failed stages")
-               self.updateCacheLocs()
-               for stage in failed:
-                   submitStage(stage)
-               failed.clear()
+                   time.sleep(0.2)
+               continue
+               
+           task = evt.task
+           stage = self.idToStage[task.stageId]
+           logging.debug("remove from pedding %s", task)
+           pendingTasks[stage].remove(task.id)
+           if isinstance(evt.reason, Success):
+               Accumulator.merge(evt.accumUpdates)
+               if isinstance(task, ResultTask):
+                   results[task.outputId] = evt.result
+                   finished[task.outputId] = True
+                   numFinished += 1
+               elif isinstance(task, ShuffleMapTask):
+                   stage = self.idToStage[task.stageId]
+                   stage.addOutputLoc(task.partition, evt.result)
+                   if not pendingTasks[stage]:
+                       logging.debug("%s finished; looking for newly runnable stages", stage)
+                       running.remove(stage)
+                       if stage.shuffleDep != None:
+                           self.mapOutputTracker.registerMapOutputs(
+                                   stage.shuffleDep.shuffleId,
+                                   [l[0] for l in stage.outputLocs])
+                       self.updateCacheLocs()
+                       newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
+                       waiting -= newlyRunnable
+                       running |= newlyRunnable
+                       logging.debug("newly runnable: %s, %s", waiting, newlyRunnable)
+                       for stage in newlyRunnable:
+                           submitMissingTasks(stage)
+           else:
+               logging.error("task %s failed", task)
+               if isinstance(evt.reason, FetchFailed):
+                   pass
+               else:
+                   logging.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
+                   raise evt.reason
 
         return results
 
@@ -420,6 +422,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.jobTasks = {}
         self.driver = None
         self.slavesWithExecutors = set()
+        self.lock = threading.RLock()
 
     def start(self):
         self.driver = mesos.MesosSchedulerDriver(self, self.master)
@@ -449,7 +452,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return info
 
     def submitTasks(self, tasks):
-        logging.debug("Got a job with %d tasks", len(tasks))
+        with self.lock:
+            self._submitTasks(tasks)
+
+    def _submitTasks(self, tasks):
+        logging.info("Got a job with %d tasks", len(tasks))
         job = SimpleJob(self, tasks)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
@@ -477,23 +484,30 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             time.sleep(0.01)
 
     def resourceOffer(self, driver, oid, offers):
-        logging.debug("get %d offers, %d jobs", len(offers), len(self.activeJobs))
+        with self.lock:
+            self._resourceOffer(driver, oid, offers)
+
+    def _resourceOffer(self, driver, oid, offers):
         if not self.activeJobs:
-            return driver.replyToOffer(oid, [], {"timeout": "0.1"})
+            return driver.replyToOffer(oid, [], {"timeout": "1"})
+         
+        cpus = [self.getResource(o.resources, 'cpus') for o in offers]
+        mems = [self.getResource(o.resources, 'mem') 
+                - (o.slave_id.value not in self.slavesWithExecutors)
+                    and EXECUTOR_MEMORY or 0
+                for o in offers]
+        logging.debug("get %d offers (%s cups, %s mem), %d jobs", 
+            len(offers), sum(cpus), sum(mems), len(self.activeJobs))
         
         tasks = []
-        availableCpus = [self.getResource(o.resources, 'cpus')
-                            for o in offers]
-        availableMem = [self.getResource(o.resources, 'mem')
-                            for o in offers]
         launchedTask = False
         for job in self.activeJobsQueue:
             while True:
                 launchedTask = False
                 for i,o in enumerate(offers):
-                    if availableMem[i] <= TASK_MEMORY or availableCpus[i] <= 1:
+                    if mems[i] < TASK_MEMORY or cpus[i] < TASK_CPUS:
                         continue
-                    t = job.slaveOffer(str(o.hostname), availableCpus[i])
+                    t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
                     task = mesos_pb2.TaskDescription()
@@ -501,11 +515,12 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     task.name = "task %s" % tid
                     task.task_id.value = tid
                     task.slave_id.value = o.slave_id.value
-                    task.data = cPickle.dumps((t, 1))
+                    task.data = cPickle.dumps((t, 1), -1)
+                     
                     cpu = task.resources.add()
                     cpu.name = 'cpus'
                     cpu.type = mesos_pb2.Resource.SCALAR
-                    cpu.scalar.value = 1
+                    cpu.scalar.value = TASK_CPUS
                     mem = task.resources.add()
                     mem.name = 'mem'
                     mem.type = mesos_pb2.Resource.SCALAR
@@ -516,10 +531,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     self.jobTasks[job.id].add(t.id)
                     self.taskIdToJobId[t.id] = job.id
                     self.taskIdToSlaveId[t.id] = o.slave_id.value
-                    availableCpus[i] -= 1
-                    availableMem[i] -= TASK_MEMORY
-                    if o.slave_id.value not in self.slavesWithExecutors:
-                        availableMem[i] -= EXECUTOR_MEMORY
+                    cpus[i] -= TASK_CPUS
+                    mems[i] -= TASK_MEMORY
                     self.slavesWithExecutors.add(o.slave_id.value)
                     launchedTask = True
 
@@ -527,9 +540,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     break
         
         driver.replyToOffer(oid, tasks, {"timeout": "1"})
-        if not tasks:
-            logging.debug("reply to %s with %d tasks", oid, len(tasks))
-            self.driver.reviveOffers()
+        logging.debug("reply with %d tasks, %s cpus %s mem left", 
+            len(tasks), sum(cpus), sum(mems))
 
     def getResource(self, res, name):
         for r in res:
@@ -616,3 +628,4 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def offerRescinded(self, driver, offer):
         logging.warning("offer rescinded: %s", offer)
+        self.driver.reviveOffers()
