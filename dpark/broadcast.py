@@ -50,6 +50,7 @@ class Broadcast:
     MaxRetryCount = 2
     MinKnockInterval = 500
     MaxKnockInterval = 999
+    
     def __init__(self, value, is_local):
         self.uuid = str(uuid.uuid4())
         self.value = value
@@ -62,6 +63,9 @@ class Broadcast:
 
     def __setstate__(self, uuid):
         self.uuid = uuid
+        # in the executor process, Broadcast is not initialized
+        if not self.initialized:
+            return
 
         self.value = self.cache.get(uuid)
         if self.value == 'loading':
