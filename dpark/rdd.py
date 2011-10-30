@@ -268,6 +268,9 @@ class MappedRDD(RDD):
         self.prev = prev
         self.func = func
         self.dependencies = [OneToOneDependency(prev)]
+    
+    def __len__(self):
+        return len(self.prev)
 
     def __str__(self):
         return '<%s %s>' % (self.__class__.__name__, self.prev)
@@ -312,6 +315,9 @@ class GlommedRDD(RDD):
         self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
+    def __len__(self):
+        return len(self.prev)
+
     @property
     def splits(self):
         return self.prev.splits
@@ -329,6 +335,9 @@ class PipedRDD(RDD):
         self.prev = prev
         self.command = command
         self.dependencies = [OneToOneDependency(prev)]
+
+    def __len__(self):
+        return len(self.prev)
 
     def __str__(self):
         return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
@@ -379,6 +388,9 @@ class ShuffledRDD(RDD):
                 parent, aggregator, part)]
         self.name = '<ShuffledRDD %s>' % self.parent
 
+    def __len__(self):
+        return self._partitioner.numPartitions
+
     def __str__(self):
         return self.name
 
@@ -416,6 +428,9 @@ class CartesionRDD(RDD):
             for s1 in rdd1.splits for s2 in rdd2.splits]
         self.dependencies = [CartesionDependency(rdd1, True, n),
                              CartesionDependency(rdd2, False, n)]
+
+    def __len__(self):
+        return len(self.rdd1) * len(self.rdd2)
 
     def __str__(self):
         return '<cartesion %s and %s>' % (self.rdd1, self.rdd2)
@@ -470,7 +485,10 @@ class CoGroupedRDD(RDD):
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
-        
+
+    def __len__(self):
+        return self.partitioner.numPartitions
+
     def compute(self, split):
         m = {}
         def getSeq(k):
@@ -538,6 +556,9 @@ class SliceRDD(RDD):
         self._splits = rdd.splits[i:j]
         self.dependencies = [RangeDependency(rdd, i, 0, j-i)]
 
+    def __len__(self):
+        return self.j - self.i
+
     def __str__(self):
         return '<SliceRDD [%d:%d] of %s>' % (self.i, self.j, self.rdd)
 
@@ -598,7 +619,7 @@ class TextFileRDD(RDD):
         if not os.path.exists(path):
             raise IOError("not exists")
         self.path = path
-        self.size = size = os.path.getsize(path)
+        size = os.path.getsize(path)
         if splitSize is None:
             if numSplits is None:
                 splitSize = 64*1024*1024
@@ -610,6 +631,9 @@ class TextFileRDD(RDD):
             n += 1
         self.splitSize = splitSize
         self.len = n
+
+    def __len__(self):
+        return self.len
 
     @property
     def splits(self):
@@ -694,6 +718,9 @@ class OutputTextFileRDD(RDD):
         self.overwrite = overwrite
         self.dependencies = [OneToOneDependency(rdd)]
 
+    def __len__(self):
+        return len(self.rdd)
+
     def __str__(self):
         return '<OutputTextFileRDD %s>' % self.path
 
@@ -715,9 +742,9 @@ class OutputTextFileRDD(RDD):
             time.sleep(1) # there are dir cache in mfs for 1 sec
             f = open(tpath,'w', 4096 * 1024 * 16)
         
-        empty = self.writedata(f, self.rdd.iterator(split))
+        have_data = self.writedata(f, self.rdd.iterator(split))
         f.close()
-        if not empty:
+        if have_data and not os.path.exists(path):
             os.rename(tpath, path)
             yield path
         else:
@@ -730,7 +757,7 @@ class OutputTextFileRDD(RDD):
             if not line.endswith('\n'):
                 f.write('\n')
             empty = False
-        return empty
+        return not empty
 
 class OutputCSVFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, overwrite):
@@ -747,4 +774,4 @@ class OutputCSVFileRDD(OutputTextFileRDD):
                 now = (now,)
             writer.writerow(row)
             empty = False
-        return empty 
+        return not empty 

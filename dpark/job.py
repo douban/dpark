@@ -112,16 +112,21 @@ class SimpleJob(Job):
                 # re-submit timeout task
                 avg = self.taskEverageTime
                 now = time.time()
-                oldest = sorted((task.start, task) 
+                task = sorted((task.start, task) 
                     for i,task in enumerate(self.tasks) 
                     if not self.finished[i])[0][1]
-                used = time.time() - oldest.start
+                used = time.time() - task.start
                 if used > avg * 2:
-                    logging.warning("re-submit task %s for timeout %s",
-                        oldest.id, used)
-                    oldest.start = time.time()
-                    oldest.tried += 1
-                    return oldest
+                    if task.tried < MAX_TASK_FAILURES:
+                        logging.warning("re-submit task %s for timeout %s",
+                            task.id, used)
+                        task.start = time.time()
+                        task.tried += 1
+                        return task
+                    else:
+                        logging.error("tast %s timeout, aborting job %s",
+                            task, self.id)
+                        self.abort("task %s timeout" % task)
             return
 
         now = time.time()

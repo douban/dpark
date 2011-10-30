@@ -49,7 +49,12 @@ class DparkContext:
         else:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
-        
+       
+        self.profile = options.profile
+        if self.profile:
+            import yappi
+            yappi.start()
+
         env.start(True)
         self.scheduler.start()
         self.started = True
@@ -111,10 +116,16 @@ class DparkContext:
         return Broadcast.newBroadcast(v, self.isLocal)
 
     def stop(self):
-        if self.started:
-            self.scheduler.stop()
-            env.stop()
-            self.started = False
+        if not self.started:
+            return
+
+        self.scheduler.stop()
+        env.stop()
+        self.started = False
+
+        if self.profile:
+            import yappi
+            yappi.print_stats()
 
     def waitForRegister(self):
         self.scheduler.waitForRegister()
@@ -135,7 +146,8 @@ def parse_options():
     parser.add_option("-p", "--parallel", type="int", default=0)
     parser.add_option("--self", action="store_true",
         help="user self as exectuor")
-
+    parser.add_option("--profile", action="store_true",
+        help="do profile using yappi")
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
     options, args = parser.parse_args()

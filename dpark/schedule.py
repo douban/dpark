@@ -522,7 +522,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     task.task_id.value = tid
                     task.slave_id.value = o.slave_id.value
                     task.data = cPickle.dumps((t, 1), -1)
-                     
+                    
                     cpu = task.resources.add()
                     cpu.name = 'cpus'
                     cpu.type = mesos_pb2.Resource.SCALAR
