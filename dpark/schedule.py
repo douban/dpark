@@ -414,6 +414,22 @@ class MultiProcessScheduler(LocalScheduler):
         logging.debug("process pool stopped")
 
 
+def profile(f):
+    def func(*args, **kwargs):
+        path = '/tmp/worker-%s.prof' % os.getpid()
+        import cProfile
+        import pstats
+        func = f
+        cProfile.runctx('func(*args, **kwargs)', 
+            globals(), locals(), path)
+        stats = pstats.Stats(path)
+        stats.strip_dirs()
+        stats.sort_stats('time', 'calls')
+        stats.print_stats(20)
+        stats.sort_stats('cumulative')
+        stats.print_stats(20)
+    return func
+
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def __init__(self, master, use_self_as_exec=False):
@@ -490,10 +506,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             time.sleep(0.01)
 
     def resourceOffer(self, driver, oid, offers):
-        with self.lock:
-            self._resourceOffer(driver, oid, offers)
-
-    def _resourceOffer(self, driver, oid, offers):
+#        with self.lock:
+#            self._resourceOffer(driver, oid, offers)
+#            profile(self._resourceOffer)(driver, oid, offers)
+#
+#    def _resourceOffer(self, driver, oid, offers):
         if not self.activeJobs:
             return driver.replyToOffer(oid, [], {"timeout": "1"})
          
@@ -516,22 +533,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
-                    task = mesos_pb2.TaskDescription()
-                    tid = "%s:%s:%s" % (job.id, t.id, t.tried)
-                    task.name = "task %s" % tid
-                    task.task_id.value = tid
-                    task.slave_id.value = o.slave_id.value
-                    task.data = cPickle.dumps((t, 1), -1)
-                    
-                    cpu = task.resources.add()
-                    cpu.name = 'cpus'
-                    cpu.type = mesos_pb2.Resource.SCALAR
-                    cpu.scalar.value = TASK_CPUS
-                    mem = task.resources.add()
-                    mem.name = 'mem'
-                    mem.type = mesos_pb2.Resource.SCALAR
-                    mem.scalar.value = TASK_MEMORY
-                    tasks.append(task)
+                    tasks.append(self.createTask(o, job, t))
 
                     logging.debug("dispatch %s into %s", t, o.hostname)
                     self.jobTasks[job.id].add(t.id)
@@ -553,6 +555,27 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         for r in res:
             if r.name == name:
                 return r.scalar.value
+
+    def createTask(self, o, job, t):
+        task = mesos_pb2.TaskDescription()
+        tid = "%s:%s:%s" % (job.id, t.id, t.tried)
+        task.name = "task %s" % tid
+        task.task_id.value = tid
+        task.slave_id.value = o.slave_id.value
+        task.data = cPickle.dumps((t, 1), -1)
+        if len(task.data) > 10*1024:
+            logging.warning("task too large: %s %d", 
+                t, len(task.data))
+
+        cpu = task.resources.add()
+        cpu.name = 'cpus'
+        cpu.type = mesos_pb2.Resource.SCALAR
+        cpu.scalar.value = TASK_CPUS
+        mem = task.resources.add()
+        mem.name = 'mem'
+        mem.type = mesos_pb2.Resource.SCALAR
+        mem.scalar.value = TASK_MEMORY
+        return task
 
     def isFinished(self, state):
         return state >= mesos_pb2.TASK_FINISHED
@@ -587,7 +610,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             else:
                 self.activeJobs[jid].statusUpdate(tid, state)
         else:
-            logging.error("Ignoring update from TID %s " +
+            logging.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
 
     def error(self, driver, code, message):

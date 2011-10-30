@@ -1,4 +1,5 @@
 import os, os.path
+import time
 import threading
 import socket
 import csv
@@ -19,7 +20,17 @@ class Split:
     def __init__(self, idx):
         self.index = idx
 
+def cached(func):
+    def getstate(self):
+        d = self._pickle_cache.get(self.id)
+        if d is None:
+            d = func(self)
+            self._pickle_cache[self.id] = d
+        return d
+    return getstate
+
 class RDD:
+    _pickle_cache = {}
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = ctx.newRddId()
@@ -29,6 +40,7 @@ class RDD:
         self._partitioner = None
         self.shouldCache = False
 
+    @cached
     def __getstate__(self):
         d = dict(self.__dict__)
         d.pop('dependencies', None)
@@ -283,6 +295,7 @@ class MappedRDD(RDD):
         for v in self.prev.iterator(split):
             yield self.func(v)
 
+    @cached
     def __getstate__(self):
         d = RDD.__getstate__(self)
         del d['func']
@@ -312,7 +325,6 @@ class GlommedRDD(RDD):
     def __init__(self, prev):
         RDD.__init__(self, prev.ctx)
         self.prev = prev
-        self.splits = self.prev.splits
         self.dependencies = [OneToOneDependency(prev)]
 
     def __len__(self):
@@ -394,6 +406,7 @@ class ShuffledRDD(RDD):
     def __str__(self):
         return self.name
 
+    @cached
     def __getstate__(self):
         d = RDD.__getstate__(self)
         d.pop('parent', None)

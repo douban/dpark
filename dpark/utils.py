@@ -42,13 +42,7 @@ def load_func((flag, bytes)):
     code, glob, name, defaults, closure = marshal.loads(bytes)
     glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    try:
-        closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
-    except:
-        print flag, name
-        for c in closure:
-            print c
-        raise
+    closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
     return new.function(code, glob, name, defaults, closure)
 
 def reconstruct_closure(values):

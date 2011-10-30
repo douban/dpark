@@ -116,7 +116,7 @@ class SimpleJob(Job):
                     for i,task in enumerate(self.tasks) 
                     if not self.finished[i])[0][1]
                 used = time.time() - task.start
-                if used > avg * 2:
+                if used > avg * 2 and used > 10:
                     if task.tried < MAX_TASK_FAILURES:
                         logging.warning("re-submit task %s for timeout %s",
                             task.id, used)
