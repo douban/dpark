@@ -81,7 +81,7 @@ class RDD:
         return SampleRDD(self, withReplacement, faction, seed)
 
     def union(self, rdd):
-        return UnionRDD([self, rdd])
+        return UnionRDD(self.ctx, [self, rdd])
 
     def glom(self):
         return GlommedRDD(self)
@@ -504,8 +504,8 @@ class UnionSplit:
         self.split = split
 
 class UnionRDD(RDD):
-    def __init__(self, rdds):
-        RDD.__init__(self, rdds[0].ctx)
+    def __init__(self, ctx, rdds):
+        RDD.__init__(self, ctx)
         self._splits = [UnionSplit(0, rdd, split) 
                 for rdd in rdds for split in rdd.splits]
         for i,split in enumerate(self._splits):
@@ -676,8 +676,12 @@ class OutputTextFileRDD(RDD):
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
+            if overwrite:
+                for name in os.path.listdir(path):
+                    os.remove(os.path.join(path, name))
         else:
             os.makedirs(path)
+
         RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
         self.path = os.path.abspath(path)
@@ -697,15 +701,26 @@ class OutputTextFileRDD(RDD):
     def compute(self, split):
         path = os.path.join(self.path, 
             "%04d%s" % (split.index, self.ext))
-        if not os.path.exists(path) or self.overwrite:
-            tpath = os.path.join(self.path, 
-                ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
-                socket.gethostname(), os.getpid()))
-            f = open(tpath,'w', 4096 * 1024 * 4)
-            for line in self.rdd.iterator(split):
-                f.write(line)
-                if not line.endswith('\n'):
-                    f.write('\n')
-            f.close()
+        if os.path.exists(path) and not self.overwrite:
+            return
+        tpath = os.path.join(self.path, 
+            ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+            socket.gethostname(), os.getpid()))
+        try:
+            f = open(tpath,'w', 4096 * 1024 * 16)
+        except IOError:
+            time.sleep(1) # there are dir cache in mfs for 1 sec
+            f = open(tpath,'w', 4096 * 1024 * 16)
+
+        empty = True
+        for line in self.rdd.iterator(split):
+            f.write(line)
+            if not line.endswith('\n'):
+                f.write('\n')
+            empty = False
+        f.close()
+        if not empty:
             os.rename(tpath, path)
-        yield path
+            yield path
+        else:
+            os.remove(tpath)
