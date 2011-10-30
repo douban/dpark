@@ -156,6 +156,9 @@ class RDD:
     def saveAsTextFile(self, path, ext='', overwrite=False):
         return OutputTextFileRDD(self, path, ext, overwrite)
 
+    def saveAsCSVFile(self, path, overwrite=False):
+        return OutputCSVFileRDD(self, path, overwrite)
+
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):
@@ -677,7 +680,7 @@ class OutputTextFileRDD(RDD):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
             if overwrite:
-                for name in os.path.listdir(path):
+                for name in os.listdir(path):
                     os.remove(os.path.join(path, name))
         else:
             os.makedirs(path)
@@ -711,16 +714,37 @@ class OutputTextFileRDD(RDD):
         except IOError:
             time.sleep(1) # there are dir cache in mfs for 1 sec
             f = open(tpath,'w', 4096 * 1024 * 16)
-
-        empty = True
-        for line in self.rdd.iterator(split):
-            f.write(line)
-            if not line.endswith('\n'):
-                f.write('\n')
-            empty = False
+        
+        empty = self.writedata(f, self.rdd.iterator(split))
         f.close()
         if not empty:
             os.rename(tpath, path)
             yield path
         else:
             os.remove(tpath)
+
+    def writedata(self, f, lines):
+        empty = True
+        for line in lines:
+            f.write(line)
+            if not line.endswith('\n'):
+                f.write('\n')
+            empty = False
+        return empty
+
+class OutputCSVFileRDD(OutputTextFileRDD):
+    def __init__(self, rdd, path, overwrite):
+        OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
+
+    def __str__(self):
+        return '<OutputCSVFileRDD %s>' % self.path
+
+    def writedata(self, f, rows):
+        writer = csv.writer(f)
+        empty = True
+        for row in rows:
+            if not isinstance(row, (tuple, list)):
+                now = (now,)
+            writer.writerow(row)
+            empty = False
+        return empty 

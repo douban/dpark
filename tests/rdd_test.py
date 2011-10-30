@@ -90,6 +90,10 @@ class TestRDD(unittest.TestCase):
         d = self.sc.textFile('/tmp/tout')
         n = len(open(__file__).readlines())
         self.assertEqual(d.count(), n)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(
+            lambda x,y: x+y
+            ).saveAsCSVFile('/tmp/tout', overwrite=True).collect(),
+            ['/tmp/tout/0000.csv'])
 
 
 #class TestRDDInThread(TestRDD):
