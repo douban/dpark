@@ -102,7 +102,7 @@ class DparkContext:
 #        return self.sequenceFile(path, minSplits).flatMap(lambda x: loads(x))
 
     def union(self, rdds):
-        return UnionRDD(rdds)
+        return UnionRDD(self, rdds)
 
     def accumulator(self, init, param=None):
         return Accumulator(init, param)
