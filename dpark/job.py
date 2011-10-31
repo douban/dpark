@@ -165,7 +165,7 @@ class SimpleJob(Job):
             task = self.tasks[i]
             task.used = time.time() - task.start
             self.total_used += task.used
-            logging.error("Finished TID %s (progress: %d/%d) in %.2fs",
+            logging.info("Finished TID %s (progress: %d/%d) in %.2fs",
                 tid, self.tasksFinished, self.numTasks, task.used)
             from schedule import Success
             self.sched.taskEnded(task, Success(), result, update)
