@@ -17,8 +17,6 @@ from env import env
 from broadcast import Broadcast
 
 EXECUTOR_MEMORY = 512
-TASK_MEMORY = 50
-TASK_CPUS = 1
 
 class TaskEndReason:
     pass
@@ -350,7 +348,6 @@ class MultiThreadScheduler(LocalScheduler):
                 func, args = r
                 func(*args)
                 self.queue.task_done()
-            env.stop()
             logging.debug("worker thread stopped")
 
         self.threads = []
@@ -432,10 +429,12 @@ def profile(f):
 
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
-    def __init__(self, master, use_self_as_exec=False):
+    def __init__(self, master, options):
         DAGScheduler.__init__(self)
         self.master = master
-        self.use_self_as_exec = use_self_as_exec
+        self.use_self_as_exec = options.self
+        self.cpus = options.cpus
+        self.mem = options.mem
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -528,7 +527,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             while True:
                 launchedTask = False
                 for i,o in enumerate(offers):
-                    if mems[i] < TASK_MEMORY or cpus[i] < TASK_CPUS:
+                    if mems[i] < self.mem or cpus[i] < self.cpus:
                         continue
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
@@ -539,8 +538,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     self.jobTasks[job.id].add(t.id)
                     self.taskIdToJobId[t.id] = job.id
                     self.taskIdToSlaveId[t.id] = o.slave_id.value
-                    cpus[i] -= TASK_CPUS
-                    mems[i] -= TASK_MEMORY
+                    cpus[i] -= self.cpus
+                    mems[i] -= self.mem
                     self.slavesWithExecutors.add(o.slave_id.value)
                     launchedTask = True
 
@@ -570,11 +569,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         cpu = task.resources.add()
         cpu.name = 'cpus'
         cpu.type = mesos_pb2.Resource.SCALAR
-        cpu.scalar.value = TASK_CPUS
+        cpu.scalar.value = self.cpus
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
-        mem.scalar.value = TASK_MEMORY
+        mem.scalar.value = self.mem
         return task
 
     def isFinished(self, state):

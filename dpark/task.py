@@ -1,3 +1,5 @@
+import os,os.path
+import socket
 import marshal
 import cPickle
 import logging
@@ -109,7 +111,8 @@ class ShuffleMapTask(DAGTask):
                 bucket[k] = createCombiner(v)
         for i in range(numOutputSplits):
             path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
-            f = open(path, 'w', 1024*4096)
+            tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
+            f = open(tpath, 'w', 1024*4096)
             #for v in buckets[i].iteritems():
             #    v = marshal.dumps(v)
             #    f.write(struct.pack('h', len(v)))
@@ -117,4 +120,6 @@ class ShuffleMapTask(DAGTask):
             #marshal.dump(buckets[i], f)
             cPickle.dump(buckets[i].items(), f, -1)
             f.close()
+            if not os.path.exists(path):
+                os.rename(tpath, path)
         return LocalFileShuffle.getServerUri()

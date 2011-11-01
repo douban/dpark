@@ -284,7 +284,7 @@ class MappedRDD(RDD):
     def __len__(self):
         return len(self.prev)
 
-    def __str__(self):
+    def __repr__(self):
         return '<%s %s>' % (self.__class__.__name__, self.prev)
     
     @property
@@ -351,7 +351,7 @@ class PipedRDD(RDD):
     def __len__(self):
         return len(self.prev)
 
-    def __str__(self):
+    def __repr__(self):
         return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
 
     @property
@@ -403,7 +403,7 @@ class ShuffledRDD(RDD):
     def __len__(self):
         return self._partitioner.numPartitions
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
     @cached
@@ -445,7 +445,7 @@ class CartesionRDD(RDD):
     def __len__(self):
         return len(self.rdd1) * len(self.rdd2)
 
-    def __str__(self):
+    def __repr__(self):
         return '<cartesion %s and %s>' % (self.rdd1, self.rdd2)
 
     def preferredLocations(self, split):
@@ -551,7 +551,7 @@ class UnionRDD(RDD):
             pos += len(rdd)
         self.name = '<union %d %s>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:2]))
 
-    def __str__(self):
+    def __repr__(self):
         return self.name
 
     def preferredLocations(self, split):
@@ -564,6 +564,8 @@ class SliceRDD(RDD):
     def __init__(self, rdd, i, j):
         RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
+        if j > len(rdd):
+            j = len(rdd)
         self.i = i
         self.j = j
         self._splits = rdd.splits[i:j]
@@ -572,7 +574,7 @@ class SliceRDD(RDD):
     def __len__(self):
         return self.j - self.i
 
-    def __str__(self):
+    def __repr__(self):
         return '<SliceRDD [%d:%d] of %s>' % (self.i, self.j, self.rdd)
 
     def preferredLocations(self, split):
@@ -595,7 +597,7 @@ class ParallelCollection(RDD):
                 for i in range(len(slices))]
         self.dependencies = []
 
-    def __str__(self):
+    def __repr__(self):
         return '<ParallelCollection %d>' % self.size
 
     def compute(self, split):
@@ -629,16 +631,19 @@ class ParallelCollection(RDD):
 class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
-        if not os.path.exists(path):
-            raise IOError("not exists")
         self.path = path
+        if not os.path.exists(path):
+            #raise IOError("not exists")
+            self.len = 0
+            self.splitSize = 1
+            return
+
         size = os.path.getsize(path)
         if splitSize is None:
             if numSplits is None:
                 splitSize = 64*1024*1024
             else:
                 splitSize = size / numSplits
-        
         n = size / splitSize
         if size % splitSize > 0:
             n += 1
@@ -652,7 +657,7 @@ class TextFileRDD(RDD):
     def splits(self):
         return [Split(i) for i in range(self.len)]
 
-    def __str__(self):
+    def __repr__(self):
         return '<TextFileRDD %s>' % self.path
 
     def compute(self, split):
@@ -676,7 +681,7 @@ class TextFileRDD(RDD):
 
 
 class CSVFileRDD(TextFileRDD):
-    def __str__(self):
+    def __repr__(self):
         return '<CSVFileRDD %s>' % self.path
 
     def compute(self, split):
@@ -734,7 +739,7 @@ class OutputTextFileRDD(RDD):
     def __len__(self):
         return len(self.rdd)
 
-    def __str__(self):
+    def __repr__(self):
         return '<OutputTextFileRDD %s>' % self.path
 
     @property
@@ -776,7 +781,7 @@ class OutputCSVFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, overwrite):
         OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
 
-    def __str__(self):
+    def __repr__(self):
         return '<OutputCSVFileRDD %s>' % self.path
 
     def writedata(self, f, rows):

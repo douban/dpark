@@ -14,24 +14,15 @@ from cache import *
 
 class LocalFileShuffle:
     serverUri = None
+    shuffleDir = None
     @classmethod
-    def initialize(cls):
-        root = '/tmp/dpark'
-        if os.path.exists('/mfs/tmp'):
-            root = '/mfs/tmp/dpark'
-        shuffleDir = os.path.join(root, socket.gethostname(),
-            str(os.getpid()))
-        if not os.path.exists(shuffleDir):
-            try:
-                os.makedirs(shuffleDir)
-            except:
-                pass
-        else:
-            pass # TODO: clean dir
-
-        logging.debug("shuffle dir: %s", shuffleDir)
+    def initialize(cls, isMaster):
+        shuffleDir = env.get('WORKDIR')
+        while not os.path.exists(shuffleDir):
+            time.sleep(0.1) # HACK for moosefs
         cls.shuffleDir = shuffleDir
         cls.serverUri = shuffleDir
+        logging.debug("shuffle dir: %s", shuffleDir)
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId):

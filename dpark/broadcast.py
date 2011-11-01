@@ -156,12 +156,7 @@ class FileBroadcast(Broadcast):
     compress = False
     @classmethod
     def initialize(cls, is_master):
-        if os.path.exists('/mfs/tmp'):
-            cls.workdir = '/mfs/tmp/dpark/broadcast'
-        else:
-            cls.workdir = '/tmp/dpark/broadcast'
-        if not os.path.exists(cls.workdir):
-            os.makedirs(cls.workdir)
+        cls.workdir = env.get('WORKDIR')
         logging.debug("FileBroadcast initialized")
 
 class FileBroadcastFactory:

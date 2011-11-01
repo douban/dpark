@@ -2,6 +2,7 @@
 import sys, os, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from datetime import date,timedelta
+import cPickle
 from dpark import DparkContext
 from operator import itemgetter
 from dpark.dependency import Aggregator
@@ -23,8 +24,10 @@ def gen_map(crawler_ip):
     crawler_ip = dpark.broadcast(crawler_ip)
     def gen_data(line):
         try:
-            uid,ip,bid,_,nurl,_,_,_,pt = line[UID:11]
+            uid,ip,bid,_,nurl,_,code,_,pt = line[UID:11]
             if not uid and not bid and ip in crawler_ip.value:
+                return
+            if int(code) >= 400:
                 return
             upv, apv = (1, 0) if uid else (0, 1)
             pt = pt and float(pt) or 0.1
@@ -33,9 +36,9 @@ def gen_map(crawler_ip):
             v = (upv,apv,pt,uid,bid,ip)
             yield (0,nurl),v
             # root url
-            nurls = nurl.split('/', 7)
-            for i in range(1, len(nurls)):
-                u = '/'.join(nurls[:i])
+            nurls = nurl.split('?',1)[0].split('#')[0].split('/')
+            for i in range(len(nurls)):
+                u = '/'.join(nurls[:i+1])
                 yield (1, u), v
         except Exception:
             print line 
@@ -53,7 +56,7 @@ def addData(all, new):
     return mergeData(all, create(new))
 agg = Aggregator(create, addData, mergeData)
 
-def pvstat(theday):
+def get_pvstat(theday):
     path = '/mfs/log/weblog/%s/' % theday.strftime("%Y/%m/%d")
     weblog = dpark.csvFile(path)
 
@@ -77,10 +80,53 @@ def pvstat(theday):
         ).collectAsMap()
     return pv
 
+def get_parent(nurl):
+    if  nurl.endswith("/"):
+        return nurl and "/".join(nurl.rstrip("/").split("/")) or ""
+    else:
+        return nurl and "/".join(nurl.rstrip("/").split("/")[:-1]) or ""
+
+def save(day, pvstats):
+    from douban.sqlstore import store_from_config
+    store = store_from_config('rohan-online')
+    store.execute('delete from pvstat2 where day=%s', day)
+    store.execute('delete from rooturl3 where day=%s', day)
+    for ((flag, nurl),(upv,apv,pt,uid,bid,ip)) in pvstats.iteritems():
+        pv = upv + apv
+        if flag == 0:
+            try:
+                store.execute('insert into pvstat2 (day,nurl,pv,upv,apv,ip,uid,bid,pt) '
+                'values (%s,%s,%s,%s,%s,%s,%s,%s,%s)', 
+                (day, nurl[:120], pv,upv,apv,ip,uid,bid,pt*1000))
+            except Exception:
+                #print nurl
+                pass
+        else:
+            #rooturl
+            #parent = '/'.join(nurl.split('/')[:-1])
+            parent = get_parent(nurl)
+            try:
+                store.execute('insert into rooturl3 (day,parent,nurl,pv,upv,apv,ip,uid,bid,pt)' 
+                    ' values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
+                    (day,parent,nurl[:120],pv,upv,apv,ip,uid,bid,pt*1000))
+            except Exception:
+                #print parent, nurl
+                pass
+    store.commit()
+
 if __name__ == '__main__':
-    day = date.today() - timedelta(days=1)
-    pv = pvstat(day)
-    print len(pv)
-    for u,d in sorted(pv.items()):
-        if d[0] > 1000000:
-            print u,d
+    for i in range(1,60):
+        day = date.today() - timedelta(days=i)
+        print day
+        name = '/mfs/tmp/pvstat-%s' % day
+        if os.path.exists(name):
+            #pv = cPickle.load(open(name))
+            pass
+        else:
+            try:
+                pv = get_pvstat(day)
+            except IOError:
+                continue
+            cPickle.dump(pv, open(name,'w'))
+            print len(pv)
+            save(day, pv)

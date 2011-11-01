@@ -46,9 +46,9 @@ class KeySpace(Cache):
     def pop(self, key):
         return self.map.pop((self.id, key))
 
-manager = multiprocessing.Manager()
-class ProcessCache(Cache):
-    map = manager.dict()
+#manager = multiprocessing.Manager()
+#class ProcessCache(Cache):
+#    map = manager.dict()
 
 class SerializingCache(Cache):
     def __init__(self, cache):
@@ -229,17 +229,17 @@ class CacheTracker:
         raise Exception("!!!")
 
 def set_cache():
-    cache = ProcessCache()
+    cache = mmapCache()
     cache.put('a','b')
     return True
 
 def get_cache():
-    cache = ProcessCache()
+    cache = mmapCache()
     return cache.get('a')
 
 def test():
     logging.basicConfig(level=logging.DEBUG)
-    cache = ProcessCache()
+    cache = mmapCache()
     pool = multiprocessing.Pool(2)
     assert pool.apply(set_cache) == True
     assert pool.apply(get_cache) == 'b'

@@ -1,4 +1,6 @@
 import os, logging
+import time
+import socket
 import threading
 
 class DparkEnv:
@@ -18,13 +20,23 @@ class DparkEnv:
             return
         logging.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
-        self.environ.update(environ)
+        if isMaster:
+            root = '/tmp/dpark'
+            if os.path.exists('/mfs/tmp'):
+                root = '/mfs/tmp/dpark'
+            name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
+                socket.gethostname(), os.getpid())
+            self.workdir = os.path.join(root, name)
+            os.makedirs(self.workdir)
+            self.environ['WORKDIR'] = self.workdir
+        else:
+            self.environ.update(environ)
 
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)
         
         from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        LocalFileShuffle.initialize()
+        LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker(isMaster)
         self.shuffleFetcher = SimpleShuffleFetcher()
 
@@ -41,6 +53,18 @@ class DparkEnv:
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
+        
+        try:
+            for root,dirs,names in os.walk(self.workdir, topdown=False):
+                for name in names:
+                    path = os.path.join(root, name)
+                    os.remove(path)
+                for d in dirs:
+                    os.removedirs(os.path.join(root,d))
+            os.removedirs(self.workdir)
+        except OSError:
+            pass
+
         self.started = False
 
 env = DparkEnv()

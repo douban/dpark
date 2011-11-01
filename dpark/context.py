@@ -41,7 +41,7 @@ class DparkContext:
                 self.master = os.environ.get('MESOS_MASTER')
                 if not self.master:
                     raise ValueError("mesos master url needed")
-            self.scheduler = MesosScheduler(self.master, options.self) 
+            self.scheduler = MesosScheduler(self.master, options) 
             self.isLocal = False
         
         if options.parallel:
@@ -78,28 +78,26 @@ class DparkContext:
             numSlices = self.defaultParallelism
         return self.parallelize(seq, numSlices)
     
-    def textFile(self, path, numSplits=None, splitSize=None, ext=''):
-        if not os.path.exists(path):
-            raise IOError("not exists: %s" % path)
+    def textFile(self, path, numSplits=None, splitSize=None,
+            ext='', followLink=True, subdir=False, cls=TextFileRDD):
         if os.path.isdir(path):
-            rdds = [TextFileRDD(self, os.path.join(path, n),numSplits,splitSize) 
-                     for n in os.listdir(path) 
-                         if not os.path.isdir(os.path.join(path, n))
-                             and n.endswith(ext)]
+            paths = [os.path.join(path, n) for n in os.listdir(path)
+                    if n.endswith(ext) and not n.startswith('.')]
+            if not followLink:
+                paths = [p for p in paths if not os.path.islink(p)]
+            if not subdir:
+                paths = [p for p in paths if not os.path.isdir(p)]
+            else:
+                #TODO subdir
+                raise NotImplementedError
+            rdds = [cls(self, p, numSplits,splitSize) 
+                     for p in paths]
             return self.union(rdds)
         else:
-            return TextFileRDD(self, path, numSplits, splitSize)
+            return cls(self, path, numSplits, splitSize)
 
-    def csvFile(self, path, numSplits=None, splitSize=None):
-        if not os.path.exists(path):
-            raise IOError("not exists: %s" % path)
-        if os.path.isdir(path):
-            rdds = [CSVFileRDD(self, os.path.join(path, n),numSplits,splitSize) 
-                     for n in os.listdir(path) 
-                     if not os.path.isdir(os.path.join(path, n))]
-            return self.union(rdds)
-        else:
-            return CSVFileRDD(self, path, numSplits, splitSize)
+    def csvFile(self, *args, **kwargs):
+        return self.textFile(cls=CSVFileRDD, *args, **kwargs)
 
 #    def objectFile(self, path, minSplits=None):
 #        if minSplits is None:
@@ -141,13 +139,21 @@ class DparkContext:
 def parse_options():
     parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
     parser.allow_interspersed_args=False
+
     parser.add_option("-m", "--master", type="string", default="local")
     parser.add_option("-n", "--name", type="string", default="dpark")
     parser.add_option("-p", "--parallel", type="int", default=0)
+
+    parser.add_option("-c", "--cpus", type="float", default=1.0,
+                    help="cpus used per task")
+    parser.add_option("--mem", type="float", default=100.0,
+                    help="memory used per task")
+
     parser.add_option("--self", action="store_true",
         help="user self as exectuor")
     parser.add_option("--profile", action="store_true",
         help="do profile using yappi")
+
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
     options, args = parser.parse_args()

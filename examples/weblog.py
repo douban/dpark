@@ -7,13 +7,13 @@ import pickle
 dpark = DparkContext()
 
 webservers = ['bifur', 'bofur', 'faramir']
-log_path = "/mfs/log/nginx-log/current/%s/access_log-%s" 
+log_path = ["/mfs/log/nginx-log/current/%s/access_log-%s",
+    "/mfs/log/nginx-log/current/%s/mobile_access_log-%s"]
 
 def peek(day):
     before = (day-timedelta(days=1)).strftime('%d/%b/%Y')
     after = (day+timedelta(days=1)).strftime('%d/%b/%Y')
     day = day.strftime('%d/%b/%Y')
-    print before, day, after
     def func(lines):
         for line in lines:
             t = line.split(' ', 3)[2]
@@ -29,20 +29,23 @@ def peek(day):
     return func
 
 today = date.today()
-for i in range(0, 60):
+for i in range(14, 60):
     day = today - timedelta(days=i)
     yesterday = day - timedelta(days=1)
+    #path = '/mfs/log/weblog/%s/' % yesterday.strftime("%Y/%m/%d")
     path = '/mfs/log/weblog/%s/' % yesterday.strftime("%Y/%m/%d")
     print 'target', path
     if not os.path.exists(path):
         os.makedirs(path)
-    target = dpark.textFile(path)
-    if len(target) > 530:
-        continue
+    #target = dpark.textFile(path)
+    #if len(target) > 530:
+    #    continue
     try:
-        rawlog = dpark.union(
-                [dpark.textFile(log_path % (h,d.strftime("%Y%m%d")))
-                 for d in (yesterday, day) for h in webservers])
+        logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")))
+                 for p in log_path
+                 for d in (yesterday, day) 
+                 for h in webservers]
+        rawlog = dpark.union(logs)
         if len(rawlog) < 1000:
             continue
         rawlog = rawlog.glom().flatMap(peek(yesterday))
