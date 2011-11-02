@@ -9,12 +9,19 @@ from douban.sqlstore import store_from_config
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
 dpark = DparkContext()
 
+def parse_time(ss):
+    h,m,s = ss.split(':')
+    return int(h)*3600 + int(m)*60 + int(s)
+
 def site_log(day):
     path = '/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d")
-    alllog = dpark.textFile(path).map(lambda line:line.split(',')).map(lambda line:(line[URL],line[BID]))
-    sitelog = alllog.filter(lambda (u,bid): u.startswith('/site/')).map(lambda (u,bid):(u[5:],bid)).groupByKey()
+    sitelog = dpark.csvFile(path).filter(
+            lambda l:l[URL].startswith('/site/')
+        ).map(
+            lambda line:(line[URL][5:],(line[BID],parse_time(line[TIME])))
+        ).groupByKey()
 
-    black_dir = ('widget','censor', 'j', 'cart', 'invite', 'about', 'tos', 'blank', 'apply')
+    black_dir = ('widget','censor', 'j', 'cart', 'invite', 'about', 'tos', 'blank', 'apply', 'site')
 
     sites = sitelog.map(
             lambda (u,bids):(u.split('/'),bids)
@@ -39,28 +46,51 @@ def merge_by_site(sites, widgets, site_widgets):
     return dict((uid, (len(bids),len(set(bids))))
         for uid,bids in sites.iteritems())
 
+VISIT_PERIOD = 30 * 60
+MIN_PERIOD = 10
+
+def calcu(logs):
+    logs.sort()
+    visits = {}
+    for bid, t in logs:
+        if bid not in visits:
+            visits[bid] = [[t,t]]
+        else:
+            last = visits[bid][-1][1]
+            if t < last + VISIT_PERIOD:
+                visits[bid][-1][1] = t
+            else:
+                visits[bid].append([t,t])
+    pv = len(logs)
+    uv = len(visits)
+    n_visit = sum(len(vs) for vs in visits.itervalues())
+    avg_time = sum(max(MIN_PERIOD, b-a) 
+            for vs in visits.itervalues() for a,b in vs) / n_visit
+    return pv, uv, n_visit, avg_time
+
 sys.path.append('/var/shire')
 store = store_from_config("shire-offline")
 
 def save_report(day, sites, widgets):
     from luzong.site import Site
     for uid in sites:
-        bids = sites[uid]
         site = Site.get(uid)
         if not site:
             continue
+        logs = sites[uid]
         for rid, in store.execute("select id from room where site_id=%s", site.id):
             for wid, in store.execute("select id from widget where container_id=%s", rid):
-                bids.extend(widgets.get(str(wid),[]))
-        pv = len(bids)
-        uv = len(set(bids))
-        store.execute("replace into site_report (date,site_id,pv,uv) "
-            "values (%s, %s, %s, %s)", (day, site.id, pv, uv))
+                logs.extend(widgets.get(str(wid),[]))
+        pv, uv, visits, avg_time = calcu(logs)
+        store.execute("replace into site_report (date,site_id,pv,uv,visits,avg_time) "
+            "values (%s,%s,%s,%s,%s,%s)", 
+            (day, site.id, pv, uv, visits, avg_time))
     for wid in widgets:
         if wid.isdigit():
+            uv = len(dict((widgets[wid])))
             store.execute("replace into widget_report (date, widget_id, pv,uv)"
                 " values (%s,%s,%s,%s)", 
-                (day,wid,len(widgets[wid]),len(set(widgets[wid]))))
+                (day,wid,len(widgets[wid]),uv))
     store.commit()
     print 'completed', len(sites)
 
