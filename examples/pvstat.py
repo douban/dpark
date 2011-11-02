@@ -103,19 +103,18 @@ def save(day, pvstats):
                 pass
         else:
             #rooturl
-            #parent = '/'.join(nurl.split('/')[:-1])
             parent = get_parent(nurl)
             try:
                 store.execute('insert into rooturl3 (day,parent,nurl,pv,upv,apv,ip,uid,bid,pt)' 
                     ' values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
-                    (day,parent,nurl[:120],pv,upv,apv,ip,uid,bid,pt*1000))
+                    (day,parent[:120],nurl[:120],pv,upv,apv,ip,uid,bid,pt*1000))
             except Exception:
                 #print parent, nurl
                 pass
     store.commit()
 
 if __name__ == '__main__':
-    for i in range(1,60):
+    for i in range(1,10):
         day = date.today() - timedelta(days=i)
         print day
         name = '/mfs/tmp/pvstat-%s' % day
@@ -125,8 +124,10 @@ if __name__ == '__main__':
         else:
             try:
                 pv = get_pvstat(day)
+                if len(pv) > 10000:
+                    cPickle.dump(pv, open(name,'w'))
+                    save(day, pv)
+                else:
+                    print 'data not enough', len(pv)
             except IOError:
                 continue
-            cPickle.dump(pv, open(name,'w'))
-            print len(pv)
-            save(day, pv)

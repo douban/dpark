@@ -22,7 +22,9 @@ class DparkEnv:
                 isMaster, environ)
         if isMaster:
             root = '/tmp/dpark'
-            if os.path.exists('/mfs/tmp'):
+            if os.path.exists('/home2/dpark'):
+                root = '/home2/dpark'
+            elif os.path.exists('/mfs/tmp'):
                 root = '/mfs/tmp/dpark'
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
                 socket.gethostname(), os.getpid())
@@ -54,16 +56,18 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
         
+        logging.info("cleaning workdir ...")
         try:
             for root,dirs,names in os.walk(self.workdir, topdown=False):
                 for name in names:
                     path = os.path.join(root, name)
                     os.remove(path)
                 for d in dirs:
-                    os.removedirs(os.path.join(root,d))
-            os.removedirs(self.workdir)
+                    os.rmdir(os.path.join(root,d))
+            os.rmdir(self.workdir)
         except OSError:
             pass
+        logging.info("done.")
 
         self.started = False
 

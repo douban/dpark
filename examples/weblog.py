@@ -29,7 +29,7 @@ def peek(day):
     return func
 
 today = date.today()
-for i in range(14, 60):
+for i in range(0, 10):
     day = today - timedelta(days=i)
     yesterday = day - timedelta(days=1)
     #path = '/mfs/log/weblog/%s/' % yesterday.strftime("%Y/%m/%d")
@@ -37,9 +37,9 @@ for i in range(14, 60):
     print 'target', path
     if not os.path.exists(path):
         os.makedirs(path)
-    #target = dpark.textFile(path)
-    #if len(target) > 530:
-    #    continue
+    target = dpark.textFile(path)
+    if len(target) > 600:
+        continue
     try:
         logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")))
                  for p in log_path

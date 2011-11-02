@@ -57,9 +57,10 @@ def save_report(day, sites, widgets):
         store.execute("replace into site_report (date,site_id,pv,uv) "
             "values (%s, %s, %s, %s)", (day, site.id, pv, uv))
     for wid in widgets:
-        store.execute("replace into widget_report (date, widget_id, pv,uv)"
-            " values (%s,%s,%s,%s)", 
-            (day,wid,len(widgets[wid]),len(set(widgets[wid]))))
+        if wid.isdigit():
+            store.execute("replace into widget_report (date, widget_id, pv,uv)"
+                " values (%s,%s,%s,%s)", 
+                (day,wid,len(widgets[wid]),len(set(widgets[wid]))))
     store.commit()
     print 'completed', len(sites)
 
@@ -70,7 +71,8 @@ if __name__ == '__main__':
         print day, path
         if not os.path.exists(path):
             sites, widgets = site_log(day)
-            cPickle.dump((sites, widgets), open(path,'w'))
-            save_report(day, sites, widgets)
+            if len(sites) > 1000 and len(widgets) > 1000:
+                cPickle.dump((len(sites), len(widgets)), open(path,'w'))
+                save_report(day, sites, widgets)
 #        else:
 #            sites, widgets = cPickle.load(open(path))
