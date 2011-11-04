@@ -165,15 +165,19 @@ class DAGScheduler(Scheduler):
                 return
             visited.add(r.id)
             locs = self.getCacheLocs(r)
+            cached = True
             for i in range(len(r)):
                 if not locs[i]:
-                    for dep in r.dependencies:
-                        if isinstance(dep, ShuffleDependency):
-                            stage = self.getShuffleMapStage(dep)
-                            if not stage.isAvailable:
-                                missing.add(stage)
-                        elif isinstance(dep, NarrowDependency):
-                            visit(dep.rdd)
+                    cached = False
+                    break
+            if not cached:
+                for dep in r.dependencies:
+                    if isinstance(dep, ShuffleDependency):
+                        stage = self.getShuffleMapStage(dep)
+                        if not stage.isAvailable:
+                            missing.add(stage)
+                    elif isinstance(dep, NarrowDependency):
+                        visit(dep.rdd)
 
         visit(stage.rdd)
         return list(missing)
@@ -217,17 +221,30 @@ class DAGScheduler(Scheduler):
         def submitMissingTasks(stage):
             myPending = pendingTasks.setdefault(stage, set())
             tasks = []
+            have_prefer = True
             if stage == finalStage:
                 for i in range(numOutputParts):
                     if not finished[i]:
                         part = outputParts[i]
-                        locs = self.getPreferredLocs(finalRdd, part)
-                        tasks.append(ResultTask(finalStage.id, finalRdd, func, part, locs, i))
+                        if have_prefer:
+                            locs = self.getPreferredLocs(finalRdd, part)
+                            if not locs:
+                                have_prefer = False
+                        else:
+                            locs = []
+                        tasks.append(ResultTask(finalStage.id, finalRdd, 
+                            func, part, locs, i))
             else:
                 for p in range(stage.numPartitions):
                     if not stage.outputLocs[p]:
-                        locs = self.getPreferredLocs(stage.rdd, p)
-                        tasks.append(ShuffleMapTask(stage.id, stage.rdd, stage.shuffleDep, p, locs))
+                        if have_prefer:
+                            locs = self.getPreferredLocs(finalRdd, p)
+                            if not locs:
+                                have_prefer = False
+                        else:
+                            locs = []
+                        tasks.append(ShuffleMapTask(stage.id, stage.rdd,
+                            stage.shuffleDep, p, locs))
             logging.debug("add to pending %s tasks", len(tasks))
             myPending |= set(t.id for t in tasks)
             self.submitTasks(tasks)
@@ -324,7 +341,7 @@ class LocalScheduler(DAGScheduler):
     def submitTasks(self, tasks):
         logging.debug("submit tasks %s in LocalScheduler", tasks)
         for task in tasks:
-            task = cPickle.loads(cPickle.dumps(task, -1))
+#            task = cPickle.loads(cPickle.dumps(task, -1))
             _, reason, result, update = run_task(task, self.nextAttempId())
             self.taskEnded(task, reason, result, update)
     def stop(self):

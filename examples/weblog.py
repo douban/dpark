@@ -38,15 +38,15 @@ for i in range(0, 10):
     if not os.path.exists(path):
         os.makedirs(path)
     target = dpark.textFile(path)
-    if len(target) > 600:
+    if len(target) > 100:
         continue
     try:
-        logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")))
+        logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")), splitSize=512<<20)
                  for p in log_path
                  for d in (yesterday, day) 
                  for h in webservers]
         rawlog = dpark.union(logs)
-        if len(rawlog) < 1000:
+        if len(rawlog) < 100:
             continue
         rawlog = rawlog.glom().flatMap(peek(yesterday))
 #        print rawlog.take(10)

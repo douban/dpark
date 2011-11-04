@@ -632,12 +632,6 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        if not os.path.exists(path):
-            #raise IOError("not exists")
-            self.len = 0
-            self.splitSize = 1
-            return
-
         size = os.path.getsize(path)
         if splitSize is None:
             if numSplits is None:

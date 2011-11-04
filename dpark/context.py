@@ -79,17 +79,23 @@ class DparkContext:
         return self.parallelize(seq, numSlices)
     
     def textFile(self, path, numSplits=None, splitSize=None,
-            ext='', followLink=True, subdir=False, cls=TextFileRDD):
+            ext='', followLink=True, maxdepth=0, cls=TextFileRDD):
         if os.path.isdir(path):
-            paths = [os.path.join(path, n) for n in os.listdir(path)
-                    if n.endswith(ext) and not n.startswith('.')]
-            if not followLink:
-                paths = [p for p in paths if not os.path.islink(p)]
-            if not subdir:
-                paths = [p for p in paths if not os.path.isdir(p)]
-            else:
-                #TODO subdir
-                raise NotImplementedError
+            paths = []
+            for root,dirs,names in os.walk(path, followlinks=followLink):
+                if maxdepth > 0:
+                    depth = len(filter(None, root[len(path):].split('/'))) + 1
+                    if depth > maxdepth:
+                        break
+                for n in names:
+                    if n.endswith(ext) and not n.startswith('.'):
+                        p = os.path.join(root, n)
+                        if followLink or not os.path.islink(p):
+                            paths.append(p)
+                for d in dirs[:]:
+                    if d.startswith('.'):
+                        dirs.remove(d)
+
             rdds = [cls(self, p, numSplits,splitSize) 
                      for p in paths]
             return self.union(rdds)
