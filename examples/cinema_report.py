@@ -43,12 +43,12 @@ def save_report(day, stats):
 if __name__ == '__main__':
     for i in range(1, 10):
         day = date.today() - timedelta(days=i)
-        path = '/tmp/cinema-report-%s' % day.strftime("%Y-%m-%d")
+        path = '/mfs/tmp/cinema-report-%s' % day.strftime("%Y-%m-%d")
         if not os.path.exists(path):
             stats = cinema_stat(day)
             if len(stats) > 100:
                 cPickle.dump(stats, open(path,'w'))
                 save_report(day, stats)
-        else:
-            stats = cPickle.load(open(path))
-            save_report(day, stats)
+#        else:
+#            stats = cPickle.load(open(path))
+#            save_report(day, stats)

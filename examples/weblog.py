@@ -11,7 +11,6 @@ log_path = ["/mfs/log/nginx-log/current/%s/access_log-%s",
     "/mfs/log/nginx-log/current/%s/mobile_access_log-%s"]
 
 def peek(day):
-    before = (day-timedelta(days=1)).strftime('%d/%b/%Y')
     after = (day+timedelta(days=1)).strftime('%d/%b/%Y')
     day = day.strftime('%d/%b/%Y')
     def func(lines):
@@ -20,16 +19,12 @@ def peek(day):
             d = t[1:12]
             if d == day:
                 yield line 
-                continue
-            t = t[13:18]
-            if d == before and t < "23:50":
-                return
-            if d == after:
+            elif d == after:
                 return
     return func
 
 today = date.today()
-for i in range(0, 10):
+for i in range(0, 5):
     day = today - timedelta(days=i)
     yesterday = day - timedelta(days=1)
     #path = '/mfs/log/weblog/%s/' % yesterday.strftime("%Y/%m/%d")
@@ -38,7 +33,7 @@ for i in range(0, 10):
     if not os.path.exists(path):
         os.makedirs(path)
     target = dpark.textFile(path)
-    if len(target) > 100:
+    if len(target) > 80:
         continue
     try:
         logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")), splitSize=512<<20)
@@ -46,7 +41,7 @@ for i in range(0, 10):
                  for d in (yesterday, day) 
                  for h in webservers]
         rawlog = dpark.union(logs)
-        if len(rawlog) < 100:
+        if len(rawlog) < 150:
             continue
         rawlog = rawlog.glom().flatMap(peek(yesterday))
 #        print rawlog.take(10)

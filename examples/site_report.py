@@ -98,7 +98,7 @@ if __name__ == '__main__':
     for i in range(1, 10):
         day = date.today() - timedelta(days=i)
         path = '/tmp/site-report-%s' % day.strftime("%Y-%m-%d")
-        print day, path
+#        print day, path
         if not os.path.exists(path):
             sites, widgets = site_log(day)
             if len(sites) > 1000 and len(widgets) > 1000:

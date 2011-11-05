@@ -116,7 +116,7 @@ def save(day, pvstats):
 if __name__ == '__main__':
     for i in range(1,10):
         day = date.today() - timedelta(days=i)
-        print day
+#        print day
         name = '/mfs/tmp/pvstat-%s' % day
         if os.path.exists(name):
             #pv = cPickle.load(open(name))
