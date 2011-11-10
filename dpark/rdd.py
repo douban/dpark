@@ -95,6 +95,17 @@ class RDD:
     def union(self, rdd):
         return UnionRDD(self.ctx, [self, rdd])
 
+    def sort(self, key=lambda x:x, numSplits=None):
+        if numSplits is None:
+            numSplits = min(self.ctx.defaultMinSplits, len(self))
+        n = numSplits * 10 / len(self)
+        samples = self.glom().flatMap(lambda x:islice(x, n)).map(key).collect()
+        keys = sorted(samples)[5::10][:numSplits-1]
+        aggr = MergeAggregator()
+        parter = RangePartitioner(keys)
+        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
+        return parted.glom().flatMap(lambda x:sorted(x))
+
     def glom(self):
         return GlommedRDD(self)
 

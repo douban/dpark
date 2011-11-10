@@ -1,4 +1,4 @@
-
+import bisect
 from utils import *
 
 class Dependency:
@@ -41,6 +41,14 @@ class RangeDependency(NarrowDependency):
             return [pid - self.outStart + self.inStart]
         return []
 
+class ShuffleDependency(Dependency):
+    isShuffle = True
+    def __init__(self, shuffleId, rdd, aggregator, partitioner):
+        Dependency.__init__(self, rdd)
+        self.shuffleId = shuffleId
+        self.aggregator = aggregator
+        self.partitioner = partitioner
+
 
 class Aggregator:
     def __init__(self, createCombiner, mergeValue,
@@ -59,6 +67,34 @@ class Aggregator:
         self.createCombiner = load_func(c1)
         self.mergeValue = load_func(c2)
         self.mergeCombiners = load_func(c3)
+
+class AddAggregator:
+    def createCombiner(self, x):
+        return x
+    def mergeValue(self, s, x):
+        return s + x
+    def mergeCombiners(self, x, y):
+        return x + y
+
+class MergeAggregator:
+    def createCombiner(self, x):
+        return [x]
+    def mergeValue(self, s, x):
+        s.append(x)
+        return s
+    def mergeCombiners(self, x, y):
+        x.extend(y)
+        return x
+
+class UniqAggregator:
+    def createCombiner(self, x):
+        return set([x])
+    def mergeValue(self, s, x):
+        s.add(x)
+        return s
+    def mergeCombiners(self, x, y):
+        x |= y
+        return x
 
 class Partitioner:
     @property
@@ -83,10 +119,18 @@ class HashPartitioner(Partitioner):
             return other.numPartitions == self.numPartitions
         return False
 
-class ShuffleDependency(Dependency):
-    isShuffle = True
-    def __init__(self, shuffleId, rdd, aggregator, partitioner):
-        Dependency.__init__(self, rdd)
-        self.shuffleId = shuffleId
-        self.aggregator = aggregator
-        self.partitioner = partitioner
+class RangePartitioner(Partitioner):
+    def __init__(self, keys):
+        self.keys = sorted(keys)
+
+    @property        
+    def numPartitions(self):
+        return len(self.keys) + 1
+
+    def getPartition(self, key):
+        return bisect.bisect(self.keys, key)
+
+    def __eq__(self, other):
+        if isinstance(other, Partitioner):
+            return other.numPartitions == self.numPartitions
+        return False

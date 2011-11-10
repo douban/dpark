@@ -3,6 +3,7 @@ sys.path.insert(0, './')
 import cPickle
 import unittest
 import pprint
+import random
 from dpark.context import *
 from dpark.rdd import *
 
@@ -78,12 +79,19 @@ class TestRDD(unittest.TestCase):
         nums.map(lambda x: acc.add([x])).count()
         self.assertEqual(list(sorted(acc.value)), range(4))
 
+    def test_sort(self):
+        d = range(100)
+        self.assertEqual(self.sc.makeRDD(d, 10).collect(), range(100))
+        random.shuffle(d)
+        rdd = self.sc.makeRDD(d, 10)
+        self.assertEqual(rdd.sort(numSplits=10).collect(), range(100))
+
     def test_file(self):
         f = self.sc.textFile(__file__)
         n = len(open(__file__).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 7)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 8)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True).collect(),
             ['/tmp/tout/0000']) 
