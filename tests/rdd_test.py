@@ -4,6 +4,7 @@ import cPickle
 import unittest
 import pprint
 import random
+import operator
 from dpark.context import *
 from dpark.rdd import *
 
@@ -36,7 +37,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.mapPartitions(lambda x:[sum(x)]).collect(),[1, 5])
         self.assertEqual(nums.map(lambda x:str(x)+"/").reduce(lambda x,y:x+y),
             "0/1/2/3/")
-        self.assertEqual(nums.pipe('grep 3').collect(), ['3'])
+        self.assertEqual(nums.pipe('grep 3').collect(), ['3\n'])
 
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
@@ -71,7 +72,7 @@ class TestRDD(unittest.TestCase):
         d = range(4)
         nums = self.sc.makeRDD(d, 2)
         
-        acc = self.sc.accumulator(0)
+        acc = self.sc.accumulator()
         nums.map(lambda x: acc.add(x)).count()
         self.assertEqual(acc.value, 6)
         
@@ -91,15 +92,14 @@ class TestRDD(unittest.TestCase):
         n = len(open(__file__).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 8)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 9)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True).collect(),
             ['/tmp/tout/0000']) 
         d = self.sc.textFile('/tmp/tout')
         n = len(open(__file__).readlines())
         self.assertEqual(d.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(
-            lambda x,y: x+y
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout', overwrite=True).collect(),
             ['/tmp/tout/0000.csv'])
 
