@@ -1,7 +1,5 @@
-import logging
-from threading import currentThread
-from utils import load_func, dump_func
-
+from serialize import load_func, dump_func
+from operator import add
 
 class AccumulatorParam:
     def __init__(self, zero, addInPlace):
@@ -15,64 +13,64 @@ class AccumulatorParam:
         add, self.zero = state
         self.addInPlace = load_func(add)
 
-intAcc = AccumulatorParam(0, lambda x,y:x+y)
+numAcc = AccumulatorParam(0, add)
 listAcc = AccumulatorParam([], lambda x,y:x.extend(y) or x)
 mapAcc = AccumulatorParam({}, lambda x,y:x.update(y) or x)
+setAcc = AccumulatorParam(set(), lambda x,y:x.update(y) or x)
 
 
 class Accumulator:
-    def __init__(self, initialValue, param=intAcc):
+    def __init__(self, initialValue=0, param=numAcc):
         self.id = self.newId()
         if param is None:
-            param = intAcc
+            param = numAcc
         self.param = param
-        self._value = initialValue
-        self.deserialized = False
+        self.value = initialValue
         self.register(self, True)
 
-    def _get_value(self):
-        return self._value
-    def _set_value(self, v):
-        self._value = v
-    value = property(_get_value, _set_value)
-  
     def add(self, v):
-        self._value = self.param.addInPlace(self._value, v)
-        self.register(self, not self.deserialized)
+        self.value = self.param.addInPlace(self.value, v)
 
-    def __setstate__(self, d):
-        self.__dict__.update(d)
-        self.deserialized = True
-        self._value = self.param.zero
+    def reset(self):
+        self.value = self.param.zero
+
+    def __getstate(self):
+        return self.id, self.param 
+
+    def __setstate__(self, s):
+        self.id, self.param = s
+        self.value = self.param.zero
+        self.register(self, False)
 
     nextId = 0
-    originals = {}
-    localAccums = {}
     @classmethod
     def newId(cls):
         cls.nextId += 1
         return cls.nextId
 
+    originals = {}
+    localAccums = {}
     @classmethod
     def register(cls, acc, original):
         if original:
             cls.originals[acc.id] = acc
         else:
-            accums = cls.localAccums.setdefault(currentThread(), {})
-            accums[acc.id] = acc
+            cls.localAccums[acc.id] = acc
 
     @classmethod
     def clear(cls):
-        if currentThread() in cls.localAccums:
-            del cls.localAccums[currentThread()]
+        cls.localAccums.clear()
 
     @classmethod
     def values(cls):
-        accums = cls.localAccums.get(currentThread(), {})
-        return dict((id, accum.value) for id,accum in accums.items())
+        return dict((id, accum.value) for id,accum in cls.localAccums.items())
 
     @classmethod
     def merge(cls, values):
         for id, value in values.items():
-            if id in cls.originals:
-                cls.originals[id].add(value)
+            cls.originals[id].add(value)
+
+ReadBytes = Accumulator()
+WriteBytes = Accumulator()
+CacheHits = Accumulator()
+CacheMisses = Accumulator()
