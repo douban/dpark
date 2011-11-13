@@ -103,6 +103,7 @@ class MasterConn:
         return d
 
     def sendAndReceive(self, cmd, *args):
+        #print 'sendAndReceive', cmd, args
         packetid = 1
         msg = pack(cmd, packetid, *args)
         # TODO lock
@@ -178,9 +179,9 @@ class MasterConn:
             p += 1
             name = ans[p:p+length]
             p += length
-            inode, = unpack("B", ans[p:p+4])
+            i, = unpack("I", ans[p:p+4])
             attr = ans[p+4:p+39]
-            infos[name] = attrToFileInfo(inode, attr, name)
+            infos[name] = attrToFileInfo(i, attr, name)
             p += 39
         return infos
 

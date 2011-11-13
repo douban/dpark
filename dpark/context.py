@@ -6,9 +6,9 @@ from rdd import *
 from schedule import *
 from env import env
 from broadcast import Broadcast
+import moosefs
 
 class DparkContext:
-    nextRddId = 0
     nextShuffleId = 0
 
     def __init__(self, master=None, name=None):
@@ -29,9 +29,6 @@ class DparkContext:
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
             self.isLocal = True
-        elif self.master.startswith('thread'):
-            self.scheduler = MultiThreadScheduler(options.parallel)
-            self.isLocal = True
         elif self.master.startswith('process'):
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.isLocal = False
@@ -50,19 +47,7 @@ class DparkContext:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
        
-        self.profile = options.profile
-        if self.profile:
-            import yappi
-            yappi.start()
-
-        env.start(True)
-        self.scheduler.start()
-        self.started = True
-        atexit.register(self.stop)
-
-    def newRddId(self):
-        self.nextRddId += 1
-        return self.nextRddId
+        self.started = False
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -74,8 +59,6 @@ class DparkContext:
         return ParallelCollection(self, seq, numSlices)
 
     def makeRDD(self, seq, numSlices=None):
-        if numSlices is None:
-            numSlices = self.defaultParallelism
         return self.parallelize(seq, numSlices)
     
     def textFile(self, path, numSplits=None, splitSize=None,
@@ -105,19 +88,47 @@ class DparkContext:
     def csvFile(self, *args, **kwargs):
         return self.textFile(cls=CSVFileRDD, *args, **kwargs)
 
-#    def objectFile(self, path, minSplits=None):
-#        if minSplits is None:
-#            minSplits = self.defaultMinSplits
-#        return self.sequenceFile(path, minSplits).flatMap(lambda x: loads(x))
+    def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
+        f = moosefs.mfsopen(path)
+        if f.info.type == 'd':
+            for root, dirs, names in moosefs.walk(path):
+                for n in names:
+                    if n.endswith(ext) and not n.startswith('.'):
+                        paths.append(p)
+                for d in dirs[:]:
+                    if d.startswith('.'):
+                        dirs.remove(d)
+
+            rdds = [MFSTextFileRDD(self, p, **kw) 
+                     for p in paths]
+            return self.union(rdds)
+        else:
+            return MFSTextFileRDD(self, path, master, **kw)
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
-    def accumulator(self, init, param=None):
+    def accumulator(self, init=0, param=None):
         return Accumulator(init, param)
 
     def broadcast(self, v):
         return Broadcast.newBroadcast(v, self.isLocal)
+
+    def start(self):
+        if self.started:
+            return
+
+        env.start(True)
+        self.scheduler.start()
+        self.started = True
+        atexit.register(self.stop)
+
+    def runJob(self, rdd, func, partitions=None, allowLocal=False):
+        self.start()
+
+        if partitions is None:
+            partitions = range(len(rdd))
+        return self.scheduler.runJob(rdd, func, partitions, allowLocal)
 
     def stop(self):
         if not self.started:
@@ -126,18 +137,6 @@ class DparkContext:
         self.scheduler.stop()
         env.stop()
         self.started = False
-
-        if self.profile:
-            import yappi
-            yappi.print_stats()
-
-    def waitForRegister(self):
-        self.scheduler.waitForRegister()
-
-    def runJob(self, rdd, func, partitions=None, allowLocal=False):
-        if partitions is None:
-            partitions = range(len(rdd))
-        return self.scheduler.runJob(rdd, func, partitions, allowLocal)
 
     def __getstate__(self):
         raise ValueError("should not pickle ctx")
@@ -158,7 +157,7 @@ def parse_options():
     parser.add_option("--self", action="store_true",
         help="user self as exectuor")
     parser.add_option("--profile", action="store_true",
-        help="do profile using yappi")
+        help="do profiling")
 
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")

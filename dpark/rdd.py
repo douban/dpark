@@ -4,11 +4,12 @@ import threading
 import socket
 import csv
 import cStringIO
-from itertools import islice
+import itertools
 
-from utils import load_func, dump_func
+from serialize import load_func, dump_func
 from dependency import *
 from env import env
+import moosefs
 
 def ilen(x):
     try:
@@ -33,12 +34,18 @@ class RDD:
     _pickle_cache = {}
     def __init__(self, ctx):
         self.ctx = ctx
-        self.id = ctx.newRddId()
+        self.id = RDD.newId()
         self._splits = []
         self.dependencies = []
         self.aggregator = None
         self._partitioner = None
         self.shouldCache = False
+
+    nextId = 0
+    @classmethod
+    def newId(cls):
+        cls.nextId += 1
+        return cls.nextId
 
     @cached
     def __getstate__(self):
@@ -74,11 +81,9 @@ class RDD:
 
     def iterator(self, split):
         if self.shouldCache:
-            for i in env.cacheTracker.getOrCompute(self, split):
-                yield i
+            return env.cacheTracker.getOrCompute(self, split)
         else:
-            for i in self.compute(split):
-                yield i
+            return self.compute(split)
 
     def map(self, f):
         return MappedRDD(self, f)
@@ -99,7 +104,7 @@ class RDD:
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
-        samples = self.glom().flatMap(lambda x:islice(x, n)).map(key).collect()
+        samples = self.glom().flatMap(lambda x:itertools.islice(x, n)).map(key).collect()
         keys = sorted(samples)[5::10][:numSplits-1]
         aggr = MergeAggregator()
         parter = RangePartitioner(keys)
@@ -135,8 +140,7 @@ class RDD:
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
 
     def __iter__(self):
-        for i in self.collect():
-            yield i
+        return self.collect()
 
     def reduce(self, f):
         def reducePartition(it):
@@ -163,7 +167,7 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self):
-            res = self.ctx.runJob(self, lambda x: islice(x, n - len(r)), [p], True)
+            res = self.ctx.runJob(self, lambda x: itertools.islice(x, n - len(r)), [p], True)
             if res[0]:
                 r.extend(res[0])
             else:
@@ -217,8 +221,6 @@ class RDD:
                     vbuf.append(v)
                 elif n == 2:
                     wbuf.append(v)
-                else:
-                    yield Exception("invalid n")
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
@@ -234,8 +236,6 @@ class RDD:
                     vbuf.append(v)
                 elif n == 2:
                     wbuf.append(v)
-                else:
-                    yield Exception("invalid n")
             if not wbuf:
                 wbuf.append(None)
             for vv in vbuf:
@@ -303,8 +303,7 @@ class MappedRDD(RDD):
         return self.prev.splits
 
     def compute(self, split):
-        for v in self.prev.iterator(split):
-            yield self.func(v)
+        return itertools.imap(self.func, self.prev.iterator(split))
 
     @cached
     def __getstate__(self):
@@ -322,15 +321,12 @@ class MappedRDD(RDD):
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
-        for i in self.prev.iterator(split):
-            for j in self.func(i):
-                yield j
+        return itertools.chain.from_iterable(itertools.imap(self.func,
+            self.prev.iterator(split)))
 
 class FilteredRDD(MappedRDD):
     def compute(self, split):
-        for i in self.prev.iterator(split):
-            if self.func(i):
-                yield i
+        return itertools.ifilter(self.func, self.prev.iterator(split))
            
 class GlommedRDD(RDD):
     def __init__(self, prev):
@@ -372,13 +368,24 @@ class PipedRDD(RDD):
     def compute(self, split):
         import subprocess
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
-        def read():
-            for i in self.prev.iterator(split):
-                p.stdin.write("%s\n" % (i,))
-            p.stdin.close()
-        threading.Thread(target=read).start()
-        for line in p.stdout:
-            yield line[:-1] # drop \n
+        def read(stdin):
+            it = self.prev.iterator(split)
+            if isinstance(it, list):
+                it = iter(it)
+            try:
+                first = it.next()
+            except StopIteration:
+                stdin.close()
+                return
+            if isinstance(first, str) and first.endswith('\n'):
+                stdin.write(first)
+                stdin.writelines(it)
+            else:
+                stdin.write("%s\n"%first)
+                stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
+            stdin.close()
+        threading.Thread(target=read, args=[p.stdin]).start()
+        return p.stdout
 
 class MappedValuesRDD(MappedRDD):
     @property
@@ -386,8 +393,9 @@ class MappedValuesRDD(MappedRDD):
         return self.prev.partitioner
 
     def compute(self, split):
-        for k, v in self.prev.iterator(split):
-            yield k,self.func(v)
+        func = self.func
+        return itertools.imap(lambda (k,v):(k,func(v)),
+            self.prev.iterator(split))
 
 class FlatMappedValuesRDD(MappedValuesRDD):
     def compute(self, split):
@@ -463,10 +471,7 @@ class CartesionRDD(RDD):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
 
     def compute(self, split):
-        for x in self.rdd1.iterator(split.s1):
-            for y in self.rdd2.iterator(split.s2):
-                yield x,y
-
+        return itertools.product(self.rdd1.iterator(split.s1), self.rdd2.iterator(split.s2))
 
 class CoGroupSplitDep: pass
 class NarrowCoGroupSplitDep(CoGroupSplitDep):
@@ -666,6 +671,11 @@ class TextFileRDD(RDD):
         return '<TextFileRDD %s>' % self.path
 
     def compute(self, split):
+        if len(self) == 1 and split.index == 0:
+            return open(self.path, 'r', 4096 * 1024)
+        return self.read(split)
+
+    def read(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
 
@@ -680,7 +690,6 @@ class TextFileRDD(RDD):
         for line in f:
             if start >= end: break
             start += len(line)
-            if line[-1] == '\n': line = line[:-1]
             yield line
         f.close()
 
@@ -692,11 +701,10 @@ class CSVFileRDD(TextFileRDD):
     def compute(self, split):
         if self.len == 1:
             f = open(self.path, 'r', 4096 * 1024)
-        else:
-            f = cStringIO.StringIO(self.read_block(split))
-        for rows in csv.reader(f):
-            yield rows
-        f.close()
+            return csv.reader(f)
+        
+        f = cStringIO.StringIO(self.read_block(split))
+        return csv.reader(f)
 
     def read_block(self, split):
         start = split.index * self.splitSize
@@ -798,3 +806,52 @@ class OutputCSVFileRDD(OutputTextFileRDD):
             writer.writerow(row)
             empty = False
         return not empty 
+
+class MFSTextFileRDD(RDD):
+    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.file = moosefs.mfsopen(path, master)
+        size = self.file.length
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = 64*1024*1024
+            else:
+                splitSize = size / numSplits
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.splitSize = splitSize
+        self.len = n
+        self.locs = self.file.locs 
+
+    def __len__(self):
+        return self.len
+    
+    @property
+    def splits(self):
+        return [Split(i) for i in range(self.len)]
+
+    def preferredLocations(self, split):
+        return self.file.locs(split.index)
+
+    def __repr__(self):
+        return '<TextFileRDD %s>' % self.path
+
+    def compute(self, split):
+        start = split.index * self.splitSize
+        end = start + self.splitSize
+
+        f = self.file
+        if start > 0:
+            f.seek(start-1)
+            byte = f.read(1)
+            while byte != '\n':
+                byte = f.read(1)
+                start += 1
+
+        for line in f:
+            if start >= end: break
+            start += len(line)
+            if line[-1] == '\n': line = line[:-1]
+            yield line

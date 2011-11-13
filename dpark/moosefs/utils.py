@@ -36,7 +36,7 @@ class FileInfo:
             atime, mtime, ctime, nlink, length):
         self.inode = inode
         self.name = name
-        self.type = type
+        self.type = chr(type)
         if type == TYPE_DIRECTORY:
             mode |= S_IFDIR
         elif type == TYPE_SYMLINK:
@@ -54,7 +54,7 @@ class FileInfo:
         self.blocks = (length + 511) / 512
 
     def __repr__(self):
-        return ("FileInfo(%s, inode=%d, type=%d, length=%d)" %
+        return ("FileInfo(%s, inode=%d, type=%s, length=%d)" %
              (self.name, self.inode, self.type, self.length))
 
     def is_symlink(self):

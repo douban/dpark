@@ -18,19 +18,14 @@ from broadcast import Broadcast
 
 EXECUTOR_MEMORY = 512
 
-class TaskEndReason:
-    pass
-
-class Success(TaskEndReason):
-    pass
-
+class TaskEndReason: pass
+class Success(TaskEndReason): pass
 class FetchFailed:
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
         self.serverUri = serverUri
         self.shuffleId = shuffleId
         self.mapId = mapId
         self.reduceId = reduceId
-
 class OtherFailure:
     def __init__(self, message):
         self.message = message
@@ -39,44 +34,42 @@ POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
 class Stage:
-    def __init__(self, id, rdd, shuffleDep, parents):
-        self.id = id
+    def __init__(self, rdd, shuffleDep, parents):
+        self.id = self.newId()
         self.rdd = rdd
         self.shuffleDep = shuffleDep
         self.parents = parents
-        self.isShuffleMap = shuffleDep != None
         self.numPartitions = len(rdd)
         self.outputLocs = [[]] * self.numPartitions
-        self.numAvailableOutputs = 0
 
     def __str__(self):
-        return '<stage(%d) %s>' % (self.id, self.rdd)
+        return '<Stage(%d) for %s>' % (self.id, self.rdd)
 
-    def __hash__(self):
-        return self.id
+    def __getstate__(self):
+        raise Exception("should not pickle stage")
 
     @property
     def isAvailable(self):
-        if not self.parents and not self.isShuffleMap:
+        if not self.parents and self.shuffleDep == None:
             return True
-        return self.numAvailableOutputs == self.numPartitions
+        return all(self.outputLocs)
 
     def addOutputLoc(self, partition, host):
-        prevList = self.outputLocs[partition]
-        self.outputLocs[partition] = [host] + prevList
-        if not prevList:
-            self.numAvailableOutputs += 1
+        self.outputLocs[partition].append(host)
         
-    def removeOutput(self, partition, host):
-        prev = self.outputLocs[partition]
-        self.outputLocs[partition] = [h for h in prev if h != host]
-        if prev and not self.outputLocs[partition]:
-            self.numAvailableOutputs -= 1
+#    def removeOutput(self, partition, host):
+#        prev = self.outputLocs[partition]
+#        self.outputLocs[partition] = [h for h in prev if h != host]
+    
+    nextId = 0
+    @classmethod
+    def newId(cls):
+        cls.nextId += 1
+        return cls.nextId
 
 
 class Scheduler:
     def start(self):pass
-    def waitForRegister(self): pass
     def runJob(self, rdd, func, partitions, allowLocal): pass
     def stop(self): pass
     def defaultParallelism(self):
@@ -92,8 +85,6 @@ class CompletionEvent:
 
 class DAGScheduler(Scheduler):
     
-    nextStageId = 0
-
     def __init__(self):
         self.completionEvents = Queue.Queue()
         self.idToStage = {}
@@ -114,10 +105,6 @@ class DAGScheduler(Scheduler):
     def taskEnded(self, task, reason, result, accumUpdates):
         self.completionEvents.put(CompletionEvent(task, reason, result, accumUpdates))
     
-    def newStageId(self):
-        self.nextStageId += 1
-        return self.nextStageId
-
     def getCacheLocs(self, rdd):
         return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd))])
 
@@ -125,11 +112,8 @@ class DAGScheduler(Scheduler):
         self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
 
     def newStage(self, rdd, shuffleDep):
-        if rdd.shouldCache:
-            self.cacheTracker.registerRDD(rdd.id, len(rdd))
-        id = self.newStageId()
-        stage = Stage(id, rdd, shuffleDep, self.getParentStages(rdd))
-        self.idToStage[id] = stage
+        stage = Stage(rdd, shuffleDep, self.getParentStages(rdd))
+        self.idToStage[stage.id] = stage
         logging.debug("new stage: %s", stage) 
         return stage
 
@@ -150,11 +134,11 @@ class DAGScheduler(Scheduler):
         visit(rdd)
         return list(parents)
 
-    def getShuffleMapStage(self, shuf):
-        stage = self.shuffleToMapStage.get(shuf.shuffleId, None)
+    def getShuffleMapStage(self, dep):
+        stage = self.shuffleToMapStage.get(dep.shuffleId, None)
         if stage is None:
-            stage = self.newStage(shuf.rdd, shuf)
-            self.shuffleToMapStage[shuf.shuffleId] = stage
+            stage = self.newStage(dep.rdd, dep)
+            self.shuffleToMapStage[dep.shuffleId] = stage
         return stage
 
     def getMissingParentStages(self, stage):
@@ -164,20 +148,16 @@ class DAGScheduler(Scheduler):
             if r.id in visited:
                 return
             visited.add(r.id)
-            locs = self.getCacheLocs(r)
-            cached = True
-            for i in range(len(r)):
-                if not locs[i]:
-                    cached = False
-                    break
-            if not cached:
-                for dep in r.dependencies:
-                    if isinstance(dep, ShuffleDependency):
-                        stage = self.getShuffleMapStage(dep)
-                        if not stage.isAvailable:
-                            missing.add(stage)
-                    elif isinstance(dep, NarrowDependency):
-                        visit(dep.rdd)
+            if r.shouldCache and all(self.getCacheLocs(r)):
+                return
+
+            for dep in r.dependencies:
+                if isinstance(dep, ShuffleDependency):
+                    stage = self.getShuffleMapStage(dep)
+                    if not stage.isAvailable:
+                        missing.add(stage)
+                elif isinstance(dep, NarrowDependency):
+                    visit(dep.rdd)
 
         visit(stage.rdd)
         return list(missing)
@@ -346,49 +326,6 @@ class LocalScheduler(DAGScheduler):
             self.taskEnded(task, reason, result, update)
     def stop(self):
         pass
-
-class MultiThreadScheduler(LocalScheduler):
-    def __init__(self, threads):
-        LocalScheduler.__init__(self)
-        self.nthreads = threads
-        self.queue = Queue.Queue()
-
-    def start(self):
-        def worker(queue):
-            logging.debug("worker thread started")
-            #env.start(False)
-            while True:
-                r = queue.get()
-                if r is None:
-                    self.queue.task_done()
-                    break
-                func, args = r
-                func(*args)
-                self.queue.task_done()
-            logging.debug("worker thread stopped")
-
-        self.threads = []
-        for i in range(self.nthreads):
-            t = threading.Thread(target=worker, args=[self.queue])
-            t.daemon = True
-            t.start()
-            self.threads.append(t)
-
-
-    def submitTasks(self, tasks):
-        logging.debug("submit tasks %s in MultiThreadScheduler", tasks)
-        def func(task, aid):
-            self.taskEnded(*run_task(task, aid))
-        for task in tasks:
-            self.queue.put((func, (task, self.nextAttempId())))
-
-    def stop(self):
-        for i in range(len(self.threads)*2):
-            self.queue.put(None)
-        #self.queue.join()
-        for t in self.threads:
-            t.join()
-        logging.debug("all threads are stopped")
 
 def run_task_in_process(task, tid, environ):
     logging.debug("run task in process %s %s %s",

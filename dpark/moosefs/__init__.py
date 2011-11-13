@@ -8,6 +8,7 @@ MFS_ROOT_INODE = 1
 
 class MooseFS:
     def __init__(self, host='mfsmaster', port=9421):
+        self.host = host
         self.mc = MasterConn(host, port)
         self.inode_cache = {}
 
@@ -30,7 +31,7 @@ class MooseFS:
             if not n: continue
             info = self._lookup(parent, n)
             if not info:
-                raise Exception("not found")
+                return
             if info.is_symlink() and followSymlink:
                 target = self.mc.read_link(info.inode)
                 if not target.startswith('/'):
@@ -38,23 +39,35 @@ class MooseFS:
                         target)
                 return self.lookup(target, True)
             parent = info.inode
-        if info is None:
+        if info is None and parent == MFS_ROOT_INODE:
             info = self.mc.getattr(parent)
         return info
 
     def open(self, path):
         info = self.lookup(path)
-        return File(info.inode, path, info)
+        if not info:
+            raise Exception("not found")
+        return File(info.inode, path, info, self.host)
+
+    def listdir(self, path):
+        info = self.lookup(path)
+        if not info:
+            raise Exception("not found")
+        files = self.mc.getdirplus(info.inode)
+        for i in files.values():
+            self.inode_cache.setdefault(info.inode, {})[i.name] = i
+        return files
 
     def close(self):
         self.mc.close()
 
 
 class File:
-    def __init__(self, inode, path, info):
+    def __init__(self, inode, path, info, master):
         self.inode = inode
         self.path = path
         self.info = info
+        self.master = master
         self.cscache = {}
         self.roff = 0
         self.rbuf = ''
@@ -66,19 +79,20 @@ class File:
         return self.info.length
 
     def __len__(self):
-        return (self.length + CHUNKSIZE - 1) / self.length
+        return (self.length + CHUNKSIZE - 1) / CHUNKSIZE
 
     def get_chunk(self, i):
-        chunk = self.cscache.get(index)
+        chunk = self.cscache.get(i)
         if not chunk:
-            chunk = mfs.mc.readchunk(self.inode, index)
-            self.cscache[index] = chunk
+            chunk = get_mfs(self.master).mc.readchunk(self.inode, i)
+            self.cscache[i] = chunk
         return chunk
 
-    def locs(self):
-        return []
-        return [[host for host,_ in self.get_chunk(i).addrs]
-                 for i in range(len(self))]
+    def locs(self, i=None):
+        if i is None:
+            return [[host for host,_ in self.get_chunk(i).addrs]
+                     for i in range(len(self))]
+        return [host for host,_ in self.get_chunk(i).addrs]
 
     def seek(self, offset):
         off = offset - self.roff
@@ -169,24 +183,40 @@ class File:
         self.roff = 0
         self.rbuf = None
 
-mfs = MooseFS()
+_mfs = {}
 
-def init(host, port=9421):
-    global mfs 
-    if mfs is not None:
-        mfs.close()
-    mfs = MooseFS(host, port)
+def get_mfs(master):
+    if master in _mfs:
+        return _mfs[master]
+    _mfs[master] = MooseFS(master)
+    return _mfs[master]
 
-def mfsopen(path):
-    return mfs.open(path)
+def mfsopen(path, master='mfsmaster'):
+    return get_mfs(master).open(path)
+
+def listdir(path, master='mfsmaster'):
+    return get_mfs(master).listdir(path)
+
+def walk(path, master='mfsmaster'):
+    ds = [path]
+    while ds:
+        root = ds.pop()
+        cs = listdir(root, master)
+        dirs = [name for name,info in cs.iteritems() 
+                if info.type == TYPE_DIRECTORY
+                    and name not in '..']
+        files = [i.name for i in cs.values() if i.type == TYPE_FILE]
+        yield root, dirs, files
+        for d in dirs:
+            ds.append(os.path.join(root, d))
 
 def _test():
-    init("localhost")
     f = open('/mfs2/test.csv')
     f.seek(1024)
     d = f.read(1024)
     
     f2 = mfsopen('/test.csv')
+    print 'f2 locs', f2.locs()
     f2.seek(1024)
     d2 = f2.read(1024)
     assert d == d2
@@ -195,7 +225,13 @@ def _test():
     f2.seek(0)
     import csv
     for row in csv.reader(f2):
-        pass
+        break
+
+    #print listdir('/')
+    for root, dirs, names in walk('/'):
+        print root, dirs, names
+        for n in names:
+            print n, mfsopen(os.path.join(root, n)).locs()
 
 if __name__ == '__main__':
     _test()
