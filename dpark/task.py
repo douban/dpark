@@ -5,25 +5,14 @@ import cPickle
 import logging
 import struct
 
-from utils import load_func, dump_func
+from serialize import load_func, dump_func
 from shuffle import LocalFileShuffle
 
-#class TaskContext:
-#    def __init__(self, stageId, splitId, attemptId):
-#        self.stageId = stageId
-#        self.splitId = splitId
-#        self.attemptId = attemptId
-#
-#class TaskResult:
-#    def __init__(self, value, accumUpdates):
-#        self.value = value
-#        self.accumUpdates = accumUpdates
-
 class Task:
-    nextId = 0
     def __init__(self):
-        self.id = self.newId()
+        self.id = Task.newId()
 
+    nextId = 0
     @classmethod
     def newId(cls):
         cls.nextId += 1
@@ -38,15 +27,12 @@ class Task:
     
 class DAGTask(Task):
     def __init__(self, stageId):
-        self.id = self.newId()
+        Task.__init__(self)
         self.stageId = stageId
-        #self.gen = env.mapOutputTracker.getGeneration
 
-    def __str__(self):
+    def __repr__(self):
         return '<task %d:%d>'%(self.stageId, self.id)
 
-#    def generation(self):
-#        return self.gen
 
 class ResultTask(DAGTask):
     def __init__(self, stageId, rdd, func, partition, locs, outputId):
@@ -65,8 +51,8 @@ class ResultTask(DAGTask):
     def preferredLocations(self):
         return self.locs
 
-    def __str__(self):
-        return "<ResultTask(%d, %d) of %s" % (self.stageId, self.partition, self.rdd)
+    def __repr__(self):
+        return "<ResultTask(%d) of %s" % (self.partition, self.rdd)
     
     def __getstate__(self):
         d = dict(self.__dict__)
@@ -81,7 +67,6 @@ class ResultTask(DAGTask):
 class ShuffleMapTask(DAGTask):
     def __init__(self, stageId, rdd, dep, partition, locs):
         DAGTask.__init__(self, stageId)
-        self.stageId = stageId
         self.rdd = rdd
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator
@@ -90,36 +75,41 @@ class ShuffleMapTask(DAGTask):
         self.split = rdd.splits[partition]
         self.locs = locs
 
-    def __str__(self):
-        return '<shuffletask(%d,%d) of %s>' % (self.stageId, self.partition, self.rdd)
+    def __repr__(self):
+        return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
 
     def run(self, attempId):
         logging.debug("shuffling %d of %s", self.partition, self.rdd)
-        aggregator= self.aggregator
-        partitioner = self.partitioner
-        numOutputSplits = partitioner.numPartitions
+        numOutputSplits = self.partitioner.numPartitions
+        getPartition = self.partitioner.getPartition
+        mergeValue = self.aggregator.mergeValue
+        createCombiner = self.aggregator.createCombiner
+
         buckets = [{} for i in range(numOutputSplits)]
-        getPartition = partitioner.getPartition
-        mergeValue = aggregator.mergeValue
-        createCombiner = aggregator.createCombiner
         for k,v in self.rdd.iterator(self.split):
             bucketId = getPartition(k)
             bucket = buckets[bucketId]
-            if k in bucket:
-                bucket[k] = mergeValue(bucket[k], v)
+            r = bucket.get(k, None)
+            if r is not None:
+                bucket[k] = mergeValue(r, v)
             else:
                 bucket[k] = createCombiner(v)
+
         for i in range(numOutputSplits):
             path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
+            if os.path.exists(path):
+                continue
             tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
-            f = open(tpath, 'w', 1024*4096)
-            #for v in buckets[i].iteritems():
-            #    v = marshal.dumps(v)
-            #    f.write(struct.pack('h', len(v)))
-            #    f.write(v)
-            #marshal.dump(buckets[i], f)
-            cPickle.dump(buckets[i].items(), f, -1)
+            try:
+                flag, d = 'm', marshal.dumps(buckets[i])
+            except ValueError:
+                flag, d = 'p', cPickle.dumps(buckets[i], -1)
+            f = open(tpath, 'wb', 1024*4096)
+            f.write(flag)
+            f.write(d)
             f.close()
             if not os.path.exists(path):
                 os.rename(tpath, path)
+            else:
+                os.unlink(tpath)
         return LocalFileShuffle.getServerUri()

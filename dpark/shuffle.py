@@ -55,16 +55,16 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
                     logging.debug("fetch %s", url)
                     f = open(url, 'rb')
-                    #while True:
-                    #    size = f.read(2)
-                    #    if not size:
-                    #        break
-                    #    size = struct.unpack('h', size)[0]
-                    #    v = f.read(size)
-                    #    k, v = marshal.loads(v)
-                    for k,v in cPickle.load(f):
-                        func(k,v)
+                    flag = f.read(1)
+                    if flag == 'm':
+                        d = marshal.load(f)
+                    elif flag == 'p':
+                        d = cPickle.load(f)
+                    else:
+                        raise ValueError("invalid flag")
                     f.close()
+                    for k,v in d.iteritems():
+                        func(k,v)
                 except IOError, e:
                     logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, part, url)
                     raise 
