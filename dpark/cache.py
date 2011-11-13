@@ -46,25 +46,6 @@ class KeySpace(Cache):
     def pop(self, key):
         return self.map.pop((self.id, key))
 
-#manager = multiprocessing.Manager()
-#class ProcessCache(Cache):
-#    map = manager.dict()
-
-class SerializingCache(Cache):
-    def __init__(self, cache):
-        self.map = cache
-
-    def get(self, key):
-        b = self.map.get(key)
-        return b and cPickle.loads(b) or None
-
-    def put(self, key, value):
-        try:
-            v = cPickle.dumps(value, -1)
-            self.map.put(key, v)
-        except Exception, e:
-            logging.error("cache key %s err", key)
-
 class LocalCache(Cache):
     '''cache obj in current process'''
     def __init__(self, cache):
@@ -180,7 +161,7 @@ class CacheTracker:
         if isMaster:
             self.cache = Cache()
         else:
-            self.cache = LocalCache(SerializingCache(mmapCache)) #.newKeySpace()
+            self.cache = LocalCache(mmapCache).newKeySpace()
 
         if isMaster:
             self.server = CacheTrackerServer()
@@ -229,17 +210,17 @@ class CacheTracker:
         raise Exception("!!!")
 
 def set_cache():
-    cache = mmapCache()
+    cache = mmapCache
     cache.put('a','b')
     return True
 
 def get_cache():
-    cache = mmapCache()
+    cache = mmapCache
     return cache.get('a')
 
 def test():
     logging.basicConfig(level=logging.DEBUG)
-    cache = mmapCache()
+    cache = mmapCache
     pool = multiprocessing.Pool(2)
     assert pool.apply(set_cache) == True
     assert pool.apply(get_cache) == 'b'
@@ -251,7 +232,7 @@ def test():
     dc = DparkContext("local")
     nums = dc.parallelize(range(100), 10)
     cache = mmapCache
-    tracker = CacheTracker(True, cache)
+    tracker = CacheTracker(True)
     tracker.registerRDD(nums.id, len(nums))
     split = nums.splits[0]
     print tracker.getOrCompute(nums, split)

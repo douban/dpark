@@ -8,11 +8,10 @@ def dump_object(o):
     try:
         return 3, cPickle.dumps(o, -1)
     except Exception:
-        if isinstance(o, new.function):
+        if isinstance(o, new.function): # lambda in module
             return 1, dump_func(o)
-        else:
-            print 'error', o
-            raise
+        print 'unable to pickle:', o
+        raise
 
 def load_object((t, d)):
     if t == 1:
@@ -27,6 +26,12 @@ def load_object((t, d)):
 def dump_func(f):
     if not isinstance(f, new.function):
         return 1, cPickle.dumps(f, -1)
+    if f.__module__ != '__main__':
+        try:
+            return 1, cPickle.dumps(f, -1)
+        except:
+            pass
+
     code = f.func_code
     glob = {}
     for n in code.co_names:

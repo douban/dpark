@@ -56,7 +56,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
         
-        logging.info("cleaning workdir ...")
+        logging.debug("cleaning workdir ...")
         try:
             for root,dirs,names in os.walk(self.workdir, topdown=False):
                 for name in names:
@@ -67,7 +67,7 @@ class DparkEnv:
             os.rmdir(self.workdir)
         except OSError:
             pass
-        logging.info("done.")
+        logging.debug("done.")
 
         self.started = False
 

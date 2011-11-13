@@ -114,7 +114,7 @@ class Broadcast:
         if is_master:
             cls.cache = cache.Cache()
         else:
-            cls.cache = cache.Cache() #cache.SerializingCache(cache.mmapCache)
+            cls.cache = cache.LocalCache(cache.mmapCache)
 
 #        cls.broadcastFactory = FileBroadcastFactory()
         cls.broadcastFactory = TreeBroadcastFactory()
