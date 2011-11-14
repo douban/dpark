@@ -70,7 +70,7 @@ class DparkContext:
                     depth = len(filter(None, root[len(path):].split('/'))) + 1
                     if depth > maxdepth:
                         break
-                for n in names:
+                for n in sorted(names):
                     if n.endswith(ext) and not n.startswith('.'):
                         p = os.path.join(root, n)
                         if followLink or not os.path.islink(p):

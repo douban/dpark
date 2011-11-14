@@ -4,6 +4,7 @@ import logging
 import cPickle
 import threading, Queue
 import time
+import random
 
 import zmq
 import mesos
@@ -475,6 +476,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logging.debug("get %d offers (%s cpus, %s mem), %d jobs", 
             len(offers), sum(cpus), sum(mems), len(self.activeJobs))
         
+        random.shuffle(offers)
+
         tasks = []
         launchedTask = False
         for job in self.activeJobsQueue:
