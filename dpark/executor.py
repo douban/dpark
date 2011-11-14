@@ -10,7 +10,7 @@ import multiprocessing
 import mesos
 import mesos_pb2
 
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
@@ -40,10 +40,9 @@ def init_env(args):
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
         cwd, paralell, args = cPickle.loads(args.data)
-        try: os.chdir(cwd)
-        except: pass
+        os.chdir(cwd)
+        sys.path.append(cwd)
         self.pool = multiprocessing.Pool(paralell, init_env, [args])
-        #driver.sendFrameworkMessage('inited %d' % os.getpid() )
 
     def launchTask(self, driver, task):
         reply_status(driver, task, mesos_pb2.TASK_RUNNING)
