@@ -460,14 +460,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             time.sleep(0.01)
 
     def resourceOffer(self, driver, oid, offers):
-#        with self.lock:
-#            self._resourceOffer(driver, oid, offers)
-#            profile(self._resourceOffer)(driver, oid, offers)
-#
-#    def _resourceOffer(self, driver, oid, offers):
         if not self.activeJobs:
             return driver.replyToOffer(oid, [], {"timeout": "1"})
          
+        random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem') 
                 - (o.slave_id.value not in self.slavesWithExecutors
@@ -475,8 +471,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 for o in offers]
         logging.debug("get %d offers (%s cpus, %s mem), %d jobs", 
             len(offers), sum(cpus), sum(mems), len(self.activeJobs))
-        
-        random.shuffle(offers)
 
         tasks = []
         launchedTask = False
