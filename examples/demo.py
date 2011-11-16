@@ -27,7 +27,7 @@ for line in log.filter(lambda line: 'error' in line):
 counts = f.flatMap(lambda x:x.split()).map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y).cache()
 pprint(counts.filter(lambda (_,v): v>50).collectAsMap())
 pprint(sorted(counts.filter(lambda (_,v): v>20).map(lambda (x,y):(y,x)).groupByKey().collect()))
-pprint(counts.map(lambda v: "%s:%s"%v ).saveAsTextFile("wc/").collect())
+pprint(counts.map(lambda v: "%s:%s"%v ).saveAsTextFile("wc/"))
 
 # Pi
 import random

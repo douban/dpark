@@ -423,7 +423,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps((os.getcwd(),
+        info.data = cPickle.dumps((os.getcwd(), sys.path,
             self.defaultParallelism(), env.environ), -1)
         return info
 

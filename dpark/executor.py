@@ -39,9 +39,9 @@ def init_env(args):
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, paralell, args = cPickle.loads(args.data)
+        cwd, python_path, paralell, args = cPickle.loads(args.data)
         os.chdir(cwd)
-        sys.path.append(cwd)
+        sys.path = python_path
         self.pool = multiprocessing.Pool(paralell, init_env, [args])
 
     def launchTask(self, driver, task):

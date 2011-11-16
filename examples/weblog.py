@@ -46,6 +46,6 @@ for i in range(0, 5):
         rawlog = rawlog.glom().flatMap(peek(yesterday))
 #        print rawlog.take(10)
         weblog = rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream')
-        weblog.saveAsTextFile(path).collect()
+        weblog.saveAsTextFile(path)
     except IOError:
         pass

@@ -181,10 +181,10 @@ class RDD:
         if r: return r[0]
 
     def saveAsTextFile(self, path, ext='', overwrite=False):
-        return OutputTextFileRDD(self, path, ext, overwrite)
+        return OutputTextFileRDD(self, path, ext, overwrite).collect()
 
     def saveAsCSVFile(self, path, overwrite=False):
-        return OutputCSVFileRDD(self, path, overwrite)
+        return OutputCSVFileRDD(self, path, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
