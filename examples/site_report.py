@@ -141,18 +141,20 @@ def save_report(day, sites, widgets, front_pages, rooms, site_shares, widget_sha
                 (day,wid,len(widgets[wid]), uv, share))
 
     for id,bids in rooms.iteritems():
-        store.execute("replace into room_report (date, room_id, pv, uv)"
+        if id and id.isdigit():
+            store.execute("replace into room_report (date, room_id, pv, uv)"
                 " values (%s, %s, %s, %s)", (day, id, len(bids), len(dict(bids))))
 
     store.commit()
     print 'completed', len(sites)
 
 if __name__ == '__main__':
-    for i in range(1, 2):
+    for i in range(1, 30):
         day = date.today() - timedelta(days=i)
         path = '/tmp/site-report-%s' % day.strftime("%Y-%m-%d")
         if not os.path.exists(path):
+            print day
             sites, widgets, fronts, rooms, site_shares, widget_shares = site_log(day)
             if len(sites) > 1000 and len(widgets) > 1000:
-                cPickle.dump((len(sites), len(rooms), len(widgets)), open(path,'w'))
                 save_report(day, sites, widgets, fronts, rooms, site_shares, widget_shares)
+                cPickle.dump((len(sites), len(rooms), len(widgets)), open(path,'w'))
