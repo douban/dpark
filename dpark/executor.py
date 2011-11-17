@@ -40,7 +40,10 @@ def init_env(args):
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
         cwd, python_path, paralell, args = cPickle.loads(args.data)
-        os.chdir(cwd)
+        try:
+            os.chdir(cwd)
+        except OSError:
+            driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
         sys.path = python_path
         self.pool = multiprocessing.Pool(paralell, init_env, [args])
 
@@ -50,7 +53,6 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, state, data)
         t, aid = cPickle.loads(task.data)
         self.pool.apply_async(run_task, [t, aid], callback=callback)
-        #driver.sendFrameworkMessage('launch task %s' % t)
     
     def killTask(self, driver, taskId):
         #driver.sendFrameworkMessage('kill task %s' % taskId)
