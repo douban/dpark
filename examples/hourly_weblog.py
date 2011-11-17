@@ -50,12 +50,12 @@ def load_weblog(hour):
         cmd = "mysql -hbalin -uluzong -pfulllink -P4406 rivendell -e".split(' ')
         cmd.append("LOAD DATA INFILE '%s' INTO TABLE hourly_weblog FIELDS TERMINATED by ',' ENCLOSED BY 'NULL'"
                   % os.path.join(path,name))
-        print ' '.join(cmd)
+        #print ' '.join(cmd)
         p = subprocess.Popen(cmd)
         p.wait()
         if p.returncode == 0:
             open(flag, 'w').write('OK')
-        
+         
 if __name__ == '__main__':
     now = datetime.now() 
     for i in range(1, 10):

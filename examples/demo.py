@@ -2,7 +2,7 @@ import math
 import random
 import os, sys
 from pprint import pprint
-sys.path.append('../')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dpark import DparkContext
 #import logging
 #logging.basicConfig(level=logging.ERROR,
