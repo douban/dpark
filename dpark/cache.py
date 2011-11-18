@@ -37,14 +37,15 @@ class KeySpace(Cache):
         self.map = cache
         self.id = id
 
+    def newkey(self, key):
+        return "%d:%s" % (self.id, key)
+
     def get(self, key):
-        return self.map.get((self.id, key))
+        return self.map.get(self.newkey(key))
 
     def put(self, key, value):
-        return self.map.put((self.id, key), value)
+        return self.map.put(self.newkey(key), value)
 
-    def pop(self, key):
-        return self.map.pop((self.id, key))
 
 class LocalCache(Cache):
     '''cache obj in current process'''

@@ -2,6 +2,8 @@ from multiprocessing import Lock, Process
 import mmap
 import os, sys, time
 import struct
+import marshal
+import cPickle
 
 class circle:
     def __init__(self, buf):

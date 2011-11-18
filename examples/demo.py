@@ -20,7 +20,7 @@ f = ctx.textFile("./", ext='py').map(lambda x:x.strip())
 log = f.filter(lambda line: 'logging' in line).cache()
 print 'logging', log.count()
 print 'error', log.filter(lambda line: 'error' in line).count()
-for line in log.filter(lambda line: 'error' in line):
+for line in log.filter(lambda line: 'error' in line).collect():
     print line
 
 # word count
