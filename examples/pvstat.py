@@ -127,6 +127,8 @@ if __name__ == '__main__':
                 if len(pv) > 10000:
                     cPickle.dump(pv, open(name,'w'))
                     save(day, pv)
+                    b = '/tmp/beacon-%s'
+                    if os.path.exists(b): os.unlink(b)
                 else:
                     print 'data not enough', len(pv)
             except IOError:
