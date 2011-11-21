@@ -30,6 +30,13 @@ $ sudo -u mesos python examples/demo.py -m mesos
 
 $ python examples/demo.py -m process -p 4
 
+## 命令行参数
+
+当应用脚本有自己的命令行参数时，需要将Dpark 的参数写在前面，并用 '--' 区分开，比如:
+
+$ python myscript.py -m mesos -- -f output
+
+同时，在程序里需要先初始化DparkContext对象，然后再解析自己的参数。
 
 ## 弹性分布式数据集 RDD
 
