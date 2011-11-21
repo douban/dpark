@@ -40,7 +40,9 @@ class DparkContext:
                     raise ValueError("mesos master url needed")
             self.scheduler = MesosScheduler(self.master, options) 
             self.isLocal = False
-        
+        else:
+            raise Exception("invalid master option: %s" % self.master)
+
         if options.parallel:
             self.defaultParallelism = options.parallel
         else:
