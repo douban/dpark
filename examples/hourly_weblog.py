@@ -27,10 +27,11 @@ def load_weblog(hour):
     path = '/mfs/tmp/hourly_weblog/%s' % hour.strftime("%Y%m%d%H")
     if not os.path.exists(path):
         weblog = format_weblog(hour)
+        LIMITS = [10,8,11,12,20,8,255,255,3,8,5,255,255] 
         g = weblog.map(lambda line:line.split(",")).filter(
                 lambda line:len(line) == 13
             ).map(
-                lambda l:(l[NURL], ",".join(i[:255] for i in l))
+                lambda l:(l[NURL], ",".join(v[:LIMITS[i]] for i,v in enumerate(l)))
             ).groupByKey()
         #    cnt = g.mapValue(len).collectAsMap()
         #    topnurl = sorted(cnt.iteritems(), key=itemgetter(1), reverse=True)[:5000]
@@ -55,7 +56,9 @@ def load_weblog(hour):
         p.wait()
         if p.returncode == 0:
             open(flag, 'w').write('OK')
-         
+        else:
+            print 'load failed', os.path.join(path,name)
+
 if __name__ == '__main__':
     now = datetime.now() 
     for i in range(1, 10):

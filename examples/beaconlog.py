@@ -98,6 +98,7 @@ def save(day, tti_stats):
         except:
             pass
     store.commit()
+    print 'completed', len(tti_stats)
 
 if __name__ == "__main__":
     today = date.today()
@@ -108,5 +109,6 @@ if __name__ == "__main__":
             pass
         else:
             tti = calc_tti(day)
-            cPickle.dump(tti, open(name, 'w'), -1)
-            save(day, tti)
+            if len(tti) > 1000:
+                cPickle.dump(tti, open(name, 'w'), -1)
+                save(day, tti)
