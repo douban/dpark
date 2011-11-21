@@ -32,11 +32,14 @@ $ python examples/demo.py -m process -p 4
 
 ## 命令行参数
 
-当应用脚本有自己的命令行参数时，需要将Dpark 的参数写在前面，并用 '--' 区分开，比如:
+当应用脚本有自己的命令行参数时，需要在dpark.optParser 的基础上进行添加，比如:
 
-$ python myscript.py -m mesos -- -f output
+from dpark import DparkContext, optParser
+optParser.add_option("--my_opt")
+dpark = DparkContext()
+options, args = optParser.parser_args()
 
-同时，在程序里需要先初始化DparkContext对象，然后再解析自己的参数。
+注意: 需要先添加自定义的option, 然后再初始化DparkContext对象。
 
 ## 弹性分布式数据集 RDD
 

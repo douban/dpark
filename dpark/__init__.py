@@ -1,2 +1,2 @@
-from context import DparkContext
+from context import DparkContext, parser as optParser
 from bagel import Bagel

@@ -145,24 +145,30 @@ class DparkContext:
 
 
 parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
-options = None
 
 def add_default_options():
     parser.disable_interspersed_args()
 
-    parser.add_option("-m", "--master", type="string", default="local")
-    parser.add_option("-n", "--name", type="string", default="dpark")
-    parser.add_option("-p", "--parallel", type="int", default=0)
+    group = optparse.OptionGroup(parser, "Dpark Options")
 
-    parser.add_option("-c", "--cpus", type="float", default=1.0,
-                    help="cpus used per task")
-    parser.add_option("--mem", type="float", default=100.0,
+    group.add_option("-m", "--master", type="string", default="local",
+            help="master of Mesos: local, process, or mesos://")
+    group.add_option("-n", "--name", type="string", default="dpark",
+            help="job name")
+    group.add_option("-p", "--parallel", type="int", default=0, 
+            help="number of processes")
+
+    group.add_option("-c", "--cpus", type="float", default=1.0,
+            help="cpus used per task")
+    group.add_option("--mem", type="float", default=100.0,
                     help="memory used per task")
 
-    parser.add_option("--self", action="store_true",
-        help="user self as exectuor")
-    parser.add_option("--profile", action="store_true",
-        help="do profiling")
+    group.add_option("--self", action="store_true",
+            help="user self as exectuor")
+    group.add_option("--profile", action="store_true",
+            help="do profiling")
+
+    parser.add_option_group(group)
 
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
@@ -170,9 +176,7 @@ def add_default_options():
 add_default_options()
 
 def parse_options():
-    global options
     options, args = parser.parse_args()
-    sys.argv = sys.argv[:1] + args
     
     logging.basicConfig(format='[dpark] %(asctime)-15s %(message)s',
         level=options.quiet and logging.ERROR
