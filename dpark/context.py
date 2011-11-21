@@ -141,9 +141,12 @@ class DparkContext:
     def __getstate__(self):
         raise ValueError("should not pickle ctx")
 
-def parse_options():
-    parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
-    parser.allow_interspersed_args=False
+
+parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
+options = None
+
+def add_default_options():
+    parser.disable_interspersed_args()
 
     parser.add_option("-m", "--master", type="string", default="local")
     parser.add_option("-n", "--name", type="string", default="dpark")
@@ -161,7 +164,13 @@ def parse_options():
 
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
+
+add_default_options()
+
+def parse_options():
+    global options
     options, args = parser.parse_args()
+    sys.argv = sys.argv[:1] + args
     
     logging.basicConfig(format='[dpark] %(asctime)-15s %(message)s',
         level=options.quiet and logging.ERROR
