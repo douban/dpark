@@ -5,6 +5,7 @@ import socket
 import csv
 import cStringIO
 import itertools
+import operator
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -206,8 +207,8 @@ class RDD:
 
     def groupByKey(self, numSplits=None):
         createCombiner = lambda x: [x]
-        mergeValue = lambda l, v: l+[v]
-        mergeCombiners = lambda l1, l2: l1 + l2
+        mergeValue = lambda x,y:x.append(y) or x
+        mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits)
 
@@ -802,7 +803,7 @@ class OutputCSVFileRDD(OutputTextFileRDD):
         empty = True
         for row in rows:
             if not isinstance(row, (tuple, list)):
-                now = (now,)
+                row = (row,)
             writer.writerow(row)
             empty = False
         return not empty 
