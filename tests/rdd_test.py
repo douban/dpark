@@ -94,13 +94,13 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(fs.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 9)
         prefix = 'prefix:'
-        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True).collect(),
+        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000']) 
         d = self.sc.textFile('/tmp/tout')
         n = len(open(__file__).readlines())
         self.assertEqual(d.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
-            ).saveAsCSVFile('/tmp/tout', overwrite=True).collect(),
+            ).saveAsCSVFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000.csv'])
 
 
