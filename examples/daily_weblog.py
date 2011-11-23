@@ -7,8 +7,6 @@ import subprocess
 from dpark import DparkContext
 import pickle
 dpark = DparkContext()
-import gc
-gc.disable()
 
 sinkservers = ['balin', 'theoden']
 log_path = "/mfs/log/access-log/current/weblog/%s/%s"
@@ -44,7 +42,6 @@ def load_weblog(day):
                 lambda (u,ls): len(ls) > 1000 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
     
-    # ib
     for name in os.listdir(path):
         if name.startswith('.'):
             continue
@@ -68,5 +65,4 @@ if __name__ == '__main__':
     today = date.today() 
     for i in range(1, 2):
         day = today - timedelta(days=i)
-        print day
         load_weblog(day)
