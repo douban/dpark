@@ -20,8 +20,8 @@ def clean(topr):
     topr = dpark.broadcast(topr)
     def _(line):
         line = [v.replace(',','%2C')[:LIMITS[i]] for i,v in enumerate(line)]
-        line[NURL] = drop_args(line[NURL]) 
-        line[NREFERER] = drop_args(line[NREFERER]) 
+#        line[NURL] = drop_args(line[NURL]) 
+#        line[NREFERER] = drop_args(line[NREFERER]) 
         if line[NREFERER] not in topr.value:
             line[NREFERER] = ''
         return (line[NURL], ','.join(line))
@@ -36,7 +36,7 @@ def load_weblog(day):
     path = '/mfs/tmp/daily_weblog/%s' % day.strftime("%Y%m%d")
     if not os.path.exists(path):
         weblog = dpark.csvFile('/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d"), splitSize=16<<20)
-        topreferers = weblog.map(lambda l:(drop_args(l[NREFERER]), 1)).reduceByKey(add).filter(lambda (x,y): y>1000).collectAsMap()
+        topreferers = weblog.map(lambda l:(l[NREFERER], 1)).reduceByKey(add).filter(lambda (x,y): y>1000).collectAsMap()
         g = weblog.map(clean(topreferers)).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 1000 and ls or [drop_nurl(l) for l in ls]
@@ -60,6 +60,8 @@ def load_weblog(day):
             open(flag, 'w').write('OK')
         else:
             print 'load failed', os.path.join(path,name)
+
+    open('/mfs/mysql-ib-eye/flags/done','w').write('OK')
 
 if __name__ == '__main__':
     today = date.today() 

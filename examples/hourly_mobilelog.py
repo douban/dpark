@@ -11,13 +11,13 @@ import pickle
 dpark = DparkContext()
 
 sinkservers = ['balin', 'theoden']
-log_path = "/mfs/log/access-log/current/weblog/%s/%s"
+log_path = "/mfs/log/access-log/current/mobilelog/%s/%s"
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
 LIMITS = [10,8,11,12,20,8,255,255,3,8,5,255,255]
 
 def format_weblog(hour):
-    logs = [dpark.textFile(log_path % (h,hour.strftime("%Y/%m/%d/%H/")), splitSize=10<<20)
-             for h in sinkservers]
+    logs = [dpark.textFile(log_path % (h,hour.strftime("mobilelog-%Y-%m-%d_000%H")), splitSize=10<<20)
+             for h in sinkservers if os.path.exists(log_path % (h,hour.strftime("mobilelog-%Y-%m-%d_000%H")))]
     rawlog = dpark.union(logs)
     return rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream')
 
@@ -39,14 +39,14 @@ def drop_nurl(line):
     return ','.join(ps)
 
 def load_weblog(hour):
-    path = '/mfs/tmp/hourly_weblog/%s' % hour.strftime("%Y%m%d%H")
+    path = '/mfs/tmp/hourly_mobilelog/%s' % hour.strftime("%Y%m%d%H")
     if not os.path.exists(path):
         weblog = format_weblog(hour)
         g = weblog.map(parse).map(clean).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 10 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
-    
+   
     for name in os.listdir(path):
         if name.startswith('.'): continue
         if not name.endswith("csv"):
@@ -67,6 +67,6 @@ def load_weblog(hour):
 
 if __name__ == '__main__':
     now = datetime.now() 
-    for i in range(1, 24):
+    for i in range(2, 48):
         hour = now - timedelta(seconds=3600*i)
         load_weblog(hour)
