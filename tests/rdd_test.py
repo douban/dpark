@@ -63,7 +63,7 @@ class TestRDD(unittest.TestCase):
         # group with
         self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
                 [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
-        nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2)
+        nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2).flatMapValue(lambda x:x)
         self.assertEqual(sorted(nums.groupWith(nums2, nums3).collect()),
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
                 (4,([],[3],[1])), (5,([],[],[2]))])
