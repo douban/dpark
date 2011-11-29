@@ -77,6 +77,7 @@ class DparkContext:
                         p = os.path.join(root, n)
                         if followLink or not os.path.islink(p):
                             paths.append(p)
+                dirs.sort()
                 for d in dirs[:]:
                     if d.startswith('.'):
                         dirs.remove(d)

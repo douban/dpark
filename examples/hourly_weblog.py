@@ -40,30 +40,34 @@ def drop_nurl(line):
 
 def load_weblog(hour):
     path = '/mfs/tmp/hourly_weblog/%s' % hour.strftime("%Y%m%d%H")
-    if not os.path.exists(path):
+    if not os.path.exists(path) or len(os.listdir(path)) < 16:
         weblog = format_weblog(hour)
         g = weblog.map(parse).map(clean).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 10 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
     
-    for name in os.listdir(path):
+    for name in sorted(os.listdir(path)):
         if name.startswith('.'): continue
         if not name.endswith("csv"):
             continue
         flag = os.path.join(path, name+".done")
         if os.path.exists(flag):
             continue
+
         cmd = "mysql -hbalin -uluzong -pfulllink -P4406 rivendell -e".split(' ')
         cmd.append("LOAD DATA INFILE '%s' INTO TABLE hourly_weblog FIELDS TERMINATED by ',' ENCLOSED BY 'NULL'"
                   % os.path.join(path,name))
-        #print ' '.join(cmd)
-        p = subprocess.Popen(cmd)
-        p.wait()
-        if p.returncode == 0:
+        try:
             open(flag, 'w').write('OK')
-        else:
-            print 'load failed', os.path.join(path,name)
+            #print ' '.join(cmd)
+            p = subprocess.Popen(cmd)
+            p.wait()
+            if p.returncode != 0:
+                print 'load failed', os.path.join(path,name)
+                os.remove(flag)
+        except :
+            os.remove(flag)
 
 if __name__ == '__main__':
     now = datetime.now() 

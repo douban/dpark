@@ -34,7 +34,7 @@ def drop_nurl(l):
 
 def load_weblog(day):
     path = '/mfs/tmp/daily_weblog/%s' % day.strftime("%Y%m%d")
-    if not os.path.exists(path):
+    if not os.path.exists(path) or len(os.listdir(path)) < 16:
         weblog = dpark.csvFile('/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d"), splitSize=16<<20)
         topreferers = weblog.map(lambda l:(l[NREFERER], 1)).reduceByKey(add).filter(lambda (x,y): y>1000).collectAsMap()
         g = weblog.map(clean(topreferers)).groupByKey()
@@ -42,29 +42,34 @@ def load_weblog(day):
                 lambda (u,ls): len(ls) > 1000 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
     
-    for name in os.listdir(path):
+    for name in sorted(os.listdir(path)):
         if name.startswith('.'):
             continue
-#        if not name.endswith("csv"):
-#            continue
+        if name.endswith('done'):
+            continue
+        if not name.endswith("csv"):
+            continue
         flag = os.path.join(path, name+".done")
         if os.path.exists(flag):
             continue
         cmd = "mysql -hbalin -uluzong -pfulllink -P4406 rivendell -e".split(' ')
         cmd.append(r"LOAD DATA INFILE '%s' INTO TABLE weblog FIELDS TERMINATED by ',' ENCLOSED BY '\"'"
                   % os.path.join(path,name))
-        print ' '.join(cmd)
-        p = subprocess.Popen(cmd)
-        p.wait()
-        if p.returncode == 0:
+        try:
             open(flag, 'w').write('OK')
-        else:
-            print 'load failed', os.path.join(path,name)
+            #print ' '.join(cmd)
+            p = subprocess.Popen(cmd)
+            p.wait()
+            if p.returncode != 0:
+                print 'load failed', os.path.join(path,name)
+                os.remove(flag)
+        except:
+            os.remove(flag)
 
     open('/mfs/mysql-ib-eye/flags/done','w').write('OK')
 
 if __name__ == '__main__':
     today = date.today() 
-    for i in range(1, 2):
+    for i in range(1, 3):
         day = today - timedelta(days=i)
         load_weblog(day)

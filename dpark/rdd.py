@@ -72,7 +72,7 @@ class RDD:
     @property
     def partitioner(self):
         return self._partitioner
-    
+
     def preferredLocations(self, split):
         return []
 
@@ -519,17 +519,18 @@ class CoGroupedRDD(RDD):
     def __len__(self):
         return self.partitioner.numPartitions
 
-    def __repr__(self):
-        return '<CoGrouped of %s>' % (','.join(str(dep.rdd) for dep in self.dependencies))
-
     def compute(self, split):
         m = {}
         def getSeq(k):
             return m.setdefault(k, tuple([[] for i in range(self.len)]))
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
-                for k,v in dep.rdd.iterator(dep.split):
-                    getSeq(k)[i].append(v)
+                if dep.rdd.partitioner:
+                    for k,vs in dep.rdd.iterator(dep.split):
+                        getSeq(k)[i].extend(vs)
+                else:
+                    for k,v in dep.rdd.iterator(dep.split):
+                        getSeq(k)[i].append(v)
             elif isinstance(dep, ShuffleCoGroupSplitDep):
                 def mergePair(k, vs):
                     getSeq(k)[i].extend(vs)

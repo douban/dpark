@@ -60,7 +60,7 @@ if __name__ == '__main__':
     result = Bagel.run(ctx, vertices, messages, compute, MinCombiner())
     startVertex = 0
     print 'Shortest path from %s to all vertices:' % startVertex
-    for v in result.collect():
+    for v in result:
         if v.value == sys.maxint:
             v.value = 'inf'
         print v.id, v.value
