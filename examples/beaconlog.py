@@ -102,11 +102,12 @@ def save(day, tti_stats):
 
 if __name__ == "__main__":
     today = date.today()
-    for i in range(1, 3):
+    for i in range(1, 2):
         day = today - timedelta(days=i)
         name = '/tmp/beacon-%s' % day
         if os.path.exists(name):
-            pass
+            tti = cPickle.load(open(name))
+            save(day, tti)
         else:
             tti = calc_tti(day)
             if len(tti) > 1000:
