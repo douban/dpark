@@ -483,7 +483,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
-                    tasks.setdefault(o.id, []).append(self.createTask(o, job, t))
+                    tasks.setdefault(o.id.value, []).append(self.createTask(o, job, t))
 
                     logging.debug("dispatch %s into %s", t, o.hostname)
                     self.jobTasks[job.id].add(t.id)
@@ -498,7 +498,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     break
         
         for o in offers:
-            driver.launchTasks(o.id, tasks.get(o.id, []))
+            driver.launchTasks(o.id, tasks.get(o.id.value, []))
         logging.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
 
