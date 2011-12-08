@@ -401,14 +401,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.lock = threading.RLock()
 
     def start(self):
-        self.driver = mesos.MesosSchedulerDriver(self, self.master)
+        name = '[dpark] ' + ' '.join(sys.argv)
+        self.driver = mesos.MesosSchedulerDriver(self, name,
+            self.getExecutorInfo(), self.master)
         self.driver.start()
         logging.debug("Mesos Scheudler driver started")
 
-    def getFrameworkName(self, driver):
-        return 'dpark: ' + sys.argv[0]
-
-    def getExecutorInfo(self, driver):
+    def getExecutorInfo(self):
         info = mesos_pb2.ExecutorInfo()
 
         if self.use_self_as_exec:
@@ -459,9 +458,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         while not self.isRegistered:
             time.sleep(0.01)
 
-    def resourceOffer(self, driver, oid, offers):
+    def resourceOffers(self, driver, offers):
         if not self.activeJobs:
-            return driver.replyToOffer(oid, [], {"timeout": "1"})
+            for o in offers:
+                return driver.launchTasks(o.id, [])
          
         random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
@@ -472,7 +472,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logging.debug("get %d offers (%s cpus, %s mem), %d jobs", 
             len(offers), sum(cpus), sum(mems), len(self.activeJobs))
 
-        tasks = []
+        tasks = {}
         launchedTask = False
         for job in self.activeJobsQueue:
             while True:
@@ -483,7 +483,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
-                    tasks.append(self.createTask(o, job, t))
+                    tasks.setdefault(o.id, []).append(self.createTask(o, job, t))
 
                     logging.debug("dispatch %s into %s", t, o.hostname)
                     self.jobTasks[job.id].add(t.id)
@@ -497,9 +497,15 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 if not launchedTask:
                     break
         
-        driver.replyToOffer(oid, tasks, {"timeout": "1"})
+        for o in offers:
+            driver.launchTasks(o.id, tasks.get(o.id, []))
         logging.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
+
+    def offerRescinded(self, driver, offers):
+        for o in offers:
+            logging.error("resource rescinded: %s", o)
+        driver.reviveOffers()
 
     def getResource(self, res, name):
         for r in res:
@@ -581,7 +587,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             #for id in self.slavesWithExecutors:
             #    slave.value = id
             #    self.driver.sendFrameworkMessage(slave, executor, "shutdown")
-            self.driver.stop()
+            self.driver.stop(False)
             self.driver.join()
 
     def defaultParallelism(self):
@@ -604,7 +610,3 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             self.driver.killTask(tid)
         else:
             logging.warning("can not kill %s because of job had gone", task)
-
-    def offerRescinded(self, driver, offer):
-        logging.warning("offer rescinded: %s", offer)
-        self.driver.reviveOffers()
