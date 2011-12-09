@@ -461,8 +461,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def resourceOffers(self, driver, offers):
         if not self.activeJobs:
             for o in offers:
-                return driver.launchTasks(o.id, [])
-         
+                driver.launchTasks(o.id, [])
+            return
+
         random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem') 
