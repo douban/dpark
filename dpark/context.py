@@ -50,7 +50,6 @@ class DparkContext:
         self.defaultMinSplits = max(self.defaultParallelism, 2)
        
         self.started = False
-        self.start()
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -116,6 +115,7 @@ class DparkContext:
         return Accumulator(init, param)
 
     def broadcast(self, v):
+        self.start()
         return Broadcast.newBroadcast(v, self.isLocal)
 
     def start(self):
