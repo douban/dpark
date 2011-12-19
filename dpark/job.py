@@ -97,8 +97,8 @@ class SimpleJob(Job):
             return noPrefTask
         if not localOnly:
             return self.findTaskFromList(self.allPendingTasks)
-        else:
-            print repr(host), self.pendingTasksForHost
+#        else:
+#            print repr(host), self.pendingTasksForHost
 
     def isPreferredLocation(self, task, host):
         locs = task.preferredLocations()

@@ -401,7 +401,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.lock = threading.RLock()
 
     def start(self):
-        name = '[dpark] ' + ' '.join(sys.argv)
+        name = '[dpark@%s] ' % socket.gethostname()
+        name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
         self.driver = mesos.MesosSchedulerDriver(self, name,
             self.getExecutorInfo(), self.master)
         self.driver.start()
