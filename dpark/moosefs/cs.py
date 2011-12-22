@@ -23,18 +23,21 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
         raise ValueError("size too large %s > %s" % 
             (size, CHUNKSIZE-offset))
     
+    from dpark.accumulator import ReadBytes, LocalReadBytes
+
     name = '%02X/chunk_%016X_%08X.mfs' % (chunkid & 0xFF, chunkid, version)
     for d in mfsdirs:
         p = os.path.join(d, name)
         if os.path.exists(p):
-#            if os.path.getsize(p) < CHUNKHDRSIZE + offset + size:
-#                raise ValueError("size too large")
+            if os.path.getsize(p) < CHUNKHDRSIZE + offset + size:
+                raise ValueError("size too large")
             f = open(p)
             f.seek(CHUNKHDRSIZE + offset)
             while size > 0:
                 to_read = min(size, 1024*1024*4)
                 data = f.read(to_read)
                 yield data
+                LocalReadBytes.add(len(data))
                 size -= len(data)
                 if len(data) < to_read:
                     break
@@ -42,7 +45,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             return
 
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    conn.settimeout(1)
+    conn.settimeout(10)
     conn.connect((host, port))
 
     msg = pack(CUTOCS_READ, uint64(chunkid), version, offset, size) 
@@ -93,11 +96,14 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             while breq > 0:
                 data = conn.recv(breq)
                 yield data
+                ReadBytes.add(len(data))
                 breq -= len(data)
             offset += bsize
             size -= bsize
         else:
             raise Exception("readblock; unknown message: %s" % cmd)
+    conn.close()
+
 
 def test():
     d = list(read_block('192.168.11.3', 9422, 6544760, 1, 6, 0))

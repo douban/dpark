@@ -81,7 +81,7 @@ class SimpleJob(Job):
     def getPendingTasksForHost(self, host):
         h, hs, ips = socket.gethostbyname_ex(host)
         return sum((self.pendingTasksForHost.setdefault(h, []) 
-            for h in [h] + hs), [])
+            for h in [h] + hs + ips), [])
 
     def findTaskFromList(self, l):
         for i in l:

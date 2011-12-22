@@ -67,16 +67,13 @@ class File:
         self.inode = inode
         self.path = path
         self.info = info
+        self.length = info.length
         self.master = master
         self.cscache = {}
         self.roff = 0
         self.rbuf = ''
         self.reader = None
-        self.generator = StringIO("")
-
-    @property
-    def length(self):
-        return self.info.length
+        self.generator = None
 
     def __len__(self):
         return (self.length + CHUNKSIZE - 1) / CHUNKSIZE
@@ -145,27 +142,34 @@ class File:
         index = roff / CHUNKSIZE
         offset = roff % CHUNKSIZE
         chunk = self.get_chunk(index)
-        if offset > chunk.length:
+        length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
+        if offset > length:
             return
         for host, port in chunk.addrs:
             try:
                 for block in read_chunk(host, port, chunk.id,
-                    chunk.version, chunk.length-offset, offset):
+                    chunk.version, length-offset, offset):
                     yield block
                     offset += len(block)
-                    if offset == self.length:
+                    if offset == length:
                         return
-            except Exception:
-                raise
-  
+            except IOError:
+                pass
+
+        if offset < length:
+            raise Exception("unexpected error: %s < %s" % (offset, length))
+        
     def __iter__(self):
         return self
 
     def next(self):
-        try:
-            line = self.generator.next()
-        except StopIteration:
-            self.generator = None
+        if self.generator is not None:
+            try:
+                line = self.generator.next()
+            except StopIteration:
+                self.generator = None
+                line = ""
+        else:
             line = ""
 
         while not line or line[-1] != '\n':

@@ -37,7 +37,7 @@ class DparkContext:
             if '://' not in self.master:
                 self.master = os.environ.get('MESOS_MASTER')
                 if not self.master:
-                    raise ValueError("mesos master url needed")
+                    self.master = 'zoo://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
             self.scheduler = MesosScheduler(self.master, options) 
             self.isLocal = False
         else:
@@ -92,17 +92,18 @@ class DparkContext:
         return self.textFile(cls=CSVFileRDD, *args, **kwargs)
 
     def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
-        f = moosefs.mfsopen(path)
+        f = moosefs.mfsopen(path, master)
         if f.info.type == 'd':
-            for root, dirs, names in moosefs.walk(path):
+            paths = []
+            for root, dirs, names in moosefs.walk(path, master):
                 for n in names:
                     if n.endswith(ext) and not n.startswith('.'):
-                        paths.append(p)
+                        paths.append(os.path.join(root, n))
                 for d in dirs[:]:
                     if d.startswith('.'):
                         dirs.remove(d)
 
-            rdds = [MFSTextFileRDD(self, p, **kw) 
+            rdds = [MFSTextFileRDD(self, p, master, **kw) 
                      for p in paths]
             return self.union(rdds)
         else:

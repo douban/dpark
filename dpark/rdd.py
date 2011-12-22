@@ -823,7 +823,6 @@ class MFSTextFileRDD(RDD):
             n += 1
         self.splitSize = splitSize
         self.len = n
-        self.locs = self.file.locs 
 
     def __len__(self):
         return self.len

@@ -72,5 +72,6 @@ class Accumulator:
 
 ReadBytes = Accumulator()
 WriteBytes = Accumulator()
+LocalReadBytes = Accumulator()
 CacheHits = Accumulator()
 CacheMisses = Accumulator()
