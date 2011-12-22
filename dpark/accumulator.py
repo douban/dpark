@@ -30,9 +30,12 @@ class Accumulator:
 
     def add(self, v):
         self.value = self.param.addInPlace(self.value, v)
+        self.register(self, False)
 
     def reset(self):
+        v = self.value
         self.value = self.param.zero
+        return v
 
     def __getstate(self):
         return self.id, self.param 
@@ -59,6 +62,8 @@ class Accumulator:
 
     @classmethod
     def clear(cls):
+        for acc in cls.localAccums.values():
+            acc.reset()
         cls.localAccums.clear()
 
     @classmethod

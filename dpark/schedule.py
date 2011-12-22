@@ -243,7 +243,6 @@ class DAGScheduler(Scheduler):
                         submitStage(stage)
                     failed.clear()
                 else:
-                    print 'sleep 0.1'
                     time.sleep(0.1)
                 continue
                
