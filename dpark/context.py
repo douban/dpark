@@ -1,6 +1,7 @@
 import os
 import atexit
 import optparse
+import signal
 
 from rdd import *
 from schedule import *
@@ -127,6 +128,14 @@ class DparkContext:
         self.scheduler.start()
         self.started = True
         atexit.register(self.stop)
+
+        def handler(signm, frame):
+            logging.error("got signal %d, exit now", signm)
+            sys.exit(1)
+        signal.signal(signal.SIGTERM, handler)
+        signal.signal(signal.SIGHUP, handler)
+        signal.signal(signal.SIGABRT, handler)
+        signal.signal(signal.SIGQUIT, handler)
 
     def runJob(self, rdd, func, partitions=None, allowLocal=False):
         self.start()

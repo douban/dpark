@@ -1,5 +1,5 @@
 import time 
-import os
+import sys
 import logging
 import socket
 
@@ -221,4 +221,4 @@ class SimpleJob(Job):
         self.causeOfFailure = message
         self.sched.jobFinished(self)
         self.sched.stop()
-        os._exit(1)
+        sys.exit(1)
