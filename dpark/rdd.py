@@ -316,8 +316,8 @@ class MappedRDD(RDD):
         self.__dict__, code = state
         try:
             self.func = load_func(code)
-        except:
-            print self.__class__, code
+        except Exception:
+            print 'load failed', self.__class__, code
             raise
 
 class FlatMappedRDD(MappedRDD):

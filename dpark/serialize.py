@@ -29,7 +29,7 @@ def dump_func(f):
     if f.__module__ != '__main__':
         try:
             return 1, cPickle.dumps(f, -1)
-        except:
+        except Exception:
             pass
 
     code = f.func_code
@@ -58,7 +58,7 @@ def reconstruct_closure(values):
     src = '\n'.join(src)
     try:
         exec src
-    except:
+    except Exception:
         raise SyntaxError(src)
     values.reverse()
     return f(values).func_closure

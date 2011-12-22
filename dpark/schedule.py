@@ -233,52 +233,54 @@ class DAGScheduler(Scheduler):
         submitStage(finalStage)
 
         while numFinished != numOutputParts:
-           evt = self.completionEvents.get(0.1)
-           if not evt:
-               if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
-                   logging.debug("Resubmitting failed stages")
-                   self.updateCacheLocs()
-                   for stage in failed:
-                       submitStage(stage)
-                   failed.clear()
-               else:
-                   time.sleep(0.2)
-               continue
+            try:
+                evt = self.completionEvents.get(False)
+            except Queue.Empty:
+                if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
+                    logging.debug("Resubmitting failed stages")
+                    self.updateCacheLocs()
+                    for stage in failed:
+                        submitStage(stage)
+                    failed.clear()
+                else:
+                    print 'sleep 0.1'
+                    time.sleep(0.1)
+                continue
                
-           task = evt.task
-           stage = self.idToStage[task.stageId]
-           logging.debug("remove from pedding %s", task)
-           pendingTasks[stage].remove(task.id)
-           if isinstance(evt.reason, Success):
-               Accumulator.merge(evt.accumUpdates)
-               if isinstance(task, ResultTask):
-                   results[task.outputId] = evt.result
-                   finished[task.outputId] = True
-                   numFinished += 1
-               elif isinstance(task, ShuffleMapTask):
-                   stage = self.idToStage[task.stageId]
-                   stage.addOutputLoc(task.partition, evt.result)
-                   if not pendingTasks[stage]:
-                       logging.debug("%s finished; looking for newly runnable stages", stage)
-                       running.remove(stage)
-                       if stage.shuffleDep != None:
-                           self.mapOutputTracker.registerMapOutputs(
-                                   stage.shuffleDep.shuffleId,
-                                   [l[0] for l in stage.outputLocs])
-                       self.updateCacheLocs()
-                       newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
-                       waiting -= newlyRunnable
-                       running |= newlyRunnable
-                       logging.debug("newly runnable: %s, %s", waiting, newlyRunnable)
-                       for stage in newlyRunnable:
-                           submitMissingTasks(stage)
-           else:
-               logging.error("task %s failed", task)
-               if isinstance(evt.reason, FetchFailed):
-                   pass
-               else:
-                   logging.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
-                   raise evt.reason
+            task = evt.task
+            stage = self.idToStage[task.stageId]
+            logging.debug("remove from pedding %s", task)
+            pendingTasks[stage].remove(task.id)
+            if isinstance(evt.reason, Success):
+                Accumulator.merge(evt.accumUpdates)
+                if isinstance(task, ResultTask):
+                    results[task.outputId] = evt.result
+                    finished[task.outputId] = True
+                    numFinished += 1
+                elif isinstance(task, ShuffleMapTask):
+                    stage = self.idToStage[task.stageId]
+                    stage.addOutputLoc(task.partition, evt.result)
+                    if not pendingTasks[stage]:
+                        logging.debug("%s finished; looking for newly runnable stages", stage)
+                        running.remove(stage)
+                        if stage.shuffleDep != None:
+                            self.mapOutputTracker.registerMapOutputs(
+                                    stage.shuffleDep.shuffleId,
+                                    [l[0] for l in stage.outputLocs])
+                        self.updateCacheLocs()
+                        newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
+                        waiting -= newlyRunnable
+                        running |= newlyRunnable
+                        logging.debug("newly runnable: %s, %s", waiting, newlyRunnable)
+                        for stage in newlyRunnable:
+                            submitMissingTasks(stage)
+            else:
+                logging.error("task %s failed", task)
+                if isinstance(evt.reason, FetchFailed):
+                    pass
+                else:
+                    logging.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
+                    raise evt.reason
 
         return results
 
@@ -333,7 +335,10 @@ def run_task_in_process(task, tid, environ):
         task, tid, environ)
     from env import env
     env.start(False, environ)
-    return run_task(task, tid)
+    try:
+        return run_task(task, tid)
+    except KeyboardInterrupt:
+        sys._exit(0)
 
 class MultiProcessScheduler(LocalScheduler):
     def __init__(self, threads):
@@ -361,7 +366,7 @@ class MultiProcessScheduler(LocalScheduler):
                 callback=callback)
 
     def stop(self):
-        self.pool.close()
+        self.pool.terminate()
         self.pool.join()
         logging.debug("process pool stopped")
 
@@ -583,12 +588,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def stop(self):
         if self.driver:
-            #slave = mesos_pb2.SlaveID()
-            #executor = mesos_pb2.ExecutorID()
-            #executor.value = 'default'
-            #for id in self.slavesWithExecutors:
-            #    slave.value = id
-            #    self.driver.sendFrameworkMessage(slave, executor, "shutdown")
             self.driver.stop(False)
             self.driver.join()
 

@@ -59,22 +59,20 @@ class MyExecutor(mesos.Executor):
         pass
 
     def shutdown(self, driver):
-        self.pool.terminate()
-        self.pool.join()
+        for p in self.pool._pool:
+            p.terminate()
+        for p in self.pool._pool:
+            p.join()
 
     def error(self, driver, code, message):
         logging.error("error: %s, %s", code, message)
 
     def frameworkMessage(self, driver, data):
-        driver.sendFrameworkMessage('got message: %s' % str(data))
-        if data == 'shutdown':
-            self.shutdown(driver)
-            os._exit(0)
+        pass
 
 def run():
     executor = MyExecutor()
     driver = mesos.MesosExecutorDriver(executor)
-    executor.driver = driver
     driver.run()
 
 if __name__ == '__main__':
