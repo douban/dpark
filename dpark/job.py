@@ -91,18 +91,15 @@ class SimpleJob(Job):
     def findTask(self, host, localOnly):
         localTask = self.findTaskFromList(self.getPendingTasksForHost(host))
         if localTask is not None:
-            return localTask
+            return localTask, True
         noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs)
         if noPrefTask is not None:
-            return noPrefTask
+            return noPrefTask, True
         if not localOnly:
-            return self.findTaskFromList(self.allPendingTasks)
+            return self.findTaskFromList(self.allPendingTasks), False
 #        else:
 #            print repr(host), self.pendingTasksForHost
-
-    def isPreferredLocation(self, task, host):
-        locs = task.preferredLocations()
-        return host in locs or not locs
+        return None, False
 
     # Respond to an offer of a single slave from the scheduler by finding a task
     def slaveOffer(self, host, availableCpus): 
@@ -131,12 +128,11 @@ class SimpleJob(Job):
 
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
-        i =  self.findTask(host, localOnly)
+        i, preferred = self.findTask(host, localOnly)
         if i is not None:
             task = self.tasks[i]
             task.start = now
             task.tried = 0
-            preferred = self.isPreferredLocation(task, host)
             prefStr = preferred and "preferred" or "non-preferred"
             logging.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
                 self.id, i, task, host, prefStr)

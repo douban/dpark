@@ -61,7 +61,7 @@ class MasterConn:
             regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL,
                     uint8(REGISTER_RECONNECT), self.sessionid, VERSION)
         self.send(regbuf)
-        recv = self.recv(8)
+        recv = self.recv_cmd(8)
         cmd, i = unpack("II", recv)
         if cmd != MATOCU_FUSE_REGISTER:
             raise Exception("got incorrect answer from mfsmaster %s" % cmd)
@@ -86,18 +86,29 @@ class MasterConn:
 
     def send(self, buf):
         #print 'send', len(buf), " ".join(str(ord(c)) for c in buf)
-        self.conn.send(buf)
+        n = self.conn.send(buf)
+        while n < len(buf):
+            n += self.conn.send(buf[n:])
 
     def nop(self):
         msg = pack(uint8(ANTOAN_NOP), 0)
         self.conn.send(msg)
 
     def recv(self, n):
-        d = self.conn.recv(n)
-        if len(d)>=8:
+        r = self.conn.recv(n)
+        while len(r) < n:
+            rr = self.conn.recv(n - len(r))
+            if not rr:
+                raise IOError("unexpected error: need %d" % n-len(r))
+            r += rr
+        return r
+
+    def recv_cmd(self, n):
+        d = self.recv(n)
+        if len(d) >= 8:
             cmd, size = unpack("II", d)
-            while cmd == ANTOAN_NOP:
-                d = d[12:] + self.conn.recv(12)
+            while cmd == ANTOAN_NOP and size == 4:
+                d = d[12:] + self.recv(12)
                 cmd, size = unpack("II", d)
         assert len(d) == n, 'unexpected end: %s != %s' % (len(d), n)
         return d
@@ -109,13 +120,13 @@ class MasterConn:
         # TODO lock
         self.connect()
         self.send(msg)
-        r = self.recv(12)
+        r = self.recv_cmd(12)
         rcmd, size, id = unpack("III", r)
         if rcmd != cmd+1 or id != packetid or size <= 4:
             self.close()
             raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4", 
                 rcmd, cmd+1, id, packetid, size)
-        d = self.conn.recv(size-4)
+        d = self.recv(size-4)
         if len(d) == 1 and ord(d[0]) != 0:
             raise Error(ord(d[0]))
         return d

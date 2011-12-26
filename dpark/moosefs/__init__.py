@@ -91,7 +91,7 @@ class File:
                      for i in range(len(self))]
         return [host for host,_ in self.get_chunk(i).addrs]
 
-    def seek(self, offset):
+    def seek(self, offset, length=0):
         off = offset - self.roff
         if off > 0 and off < len(self.rbuf):
             self.rbuf = self.rbuf[off:]
@@ -99,9 +99,19 @@ class File:
             self.rbuf = ''
         self.roff = offset
         self.reader = None
-        self.generator = StringIO("")
+        self.generator = None
+        if length > 0 and length < self.length:
+            self.length = length
 
     def read(self, n):
+        if n == -1:
+            if not self.rbuf:
+                self.fill_buffer()
+            v = self.rbuf
+            self.roff += len(v)
+            self.rbuf = ''
+            return v
+
         buf = []
         while n > 0:
             nbuf = len(self.rbuf)
@@ -130,11 +140,7 @@ class File:
             else:
                 return
         try:
-            buf = self.reader.next()
-            if self.rbuf:
-                self.rbuf += buf
-            else:
-                self.rbuf = buf
+            self.rbuf = self.reader.next()
         except StopIteration:
             self.reader = None
 
@@ -173,19 +179,18 @@ class File:
             line = ""
 
         while not line or line[-1] != '\n':
-            data = self.read(1024*1024*4)
-            if not data:
-                if line:
-                    return line
-                else:
-                    raise StopIteration
+            data = self.read(-1)
+            if not data and line:
+                return line
             self.generator = StringIO(data)
             line += self.generator.next()
         return line
 
     def close(self):
         self.roff = 0
-        self.rbuf = None
+        self.rbuf = ''
+        self.reader = None
+        self.generator = None
 
 _mfs = {}
 
