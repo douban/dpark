@@ -36,8 +36,8 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             while size > 0:
                 to_read = min(size, 1024*1024*4)
                 data = f.read(to_read)
-                yield data
                 LocalReadBytes.add(len(data))
+                yield data
                 size -= len(data)
                 if len(data) < to_read:
                     break
@@ -95,8 +95,8 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             
             while breq > 0:
                 data = conn.recv(breq)
-                yield data
                 ReadBytes.add(len(data))
+                yield data
                 breq -= len(data)
             offset += bsize
             size -= bsize
