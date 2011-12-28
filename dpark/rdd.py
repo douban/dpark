@@ -171,9 +171,6 @@ class RDD:
             res = self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True)
             if res[0]:
                 r.extend(res[0])
-            else:
-                break 
-            if len(r) == n: break
             p += 1
         return r
 
