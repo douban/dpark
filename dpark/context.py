@@ -64,8 +64,7 @@ class DparkContext:
     def makeRDD(self, seq, numSlices=None):
         return self.parallelize(seq, numSlices)
     
-    def textFile(self, path, numSplits=None, splitSize=None,
-            ext='', followLink=True, maxdepth=0, cls=TextFileRDD):
+    def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
         if os.path.isdir(path):
             paths = []
             for root,dirs,names in os.walk(path, followlinks=followLink):
@@ -83,11 +82,11 @@ class DparkContext:
                     if d.startswith('.'):
                         dirs.remove(d)
 
-            rdds = [cls(self, p, numSplits,splitSize) 
+            rdds = [cls(self, p, *ka, **kws) 
                      for p in paths]
             return self.union(rdds)
         else:
-            return cls(self, path, numSplits, splitSize)
+            return cls(self, path, *ka, **kws)
 
     def csvFile(self, *args, **kwargs):
         return self.textFile(cls=CSVFileRDD, *args, **kwargs)

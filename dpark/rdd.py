@@ -695,16 +695,26 @@ class TextFileRDD(RDD):
 
 
 class CSVFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, dialect='auto', numSplits=None, splitSize=None):
+        if dialect in ('auto', 'sniff'):
+            dialect = csv.Sniffer().sniff(open(path).read(4096))
+        elif isinstance(dialect, str):
+            dialect = csv.get_dialect(dialect)
+            if not dialect:
+                raise Exception("Invalid dialect")
+        self.dialect = dialect
+        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
+
     def __repr__(self):
         return '<CSVFileRDD %s>' % self.path
 
     def compute(self, split):
         if self.len == 1:
             f = open(self.path, 'r', 4096 * 1024)
-            return csv.reader(f)
+            return csv.reader(f, self.dialect)
         
         f = cStringIO.StringIO(self.read_block(split))
-        return csv.reader(f)
+        return csv.reader(f, self.dialect)
 
     def read_block(self, split):
         start = split.index * self.splitSize
