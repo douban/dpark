@@ -704,11 +704,15 @@ class CSVFileRDD(TextFileRDD):
 
     def compute(self, split):
         if self.dialect in ('auto', 'sniff'):
-            dialect = csv.Sniffer().sniff(open(self.path).read(4096))
+            try:
+                dialect = csv.Sniffer().sniff(open(self.path).read(4096))
+            except Exception:
+                dialect = csv.get_dialect("excel")
         elif isinstance(self.dialect, str):
             dialect = csv.get_dialect(self.dialect)
             if not dialect:
                 raise Exception("Invalid dialect")
+
         if self.len == 1:
             f = open(self.path, 'r', 4096 * 1024)
             return csv.reader(f, dialect)
