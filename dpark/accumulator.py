@@ -1,5 +1,6 @@
 from serialize import load_func, dump_func
 from operator import add
+import copy
 
 class AccumulatorParam:
     def __init__(self, zero, addInPlace):
@@ -34,7 +35,7 @@ class Accumulator:
 
     def reset(self):
         v = self.value
-        self.value = self.param.zero
+        self.value = copy.copy(self.param.zero)
         return v
 
     def __getstate(self):
@@ -42,7 +43,7 @@ class Accumulator:
 
     def __setstate__(self, s):
         self.id, self.param = s
-        self.value = self.param.zero
+        self.value = copy.copy(self.param.zero)
         self.register(self, False)
 
     nextId = 0
@@ -68,7 +69,9 @@ class Accumulator:
 
     @classmethod
     def values(cls):
-        return dict((id, accum.value) for id,accum in cls.localAccums.items())
+        v = dict((id, accum.value) for id,accum in cls.localAccums.items())
+        cls.clear()
+        return v
 
     @classmethod
     def merge(cls, values):
