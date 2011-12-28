@@ -168,7 +168,7 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self):
-            res = self.ctx.runJob(self, lambda x: itertools.islice(x, n - len(r)), [p], True)
+            res = self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True)
             if res[0]:
                 r.extend(res[0])
             else:
