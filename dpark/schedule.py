@@ -41,7 +41,7 @@ class Stage:
         self.shuffleDep = shuffleDep
         self.parents = parents
         self.numPartitions = len(rdd)
-        self.outputLocs = [[]] * self.numPartitions
+        self.outputLocs = [[] for i in range(self.numPartitions)]
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -183,7 +183,7 @@ class DAGScheduler(Scheduler):
         logging.debug("Parents of final stage: %s", finalStage.parents)
         logging.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
        
-        if allowLocal and not finalStage.parents and numOutputParts == 1:
+        if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
             return [func(finalRdd.iterator(split))]
 
@@ -243,12 +243,12 @@ class DAGScheduler(Scheduler):
                         submitStage(stage)
                     failed.clear()
                 else:
-                    time.sleep(0.1)
+                    time.sleep(0.01)
                 continue
                
             task = evt.task
             stage = self.idToStage[task.stageId]
-            logging.debug("remove from pedding %s", task)
+            logging.debug("remove from pedding %s from %s", task, stage)
             pendingTasks[stage].remove(task.id)
             if isinstance(evt.reason, Success):
                 Accumulator.merge(evt.accumUpdates)
@@ -560,7 +560,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         jid = self.taskIdToJobId.get(tid)
         if jid in self.activeJobs:
             if self.isFinished(state):
-#                print self.taskIdToJobId
                 del self.taskIdToJobId[tid]
                 del self.taskIdToSlaveId[tid]
                 if tid in self.jobTasks[jid]:
