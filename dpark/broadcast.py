@@ -150,13 +150,19 @@ class FileBroadcast(Broadcast):
         return os.path.join(self.workdir, self.uuid)
 
     def sendBroadcast(self):
-        f = open(self.path, 'wb', 65536)
-        cPickle.dump(self.value, f, -1)
+        f = open(self.path, 'wb', 65536*100)
+        try:
+            marshal.dump(self.value, f)
+        except ValueError:
+            cPickle.dump(self.value, f, -1)
         f.close()
         logging.debug("dump to %s", self.path)
 
     def recvBroadcast(self):
-        self.value = cPickle.load(open(self.path, 'rb', 65536))
+        try:
+            self.value = marshal.load(open(self.path, 'rb', 65536*100))
+        except ValueError:
+            self.value = cPickle.load(open(self.path, 'rb', 65536*100))
         logging.debug("load from %s", self.path)
 
     workdir = None
@@ -194,8 +200,8 @@ class TreeBroadcast(FileBroadcast):
 
     def sendBroadcast(self):
         # store a copy to file
-        FileBroadcast.sendBroadcast(self)
-        self.has_copy_in_fs = True
+        # FileBroadcast.sendBroadcast(self)
+        # self.has_copy_in_fs = True
 
         variableInfo = self.blockifyObject(self.value)
         self.blocks = variableInfo.blocks
