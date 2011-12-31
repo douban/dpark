@@ -91,9 +91,9 @@ class Broadcast:
 
     def blockifyObject(self, obj):
         try:
-            buf = marshal.dumps(obj, -1)
+            buf = marshal.dumps(obj)
         except ValueError:
-            buf = cPickle.dumps(obj)
+            buf = cPickle.dumps(obj, -1)
         N = self.BlockSize
         blockNum = len(buf) / N
         if len(buf) % N != 0:
