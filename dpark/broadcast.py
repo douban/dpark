@@ -1,6 +1,7 @@
 import os, time
 import uuid
 import socket
+import marshal
 import cPickle
 import threading
 import logging
@@ -89,7 +90,10 @@ class Broadcast:
         raise NotImplementedError
 
     def blockifyObject(self, obj):
-        buf = cPickle.dumps(obj, -1)
+        try:
+            buf = marshal.dumps(obj, -1)
+        except ValueError:
+            buf = cPickle.dumps(obj)
         N = self.BlockSize
         blockNum = len(buf) / N
         if len(buf) % N != 0:
@@ -102,7 +106,10 @@ class Broadcast:
 
     def unBlockifyObject(self, blocks):
         s = ''.join(b.data for b in blocks)
-        return cPickle.loads(s)
+        try:
+            return marshal.loads(s)
+        except ValueError:
+            return cPickle.loads(s)
    
     @classmethod
     def initialize(cls, is_master):
