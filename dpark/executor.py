@@ -63,9 +63,11 @@ class MyExecutor(mesos.Executor):
 
     def shutdown(self, driver):
         for p in self.pool._pool:
-            p.terminate()
+            try: p.terminate()
+            except: pass
         for p in self.pool._pool:
-            p.join()
+            try: p.join()
+            except: pass
 
     def error(self, driver, code, message):
         logging.error("error: %s, %s", code, message)
