@@ -465,8 +465,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def resourceOffers(self, driver, offers):
         if not self.activeJobs:
+            rf = mesos_pb2.Filters()
+            rf.refuse_seconds = -1
             for o in offers:
-                driver.launchTasks(o.id, [])
+                driver.launchTasks(o.id, [], rf)
             return
 
         random.shuffle(offers)
