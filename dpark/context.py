@@ -65,6 +65,9 @@ class DparkContext:
         return self.parallelize(seq, numSlices)
     
     def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
+        if isinstance(path, (list, tuple)):
+            return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
+                for p in path]) 
         if os.path.isdir(path):
             paths = []
             for root,dirs,names in os.walk(path, followlinks=followLink):
