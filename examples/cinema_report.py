@@ -38,7 +38,7 @@ def save_report(day, stats):
         store.execute('replace into cinema_report (date, loc_id, pv, uv) '
                 'values (%s,%s,%s,%s)', (day, loc, pv, uv))
     store.commit()
-    print 'completed', day, len(stats)
+    #print 'completed', day, len(stats)
 
 if __name__ == '__main__':
     for i in range(1, 10):

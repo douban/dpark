@@ -49,7 +49,7 @@ def format_line(line):
         url = hosts.get(host, '') + url
         while url.startswith('//'): url=url[1:]
         yield ourl(url), int(done)
-    except :
+    except Exception:
         print line
     
 def gen_tti((nurl, tti)):
@@ -95,14 +95,14 @@ def save(day, tti_stats):
             else:
                 store.execute('update rooturl3 set tti=%s where day=%s and parent=%s '
                     ' and nurl=%s', (tti, day, get_parent(nurl)[:120], nurl[:120]))
-        except:
+        except Exception:
             pass
     store.commit()
-    print 'completed', len(tti_stats)
+    #print 'completed', len(tti_stats)
 
 if __name__ == "__main__":
     today = date.today()
-    for i in range(1, 2):
+    for i in range(1, 3):
         day = today - timedelta(days=i)
         name = '/tmp/beacon-%s' % day
         if os.path.exists(name):
