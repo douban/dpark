@@ -13,7 +13,7 @@ class DparkContext:
     nextShuffleId = 0
 
     def __init__(self, master=None, name=None):
-        if 'MESOS_SLAVE_PID' in os.environ:
+        if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
             from executor import run
             run()
             sys.exit(0)
