@@ -28,7 +28,10 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate), -1)
+        d = cPickle.dumps((task.id, Success(), result, accUpdate), -1)
+        if len(d) > 1024*1024:
+            return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure("Task result is too large"), None, None), -1)
+        return mesos_pb2.TASK_FINISHED, d
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
