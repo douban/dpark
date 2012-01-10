@@ -595,8 +595,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return 16
 
     def frameworkMessage(self, driver, slave, executor, data):
-        logging.warning("got message from slave %s %s %s", 
-                slave.value, executor.value, data)
+        logging.warning("[slave %s] %s %s", slave.value, data)
 
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)

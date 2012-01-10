@@ -15,11 +15,15 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
 
+TASK_RESULT_LIMIT = 1024 * 1024
+
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()
     update.task_id.value = task.task_id.value
     update.state = status
     if data is not None:
+        if len(data) > TASK_RESULT_LIMIT:
+            driver.sendFrameworkMessage("task result too large: %d" % len(data))
         update.data = data
     driver.sendStatusUpdate(update)
 
@@ -28,10 +32,7 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
-        d = cPickle.dumps((task.id, Success(), result, accUpdate), -1)
-        if len(d) > 1024*1024:
-            return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure("Task result is too large"), None, None), -1)
-        return mesos_pb2.TASK_FINISHED, d
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
