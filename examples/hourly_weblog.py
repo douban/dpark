@@ -8,14 +8,13 @@ from cStringIO import StringIO
 import subprocess
 from dpark import DparkContext
 import pickle
-dpark = DparkContext()
 
 sinkservers = ['balin', 'theoden']
 log_path = "/mfs/log/access-log/current/weblog/%s/%s"
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
 LIMITS = [10,8,11,12,20,8,255,255,3,8,5,255,255]
 
-def format_weblog(hour):
+def format_weblog(dpark, hour):
     logs = [dpark.textFile(log_path % (h,hour.strftime("%Y/%m/%d/%H/")), splitSize=10<<20)
              for h in sinkservers]
     rawlog = dpark.union(logs)
@@ -41,12 +40,14 @@ def drop_nurl(line):
 def load_weblog(hour):
     path = '/mfs/tmp/hourly_weblog/%s' % hour.strftime("%Y%m%d%H")
     if not os.path.exists(path) or len(os.listdir(path)) < 16:
-        weblog = format_weblog(hour)
+        dpark = DparkContext()
+        weblog = format_weblog(dpark, hour)
         g = weblog.map(parse).map(clean).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 10 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
-    
+        dpark.stop()
+
     for name in sorted(os.listdir(path)):
         if name.startswith('.'): continue
         if not name.endswith("csv"):

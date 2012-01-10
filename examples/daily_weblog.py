@@ -6,7 +6,6 @@ from operator import itemgetter, add
 import subprocess
 from dpark import DparkContext
 import pickle
-dpark = DparkContext()
 
 sinkservers = ['balin', 'theoden']
 log_path = "/mfs/log/access-log/current/weblog/%s/%s"
@@ -16,7 +15,7 @@ LIMITS = [10,8,11,12,20,8,80,255,3,8,5,80,255]
 def drop_args(url):
     return url[:url.index('?')] if '?' in url else url
 
-def clean(topr):
+def clean(dpark, topr):
     topr = dpark.broadcast(topr)
     def _(line):
         line = [v.replace(',','%2C')[:LIMITS[i]] for i,v in enumerate(line)]
@@ -35,13 +34,15 @@ def drop_nurl(l):
 def load_weblog(day):
     path = '/mfs/tmp/daily_weblog/%s' % day.strftime("%Y%m%d")
     if not os.path.exists(path) or len(os.listdir(path)) < 16:
-        weblog = dpark.csvFile('/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d"), splitSize=16<<20)
+        dpark = DparkContext()
+        weblog = dpark.csvFile('/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d"))
         topreferers = weblog.map(lambda l:(l[NREFERER], 1)).reduceByKey(add).filter(lambda (x,y): y>1000).collectAsMap()
-        g = weblog.map(clean(topreferers)).groupByKey()
+        g = weblog.map(clean(dpark, topreferers)).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 1000 and ls or [drop_nurl(l) for l in ls]
             ).saveAsTextFile(path, ext='csv')
-    
+        dpark.stop()
+
     for name in sorted(os.listdir(path)):
         if name.startswith('.'):
             continue
@@ -63,13 +64,13 @@ def load_weblog(day):
             if p.returncode != 0:
                 print 'load failed', os.path.join(path,name)
                 os.remove(flag)
-        except:
+        except :
             os.remove(flag)
 
     open('/mfs/mysql-ib-eye/flags/done','w').write('OK')
 
 if __name__ == '__main__':
     today = date.today() 
-    for i in range(1, 3):
+    for i in range(1, 4):
         day = today - timedelta(days=i)
         load_weblog(day)
