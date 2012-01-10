@@ -1,0 +1,47 @@
+#!/usr/bin/env python
+
+import sys
+import time
+
+from dpark import DparkContext, optParser
+
+optParser.set_usage("%prog [options] pattern filepath...")
+optParser.add_option('-e', '--regexp', action='store_true',
+                  help="indicate the pattern is a regular expression")
+optParser.set_default('master', 'mesos')
+
+dpark = DparkContext()
+options, args = optParser.parse_args()
+
+if len(args) < 2:
+    optParser.error("wrong number of arguments")
+else:
+    pattern, filepaths = args[0], args[1:]
+
+if options.regexp:
+    import re
+    ptn = re.compile(pattern)
+    def match(line):
+        return ptn.search(line)
+
+else:
+    def match(line):
+        return pattern in line
+
+def include_path(path):
+    def _(line):
+        return '%s:%s' % (path, line)
+    return _
+
+def echo(s):
+    sys.stdout.write(s)
+
+if len(filepaths) == 1:
+    path = filepaths[0]
+    dpark.textFile(path).filter(match).foreach(echo)
+
+else:
+    rdd = dpark.union([dpark.textFile(path).filter(match)
+                        .map(include_path(path))
+                       for path in filepaths])
+    rdd.foreach(echo)
