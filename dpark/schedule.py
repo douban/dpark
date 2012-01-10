@@ -1,6 +1,7 @@
 import os, sys
 import socket
 import logging
+import marshal
 import cPickle
 import threading, Queue
 import time
@@ -406,12 +407,34 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.lock = threading.RLock()
 
     def start(self):
+        self.out_logger = self.start_logger(sys.stdout) 
+        self.err_logger = self.start_logger(sys.stderr)
+
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
         self.driver = mesos.MesosSchedulerDriver(self, name,
             self.getExecutorInfo(), self.master)
         self.driver.start()
         logging.debug("Mesos Scheudler driver started")
+
+    def start_logger(self, output):
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.PULL)
+        port = sock.bind_to_random_port("tcp://0.0.0.0")
+
+        def collect_log():
+            while True:
+                line = sock.recv()
+                output.write(line)
+
+        t = threading.Thread(target=collect_log)
+        t.daemon = True
+        t.start()
+
+        host = socket.gethostname()
+        addr = "tcp://%s:%d" % (host, port)
+        logging.debug("log collecter start at %s", addr)
+        return addr
 
     def getExecutorInfo(self):
         info = mesos_pb2.ExecutorInfo()
@@ -428,8 +451,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps((os.getcwd(), sys.path, self.task_per_node,
-            env.environ), -1)
+        info.data = marshal.dumps((os.getcwd(), sys.path, self.task_per_node,
+            self.out_logger, self.err_logger, env.environ))
         return info
 
     def submitTasks(self, tasks):
@@ -564,14 +587,14 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 self.slaveTasks[self.taskIdToSlaveId[tid]] -= 1
                 del self.taskIdToSlaveId[tid]
             
-                if status.data:
+                if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
                     tid,reason,result,accUpdate = cPickle.loads(status.data)
                     self.activeJobs[jid].statusUpdate(tid, state, 
                         reason, result, accUpdate)
                 else:
                     # killed, lost
                     tid = int(tid.split(':')[1])
-                    self.activeJobs[jid].statusUpdate(tid, state)
+                    self.activeJobs[jid].statusUpdate(tid, state, status.data)
         else:
             logging.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
@@ -590,6 +613,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         if self.driver:
             self.driver.stop(False)
             self.driver.join()
+        time.sleep(2)
 
     def defaultParallelism(self):
         return 16

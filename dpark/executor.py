@@ -3,10 +3,12 @@ import logging
 import os, sys, time
 import os.path
 import threading
+import marshal
 import cPickle
 import socket
 import multiprocessing
 
+import zmq
 import mesos
 import mesos_pb2
 
@@ -41,21 +43,60 @@ def run_task(task, aid):
 def init_env(args):
     env.start(False, args)
 
+def forword(fd, addr, prefix=''):
+    f = os.fdopen(fd, 'r')
+    ctx = zmq.Context()
+    out = ctx.socket(zmq.PUSH)
+    out.connect(addr)
+    buf = []
+    while True:
+        try:
+            line = f.readline()
+            if not line: break
+            buf.append(line)
+            if line.endswith('\n'):
+                out.send(prefix+''.join(buf))
+                buf = []
+        except IOError:
+            break
+    if buf:
+        out.send(''.join(buf))
+    out.close()
+    f.close()
+    ctx.shutdown()
+
+def start_forword(addr, prefix=''):
+    rfd, wfd = os.pipe()
+    t = threading.Thread(target=forword, args=[rfd, addr, prefix])
+    t.daemon = True
+    t.start()    
+    return t, os.fdopen(wfd, 'w', 0) 
+
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, python_path, paralell, args = cPickle.loads(args.data)
+        cwd, python_path, paralell, out_logger, err_logger, args = marshal.loads(args.data)
         try:
             os.chdir(cwd)
         except OSError:
             driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
         sys.path = python_path
+        self.outt, sys.stdout = start_forword(out_logger)
+        self.errt, sys.stderr = start_forword(err_logger)
         self.pool = multiprocessing.Pool(paralell, init_env, [args])
 
     def launchTask(self, driver, task):
-        reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+        try:
+            t, aid = cPickle.loads(task.data)
+        except Exception, e:
+            import traceback
+            msg = traceback.format_exc()
+            reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
+            return
+
         def callback((state, data)):
             reply_status(driver, task, state, data)
-        t, aid = cPickle.loads(task.data)
+        
+        reply_status(driver, task, mesos_pb2.TASK_RUNNING)
         self.pool.apply_async(run_task, [t, aid], callback=callback)
     
     def killTask(self, driver, taskId):
@@ -63,6 +104,11 @@ class MyExecutor(mesos.Executor):
         pass
 
     def shutdown(self, driver):
+        # flush
+        sys.stdout.close()
+        sys.stderr.close()
+        self.outt.join()
+        self.errt.join()
         for p in self.pool._pool:
             try: p.terminate()
             except: pass

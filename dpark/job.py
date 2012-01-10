@@ -179,7 +179,7 @@ class SimpleJob(Job):
     def taskLost(self, tid, status, reason):
         index = self.tidToIndex[tid]
         if not self.finished[index]:
-            logging.warning("Lost TID %s (task %d:%d)", tid, self.id, index)
+            logging.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
             self.launched[index] = False
             self.tasksLaunched -= 1
 
@@ -196,7 +196,7 @@ class SimpleJob(Job):
             logging.warning("re-enqueue the task as pending for a max number of retries")
             if status == TASK_FAILED:
                 logging.warning("task %s failed with: %s", 
-                    self.tasks[index], reason and reason.message) 
+                    self.tasks[index], reason and reason.message)
             self.addPendingTask(index)
             if status in (TASK_FAILED, TASK_LOST):
                 self.numFailures[index] += 1
