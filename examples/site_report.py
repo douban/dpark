@@ -146,14 +146,14 @@ def save_report(day, sites, widgets, front_pages, rooms, site_shares, widget_sha
                 " values (%s, %s, %s, %s)", (day, id, len(bids), len(dict(bids))))
 
     store.commit()
-    print 'completed', len(sites)
+    #print 'completed', len(sites)
 
 if __name__ == '__main__':
     for i in range(1, 30):
         day = date.today() - timedelta(days=i)
         path = '/tmp/site-report-%s' % day.strftime("%Y-%m-%d")
         if not os.path.exists(path):
-            print day
+            #print day
             sites, widgets, fronts, rooms, site_shares, widget_shares = site_log(day)
             if len(sites) > 1000 and len(widgets) > 1000:
                 save_report(day, sites, widgets, fronts, rooms, site_shares, widget_shares)

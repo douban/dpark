@@ -13,7 +13,7 @@ today = date.today()
 for i in range(1, 5):
     day = today - timedelta(days=i)
     path = '/mfs/log/weblog/%s/' % day.strftime("%Y/%m/%d")
-    print 'target', path
+    #print 'target', path
     if not os.path.exists(path):
         os.makedirs(path)
     target = dpark.textFile(path)
