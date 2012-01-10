@@ -394,6 +394,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
+        self.task_per_node = options.parallel or 16
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -401,7 +402,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.taskIdToSlaveId = {}
         self.jobTasks = {}
         self.driver = None
-        self.slavesWithExecutors = set()
+        self.slaveTasks = {}
         self.lock = threading.RLock()
 
     def start(self):
@@ -427,8 +428,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.name = 'mem'
         mem.type = mesos_pb2.Resource.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = cPickle.dumps((os.getcwd(), sys.path,
-            self.defaultParallelism(), env.environ), -1)
+        info.data = cPickle.dumps((os.getcwd(), sys.path, self.task_per_node,
+            env.environ), -1)
         return info
 
     def submitTasks(self, tasks):
@@ -474,7 +475,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem') 
-                - (o.slave_id.value not in self.slavesWithExecutors
+                - (o.slave_id.value not in self.slaveTasks
                     and EXECUTOR_MEMORY or 0)
                 for o in offers]
         logging.debug("get %d offers (%s cpus, %s mem), %d jobs", 
@@ -486,20 +487,25 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             while True:
                 launchedTask = False
                 for i,o in enumerate(offers):
+                    sid = o.slave_id.value
+                    if self.slaveTasks.get(sid, 0) >= self.task_per_node:
+                        continue
                     if mems[i] < self.mem or cpus[i] < self.cpus:
                         continue
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
-                    tasks.setdefault(o.id.value, []).append(self.createTask(o, job, t))
+                    task = self.createTask(o, job, t)
+                    tasks.setdefault(o.id.value, []).append(task)
 
                     logging.debug("dispatch %s into %s", t, o.hostname)
-                    self.jobTasks[job.id].add(t.id)
-                    self.taskIdToJobId[t.id] = job.id
-                    self.taskIdToSlaveId[t.id] = o.slave_id.value
+                    tid = task.task_id.value
+                    self.jobTasks[job.id].add(tid)
+                    self.taskIdToJobId[tid] = job.id
+                    self.taskIdToSlaveId[tid] = sid
+                    self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
                     cpus[i] -= self.cpus
                     mems[i] -= self.mem
-                    self.slavesWithExecutors.add(o.slave_id.value)
                     launchedTask = True
 
                 if not launchedTask:
@@ -542,36 +548,30 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return task
 
     def isFinished(self, state):
+        # finished, failed, killed, lost
         return state >= mesos_pb2.TASK_FINISHED
 
     def statusUpdate(self, driver, status):
-        tid = status.task_id.value.split(':')
-        if len(tid) != 3 or not tid[1].isdigit():
-            logging.warning("invalid task id: %s", status.task_id.value)
-            return
-        tid = int(tid[1])
+        tid = status.task_id.value
         state = status.state
         logging.debug("status update: %s %s", tid, state)
-
-        if (state == mesos_pb2.TASK_LOST 
-            and tid in self.taskIdToSlaveId 
-            and self.taskIdToSlaveId[tid] in self.slavesWithExecutors):
-            logging.warning("slave %s lost", self.taskIdToSlaveId[tid])
-            self.slavesWithExecutors.remove(self.taskIdToSlaveId[tid])
 
         jid = self.taskIdToJobId.get(tid)
         if jid in self.activeJobs:
             if self.isFinished(state):
                 del self.taskIdToJobId[tid]
+                self.jobTasks[jid].remove(tid)
+                self.slaveTasks[self.taskIdToSlaveId[tid]] -= 1
                 del self.taskIdToSlaveId[tid]
-                if tid in self.jobTasks[jid]:
-                    self.jobTasks[jid].remove(tid)
-            if status.data:
-                _,reason,result,accUpdate = cPickle.loads(status.data)
-                self.activeJobs[jid].statusUpdate(tid, state, 
-                    reason, result, accUpdate)
-            else:
-                self.activeJobs[jid].statusUpdate(tid, state)
+            
+                if status.data:
+                    tid,reason,result,accUpdate = cPickle.loads(status.data)
+                    self.activeJobs[jid].statusUpdate(tid, state, 
+                        reason, result, accUpdate)
+                else:
+                    # killed, lost
+                    tid = int(tid.split(':')[1])
+                    self.activeJobs[jid].statusUpdate(tid, state)
         else:
             logging.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
@@ -599,8 +599,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)
-        if slave.value in self.slavesWithExecutors:
-            self.slavesWithExecutors.remove(slave.value)
+        self.slaveTasks.pop(slave.value, 0)
 
     def killTask(self, task):
         jid = self.taskIdToJobId.get(task.id)
