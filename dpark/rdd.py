@@ -145,12 +145,14 @@ class RDD:
 
     def reduce(self, f):
         def reducePartition(it):
-            if it:
+            try:
                 return [reduce(f, it)]
-            else:
+            except TypeError:
                 return []
         options = self.ctx.runJob(self, reducePartition)
-        return reduce(f, sum(options, []))
+        s = sum(options, [])
+        if s:
+            return reduce(f, s)
 
     def uniq(self):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None)
