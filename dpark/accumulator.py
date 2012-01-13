@@ -1,6 +1,6 @@
-from serialize import load_func, dump_func
 from operator import add
 import copy
+from serialize import load_func, dump_func
 
 class AccumulatorParam:
     def __init__(self, zero, addInPlace):
@@ -38,7 +38,7 @@ class Accumulator:
         self.value = copy.copy(self.param.zero)
         return v
 
-    def __getstate(self):
+    def __getstate__(self):
         return self.id, self.param 
 
     def __setstate__(self, s):
