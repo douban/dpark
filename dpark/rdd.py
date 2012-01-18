@@ -6,6 +6,7 @@ import csv
 import cStringIO
 import itertools
 import operator
+import bz2
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -644,13 +645,16 @@ class ParallelCollection(RDD):
 
 
 class TextFileRDD(RDD):
+
+    DEFAULT_SPLIT_SIZE = 64*1024*1024
+
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
         size = os.path.getsize(path)
         if splitSize is None:
             if numSplits is None:
-                splitSize = 64*1024*1024
+                splitSize = self.DEFAULT_SPLIT_SIZE
             else:
                 splitSize = size / numSplits
         n = size / splitSize
@@ -730,6 +734,63 @@ class CSVFileRDD(TextFileRDD):
                     break
             block += ahead
         return block
+
+
+class BZip2FileRDD(TextFileRDD):
+    
+    DEFAULT_SPLIT_SIZE = 10*1024*1024
+    MAX_BLOCK_SIZE = 9000
+
+    def __init__(self, ctx, path, numSplits=None, splitSize=None):
+        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
+        self.magic = open(path).read(10)
+
+    def __repr__(self):
+        return '<BZip2FileRDD %s>' % self.path
+
+    def compute(self, split):
+        f = open(self.path, 'r', 4096 * 1024)
+        f.seek(split.index * self.splitSize)
+        d = f.read(self.splitSize)
+        fp = d.find(self.magic)
+        if fp > 0:
+            d = d[fp:] # drop end of last block
+
+        # real all the block    
+        nd = f.read(self.MAX_BLOCK_SIZE)
+        np = nd.find(self.magic)
+        while nd and np < 0:
+            t = f.read(len(nd))
+            if not t: break
+            nd += t
+            np = nd.find(self.magic)
+        d += nd[:np] if np >= 0 else nd
+        f.close()
+
+        last_line = None if split.index > 0 else ''
+        while d:
+            io = cStringIO.StringIO(bz2.decompress(d))
+
+            if last_line is None:
+                io.readline() # skip the first line
+            else:
+                yield last_line + io.readline()
+                last_line += io.readline()
+                if last_line.endswith('\n'):
+                    yield last_line
+                    last_line = ''
+            
+            for line in io:
+                if line.endswith('\n'): # drop last line
+                    yield line
+                else:
+                    last_line = line
+                    break
+
+            np = d.find(self.magic, 1)
+            if np <= 0:
+                break
+            d = d[np:]
 
 
 class OutputTextFileRDD(RDD):

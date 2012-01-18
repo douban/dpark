@@ -94,6 +94,9 @@ class DparkContext:
     def csvFile(self, *args, **kwargs):
         return self.textFile(cls=CSVFileRDD, *args, **kwargs)
 
+    def bzip2File(self, *args, **kwargs):
+        return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
+
     def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
         f = moosefs.mfsopen(path, master)
         if f.info.type == 'd':
