@@ -6,6 +6,8 @@ import csv
 import cStringIO
 import itertools
 import operator
+import math
+import random
 import bz2
 
 from serialize import load_func, dump_func
@@ -96,8 +98,8 @@ class RDD:
     def filter(self, f):
         return FilteredRDD(self, f)
 
-    def sample(self, withReplacement, faction, seed):
-        return SampleRDD(self, withReplacement, faction, seed)
+    def sample(self, faction, withReplacement=False, seed=12345):
+        return SampleRDD(self, faction, withReplacement, seed)
 
     def union(self, rdd):
         return UnionRDD(self.ctx, [self, rdd])
@@ -536,16 +538,41 @@ class CoGroupedRDD(RDD):
                 env.shuffleFetcher.fetch(dep.shuffleId, split.index, mergePair)
         return m.iteritems()
         
-class SampledRDDSplit(Split):
-    def __init__(self, prev, seed):
-        pass
 
 class SampleRDD(RDD):
-    def __init__(self, prev, withReplacement, frac, seed):
+    def __init__(self, prev, frac, withReplacement, seed):
         RDD.__init__(self, prev.ctx)
         self.prev = prev
-        raise NotImplementedError
-        # TODO
+        self.frac = frac
+        self.withReplacement = withReplacement
+        self.seed = seed
+        self.dependencies = [OneToOneDependency(prev)]
+
+    def __len__(self):
+        return len(self.prev)
+
+    @property
+    def splits(self):
+        return self.prev.splits
+
+    def __repr__(self):
+        return '<SampleRDD(%s) of %s>' % (self.frac, self.prev)
+
+    def preferredLocations(self, split):
+        return self.prev.preferredLocations(split)
+
+    def compute(self, split):
+        rd = random.Random(self.seed + split.index)
+        if self.withReplacement:
+            olddata = list(self.prev.iterator(split))
+            sampleSize = int(math.ceil(len(olddata) * self.frac))
+            for i in xrange(sampleSize):
+                yield rd.choice(olddata)
+        else:
+            for i in self.prev.iterator(split):
+                if rd.random() <= self.frac:
+                    yield i
+
 
 class UnionSplit:
     def __init__(self, idx, rdd, split):

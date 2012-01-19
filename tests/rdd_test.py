@@ -38,6 +38,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.map(lambda x:str(x)+"/").reduce(lambda x,y:x+y),
             "0/1/2/3/")
         self.assertEqual(nums.pipe('grep 3').collect(), ['3\n'])
+        self.assertEqual(nums.sample(0.5, True).count(), 2)
 
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
