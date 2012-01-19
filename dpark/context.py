@@ -32,7 +32,7 @@ class DparkContext:
             self.isLocal = True
         elif self.master.startswith('process'):
             self.scheduler = MultiProcessScheduler(options.parallel)
-            self.isLocal = False
+            self.isLocal = True
         elif (self.master.startswith('mesos')
               or self.master.startswith('zoo')):
             if '://' not in self.master:
@@ -129,7 +129,7 @@ class DparkContext:
         if self.started:
             return
 
-        env.start(True)
+        env.start(True, isLocal=self.isLocal)
         self.scheduler.start()
         self.started = True
         atexit.register(self.stop)

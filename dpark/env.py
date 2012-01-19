@@ -15,17 +15,18 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}):
+    def start(self, isMaster, environ={}, isLocal=False):
         if getattr(self, 'started', False):
             return
         logging.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         if isMaster:
             root = '/tmp/dpark'
-            if os.path.exists('/home2/dpark'):
-                root = '/home2/dpark'
-            elif os.path.exists('/mfs/tmp'):
-                root = '/mfs/tmp/dpark'
+            if not isLocal:
+                if os.path.exists('/home2/dpark'):
+                    root = '/home2/dpark'
+                elif os.path.exists('/mfs/tmp'):
+                    root = '/mfs/tmp/dpark'
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
                 socket.gethostname(), os.getpid())
             self.workdir = os.path.join(root, name)
