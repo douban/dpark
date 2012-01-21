@@ -5,10 +5,12 @@ import marshal
 import cPickle
 import threading
 import logging
+from multiprocessing import Lock
 
 import zmq
 
 import cache
+import shareddict
 from env import env
 
 class SourceInfo:
@@ -46,17 +48,21 @@ class VariableInfo:
 class Broadcast:
     initialized = False
     is_master = False
+    lock = Lock()
+    cache = shareddict.SharedDicts(1024*4, 1)
     broadcastFactory = None
     BlockSize = 4096 * 1024
     MaxRetryCount = 2
     MinKnockInterval = 500
     MaxKnockInterval = 999
-    
+        
     def __init__(self, value, is_local):
         self.uuid = str(uuid.uuid4())
         self.value = value
-        self.cache.put(self.uuid, value)
-        if not is_local:
+        if is_local:
+            if self.cache.put(self.uuid, value):
+                raise Exception('object %s is too big to cache', repr(value))
+        else:
             self.sendBroadcast()
 
     def __getstate__(self):
@@ -67,9 +73,16 @@ class Broadcast:
         # in the executor process, Broadcast is not initialized
         if not self.initialized:
             return
-
+        
         self.value = self.cache.get(uuid)
-        if self.value == 'loading':
+        if self.value is None:
+            self.lock.acquire()
+            self.value = self.cache.get(uuid)
+            if self.value is None:
+                self.cache.put(uuid, 'loading')
+            self.lock.release()
+        
+        while self.value == 'loading':
             time.sleep(0.1)
             self.value = self.cache.get(uuid)
         
@@ -77,11 +90,14 @@ class Broadcast:
             logging.debug("get broadcast from cache: %s", uuid)
             return
 
-        self.cache.put(uuid, 'loading')
         self.recvBroadcast()
         if self.value is None:
             raise Exception("recv broadcast failed")
-        self.cache.put(uuid, self.value)
+        if self.cache.get(uuid) == 'loading':
+            if not self.cache.put(uuid, self.value):
+                logging.error('object %s is too big to cache', repr(value))
+            else:
+                self.cache.put(uuid, None)
                 
     def sendBroadcast(self):
         raise NotImplementedError
@@ -118,10 +134,6 @@ class Broadcast:
 
         cls.is_master = is_master
         cls.host = socket.gethostname()
-        if is_master:
-            cls.cache = cache.Cache()
-        else:
-            cls.cache = cache.Cache() #cache.LocalCache(cache.mmapCache)
 
 #        cls.broadcastFactory = FileBroadcastFactory()
         cls.broadcastFactory = TreeBroadcastFactory()
@@ -202,7 +214,7 @@ class TreeBroadcast(FileBroadcast):
         # store a copy to file
         # FileBroadcast.sendBroadcast(self)
         # self.has_copy_in_fs = True
-
+        logging.debug("start sendBroadcast %s", self.uuid)
         variableInfo = self.blockifyObject(self.value)
         self.blocks = variableInfo.blocks
         self.total_bytes = variableInfo.total_bytes

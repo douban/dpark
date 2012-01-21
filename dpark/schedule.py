@@ -330,11 +330,13 @@ class LocalScheduler(DAGScheduler):
     def stop(self):
         pass
 
-def run_task_in_process(task, tid, environ):
-    logging.debug("run task in process %s %s %s",
-        task, tid, environ)
+def init_worker(environ):
     from env import env
+    logging.debug("init worker process: %s", environ)
     env.start(False, environ)
+
+def run_task_in_process(task, tid):
+    logging.debug("run task in process %s %s", task, tid)
     try:
         return run_task(task, tid)
     except KeyboardInterrupt:
@@ -344,12 +346,11 @@ class MultiProcessScheduler(LocalScheduler):
     def __init__(self, threads):
         LocalScheduler.__init__(self)
         self.threads = threads
-        from  multiprocessing import Pool
-        self.pool = Pool(threads or 2)
         self.tasks = {}
 
     def start(self):
-        pass
+        from  multiprocessing import Pool
+        self.pool = Pool(self.threads or 2, init_worker, [env.environ])
 
     def submitTasks(self, tasks):
         def callback(args):
@@ -362,7 +363,7 @@ class MultiProcessScheduler(LocalScheduler):
             logging.debug("put task async: %s", task)
             self.tasks[task.id] = task
             self.pool.apply_async(run_task_in_process,
-                [task, self.nextAttempId(), env.environ],
+                [task, self.nextAttempId()],
                 callback=callback)
 
     def stop(self):
