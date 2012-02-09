@@ -200,7 +200,6 @@ class TreeBroadcast(FileBroadcast):
         self.blocks = []
         self.total_bytes = -1
         self.total_blocks = -1
-        self.has_blocks = 0
         self.block_size = self.BlockSize
 
         self.listOfSources = {}
@@ -219,7 +218,6 @@ class TreeBroadcast(FileBroadcast):
         self.blocks = variableInfo.blocks
         self.total_bytes = variableInfo.total_bytes
         self.total_blocks = variableInfo.total_blocks
-        self.has_blocks = variableInfo.total_blocks
 
         self.startGuide()
         self.startServer()
@@ -301,8 +299,10 @@ class TreeBroadcast(FileBroadcast):
                     self.stop = True
                     # TODO send to gruide server
                     break
-                while id >= self.has_blocks:
+                while id >= len(self.blocks):
                     time.sleep(0.01)
+                if not isinstance(self.blocks[id], BroadcastBlock):
+                    raise Exception("bad block: %s" % repr(self.blocks[id]))
                 sock.send_pyobj(self.blocks[id])
             sock.close()
             logging.debug("stop TreeBroadcast server %s", self.serverAddr)
@@ -350,7 +350,7 @@ class TreeBroadcast(FileBroadcast):
         source_info = guide_sock.recv_pyobj()
         self.total_blocks = source_info.total_blocks
         self.total_bytes = source_info.total_bytes
-        self.has_blocks = 0
+        self.blocks = []
         logging.debug("received SourceInfo from master: %s", 
             source_info)
 
@@ -362,13 +362,13 @@ class TreeBroadcast(FileBroadcast):
 #        guide_sock.send_pyobj(source_info)
 #        guide_sock.recv_pyobj()
 
-        return self.has_blocks == self.total_blocks
+        return len(self.blocks) == self.total_blocks
 
     def receiveSingleTransmission(self, source_info):
         receptionSucceeded = False
         logging.debug("Inside receiveSingleTransmission")
         logging.debug("total_blocks: %s has %s", self.total_blocks,
-                self.has_blocks)
+                len(self.blocks))
         ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
         sock.connect(source_info.addr)
@@ -380,7 +380,6 @@ class TreeBroadcast(FileBroadcast):
             logging.debug("Received block: %s from %s", 
                 block.id, source_info.addr)
             self.blocks.append(block)
-            self.has_blocks += 1
             receptionSucceeded = True
         return receptionSucceeded
 

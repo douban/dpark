@@ -12,7 +12,7 @@ import zmq
 import shareddict
 from env import env
 
-mmapCache = shareddict.SharedDicts(512)
+mmapCache = shareddict.SharedDicts(1024)
 
 class Cache:
     map = {}
