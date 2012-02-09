@@ -80,7 +80,7 @@ class RDD:
         return []
 
     def cache(self):
-        self.shouldCache = True
+#        self.shouldCache = True
         return self
 
     def iterator(self, split):
