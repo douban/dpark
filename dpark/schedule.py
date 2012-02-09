@@ -12,13 +12,16 @@ import mesos
 import mesos_pb2
 
 from dependency import *
-from accumulator import *
-from task import *
-from job import *
+from accumulator import Accumulator
+from task import ResultTask, ShuffleMapTask
+from job import SimpleJob
 from env import env
 from broadcast import Broadcast
 
-EXECUTOR_MEMORY = 512
+MAX_FAILED = 3
+EXECUTOR_MEMORY = 4096 + 1024 # cache
+POLL_TIMEOUT = 0.1
+RESUBMIT_TIMEOUT = 60
 
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
@@ -31,9 +34,6 @@ class FetchFailed:
 class OtherFailure:
     def __init__(self, message):
         self.message = message
-
-POLL_TIMEOUT = 0.1
-RESUBMIT_TIMEOUT = 60
 
 class Stage:
     def __init__(self, rdd, shuffleDep, parents):
@@ -405,6 +405,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.jobTasks = {}
         self.driver = None
         self.slaveTasks = {}
+        self.slaveFailed = {}
         self.lock = threading.RLock()
 
     def start(self):
@@ -482,7 +483,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def registered(self, driver, fid):
         self.isRegistered = True
-        logging.debug("is registered: %s", fid)
+        logging.debug("registered as %s", fid)
 
     def waitForRegister(self):
         while not self.isRegistered:
@@ -512,6 +513,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 launchedTask = False
                 for i,o in enumerate(offers):
                     sid = o.slave_id.value
+                    if self.slaveFailed.get(sid, 0) >= MAX_FAILED:
+                        continue
                     if self.slaveTasks.get(sid, 0) >= self.task_per_node:
                         continue
                     if mems[i] < self.mem or cpus[i] < self.cpus:
@@ -585,7 +588,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             if self.isFinished(state):
                 del self.taskIdToJobId[tid]
                 self.jobTasks[jid].remove(tid)
-                self.slaveTasks[self.taskIdToSlaveId[tid]] -= 1
+                slave_id = self.taskIdToSlaveId[tid]
+                self.slaveTasks[slave_id] -= 1
                 del self.taskIdToSlaveId[tid]
             
                 if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
@@ -596,6 +600,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     # killed, lost
                     tid = int(tid.split(':')[1])
                     self.activeJobs[jid].statusUpdate(tid, state, status.data)
+                    self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
         else:
             logging.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
@@ -625,6 +630,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)
         self.slaveTasks.pop(slave.value, 0)
+        self.slaveFailed[slave.value] = MAX_FAILED
 
     def killTask(self, task):
         jid = self.taskIdToJobId.get(task.id)
