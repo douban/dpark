@@ -72,6 +72,6 @@ def load_weblog(hour):
 
 if __name__ == '__main__':
     now = datetime.now() 
-    for i in range(1, 24):
+    for i in range(1, 72):
         hour = now - timedelta(seconds=3600*i)
         load_weblog(hour)

@@ -109,7 +109,7 @@ def calcu(logs):
             for vs in visits.itervalues() for a,b in vs) / n_visit
     return pv, uv, n_visit, avg_time
 
-sys.path.append('/var/shire')
+sys.path.insert(0, '/var/shire')
 store = store_from_config("shire-offline")
 
 def save_report(day, sites, widgets, front_pages, rooms, site_shares, widget_shares):
