@@ -113,7 +113,7 @@ class RDD:
         aggr = MergeAggregator()
         parter = RangePartitioner(keys)
         parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
-        return parted.glom().flatMap(lambda x:sorted(x))
+        return parted.glom().flatMap(lambda x:sorted(x, key=key))
 
     def glom(self):
         return GlommedRDD(self)
