@@ -19,7 +19,7 @@ from env import env
 from broadcast import Broadcast
 
 MAX_FAILED = 3
-EXECUTOR_MEMORY = 4096 + 1024 # cache
+EXECUTOR_MEMORY = 2096 + 1024 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
@@ -592,15 +592,18 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 self.slaveTasks[slave_id] -= 1
                 del self.taskIdToSlaveId[tid]
             
-                if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
-                    tid,reason,result,accUpdate = cPickle.loads(status.data)
-                    self.activeJobs[jid].statusUpdate(tid, state, 
-                        reason, result, accUpdate)
-                else:
-                    # killed, lost
-                    tid = int(tid.split(':')[1])
-                    self.activeJobs[jid].statusUpdate(tid, state, status.data)
-                    self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
+                if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
+                    try:
+                        tid,reason,result,accUpdate = cPickle.loads(status.data)
+                        return self.activeJobs[jid].statusUpdate(tid, state, 
+                            reason, result, accUpdate)
+                    except EOFError, e:
+                        logging.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
+
+                # killed, lost, load failed
+                tid = int(tid.split(':')[1])
+                self.activeJobs[jid].statusUpdate(tid, state, status.data)
+                self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
         else:
             logging.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
