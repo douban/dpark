@@ -597,8 +597,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                         tid,reason,result,accUpdate = cPickle.loads(status.data)
                         return self.activeJobs[jid].statusUpdate(tid, state, 
                             reason, result, accUpdate)
-                    except EOFError, e:
-                        logging.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
+                    except Exception, e:
+                        logging.error("error when cPickle.loads: %s, data length:%s", e, len(status.data))
 
                 # killed, lost, load failed
                 tid = int(tid.split(':')[1])
