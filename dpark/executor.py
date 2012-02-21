@@ -12,6 +12,12 @@ import zmq
 import mesos
 import mesos_pb2
 
+try:
+    from setproctitle import setproctitle
+except ImportError:
+    def setproctitle(s):
+        pass
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -31,16 +37,20 @@ def reply_status(driver, task, status, data=None):
 
 def run_task(task, aid):
     try:
+        setproctitle('dpark worker: run task %s' % task)
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
+        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
+        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
 
 def init_env(args):
+    setproctitle('dpark worker: idle')
     env.start(False, args)
 
 def forword(fd, addr, prefix=''):
@@ -74,7 +84,7 @@ def start_forword(addr, prefix=''):
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, python_path, paralell, out_logger, err_logger, args = marshal.loads(args.data)
+        cwd, python_path, parallel, out_logger, err_logger, args = marshal.loads(args.data)
         try:
             os.chdir(cwd)
         except OSError:
@@ -82,7 +92,7 @@ class MyExecutor(mesos.Executor):
         sys.path = python_path
         self.outt, sys.stdout = start_forword(out_logger)
         self.errt, sys.stderr = start_forword(err_logger)
-        self.pool = multiprocessing.Pool(paralell, init_env, [args])
+        self.pool = multiprocessing.Pool(parallel, init_env, [args])
 
     def launchTask(self, driver, task):
         try:
@@ -112,9 +122,9 @@ class MyExecutor(mesos.Executor):
         for p in self.pool._pool:
             try: p.terminate()
             except: pass
-        for p in self.pool._pool:
-            try: p.join()
-            except: pass
+        #for p in self.pool._pool:
+        #    try: p.join()
+        #    except: pass
 
     def error(self, driver, code, message):
         logging.error("error: %s, %s", code, message)
