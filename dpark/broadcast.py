@@ -6,7 +6,7 @@ import cPickle
 import threading
 import logging
 from multiprocessing import Lock
-from setproctitle import setproctitle
+from setproctitle import getproctitle, setproctitle
 
 import zmq
 
@@ -50,8 +50,8 @@ class Broadcast:
     initialized = False
     is_master = False
     lock = Lock()
-    #cache = shareddict.SharedDicts(1024*4, 1)
-    cache = cache.Cache() 
+    cache = shareddict.SharedDicts(1024*4, 1)
+    #cache = cache.Cache() 
     broadcastFactory = None
     BlockSize = 4096 * 1024
     MaxRetryCount = 2
@@ -72,36 +72,51 @@ class Broadcast:
 
     def __setstate__(self, uuid):
         self.uuid = uuid
+    
+    def __getattr__(self, name):
+        if name != 'value':
+            raise AttributeError(name)
+
         # in the executor process, Broadcast is not initialized
         if not self.initialized:
             return
-        
-        setproctitle('dpark worker: broadcasting ' + self.uuid)
 
+        uuid = self.uuid
         self.value = self.cache.get(uuid)
         if self.value is None:
-            #self.lock.acquire()
+            self.lock.acquire()
             self.value = self.cache.get(uuid)
             if self.value is None:
                 self.cache.put(uuid, 'loading')
-            #self.lock.release()
+            self.lock.release()
         
+        oldtitle = getproctitle()
         while self.value == 'loading':
+            setproctitle('dpark worker: waiting ' + uuid)
             time.sleep(0.1)
             self.value = self.cache.get(uuid)
         
         if self.value is not None:
             logging.debug("get broadcast from cache: %s", uuid)
-            return
+            setproctitle(oldtitle)
+            return self.value
+
+        setproctitle('dpark worker: broadcasting ' + uuid)
 
         self.recvBroadcast()
         if self.value is None:
             raise Exception("recv broadcast failed")
         if self.cache.get(uuid) == 'loading':
-            if not self.cache.put(uuid, self.value):
-                logging.error('object %s is too big to cache', repr(self.value))
-            else:
-                self.cache.put(uuid, None)
+            self.lock.acquire()
+            if self.cache.get(uuid) == 'loading':
+                if not self.cache.put(uuid, self.value):
+                    logging.error('object %s is too big to cache', repr(self.value))
+                    self.cache.put(uuid, None)
+            self.lock.release()
+
+        setproctitle(oldtitle)
+
+        return self.value                
                 
     def sendBroadcast(self):
         raise NotImplementedError
@@ -397,7 +412,7 @@ class TreeBroadcast(FileBroadcast):
         return guide_addr
 
     guides = {}
-    MaxDegree = 2
+    MaxDegree = 4
     master_addr = None
 
     @classmethod
