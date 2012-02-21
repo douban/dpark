@@ -396,7 +396,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
-        self.task_per_node = options.parallel or 16
+        self.task_per_node = options.parallel or 8
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -597,8 +597,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                         tid,reason,result,accUpdate = cPickle.loads(status.data)
                         return self.activeJobs[jid].statusUpdate(tid, state, 
                             reason, result, accUpdate)
-                    except Exception, e:
-                        logging.error("error when cPickle.loads: %s, data length:%s", e, len(status.data))
+                    except EOFError, e:
+                        logging.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
 
                 # killed, lost, load failed
                 tid = int(tid.split(':')[1])

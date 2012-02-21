@@ -49,7 +49,8 @@ class Broadcast:
     initialized = False
     is_master = False
     lock = Lock()
-    cache = shareddict.SharedDicts(1024*4, 1)
+    #cache = shareddict.SharedDicts(1024*4, 1)
+    cache = cache.Cache() 
     broadcastFactory = None
     BlockSize = 4096 * 1024
     MaxRetryCount = 2
@@ -60,7 +61,7 @@ class Broadcast:
         self.uuid = str(uuid.uuid4())
         self.value = value
         if is_local:
-            if self.cache.put(self.uuid, value):
+            if not self.cache.put(self.uuid, value):
                 raise Exception('object %s is too big to cache', repr(value))
         else:
             self.sendBroadcast()
@@ -76,11 +77,11 @@ class Broadcast:
         
         self.value = self.cache.get(uuid)
         if self.value is None:
-            self.lock.acquire()
+            #self.lock.acquire()
             self.value = self.cache.get(uuid)
             if self.value is None:
                 self.cache.put(uuid, 'loading')
-            self.lock.release()
+            #self.lock.release()
         
         while self.value == 'loading':
             time.sleep(0.1)
@@ -95,7 +96,7 @@ class Broadcast:
             raise Exception("recv broadcast failed")
         if self.cache.get(uuid) == 'loading':
             if not self.cache.put(uuid, self.value):
-                logging.error('object %s is too big to cache', repr(value))
+                logging.error('object %s is too big to cache', repr(self.value))
             else:
                 self.cache.put(uuid, None)
                 

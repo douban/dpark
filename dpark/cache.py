@@ -31,6 +31,7 @@ class Cache:
     
     def put(self, key, value):
         self.map[key] = value
+        return True
 
 class KeySpace(Cache):
     def __init__(self, cache, id):
