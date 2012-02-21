@@ -11,7 +11,6 @@ from setproctitle import getproctitle, setproctitle
 import zmq
 
 import cache
-import shareddict
 from env import env
 
 class SourceInfo:
@@ -49,9 +48,7 @@ class VariableInfo:
 class Broadcast:
     initialized = False
     is_master = False
-    lock = Lock()
-    cache = shareddict.SharedDicts(1024*4, 1)
-    #cache = cache.Cache() 
+    cache = cache.Cache() 
     broadcastFactory = None
     BlockSize = 4096 * 1024
     MaxRetryCount = 2
@@ -83,39 +80,18 @@ class Broadcast:
 
         uuid = self.uuid
         self.value = self.cache.get(uuid)
-        if self.value is None:
-            self.lock.acquire()
-            self.value = self.cache.get(uuid)
-            if self.value is None:
-                self.cache.put(uuid, 'loading')
-            self.lock.release()
+        if self.value is not None:
+            return self.value    
         
         oldtitle = getproctitle()
-        while self.value == 'loading':
-            setproctitle('dpark worker: waiting ' + uuid)
-            time.sleep(0.1)
-            self.value = self.cache.get(uuid)
-        
-        if self.value is not None:
-            logging.debug("get broadcast from cache: %s", uuid)
-            setproctitle(oldtitle)
-            return self.value
-
         setproctitle('dpark worker: broadcasting ' + uuid)
 
         self.recvBroadcast()
         if self.value is None:
             raise Exception("recv broadcast failed")
-        if self.cache.get(uuid) == 'loading':
-            self.lock.acquire()
-            if self.cache.get(uuid) == 'loading':
-                if not self.cache.put(uuid, self.value):
-                    logging.error('object %s is too big to cache', repr(self.value))
-                    self.cache.put(uuid, None)
-            self.lock.release()
+        self.cache.put(uuid, self.value)
 
         setproctitle(oldtitle)
-
         return self.value                
                 
     def sendBroadcast(self):
