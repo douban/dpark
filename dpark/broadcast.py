@@ -6,6 +6,7 @@ import cPickle
 import threading
 import logging
 from multiprocessing import Lock
+from setproctitle import setproctitle
 
 import zmq
 
@@ -75,6 +76,8 @@ class Broadcast:
         if not self.initialized:
             return
         
+        setproctitle('dpark worker: broadcasting ' + self.uuid)
+
         self.value = self.cache.get(uuid)
         if self.value is None:
             #self.lock.acquire()
