@@ -16,7 +16,7 @@ LIMITS = [10,8,11,12,20,8,255,255,3,8,5,255,255]
 
 def format_weblog(dpark, hour):
     logs = [dpark.textFile(log_path % (h,hour.strftime("%Y/%m/%d/%H/")), splitSize=10<<20)
-             for h in sinkservers]
+             for h in sinkservers if os.path.exists(log_path % (h,hour.strftime("%Y/%m/%d/%H/")))]
     rawlog = dpark.union(logs)
     return rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream')
 

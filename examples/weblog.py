@@ -17,8 +17,8 @@ for i in range(1, 5):
     if not os.path.exists(path):
         os.makedirs(path)
     target = dpark.textFile(path)
-    if len(target) > 80:
-        continue
+#    if len(target) > 80:
+#        continue
     try:
         logs = [dpark.textFile(p % (h,day.strftime("%Y/%m/%d")), splitSize=512<<20)
                  for p in log_path

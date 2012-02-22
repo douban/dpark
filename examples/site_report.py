@@ -149,7 +149,7 @@ def save_report(day, sites, widgets, front_pages, rooms, site_shares, widget_sha
     #print 'completed', len(sites)
 
 if __name__ == '__main__':
-    for i in range(1, 30):
+    for i in range(1, 2):
         day = date.today() - timedelta(days=i)
         path = '/tmp/site-report-%s' % day.strftime("%Y-%m-%d")
         if not os.path.exists(path):
