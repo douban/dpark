@@ -123,7 +123,7 @@ class DparkContext:
 
     def broadcast(self, v):
         self.start()
-        return Broadcast.newBroadcast(v, self.isLocal)
+        return Broadcast.newBroadcast(v, self.master=='local')
 
     def start(self):
         if self.started:

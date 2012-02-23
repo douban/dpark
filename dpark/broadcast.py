@@ -264,7 +264,7 @@ class TreeBroadcast(FileBroadcast):
         while self.guide_addr is None:
             time.sleep(0.01)
         self.registerValue(self.uuid, self.guide_addr)
-        #logging.info("guide started...")
+        logging.debug("guide started...")
 
     def selectSuitableSource(self, skip):
         maxLeechers = -1

@@ -330,12 +330,10 @@ class LocalScheduler(DAGScheduler):
     def stop(self):
         pass
 
-def init_worker(environ):
+def run_task_in_process(task, tid, environ):
     from env import env
-    logging.debug("init worker process: %s", environ)
     env.start(False, environ)
-
-def run_task_in_process(task, tid):
+    
     logging.debug("run task in process %s %s", task, tid)
     try:
         return run_task(task, tid)
@@ -347,10 +345,11 @@ class MultiProcessScheduler(LocalScheduler):
         LocalScheduler.__init__(self)
         self.threads = threads
         self.tasks = {}
+        from multiprocessing import Pool
+        self.pool = Pool(self.threads or 2)
 
     def start(self):
-        from  multiprocessing import Pool
-        self.pool = Pool(self.threads or 2, init_worker, [env.environ])
+        pass
 
     def submitTasks(self, tasks):
         def callback(args):
@@ -363,7 +362,7 @@ class MultiProcessScheduler(LocalScheduler):
             logging.debug("put task async: %s", task)
             self.tasks[task.id] = task
             self.pool.apply_async(run_task_in_process,
-                [task, self.nextAttempId()],
+                [task, self.nextAttempId(), env.environ],
                 callback=callback)
 
     def stop(self):
