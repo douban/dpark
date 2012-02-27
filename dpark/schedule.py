@@ -450,7 +450,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         
         mem = info.resources.add()
         mem.name = 'mem'
-        mem.type = mesos_pb2.Resource.SCALAR
+        mem.type = 0 #mesos_pb2.Value.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
         info.data = marshal.dumps((os.getcwd(), sys.path, self.task_per_node,
             self.out_logger, self.err_logger, env.environ))
@@ -565,11 +565,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
         cpu = task.resources.add()
         cpu.name = 'cpus'
-        cpu.type = mesos_pb2.Resource.SCALAR
+        cpu.type = 0 #mesos_pb2.Value.SCALAR
         cpu.scalar.value = self.cpus
         mem = task.resources.add()
         mem.name = 'mem'
-        mem.type = mesos_pb2.Resource.SCALAR
+        mem.type = 0 #mesos_pb2.Value.SCALAR
         mem.scalar.value = self.mem
         return task
 
