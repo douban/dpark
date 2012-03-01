@@ -66,7 +66,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     for k,v in d.iteritems():
                         func(k,v)
                 except IOError, e:
-                    logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s", shuffleId, reduceId, part, url)
+                    logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
                     raise 
 
 
