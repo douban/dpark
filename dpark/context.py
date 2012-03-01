@@ -178,7 +178,9 @@ def add_default_options():
     group.add_option("-c", "--cpus", type="float", default=1.0,
             help="cpus used per task")
     group.add_option("--mem", type="float", default=1000.0,
-                    help="memory used per task")
+            help="memory used per task")
+    group.add_option("-g", "--group", type="string", default="",
+            help="which group of machines")
 
     group.add_option("--self", action="store_true",
             help="user self as exectuor")

@@ -396,6 +396,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.cpus = options.cpus
         self.mem = options.mem
         self.task_per_node = options.parallel or 8
+        self.group = options.group
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -512,6 +513,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 launchedTask = False
                 for i,o in enumerate(offers):
                     sid = o.slave_id.value
+                    g = self.getAttribute(o.attributes, 'group') or 'none'
+                    if self.group and g not in self.group:
+                        continue
                     if self.slaveFailed.get(sid, 0) >= MAX_FAILED:
                         continue
                     if self.slaveTasks.get(sid, 0) >= self.task_per_node:
@@ -551,6 +555,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         for r in res:
             if r.name == name:
                 return r.scalar.value
+
+    def getAttribute(self, attrs, name):
+        for r in attrs:
+            if r.name == name:
+                return r.text.value
 
     def createTask(self, o, job, t):
         task = mesos_pb2.TaskDescription()
