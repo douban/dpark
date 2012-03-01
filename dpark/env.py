@@ -27,6 +27,9 @@ class DparkEnv:
                     root = '/home2/dpark'
                 elif os.path.exists('/mfs/tmp'):
                     root = '/mfs/tmp/dpark'
+            if not os.path.exists(root):
+                os.mkdir(root, 0777)
+                os.chmod(root, 0777) # because of umask
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
                 socket.gethostname(), os.getpid())
             self.workdir = os.path.join(root, name)
