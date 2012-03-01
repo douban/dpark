@@ -63,10 +63,9 @@ def gen_tti((nurl, tti)):
         yield (1, u), (1, tti) 
 
 def calc_tti(day):
-    yesterday = day - timedelta(days=1)
     logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")))
              for p in log_path
-             for d in (yesterday, day) 
+             for d in (day, day + timedelta(days=1)) 
              for h in webservers]
     rawlog = dpark.union(logs)
     beacon = rawlog.glom().flatMap(peek(day)).flatMap(format_line)
