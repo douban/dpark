@@ -51,24 +51,33 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             splitsByUri.setdefault(uri, []).append(i)
         for uri, parts in splitsByUri.items():
             for part in parts:
-                try:
-                    url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
-                    logging.debug("fetch %s", url)
-                    f = open(url, 'rb')
-                    flag = f.read(1)
-                    if flag == 'm':
-                        d = marshal.load(f)
-                    elif flag == 'p':
-                        d = cPickle.load(f)
-                    else:
-                        raise ValueError("invalid flag")
-                    f.close()
-                    for k,v in d.iteritems():
-                        func(k,v)
-                except IOError, e:
-                    logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
-                    raise 
-
+                url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
+                logging.debug("fetch %s", url)
+                
+                tries = 3
+                while True:
+                    try:
+                        f = open(url, 'rb')
+                        flag = f.read(1)
+                        if flag == 'm':
+                            d = marshal.load(f)
+                        elif flag == 'p':
+                            d = cPickle.load(f)
+                        else:
+                            raise ValueError("invalid flag")
+                        f.close()
+                        break
+                    except IOError, e:
+                        if not os.path.exists(uri): raise
+                        logging.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
+                        tries -= 1
+                        if not tries:
+                            logging.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
+                            raise
+                        time.sleep(1)
+                
+                for k,v in d.iteritems():
+                    func(k,v)
 
 class MapOutputTrackerMessage: pass
 class GetMapOutputLocations:
