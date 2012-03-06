@@ -7,6 +7,7 @@ import random
 import operator
 from dpark.context import *
 from dpark.rdd import *
+from dpark.accumulator import *
 
 class TestRDD(unittest.TestCase):
     def setUp(self):
@@ -39,6 +40,11 @@ class TestRDD(unittest.TestCase):
             "0/1/2/3/")
         self.assertEqual(nums.pipe('grep 3').collect(), ['3\n'])
         self.assertEqual(nums.sample(0.5, True).count(), 2)
+
+        self.assertEqual(len(nums[:1]), 1)
+        self.assertEqual(nums[:1].collect(), range(2))
+        self.assertEqual(len(nums.mergeSplit(2)), 1)
+        self.assertEqual(nums.mergeSplit(2).collect(), range(4))
 
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
@@ -93,7 +99,7 @@ class TestRDD(unittest.TestCase):
         n = len(open(__file__).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 9)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 10)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000']) 

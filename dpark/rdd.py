@@ -65,6 +65,9 @@ class RDD:
     def __getslice__(self, i,j):
         return SliceRDD(self, i, j)
 
+    def mergeSplit(self, splitSize=2, numSplits=None):
+        return MergedRDD(self, splitSize, numSplits)
+
     @property
     def splits(self):
         return self._splits
@@ -625,6 +628,40 @@ class SliceRDD(RDD):
     
     def compute(self, split):
         return self.rdd.iterator(split)
+
+
+class MergeSplit(Split):
+    def __init__(self, index, splits):
+        self.index = index
+        self.splits = splits
+
+class MergedRDD(RDD):
+    def __init__(self, rdd, splitSize=None, numSplits=None):
+        RDD.__init__(self, rdd.ctx)
+        if splitSize is None:
+            splitSize = (len(rdd) + numSplits - 1) / numSplits
+        numSplits = (len(rdd) + splitSize - 1) / splitSize
+        self.rdd = rdd
+        self.splitSize = splitSize
+        self.numSplits = numSplits
+
+        splits = rdd.splits
+        self._splits = [MergeSplit(i, splits[i*splitSize:(i+1)*splitSize])
+               for i in range(numSplits)]
+        self.dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
+
+    def __len__(self):
+        return self.numSplits 
+
+    def __repr__(self):
+        return '<MergedRDD %s:1 of %s>' % (self.splitSize, self.rdd)
+
+    def preferredLocations(self, split):
+        return sum([self.rdd.preferredLocations(sp) for sp in split.splits], [])
+
+    def compute(self, split):
+        return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
+
 
 class ParallelCollectionSplit:
     def __init__(self, index, values):
