@@ -23,6 +23,8 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
 
+logger = logging.getLogger("executor")
+
 TASK_RESULT_LIMIT = 1024 * 1024 * 2
 
 def reply_status(driver, task, status, data=None):
@@ -130,7 +132,7 @@ class MyExecutor(mesos.Executor):
         #    except: pass
 
     def error(self, driver, code, message):
-        logging.error("error: %s, %s", code, message)
+        logger.error("error: %s, %s", code, message)
 
     def frameworkMessage(self, driver, data):
         pass

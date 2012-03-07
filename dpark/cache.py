@@ -12,6 +12,8 @@ import zmq
 import shareddict
 from env import env
 
+logger = logging.getLogger("cache")
+
 mmapCache = shareddict.SharedDicts(1024)
 
 class Cache:
@@ -112,7 +114,7 @@ class CacheTrackerServer:
         sock = ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
-        logging.debug("CacheTrackerServer started at %s", self.addr)
+        logger.debug("CacheTrackerServer started at %s", self.addr)
         def reply(msg):
             sock.send_pyobj(msg)
         while True:
@@ -137,10 +139,10 @@ class CacheTrackerServer:
                 reply('OK')
                 break
             else:
-                logging.error("unexpected msg %s %s", msg, type(msg))
+                logger.error("unexpected msg %s %s", msg, type(msg))
                 reply('ERROR')
         sock.close()
-        logging.debug("stop CacheTrackerServer %s", self.addr)
+        logger.debug("stop CacheTrackerServer %s", self.addr)
 
 class CacheTrackerClient:
     def __init__(self, addr):
@@ -154,7 +156,7 @@ class CacheTrackerClient:
 
     def stop(self):
         self.sock.close()
-        #logging.debug("stop %s", self.__class__)
+        #logger.debug("stop %s", self.__class__)
 
 class CacheTracker:
     def __init__(self, isMaster):
@@ -177,7 +179,7 @@ class CacheTracker:
 
     def registerRDD(self, rddId, numPartitions):
         if rddId not in self.registeredRddIds:
-            logging.debug("Registering RDD ID %d with cache", rddId)
+            logger.debug("Registering RDD ID %d with cache", rddId)
             self.registeredRddIds.add(rddId)
             self.client.call(RegisterRDD(rddId, numPartitions))
 
@@ -191,10 +193,10 @@ class CacheTracker:
             time.sleep(0.01)
             cachedVal = self.cache.get(key)
         if cachedVal is not None:
-            logging.debug("Found partition in cache! %s", key)
+            logger.debug("Found partition in cache! %s", key)
             #self.client.call("found " + key) 
             return cachedVal
-        logging.debug("partition not in cache, %s", key)
+        logger.debug("partition not in cache, %s", key)
         #self.client.call("not found " + key)
         self.cache.put(key, 'loading')
         r = list(rdd.compute(split))

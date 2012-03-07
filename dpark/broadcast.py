@@ -13,6 +13,8 @@ import zmq
 import cache
 from env import env
 
+logger = logging.getLogger("broadcast")
+
 class SourceInfo:
     TxNotStartedRetry = -1
     TxOverGoToHDFS = 0
@@ -134,7 +136,7 @@ class Broadcast:
         cls.broadcastFactory = TreeBroadcastFactory()
         cls.broadcastFactory.initialize(is_master)
         cls.initialized = True
-        logging.debug("Broadcast initialized")
+        logger.debug("Broadcast initialized")
 
     @classmethod
     def getBroadcastFactory(cls):
@@ -163,21 +165,21 @@ class FileBroadcast(Broadcast):
         except ValueError:
             cPickle.dump(self.value, f, -1)
         f.close()
-        logging.debug("dump to %s", self.path)
+        logger.debug("dump to %s", self.path)
 
     def recvBroadcast(self):
         try:
             self.value = marshal.load(open(self.path, 'rb', 65536*100))
         except ValueError:
             self.value = cPickle.load(open(self.path, 'rb', 65536*100))
-        logging.debug("load from %s", self.path)
+        logger.debug("load from %s", self.path)
 
     workdir = None
     compress = False
     @classmethod
     def initialize(cls, is_master):
         cls.workdir = env.get('WORKDIR')
-        logging.debug("FileBroadcast initialized")
+        logger.debug("FileBroadcast initialized")
 
 class FileBroadcastFactory:
     def initialize(self, is_master):
@@ -208,7 +210,7 @@ class TreeBroadcast(FileBroadcast):
         # store a copy to file
         # FileBroadcast.sendBroadcast(self)
         # self.has_copy_in_fs = True
-        logging.debug("start sendBroadcast %s", self.uuid)
+        logger.debug("start sendBroadcast %s", self.uuid)
         variableInfo = self.blockifyObject(self.value)
         self.blocks = variableInfo.blocks
         self.total_bytes = variableInfo.total_bytes
@@ -224,7 +226,7 @@ class TreeBroadcast(FileBroadcast):
             sock = ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.guide_addr = "tcp://%s:%d" % (self.host, port)
-            logging.debug("guide start at %s", self.guide_addr)
+            logger.debug("guide start at %s", self.guide_addr)
 
             while True:
                 if self.stop and self.has_copy_in_fs:
@@ -239,16 +241,16 @@ class TreeBroadcast(FileBroadcast):
                 o = sock.recv_pyobj()
                 if isinstance(o, SourceInfo):
                     ssi = self.selectSuitableSource(o)
-                    logging.debug("sending selected sourceinfo %s", ssi.addr)
+                    logger.debug("sending selected sourceinfo %s", ssi.addr)
                     sock.send_pyobj(ssi)
                     o = SourceInfo(o.addr, self.total_blocks,
                         self.total_bytes, self.block_size)
-                    logging.debug("Adding possible new source to listOfSource: %s",
+                    logger.debug("Adding possible new source to listOfSource: %s",
                         o)
                     self.listOfSources[o.addr] = o
 
             sock.close()
-            logging.debug("Sending stop notification ...")
+            logger.debug("Sending stop notification ...")
 
             for source_info in self.listOfSources.values():
                 req = ctx.socket(zmq.REQ)
@@ -264,7 +266,7 @@ class TreeBroadcast(FileBroadcast):
         while self.guide_addr is None:
             time.sleep(0.01)
         self.registerValue(self.uuid, self.guide_addr)
-        logging.debug("guide started...")
+        logger.debug("guide started...")
 
     def selectSuitableSource(self, skip):
         maxLeechers = -1
@@ -284,7 +286,7 @@ class TreeBroadcast(FileBroadcast):
             sock = ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.serverAddr = 'tcp://%s:%d' % (self.host,port)
-            logging.debug("server started at %s", self.serverAddr)
+            logger.debug("server started at %s", self.serverAddr)
 
             while True:
                 if self.stop:
@@ -300,14 +302,14 @@ class TreeBroadcast(FileBroadcast):
                     raise Exception("bad block: %s" % repr(self.blocks[id]))
                 sock.send_pyobj(self.blocks[id])
             sock.close()
-            logging.debug("stop TreeBroadcast server %s", self.serverAddr)
+            logger.debug("stop TreeBroadcast server %s", self.serverAddr)
 
         t = threading.Thread(target=run)
         t.daemon = True
         t.start()
         while self.serverAddr is None:
             time.sleep(0.01)
-        #logging.debug("server started...")
+        #logger.debug("server started...")
         self.listOfSources[self.serverAddr] = SourceInfo(self.serverAddr, 
             self.total_blocks, self.total_bytes,
             self.block_size)
@@ -323,10 +325,10 @@ class TreeBroadcast(FileBroadcast):
             self.value = self.unBlockifyObject(self.blocks)
         else:    
             # fallback
-            logging.warning("recieve obj failed, fallback to FileBroadcast")
+            logger.warning("recieve obj failed, fallback to FileBroadcast")
             FileBroadcast.recvBroadcast(self)
         used = time.time() - start
-        logging.debug("Reading Broadcasted variable %s took %ss", self.uuid, used)
+        logger.debug("Reading Broadcasted variable %s took %ss", self.uuid, used)
 
     def receiveBroadcast(self, uuid):
         master_addr = self.getMasterAddr(uuid)
@@ -339,14 +341,14 @@ class TreeBroadcast(FileBroadcast):
         ctx = zmq.Context()
         guide_sock = ctx.socket(zmq.REQ)
         guide_sock.connect(master_addr)
-        logging.debug("connect to guide %s", master_addr)
+        logger.debug("connect to guide %s", master_addr)
 
         guide_sock.send_pyobj(SourceInfo(self.serverAddr))
         source_info = guide_sock.recv_pyobj()
         self.total_blocks = source_info.total_blocks
         self.total_bytes = source_info.total_bytes
         self.blocks = []
-        logging.debug("received SourceInfo from master: %s", 
+        logger.debug("received SourceInfo from master: %s", 
             source_info)
 
         #start = time.time()
@@ -361,8 +363,8 @@ class TreeBroadcast(FileBroadcast):
 
     def receiveSingleTransmission(self, source_info):
         receptionSucceeded = False
-        logging.debug("Inside receiveSingleTransmission")
-        logging.debug("total_blocks: %s has %s", self.total_blocks,
+        logger.debug("Inside receiveSingleTransmission")
+        logger.debug("total_blocks: %s has %s", self.total_blocks,
                 len(self.blocks))
         ctx = zmq.Context()
         sock = ctx.socket(zmq.REQ)
@@ -372,7 +374,7 @@ class TreeBroadcast(FileBroadcast):
             block = sock.recv_pyobj()
             if i != block.id:
                 raise Exception("bad block %d %s", i, block)
-            logging.debug("Received block: %s from %s", 
+            logger.debug("Received block: %s from %s", 
                 block.id, source_info.addr)
             self.blocks.append(block)
             receptionSucceeded = True
@@ -401,16 +403,16 @@ class TreeBroadcast(FileBroadcast):
             sock = ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
-            logging.debug("TreeBroadcast tracker started at %s", 
+            logger.debug("TreeBroadcast tracker started at %s", 
                     cls.master_addr)
             while True:
                 uuid = sock.recv_pyobj()
                 guide = cls.guides.get(uuid, '')
                 if not guide:
-                    logging.warning("broadcast %s is not registered", uuid)
+                    logger.warning("broadcast %s is not registered", uuid)
                 sock.send_pyobj(guide)
             sock.close()
-            logging.debug("TreeBroadcast tracker stopped")
+            logger.debug("TreeBroadcast tracker stopped")
 
         if is_master:
             t = threading.Thread(target=run)
@@ -422,17 +424,17 @@ class TreeBroadcast(FileBroadcast):
         else:
             cls.master_addr = env.get('TreeBroadcastTrackerAddr')
             
-        logging.debug("TreeBroadcast initialized")
+        logger.debug("TreeBroadcast initialized")
 
     @classmethod
     def registerValue(cls, uuid, guide_addr):
         cls.guides[uuid] = guide_addr
-        logging.debug("New value registered with the Tracker %s, %s", uuid, guide_addr) 
+        logger.debug("New value registered with the Tracker %s, %s", uuid, guide_addr) 
 
     @classmethod
     def unregisterValue(cls, uuid):
         guide_addr = cls.guides.pop(uuid, None)
-        logging.debug("value unregistered from Tracker %s, %s", uuid, guide_addr) 
+        logger.debug("value unregistered from Tracker %s, %s", uuid, guide_addr) 
 
 class TreeBroadcastFactory(BroadcastFactory):
     def initialize(self, is_master):

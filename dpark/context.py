@@ -2,12 +2,14 @@ import os
 import atexit
 import optparse
 import signal
+import logging
 
 from rdd import *
-from schedule import *
+from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from env import env
 from broadcast import Broadcast
-import moosefs
+
+logger = logging.getLogger("dpark")
 
 class DparkContext:
     nextShuffleId = 0
@@ -98,6 +100,7 @@ class DparkContext:
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
     def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
+        import moosefs
         f = moosefs.mfsopen(path, master)
         if f.info.type == 'd':
             paths = []
@@ -135,7 +138,7 @@ class DparkContext:
         atexit.register(self.stop)
 
         def handler(signm, frame):
-            logging.error("got signal %d, exit now", signm)
+            logger.error("got signal %d, exit now", signm)
             sys.exit(1)
         signal.signal(signal.SIGTERM, handler)
         signal.signal(signal.SIGHUP, handler)
@@ -197,7 +200,7 @@ add_default_options()
 def parse_options():
     options, args = parser.parse_args()
     
-    logging.basicConfig(format='[dpark] %(asctime)-15s %(message)s',
+    logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s',
         level=options.quiet and logging.ERROR
               or options.verbose and logging.DEBUG or logging.INFO)
     

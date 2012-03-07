@@ -3,6 +3,8 @@ import time
 import socket
 import threading
 
+logger = logging.getLogger("env")
+
 class DparkEnv:
     environ = {}
     @classmethod
@@ -18,7 +20,7 @@ class DparkEnv:
     def start(self, isMaster, environ={}, isLocal=False):
         if getattr(self, 'started', False):
             return
-        logging.debug("start env in %s: %s %s", os.getpid(),
+        logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         if isMaster:
             root = '/tmp/dpark'
@@ -50,17 +52,17 @@ class DparkEnv:
         Broadcast.initialize(isMaster)
 
         self.started = True
-        logging.debug("env started") 
+        logger.debug("env started") 
     
     def stop(self):
         if not getattr(self, 'started', False):
             return
-        logging.debug("stop env in %s", os.getpid())
+        logger.debug("stop env in %s", os.getpid())
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
         
-        logging.debug("cleaning workdir ...")
+        logger.debug("cleaning workdir ...")
         try:
             for root,dirs,names in os.walk(self.workdir, topdown=False):
                 for name in names:
@@ -71,7 +73,7 @@ class DparkEnv:
             os.rmdir(self.workdir)
         except OSError:
             pass
-        logging.debug("done.")
+        logger.debug("done.")
 
         self.started = False
 

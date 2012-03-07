@@ -5,6 +5,7 @@ import struct
 import marshal
 import cPickle
 
+
 class circle:
     def __init__(self, buf):
         self.size = len(buf)
@@ -122,7 +123,6 @@ class SharedDicts:
                 try:
                     flag, v = 2, cPickle.dumps(value, -1)
                 except Exception, e:
-                    logging.error("cache key %s err", key)
                     return
 
         return self.ds[hash(key) % self.slots].put(key, v, flag)

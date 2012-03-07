@@ -1,5 +1,5 @@
 import bisect
-from serialize import *
+from serialize import load_func, dump_func
 
 class Dependency:
     def __init__(self, rdd):

@@ -2,6 +2,8 @@ import time
 import logging
 from pprint import pprint
 
+logger = logging.getLogger("bagel")
+
 class Vertex:
     def __init__(self, id, value, outEdges, active):
         self.id = id
@@ -58,14 +60,14 @@ class Bagel:
             superstep=0, numSplits=None):
 
         while True:
-            logging.info("Starting superstep %d", superstep)
+            logger.info("Starting superstep %d", superstep)
             start = time.time()
             aggregated = cls.agg(verts, aggregator)
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs)
             processed, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
                 lambda v, ms: compute(v, ms, aggregated, superstep))
-            logging.info("superstep %d took %s s", superstep, time.time()-start)
+            logger.info("superstep %d took %s s", superstep, time.time()-start)
 
             noActivity = numMsgs == 0 and numActiveVerts == 0
             if noActivity:

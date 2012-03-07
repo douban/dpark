@@ -8,6 +8,8 @@ import struct
 from serialize import load_func, dump_func
 from shuffle import LocalFileShuffle
 
+logger = logging.getLogger("dpark")
+
 class Task:
     def __init__(self):
         self.id = Task.newId()
@@ -45,7 +47,7 @@ class ResultTask(DAGTask):
         self.outputId = outputId
 
     def run(self, attemptId):
-        logging.debug("run task %s with %d", self, attemptId)
+        logger.debug("run task %s with %d", self, attemptId)
         return self.func(self.rdd.iterator(self.split))
 
     def preferredLocations(self):
@@ -79,7 +81,7 @@ class ShuffleMapTask(DAGTask):
         return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
 
     def run(self, attempId):
-        logging.debug("shuffling %d of %s", self.partition, self.rdd)
+        logger.debug("shuffling %d of %s", self.partition, self.rdd)
         numOutputSplits = self.partitioner.numPartitions
         getPartition = self.partitioner.getPartition
         mergeValue = self.aggregator.mergeValue
