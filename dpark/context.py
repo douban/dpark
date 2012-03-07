@@ -5,6 +5,7 @@ import signal
 import logging
 
 from rdd import *
+from accumulator import Accumulator
 from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from env import env
 from broadcast import Broadcast
