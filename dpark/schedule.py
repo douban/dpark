@@ -237,6 +237,10 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except Queue.Empty:
+                if self.shutdown:
+                    logging.error("shutdown the scheduler")
+                    sys.exit(1)
+                
                 if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
                     logging.debug("Resubmitting failed stages")
                     self.updateCacheLocs()
@@ -407,6 +411,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.slaveTasks = {}
         self.slaveFailed = {}
         self.lock = threading.RLock()
+        self.shutdown = False
 
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
@@ -599,7 +604,12 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 slave_id = self.taskIdToSlaveId[tid]
                 self.slaveTasks[slave_id] -= 1
                 del self.taskIdToSlaveId[tid]
-            
+           
+                if state == mesos_pb2.TASK_FINISHED and not status.data:
+                    # result was drop, because of too large
+                    self.activeJobs[jid].abort("result was dropped, because of too large")
+                    return
+
                 if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
                     try:
                         tid,reason,result,accUpdate = cPickle.loads(status.data)
@@ -630,6 +640,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         if self.driver:
             self.driver.stop(False)
             self.driver.join()
+            self.driver = None
         time.sleep(2)
 
     def defaultParallelism(self):

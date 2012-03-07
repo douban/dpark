@@ -209,12 +209,8 @@ class SimpleJob(Job):
             logging.warning("Ignoring task-lost event for TID %d "
                 +"because task %d is already finished")
 
-    def error(self, code, message):
-        self.abort("Mesos error: %s (error code: %d)" % (message, code))
-
     def abort(self, message):
+        logging.error("abort the job: %s", message)
         self.failed = True
         self.causeOfFailure = message
-        self.sched.jobFinished(self)
-        self.sched.stop()
-        sys.exit(1)
+        self.sched.shutdown = True

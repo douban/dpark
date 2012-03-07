@@ -34,8 +34,7 @@ def reply_status(driver, task, status, data=None):
             driver.sendFrameworkMessage("warning: task result is too large size=%d" % len(data))
             if len(data) > TASK_RESULT_LIMIT * 10:
                 driver.sendFrameworkMessage("error: drop the result with size=%d" % len(data))
-                data = None
-                update.state = mesos_pb2.TASK_FAILED
+                data = ''
         update.data = data
     driver.sendStatusUpdate(update)
 
