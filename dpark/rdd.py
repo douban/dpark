@@ -134,6 +134,9 @@ class RDD:
             command = command.split(' ')
         return PipedRDD(self, command)
 
+    def fromCsv(self, dialect='excel'):
+        return CSVReaderRDD(self, dialect)
+
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
 
@@ -663,6 +666,27 @@ class MergedRDD(RDD):
         return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
 
 
+class CSVReaderRDD(RDD):
+    def __init__(self, rdd, dialect='excel'):
+        RDD.__init__(self, rdd.ctx)
+        self.rdd = rdd
+        self.dialect = dialect
+        self.dependencies = [OneToOneDependency(rdd)]
+    
+    def __len__(self):
+        return len(self.rdd)
+
+    @property
+    def splits(self):
+        return self.rdd.splits
+
+    def __repr__(self):
+        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
+
+    def compute(self, split):
+        return csv.reader(self.rdd.iterator(split), self.dialect)
+
+
 class ParallelCollectionSplit:
     def __init__(self, index, values):
         self.index = index
@@ -761,45 +785,6 @@ class TextFileRDD(RDD):
         f.close()
 
 
-class CSVFileRDD(TextFileRDD):
-    def __init__(self, ctx, path, dialect='excel', numSplits=None, splitSize=None):
-        self.dialect = dialect
-        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
-
-    def __repr__(self):
-        return '<CSVFileRDD %s>' % self.path
-
-    def compute(self, split):
-        if self.len == 1:
-            f = open(self.path, 'r', 4096 * 1024)
-            return csv.reader(f, self.dialect)
-        
-        f = cStringIO.StringIO(self.read_block(split))
-        return csv.reader(f, self.dialect)
-
-    def read_block(self, split):
-        start = split.index * self.splitSize
-        end = start + self.splitSize
-        f = open(self.path, 'r', 4096 * 1024)
-        if start > 0:
-            f.seek(start-1)
-            byte = f.read(1)
-            while byte != '\n':
-                byte = f.read(1)
-                start += 1
-
-        block = f.read(end-start)
-        if len(block) == end-start and block[-1] != '\n':
-            ahead = f.read(1)
-            while ahead[-1] != '\n':
-                c = f.read(1)
-                ahead += c 
-                if not c:
-                    break
-            block += ahead
-        return block
-
-
 class BZip2FileRDD(TextFileRDD):
     
     DEFAULT_SPLIT_SIZE = 10*1024*1024
@@ -855,6 +840,58 @@ class BZip2FileRDD(TextFileRDD):
             if np <= 0:
                 break
             d = d[np:]
+
+
+class MFSTextFileRDD(RDD):
+    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.file = moosefs.mfsopen(path, master)
+        size = self.file.length
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = 64*1024*1024
+            else:
+                splitSize = size / numSplits
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.splitSize = splitSize
+        self.len = n
+
+    def __len__(self):
+        return self.len
+    
+    @property
+    def splits(self):
+        return [Split(i) for i in range(self.len)]
+
+    def preferredLocations(self, split):
+        return self.file.locs(split.index)
+
+    def __repr__(self):
+        return '<TextFileRDD %s>' % self.path
+
+    def compute(self, split):
+        start = split.index * self.splitSize
+        end = start + self.splitSize
+        MAX_RECORD_LENGTH =1024
+
+        f = self.file
+        if start > 0:
+            f.seek(start-1, end + MAX_RECORD_LENGTH)
+            byte = f.read(1)
+            while byte != '\n':
+                byte = f.read(1)
+                start += 1
+        else:
+            f.seek(0, end + MAX_RECORD_LENGTH)
+
+        for line in f:
+            if start >= end: break
+            start += len(line)
+            yield line
+        f.close()
 
 
 class OutputTextFileRDD(RDD):
@@ -918,6 +955,7 @@ class OutputTextFileRDD(RDD):
             empty = False
         return not empty
 
+
 class OutputCSVFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, overwrite):
         OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
@@ -934,54 +972,3 @@ class OutputCSVFileRDD(OutputTextFileRDD):
             writer.writerow(row)
             empty = False
         return not empty 
-
-class MFSTextFileRDD(RDD):
-    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
-        RDD.__init__(self, ctx)
-        self.path = path
-        self.file = moosefs.mfsopen(path, master)
-        size = self.file.length
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = 64*1024*1024
-            else:
-                splitSize = size / numSplits
-        n = size / splitSize
-        if size % splitSize > 0:
-            n += 1
-        self.splitSize = splitSize
-        self.len = n
-
-    def __len__(self):
-        return self.len
-    
-    @property
-    def splits(self):
-        return [Split(i) for i in range(self.len)]
-
-    def preferredLocations(self, split):
-        return self.file.locs(split.index)
-
-    def __repr__(self):
-        return '<TextFileRDD %s>' % self.path
-
-    def compute(self, split):
-        start = split.index * self.splitSize
-        end = start + self.splitSize
-        MAX_RECORD_LENGTH =1024
-
-        f = self.file
-        if start > 0:
-            f.seek(start-1, end + MAX_RECORD_LENGTH)
-            byte = f.read(1)
-            while byte != '\n':
-                byte = f.read(1)
-                start += 1
-        else:
-            f.seek(0, end + MAX_RECORD_LENGTH)
-
-        for line in f:
-            if start >= end: break
-            start += len(line)
-            yield line
-        f.close()

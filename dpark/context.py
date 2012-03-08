@@ -94,9 +94,6 @@ class DparkContext:
         else:
             return cls(self, path, *ka, **kws)
 
-    def csvFile(self, *args, **kwargs):
-        return self.textFile(cls=CSVFileRDD, *args, **kwargs)
-
     def bzip2File(self, *args, **kwargs):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
@@ -118,6 +115,10 @@ class DparkContext:
             return self.union(rdds)
         else:
             return MFSTextFileRDD(self, path, master, **kw)
+
+    def csvFile(self, path, dialect='excel', *args, **kwargs):
+        """ deprecated. """
+        return self.textFile(path, cls=TextFileRDD, *args, **kwargs).fromCsv(dialect)
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
