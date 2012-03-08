@@ -147,8 +147,7 @@ class SimpleJob(Job):
         logger.debug("no task found %s", localOnly)
 
     def statusUpdate(self, tid, status, reason=None, result=None, update=None):
-        logger.debug("job status update %s %s %s %s %s", tid, status,
-            result, update, reason)
+        logger.debug("job status update %s %s %s", tid, status, reason)
         if status == TASK_FINISHED:
             self.taskFinished(tid, result, update)
         elif status in (TASK_LOST, 
@@ -163,19 +162,19 @@ class SimpleJob(Job):
             task = self.tasks[i]
             task.used = time.time() - task.start
             self.total_used += task.used
-            logger.info("Finished TID %s (progress: %d/%d) in %.2fs",
-                tid, self.tasksFinished, self.numTasks, task.used)
+            logger.info("Task %s finished in %.2fs (%d/%d)",
+                tid, task.used, self.tasksFinished, self.numTasks)
             from schedule import Success
             self.sched.taskEnded(task, Success(), result, update)
             if self.tasksFinished == self.numTasks:
                 ts = [t.used for t in self.tasks]
                 tried = [t.tried for t in self.tasks]
-                logger.info("job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
+                logger.info("Job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
                     self.id, time.time()-self.start, 
                     min(ts), sum(ts)/len(ts), max(ts), max(tried))
                 self.sched.jobFinished(self)
         else:
-            logger.warning("Ignoring task-finished event for TID %d "
+            logger.info("Ignoring task-finished event for TID %d "
                 + "because task %d is already finished", tid, i)
 
     def taskLost(self, tid, status, reason):

@@ -648,13 +648,14 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     @safe
     def stop(self):
+        logger.debug("stop scheduler")
         if self.driver:
             self.driver.stop(False)
             self.lock.release()
+            logger.debug("wait for join mesos driver thread")
             self.driver.join()
             self.lock.acquire()
             self.driver = None
-        time.sleep(2)
 
     def defaultParallelism(self):
         return 16
