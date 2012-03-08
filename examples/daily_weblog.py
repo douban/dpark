@@ -33,7 +33,7 @@ def drop_nurl(l):
 
 def load_weblog(day):
     path = '/mfs/tmp/daily_weblog/%s' % day.strftime("%Y%m%d")
-    if not os.path.exists(path) or len(os.listdir(path)) < 16:
+    if not os.path.exists(path) or len([1 for f in os.listdir(path) if f.endswith('.csv')]) < 16:
         dpark = DparkContext()
         weblog = dpark.csvFile('/mfs/log/weblog/%s' % day.strftime("%Y/%m/%d"))
         topreferers = weblog.map(lambda l:(l[NREFERER], 1)).reduceByKey(add).filter(lambda (x,y): y>1000).collectAsMap()
@@ -71,6 +71,6 @@ def load_weblog(day):
 
 if __name__ == '__main__':
     today = date.today() 
-    for i in range(1, 4):
+    for i in range(1, 3):
         day = today - timedelta(days=i)
         load_weblog(day)
