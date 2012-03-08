@@ -31,6 +31,12 @@ class Chunk:
     def __repr__(self):
         return "<Chunk(%d, %d, %d)>" % (self.id, self.version, self.length)
 
+def lock(f):
+    def _(self, *a, **kw):
+        with self.lock:
+            return f(self, *a, **kw)
+    return _
+
 class MasterConn:
     def __init__(self, host='mfsmaster', port=9421):
         self.host = host
@@ -41,12 +47,25 @@ class MasterConn:
         self.conn = None
         self.fail_count = 0
 
+        self.lock = threading.RLock()
+        t = threading.Thread(target=self.heartbeat)
+        t.daemon = True
+        t.start()
+
+    def heartbeat(self):
+        while True:
+            try:
+                self.nop()
+            except Exception, e:
+                print 'nop', e
+            time.sleep(3)
+
+    @lock
     def connect(self):
         if self.conn is not None:
             return
         try:
             self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            #self.conn.settimeout(1)
             self.conn.connect((self.host, self.port))
         except socket.error, e:
             self.conn = None
@@ -66,7 +85,7 @@ class MasterConn:
         if cmd != MATOCU_FUSE_REGISTER:
             raise Exception("got incorrect answer from mfsmaster %s" % cmd)
 
-        if i not in (1, 13, 21):
+        if i not in (1, 13, 21, 25, 35):
             raise Exception("got incorrect size from mfsmaster")
 
         data = self.recv(i)
@@ -76,7 +95,10 @@ class MasterConn:
                 raise Exception("mfsmaster register error: " 
                         + mfs_strerror(code))
         if self.sessionid == 0:
-            self.sessionid, = unpack("I", data)
+            if i in (25, 35):
+                _,self.sessionid, = unpack("II", data)
+            else:
+                self.sessionid, = unpack("I", data)
 
 
     def close(self):
@@ -90,8 +112,10 @@ class MasterConn:
         while n < len(buf):
             n += self.conn.send(buf[n:])
 
+    @lock
     def nop(self):
-        msg = pack(uint8(ANTOAN_NOP), 0)
+        self.connect()
+        msg = pack(ANTOAN_NOP, 0)
         self.conn.send(msg)
 
     def recv(self, n):
@@ -99,7 +123,8 @@ class MasterConn:
         while len(r) < n:
             rr = self.conn.recv(n - len(r))
             if not rr:
-                raise IOError("unexpected error: need %d" % n-len(r))
+                print self.conn, n, len(r)
+                raise IOError("unexpected error: need %d" % (n-len(r)))
             r += rr
         return r
 
@@ -113,6 +138,7 @@ class MasterConn:
         assert len(d) == n, 'unexpected end: %s != %s' % (len(d), n)
         return d
 
+    @lock
     def sendAndReceive(self, cmd, *args):
         #print 'sendAndReceive', cmd, args
         packetid = 1
@@ -211,13 +237,14 @@ class MasterConn:
 
 
 def test():
-    m = MasterConn("localhost")
+    m = MasterConn("mfsmaster")
     m.connect()
     m.close()
-    m.connect()
     #print m.get_attr(1)
-    print m.getdir(1)
-    print m.getdirplus(1)
+    while True:
+        print m.getdir(1)
+        print m.getdirplus(1)
+        time.sleep(60)
     info, err = m.lookup(1, "test.csv")
     print info, err
     #print m.opencheck(info.inode)
