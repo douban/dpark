@@ -215,4 +215,6 @@ class SimpleJob(Job):
         logger.error("abort the job: %s", message)
         self.failed = True
         self.causeOfFailure = message
-        self.sched.shutdown = True
+        self.sched.jobFinished(self)
+        self.sched.stop()
+        sys.exit(1)

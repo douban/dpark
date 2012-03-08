@@ -94,7 +94,6 @@ class DAGScheduler(Scheduler):
         self.idToStage = {}
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
-        self.shutdown = False
 
     @property
     def cacheTracker(self):
@@ -240,10 +239,6 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except Queue.Empty:
-                if self.shutdown:
-                    logger.error("shutdown the scheduler")
-                    sys.exit(1)
-                
                 if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
                     logger.debug("Resubmitting failed stages")
                     self.updateCacheLocs()
