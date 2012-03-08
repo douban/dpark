@@ -94,6 +94,10 @@ class DAGScheduler(Scheduler):
         self.idToStage = {}
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
+        self._shutdown = False
+
+    def shutdown(self):
+        self._shutdown = True
 
     @property
     def cacheTracker(self):
@@ -239,6 +243,9 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except Queue.Empty:
+                if self._shutdown:
+                    sys.exit(1)
+
                 if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
                     logger.debug("Resubmitting failed stages")
                     self.updateCacheLocs()
@@ -481,10 +488,15 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
         
+        self.requestMoreResources()
+
+    def requestMoreResources(self): 
         while not self.isRegistered:
             self.lock.release()
             time.sleep(0.01)
             self.lock.acquire()
+
+        logger.debug("reviveOffers")
         self.driver.reviveOffers()
 
     @safe
@@ -559,7 +571,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def offerRescinded(self, driver, offers):
         for o in offers:
             logger.error("resource rescinded: %s", o)
-        driver.reviveOffers()
+        self.requestMoreResources()
 
     def getResource(self, res, name):
         for r in res:
@@ -614,14 +626,15 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
                     try:
                         tid,reason,result,accUpdate = cPickle.loads(status.data)
-                        flag, data = result
-                        if flag >= 2:
-                            data = open(data).read()
-                            flag -= 2
-                        if flag == 0:
-                            result = marshal.loads(data)
-                        else:
-                            result = cPickle.loads(data)
+                        if result:
+                            flag, data = result
+                            if flag >= 2:
+                                data = open(data).read()
+                                flag -= 2
+                            if flag == 0:
+                                result = marshal.loads(data)
+                            else:
+                                result = cPickle.loads(data)
                         return self.activeJobs[jid].statusUpdate(tid, state, 
                             reason, result, accUpdate)
                     except EOFError, e:
@@ -638,7 +651,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     @safe
     def error(self, driver, code, message):
         logger.error("Mesos error: %s (code: %s)", message, code)
-        self.driver.reviveOffers()
+        self.requestMoreResources()
 #        if self.activeJobs:
 #            for id, job in self.activeJobs.items():
 #                try:

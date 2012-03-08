@@ -141,7 +141,8 @@ class DparkContext:
 
         def handler(signm, frame):
             logger.error("got signal %d, exit now", signm)
-            sys.exit(1)
+            self.scheduler.shutdown()
+
         signal.signal(signal.SIGTERM, handler)
         signal.signal(signal.SIGHUP, handler)
         signal.signal(signal.SIGABRT, handler)

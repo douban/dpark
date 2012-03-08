@@ -199,6 +199,7 @@ class SimpleJob(Job):
                 logger.warning("task %s failed with: %s", 
                     self.tasks[index], reason and reason.message)
             self.addPendingTask(index)
+            self.sched.requestMoreResources()
             if status in (TASK_FAILED, TASK_LOST):
                 self.numFailures[index] += 1
                 if self.numFailures[index] > MAX_TASK_FAILURES:
@@ -215,5 +216,4 @@ class SimpleJob(Job):
         self.failed = True
         self.causeOfFailure = message
         self.sched.jobFinished(self)
-        self.sched.stop()
-        sys.exit(1)
+        self.sched.shutdown()
