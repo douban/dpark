@@ -608,14 +608,17 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 self.slaveTasks[slave_id] -= 1
                 del self.taskIdToSlaveId[tid]
            
-                if state == mesos_pb2.TASK_FINISHED and not status.data:
-                    # result was drop, because of too large
-                    self.activeJobs[jid].abort("result was dropped, because of too large")
-                    return
-
                 if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
                     try:
                         tid,reason,result,accUpdate = cPickle.loads(status.data)
+                        flag, data = result
+                        if flag >= 2:
+                            data = open(data).read()
+                            flag -= 2
+                        if flag == 0:
+                            result = marshal.loads(data)
+                        else:
+                            result = cPickle.loads(data)
                         return self.activeJobs[jid].statusUpdate(tid, state, 
                             reason, result, accUpdate)
                     except EOFError, e:

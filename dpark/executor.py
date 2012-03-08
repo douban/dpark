@@ -32,11 +32,6 @@ def reply_status(driver, task, status, data=None):
     update.task_id.value = task.task_id.value
     update.state = status
     if data is not None:
-        if len(data) > TASK_RESULT_LIMIT:
-            driver.sendFrameworkMessage("warning: task result is too large size=%d" % len(data))
-            if len(data) > TASK_RESULT_LIMIT * 10:
-                driver.sendFrameworkMessage("error: drop the result with size=%d" % len(data))
-                data = ''
         update.data = data
     driver.sendStatusUpdate(update)
 
@@ -46,8 +41,21 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
+        try:
+            flag, data = 0, marshal.dumps(result)
+        except ValueError:
+            flag, data = 1, cPickle.dumps(result)
+
+        if len(data) > TASK_RESULT_LIMIT:
+            workdir = env.get('WORKDIR')
+            path = os.path.join(workdir, str(task.id)+'.result')
+            with open(path, 'w') as f:
+                f.write(data)
+            data = path
+            flag += 2
+
         setproctitle('dpark worker: idle')
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), result, accUpdate), -1)
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
