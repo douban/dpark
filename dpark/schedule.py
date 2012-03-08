@@ -389,6 +389,15 @@ def profile(f):
         stats.print_stats(20)
     return func
 
+def safe(f):
+    def _(self, *a, **kw):
+        print 'try', f
+        with self.lock:
+            print 'exec', f
+            r = f(self, *a, **kw)
+        print 'end', f
+        return r
+    return _
 
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
@@ -441,6 +450,12 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("log collecter start at %s", addr)
         return addr
 
+    @safe
+    def registered(self, driver, fid):
+        self.isRegistered = True
+        logger.debug("registered as %s", fid)
+
+    @safe
     def getExecutorInfo(self):
         info = mesos_pb2.ExecutorInfo()
 
@@ -460,11 +475,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             self.out_logger, self.err_logger, env.environ))
         return info
 
+    @safe
     def submitTasks(self, tasks):
-        with self.lock:
-            self._submitTasks(tasks)
-
-    def _submitTasks(self, tasks):
         logger.info("Got a job with %d tasks", len(tasks))
         job = SimpleJob(self, tasks)
         self.activeJobs[job.id] = job
@@ -472,9 +484,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
         
-        self.waitForRegister()
+        while not self.isRegistered:
+            self.lock.release()
+            time.sleep(0.01)
+            self.lock.acquire()
         self.driver.reviveOffers()
 
+    @safe
     def jobFinished(self, job):
         logger.debug("job %s finished", job.id)
         del self.activeJobs[job.id]
@@ -484,14 +500,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             del self.taskIdToSlaveId[id]
         del self.jobTasks[job.id]
 
-    def registered(self, driver, fid):
-        self.isRegistered = True
-        logger.debug("registered as %s", fid)
-
-    def waitForRegister(self):
-        while not self.isRegistered:
-            time.sleep(0.01)
-
+    @safe
     def resourceOffers(self, driver, offers):
         if not self.activeJobs:
             rf = mesos_pb2.Filters()
@@ -549,6 +558,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
 
+    @safe
     def offerRescinded(self, driver, offers):
         for o in offers:
             logger.error("resource rescinded: %s", o)
@@ -589,6 +599,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         # finished, failed, killed, lost
         return state >= mesos_pb2.TASK_FINISHED
 
+    @safe
     def statusUpdate(self, driver, status):
         tid = status.task_id.value
         state = status.state
@@ -627,6 +638,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             logger.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
 
+    @safe
     def error(self, driver, code, message):
         logger.error("Mesos error: %s (code: %s)", message, code)
         self.driver.reviveOffers()
@@ -637,24 +649,30 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 #                except Exception:
 #                    raise
 
+    @safe
     def stop(self):
         if self.driver:
             self.driver.stop(False)
+            self.lock.release()
             self.driver.join()
+            self.lock.acquire()
             self.driver = None
         time.sleep(2)
 
     def defaultParallelism(self):
         return 16
 
+    @safe
     def frameworkMessage(self, driver, slave, executor, data):
         logger.warning("[slave %s] %s", slave.value, data)
 
+    @safe
     def slaveLost(self, driver, slave):
         logger.warning("slave %s lost", slave.value)
         self.slaveTasks.pop(slave.value, 0)
         self.slaveFailed[slave.value] = MAX_FAILED
 
+    @safe
     def killTask(self, task):
         jid = self.taskIdToJobId.get(task.id)
         if jid :
