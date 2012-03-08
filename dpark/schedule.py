@@ -391,11 +391,8 @@ def profile(f):
 
 def safe(f):
     def _(self, *a, **kw):
-        print 'try', f
         with self.lock:
-            print 'exec', f
             r = f(self, *a, **kw)
-        print 'end', f
         return r
     return _
 
