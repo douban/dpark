@@ -27,6 +27,8 @@ logger = logging.getLogger("executor")
 
 TASK_RESULT_LIMIT = 1024 * 1024
 
+Script = ''
+
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()
     update.task_id.value = task.task_id.value
@@ -37,7 +39,7 @@ def reply_status(driver, task, status, data=None):
 
 def run_task(task, aid):
     try:
-        setproctitle('dpark worker: run task %s' % task)
+        setproctitle('dpark worker %s: run task %s' % (Script, task))
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
@@ -97,7 +99,8 @@ def start_forword(addr, prefix=''):
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        cwd, python_path, parallel, out_logger, err_logger, args = marshal.loads(args.data)
+        global Script
+        Script, cwd, python_path, parallel, out_logger, err_logger, args = marshal.loads(args.data)
         try:
             os.chdir(cwd)
         except OSError:
