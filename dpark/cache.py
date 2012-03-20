@@ -165,7 +165,7 @@ class CacheTracker:
         if isMaster:
             self.cache = Cache()
         else:
-            self.cache = LocalCache(mmapCache).newKeySpace()
+            self.cache = Cache() #LocalCache(mmapCache).newKeySpace()
 
         if isMaster:
             self.server = CacheTrackerServer()

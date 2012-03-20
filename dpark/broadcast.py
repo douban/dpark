@@ -6,7 +6,10 @@ import cPickle
 import threading
 import logging
 from multiprocessing import Lock
-from setproctitle import getproctitle, setproctitle
+try:
+    from setproctitle import getproctitle, setproctitle
+except ImportError:
+    getproctitle = setproctitle = lambda x: None
 
 import zmq
 
