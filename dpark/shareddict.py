@@ -51,12 +51,10 @@ class SharedDict:
         self._lock = Lock()
 
     def _load(self):
-        self._lock.acquire()
         self.start, self.length = struct.unpack("II", self._meta)
 
     def _save(self):
         self._meta[:8] = struct.pack("II", self.start % self.size, self.length)
-        self._lock.release()
 
     def _free(self):
         return self.size - self.length
@@ -70,42 +68,42 @@ class SharedDict:
         vsize = 16 + len(key) + len(value)
         if vsize > self.size:
             return False
-        
-        self._load()
-        while self._free() < vsize:
-            self._pop()
 
-        p = (self.start + self.length) % self.size
-        self._map[p:p+8] = struct.pack("HHI", len(key), flag, len(value))
-        p += 8
-        self._map[p:p+len(value)] = value
-        p += len(value)
-        self._map[p:p+8+len(key)] = key + struct.pack("HHI", len(key), flag, len(value))
-        
-        self.length += vsize
-        self._save() 
-        return True
+        with self._lock:
+            self._load()
+            while self._free() < vsize:
+                self._pop()
+
+            p = (self.start + self.length) % self.size
+            self._map[p:p+8] = struct.pack("HHI", len(key), flag, len(value))
+            p += 8
+            self._map[p:p+len(value)] = value
+            p += len(value)
+            self._map[p:p+8+len(key)] = key + struct.pack("HHI", len(key), flag, len(value))
+            
+            self.length += vsize
+            self._save() 
+            return True
 
     def get(self, key):
-        self._load()
-        p = self.start + self.length
-        left = self.length
-        v = (None, None)
-        while left > 16:
-            klen,flag,vlen = struct.unpack("HHI", self._map[p-8:p])
-            p -= 8+klen
-            if self._map[p:p+klen] == key:
-                v = flag, self._map[p-vlen:p]
-                break
-            p -= vlen + 8
-            left -= 16 + klen + vlen
-        self._lock.release()
-        return v
+        with self._lock:
+            self._load()
+            p = self.start + self.length
+            left = self.length
+            v = (None, None)
+            while left > 16:
+                klen,flag,vlen = struct.unpack("HHI", self._map[p-8:p])
+                p -= 8+klen
+                if self._map[p:p+klen] == key:
+                    v = flag, self._map[p-vlen:p]
+                    break
+                p -= vlen + 8
+                left -= 16 + klen + vlen
+            return v
 
     def clear(self):
-        self._lock.acquire()
-        self._meta[:8] = struct.pack("II", 0, 0)
-        self._lock.release()
+        with self._lock:
+            self._meta[:8] = struct.pack("II", 0, 0)
         
 class SharedDicts:
     def __init__(self, size, slots=16):
