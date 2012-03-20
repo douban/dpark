@@ -490,9 +490,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.jobTasks[job.id] = set()
         
         while not self.isRegistered:
-            self.lock.release()
+#            self.lock.release()
             time.sleep(0.01)
-            self.lock.acquire()
+#            self.lock.acquire()
 
         self.requestMoreResources()
 
