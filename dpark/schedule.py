@@ -666,7 +666,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             self.driver.stop(False)
     #        self.lock.release()
             logger.debug("wait for join mesos driver thread")
-            self.driver.join()
+    #        self.driver.join()
     #        self.lock.acquire()
             self.driver = None
 
