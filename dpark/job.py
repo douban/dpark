@@ -49,6 +49,7 @@ class SimpleJob(Job):
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
+        self.blacklist = [[] for i in xrange(len(tasks))]
         self.tidToIndex = {}
         self.numTasks = len(tasks)
         self.tasksLaunched = 0
@@ -85,20 +86,21 @@ class SimpleJob(Job):
         return sum((self.pendingTasksForHost.setdefault(h, []) 
             for h in [h] + hs + ips), [])
 
-    def findTaskFromList(self, l):
+    def findTaskFromList(self, l, host):
         for i in l:
-            if not self.launched[i] and not self.finished[i]:
+            if not self.launched[i] and not self.finished[i] and host not in self.blacklist[i]:
+                self.blacklist[i].append(host)
                 return i
 
     def findTask(self, host, localOnly):
-        localTask = self.findTaskFromList(self.getPendingTasksForHost(host))
+        localTask = self.findTaskFromList(self.getPendingTasksForHost(host), host)
         if localTask is not None:
             return localTask, True
-        noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs)
+        noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs, host)
         if noPrefTask is not None:
             return noPrefTask, True
         if not localOnly:
-            return self.findTaskFromList(self.allPendingTasks), False
+            return self.findTaskFromList(self.allPendingTasks, host), False
 #        else:
 #            print repr(host), self.pendingTasksForHost
         return None, False
@@ -116,7 +118,7 @@ class SimpleJob(Job):
                     if not self.finished[i])[0][1]
                 used = time.time() - task.start
                 if used > avg * 2 and used > 10:
-                    if task.tried < MAX_TASK_FAILURES:
+                    if task.tried <= MAX_TASK_FAILURES:
                         logger.warning("re-submit task %s for timeout %s",
                             task.id, used)
                         task.start = time.time()
@@ -143,6 +145,7 @@ class SimpleJob(Job):
             self.tasksLaunched += 1
             if preferred:
                 self.lastPreferredLaunchTime = now
+            print i, "=>", host
             return task
         logger.debug("no task found %s", localOnly)
 
