@@ -113,18 +113,19 @@ class MyExecutor(mesos.Executor):
     def launchTask(self, driver, task):
         try:
             t, aid = cPickle.loads(task.data)
+            
+            def callback((state, data)):
+                reply_status(driver, task, state, data)
+        
+            reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+            self.pool.apply_async(run_task, [t, aid], callback=callback)
+    
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
             reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
             return
 
-        def callback((state, data)):
-            reply_status(driver, task, state, data)
-        
-        reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-        self.pool.apply_async(run_task, [t, aid], callback=callback)
-    
     def killTask(self, driver, taskId):
         #driver.sendFrameworkMessage('kill task %s' % taskId)
         pass
