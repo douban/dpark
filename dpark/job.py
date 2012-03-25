@@ -145,7 +145,6 @@ class SimpleJob(Job):
             self.tasksLaunched += 1
             if preferred:
                 self.lastPreferredLaunchTime = now
-            print i, "=>", host
             return task
         logger.debug("no task found %s", localOnly)
 

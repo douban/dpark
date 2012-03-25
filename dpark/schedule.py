@@ -568,9 +568,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             len(tasks), sum(cpus), sum(mems))
 
     @safe
-    def offerRescinded(self, driver, offers):
-        for o in offers:
-            logger.error("resource rescinded: %s", o)
+    def offerRescinded(self, driver, offer_id):
+        logger.warning("rescinded offer: %s", offer_id)
         self.requestMoreResources()
 
     def getResource(self, res, name):
