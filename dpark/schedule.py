@@ -244,7 +244,6 @@ class DAGScheduler(Scheduler):
                 evt = self.completionEvents.get(False)
             except Queue.Empty:
                 if self._shutdown:
-                    self.stop()
                     sys.exit(1)
 
                 if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
@@ -502,12 +501,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def jobFinished(self, job):
         logger.debug("job %s finished", job.id)
-        del self.activeJobs[job.id]
-        self.activeJobsQueue.remove(job) 
-        for id in self.jobTasks[job.id]:
-            del self.taskIdToJobId[id]
-            del self.taskIdToSlaveId[id]
-        del self.jobTasks[job.id]
+        if job.id in self.activeJobs:
+            del self.activeJobs[job.id]
+            self.activeJobsQueue.remove(job) 
+            for id in self.jobTasks[job.id]:
+                del self.taskIdToJobId[id]
+                del self.taskIdToSlaveId[id]
+            del self.jobTasks[job.id]
 
     @safe
     def resourceOffers(self, driver, offers):
@@ -667,7 +667,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             logger.debug("wait for join mesos driver thread")
     #        self.driver.join()
     #        self.lock.acquire()
-            self.driver = None
+    #         self.driver = None
 
     def defaultParallelism(self):
         return 16
