@@ -25,7 +25,7 @@ from dpark.env import env
 
 logger = logging.getLogger("executor")
 
-TASK_RESULT_LIMIT = 1024 * 1024
+TASK_RESULT_LIMIT = 1024 * 256
 
 Script = ''
 
@@ -99,16 +99,24 @@ def start_forword(addr, prefix=''):
 
 class MyExecutor(mesos.Executor):
     def init(self, driver, args):
-        global Script
-        Script, cwd, python_path, parallel, out_logger, err_logger, args = marshal.loads(args.data)
         try:
-            os.chdir(cwd)
-        except OSError:
-            driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
-        sys.path = python_path
-        self.outt, sys.stdout = start_forword(out_logger)
-        self.errt, sys.stderr = start_forword(err_logger)
-        self.pool = multiprocessing.Pool(parallel, init_env, [args])
+            global Script
+            Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(args.data)
+            try:
+                os.chdir(cwd)
+            except OSError:
+                driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
+            sys.path = python_path
+            self.outt, sys.stdout = start_forword(out_logger)
+            self.errt, sys.stderr = start_forword(err_logger)
+            logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
+            self.pool = multiprocessing.Pool(parallel, init_env, [args])
+            logger.debug("executor started at %s", socket.gethostname())
+        except Exception, e:
+            import traceback
+            msg = traceback.format_exc()
+            driver.sendFrameworkMessage("init executor failed:\n " +  msg)
+            return
 
     def launchTask(self, driver, task):
         try:
@@ -118,6 +126,7 @@ class MyExecutor(mesos.Executor):
                 reply_status(driver, task, state, data)
         
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+            logging.debug("launch task %s", t.id) 
             self.pool.apply_async(run_task, [t, aid], callback=callback)
     
         except Exception, e:

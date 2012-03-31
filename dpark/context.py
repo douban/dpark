@@ -10,25 +10,20 @@ from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from env import env
 from broadcast import Broadcast
 
-logger = logging.getLogger("dpark")
+logger = logging.getLogger("context")
 
 class DparkContext:
     nextShuffleId = 0
 
-    def __init__(self, master=None, name=None):
+    def __init__(self, master=None):
+        
         if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
             from executor import run
             run()
             sys.exit(0)
         
         options = parse_options()
-        if master is None:
-            master = options.master
-        if name is None:
-            name = options.name
-
-        self.master = master
-        self.name = name
+        self.master = master or options.master
 
         if self.master.startswith('local'):
             self.scheduler = LocalScheduler()
@@ -176,8 +171,8 @@ def add_default_options():
 
     group.add_option("-m", "--master", type="string", default="local",
             help="master of Mesos: local, process, or mesos://")
-    group.add_option("-n", "--name", type="string", default="dpark",
-            help="job name")
+#    group.add_option("-n", "--name", type="string", default="dpark",
+#            help="job name")
     group.add_option("-p", "--parallel", type="int", default=0, 
             help="number of processes")
 
@@ -202,9 +197,10 @@ add_default_options()
 
 def parse_options():
     options, args = parser.parse_args()
-    
+    options.logLevel = (options.quiet and logging.ERROR
+                  or options.verbose and logging.DEBUG or logging.INFO)
+
     logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s',
-        level=options.quiet and logging.ERROR
-              or options.verbose and logging.DEBUG or logging.INFO)
+        level=options.logLevel)
     
     return options

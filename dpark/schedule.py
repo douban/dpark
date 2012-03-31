@@ -413,6 +413,8 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         self.mem = options.mem
         self.task_per_node = options.parallel or 8
         self.group = options.group
+        self.logLevel = options.logLevel
+        self.options = options
         self.isRegistered = False
         self.activeJobs = {}
         self.activeJobsQueue = []
@@ -476,7 +478,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.type = 0 #mesos_pb2.Value.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
         info.data = marshal.dumps((os.path.realpath(sys.argv[0]), os.getcwd(), sys.path, self.task_per_node,
-            self.out_logger, self.err_logger, env.environ))
+            self.out_logger, self.err_logger, self.logLevel, env.environ))
         return info
 
     @safe
