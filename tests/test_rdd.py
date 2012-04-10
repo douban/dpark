@@ -1,5 +1,4 @@
 import sys
-sys.path.insert(0, './')
 import cPickle
 import unittest
 import pprint
@@ -95,8 +94,9 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.sort(numSplits=10).collect(), range(100))
 
     def test_file(self):
-        f = self.sc.textFile(__file__)
-        n = len(open(__file__).read().split())
+        path = 'tests/test_rdd.py'
+        f = self.sc.textFile(path)
+        n = len(open(path).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 10)
@@ -104,7 +104,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000']) 
         d = self.sc.textFile('/tmp/tout')
-        n = len(open(__file__).readlines())
+        n = len(open(path).readlines())
         self.assertEqual(d.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout', overwrite=True),

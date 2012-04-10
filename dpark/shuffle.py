@@ -21,6 +21,8 @@ class LocalFileShuffle:
     @classmethod
     def initialize(cls, isMaster):
         shuffleDir = env.get('WORKDIR')
+        if not shuffleDir:
+            return
         while not os.path.exists(shuffleDir):
             time.sleep(0.1) # HACK for moosefs
         cls.shuffleDir = shuffleDir

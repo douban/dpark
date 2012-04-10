@@ -146,9 +146,12 @@ class CacheTrackerServer:
 
 class CacheTrackerClient:
     def __init__(self, addr):
-        ctx = zmq.Context()
-        self.sock = ctx.socket(zmq.REQ)
-        self.sock.connect(addr)
+        if addr:
+            ctx = zmq.Context()
+            self.sock = ctx.socket(zmq.REQ)
+            self.sock.connect(addr)
+        else:
+            self.sock = None
 
     def call(self, msg):
         self.sock.send_pyobj(msg)

@@ -1,7 +1,7 @@
 Dpark is a Python clone of Spark, MapReduce computing 
 framework supporting regression computation.
 
-Work Count Example:
+Word Count Example:
 
 from dpark import DparkContext
 ctx = DparkContext()

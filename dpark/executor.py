@@ -106,8 +106,10 @@ class MyExecutor(mesos.Executor):
         except OSError:
             driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
         sys.path = python_path
-        self.outt, sys.stdout = start_forword(out_logger)
-        self.errt, sys.stderr = start_forword(err_logger)
+        if out_logger:
+            self.outt, sys.stdout = start_forword(out_logger)
+        if err_logger:
+            self.errt, sys.stderr = start_forword(err_logger)
         self.pool = multiprocessing.Pool(parallel, init_env, [args])
 
     def launchTask(self, driver, task):

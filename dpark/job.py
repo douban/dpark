@@ -27,8 +27,6 @@ class Job:
         raise NotImplementedError
     
     nextJobId = 0
-    nextTaskId = 0
-
     @classmethod
     def newJobId(cls):
         cls.nextJobId += 1
