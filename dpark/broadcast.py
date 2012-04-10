@@ -9,7 +9,7 @@ from multiprocessing import Lock
 try:
     from setproctitle import getproctitle, setproctitle
 except ImportError:
-    def getproctitle(x):
+    def getproctitle():
         return ''
     def setproctitle(x):
         pass
