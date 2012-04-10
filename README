@@ -3,12 +3,12 @@ framework supporting regression computation.
 
 Word Count Example:
 
-from dpark import DparkContext
-ctx = DparkContext()
-file = ctx.textFile("/tmp/words.txt")
-words = file.flatMap(lambda x:x.split()).map(lambda x:(x,1))
-wc = words.reduceByKey(lambda x,y:x+y).collectAsMap()
-print wc
+>>> from dpark import DparkContext
+>>> ctx = DparkContext()
+>>> file = ctx.textFile("/tmp/words.txt")
+>>> words = file.flatMap(lambda x:x.split()).map(lambda x:(x,1))
+>>> wc = words.reduceByKey(lambda x,y:x+y).collectAsMap()
+>>> print wc
 
 This scripts can run locally or on Mesos cluster without
 any modification, just with different command arguments.

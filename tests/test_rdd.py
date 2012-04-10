@@ -111,13 +111,11 @@ class TestRDD(unittest.TestCase):
             ['/tmp/tout/0000.csv'])
 
 
-#class TestRDDInThread(TestRDD):
+#class TestRDDInProcess(TestRDD):
 #    def setUp(self):
-#        self.sc = SparkContext("thread", "test")
+#        self.sc = DparkContext("process")
 
 
 if __name__ == "__main__":
     import logging
-    #logging.basicConfig(format="%(process)d:%(threadName)s:%(levelname)s %(message)s", level=logging.INFO)
-    #psc = DparkContext("process")
     unittest.main()
