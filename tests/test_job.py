@@ -40,7 +40,7 @@ class TestJob(unittest.TestCase):
         [job.statusUpdate(t.id, mesos_pb2.TASK_FINISHED) for t in ts[1:]]
         assert job.tasksFinished == 9
         job.statusUpdate(ts[0].id, mesos_pb2.TASK_FAILED)
-        t = job.slaveOffer('localhost', 5)
+        t = job.slaveOffer('localhost1', 5)
         assert t.id == 0
         assert job.slaveOffer('localhost', 5) is None
         assert job.tasksLaunched == 10

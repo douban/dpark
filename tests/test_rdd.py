@@ -10,7 +10,7 @@ from dpark.accumulator import *
 
 class TestRDD(unittest.TestCase):
     def setUp(self):
-        self.sc = DparkContext("local", "test")
+        self.sc = DparkContext("local")
 
     def tearDown(self):
         self.sc.stop()

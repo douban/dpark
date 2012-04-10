@@ -80,7 +80,10 @@ class SimpleJob(Job):
         self.allPendingTasks.append(i)
 
     def getPendingTasksForHost(self, host):
-        h, hs, ips = socket.gethostbyname_ex(host)
+        try:
+            h, hs, ips = socket.gethostbyname_ex(host)
+        except Exception:
+            h, hs, ips = host, [], []
         return sum((self.pendingTasksForHost.setdefault(h, []) 
             for h in [h] + hs + ips), [])
 

@@ -37,7 +37,7 @@ class TestExecute(unittest.TestCase):
         args.executor_id.value = "test-id"
         args.slave_id.value = "test-slave"
         args.hostname = socket.gethostname()
-        args.data = marshal.dumps(("./", os.getcwd(), sys.path, 8, "", "", env.environ))
+        args.data = marshal.dumps(("./", os.getcwd(), sys.path, 8, "", "", 1, env.environ))
         executor.init(driver, args)
         assert executor.pool
 
