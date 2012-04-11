@@ -36,7 +36,7 @@ class DparkContext:
             if '://' not in self.master:
                 self.master = os.environ.get('MESOS_MASTER')
                 if not self.master:
-                    self.master = 'zoo://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
+                    raise Exception("invalid uri of mesos master: %s" % self.master)
             self.scheduler = MesosScheduler(self.master, options) 
             self.isLocal = False
         else:

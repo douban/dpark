@@ -25,10 +25,9 @@ class DparkEnv:
         if isMaster:
             root = '/tmp/dpark'
             if not isLocal:
-                if os.path.exists('/home2/dpark'):
-                    root = '/home2/dpark'
-                elif os.path.exists('/mfs/tmp'):
-                    root = '/mfs/tmp/dpark'
+                root = os.environ.get("DPARK_SHARE_DIR")
+            if not root:
+                raise Exception("no shuffle dir exists")
             if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
