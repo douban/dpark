@@ -4,9 +4,6 @@ import os, sys
 from pprint import pprint
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dpark import DparkContext
-#import logging
-#logging.basicConfig(level=logging.ERROR,
-#    format="%(process)d:%(threadName)s:%(levelname)s %(message)s")
 
 ctx = DparkContext()
 
