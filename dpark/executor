@@ -1,0 +1,8 @@
+#!/bin/sh
+
+if [ "x$MESOS_HOME" == "x" ]; then
+    MESOS_HOME=/Users/davies/work/mesos/
+fi
+
+export PYTHONPATH=$MESOS_HOME/lib/python
+exec python "$(dirname $0)/executor.py" $@

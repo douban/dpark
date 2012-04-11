@@ -1,0 +1,22 @@
+Dpark is a Python clone of Spark, MapReduce computing 
+framework supporting regression computation.
+
+Word count example wc.py:
+
+ from dpark import DparkContext
+ ctx = DparkContext()
+ file = ctx.textFile("/tmp/words.txt")
+ words = file.flatMap(lambda x:x.split()).map(lambda x:(x,1))
+ wc = words.reduceByKey(lambda x,y:x+y).collectAsMap()
+ print wc
+
+This scripts can run locally or on Mesos cluster without
+any modification, just with different command arguments:
+
+$ python wc.py
+$ python wc.py -m process
+$ python wc.py -m mesos
+
+See examples/ for more examples.
+
+Some Chinese docs: https://github.com/jackfengji/test_pro/wiki
