@@ -1,6 +1,2 @@
 #!/bin/bash
-
-MESOS_HOME=/opt/mesos
-
-export PYTHONPATH=$MESOS_HOME/lib/python
 exec python "$(dirname "$(readlink -f "$0")")/scheduler.py" "$@"

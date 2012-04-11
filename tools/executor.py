@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import os
-import pickle
+import cPickle as pickle
 import subprocess
 import sys
 import threading
@@ -37,57 +37,51 @@ def reply_status(driver, task, status):
     
 
 def launch_task(self, driver, task):
-    reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-    
-    host = socket.gethostname()
-    cwd, command, _env, shell, addr1, addr2 = pickle.loads(task.data)
-    stderr = ctx.socket(zmq.PUSH)
-    stderr.connect(addr2)
+    cwd, command, _env, shell, stdout_addr, stderr_addr = pickle.loads(task.data)
 
-    prefix = "[%s@%s] " % (str(task.task_id.value), host)
+    prefix = "[%s@%s] " % (str(task.task_id.value), socket.gethostname())
     outr, outw = os.pipe()
     errr, errw = os.pipe()
-    t1 = Thread(target=forword, args=[outr, addr1, prefix])
+    t1 = Thread(target=forword, args=[outr, stdout_addr, prefix])
     t1.daemon = True
     t1.start()
-    t2 = Thread(target=forword, args=[errr, addr2, prefix])
+    t2 = Thread(target=forword, args=[errr, stderr_addr, prefix])
     t2.daemon = True
     t2.start()
     wout = os.fdopen(outw,'w',0)
     werr = os.fdopen(errw,'w',0)
+
+    env = dict(os.environ)
+    env.update(_env)
+    if not os.path.exists(cwd):
+        print >>werr, 'CWD %s is not exists, use /tmp instead' % cwd
+        cwd = '/tmp'
+    
     try:
-        env = dict(os.environ)
-        env.update(_env)
-        if not os.path.exists(cwd):
-            print >>werr, 'CWD %s is not exists, use /tmp instead' % cwd
-            cwd = '/tmp'
-        p = subprocess.Popen(command,
-                stdout=wout, stderr=werr,
+        p = subprocess.Popen(command, stdout=wout, stderr=werr,
                 cwd=cwd, env=env, shell=shell)
         self.ps[task.task_id.value] = p
+        
+        reply_status(driver, task, mesos_pb2.TASK_RUNNING)
         p.wait()
         code = p.returncode
         if code == 0 or code is None:
             status = mesos_pb2.TASK_FINISHED
         else:
-            stderr.send(prefix+' '.join(command) 
-                + (' exit with %s\n' % code))
+            print >>werr, ' '.join(command) + ' exit with %s' % code
             status = mesos_pb2.TASK_FAILED
+        del self.ps[task.task_id.value]
+
     except Exception, e:
         status = mesos_pb2.TASK_FAILED
         import traceback
-        stderr.send('exception while open '+
-                ' '.join(command) + '\n')
-        for line in traceback.format_exc():
-            stderr.send(line)
+        print >>werr, 'exception while open', ' '.join(command)
+        traceback.print_exc(file=werr)
     
     wout.close()
     werr.close()
     t1.join()
     t2.join()
-    stderr.close()
-    if task.task_id.value in self.ps:
-        del self.ps[task.task_id.value]
 
     reply_status(driver, task, status)
 
