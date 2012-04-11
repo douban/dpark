@@ -92,25 +92,6 @@ class DparkContext:
     def bzip2File(self, *args, **kwargs):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
-    def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
-        import moosefs
-        f = moosefs.mfsopen(path, master)
-        if f.info.type == 'd':
-            paths = []
-            for root, dirs, names in moosefs.walk(path, master):
-                for n in names:
-                    if n.endswith(ext) and not n.startswith('.'):
-                        paths.append(os.path.join(root, n))
-                for d in dirs[:]:
-                    if d.startswith('.'):
-                        dirs.remove(d)
-
-            rdds = [MFSTextFileRDD(self, p, master, **kw) 
-                     for p in paths]
-            return self.union(rdds)
-        else:
-            return MFSTextFileRDD(self, path, master, **kw)
-
     def csvFile(self, path, dialect='excel', *args, **kwargs):
         """ deprecated. """
         return self.textFile(path, cls=TextFileRDD, *args, **kwargs).fromCsv(dialect)

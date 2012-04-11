@@ -13,7 +13,6 @@ import bz2
 from serialize import load_func, dump_func
 from dependency import *
 from env import env
-import moosefs
 
 def ilen(x):
     try:
@@ -840,58 +839,6 @@ class BZip2FileRDD(TextFileRDD):
             if np <= 0:
                 break
             d = d[np:]
-
-
-class MFSTextFileRDD(RDD):
-    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
-        RDD.__init__(self, ctx)
-        self.path = path
-        self.file = moosefs.mfsopen(path, master)
-        size = self.file.length
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = 64*1024*1024
-            else:
-                splitSize = size / numSplits
-        n = size / splitSize
-        if size % splitSize > 0:
-            n += 1
-        self.splitSize = splitSize
-        self.len = n
-
-    def __len__(self):
-        return self.len
-    
-    @property
-    def splits(self):
-        return [Split(i) for i in range(self.len)]
-
-    def preferredLocations(self, split):
-        return self.file.locs(split.index)
-
-    def __repr__(self):
-        return '<TextFileRDD %s>' % self.path
-
-    def compute(self, split):
-        start = split.index * self.splitSize
-        end = start + self.splitSize
-        MAX_RECORD_LENGTH =1024
-
-        f = self.file
-        if start > 0:
-            f.seek(start-1, end + MAX_RECORD_LENGTH)
-            byte = f.read(1)
-            while byte != '\n':
-                byte = f.read(1)
-                start += 1
-        else:
-            f.seek(0, end + MAX_RECORD_LENGTH)
-
-        for line in f:
-            if start >= end: break
-            start += len(line)
-            yield line
-        f.close()
 
 
 class OutputTextFileRDD(RDD):
