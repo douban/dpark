@@ -17,16 +17,22 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}, isLocal=False):
+    def start(self, isMaster, environ={}, isLocal=False, port=None):
         if getattr(self, 'started', False):
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         if isMaster:
-            root = '/tmp/dpark'
-            if not isLocal:
-                root = os.environ.get("DPARK_SHARE_DIR")
-            if not root:
+            if isLocal:
+                root = '/tmp/dpark'
+                self.dfs = True
+            elif os.environ.has_key('DPARK_SHARE_DIR'):
+                root = os.environ['DPARK_SHARE_DIR']
+                self.dfs = True
+            elif os.environ.has_key('DPARK_WORK_DIR'):
+                root = os.environ['DPARK_WORK_DIR']
+                self.dfs = False
+            else:
                 raise Exception("no shuffle dir exists")
             if not os.path.exists(root):
                 os.mkdir(root, 0777)
@@ -36,14 +42,16 @@ class DparkEnv:
             self.workdir = os.path.join(root, name)
             os.makedirs(self.workdir)
             self.environ['WORKDIR'] = self.workdir
+            self.environ['DPARK_HAS_DFS'] = str(self.dfs)
         else:
             self.environ.update(environ)
+            self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
 
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)
         
         from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        LocalFileShuffle.initialize(isMaster)
+        LocalFileShuffle.initialize(isMaster, port)
         self.mapOutputTracker = MapOutputTracker(isMaster)
         self.shuffleFetcher = SimpleShuffleFetcher()
 

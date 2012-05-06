@@ -7,6 +7,10 @@ import marshal
 import cPickle
 import socket
 import multiprocessing
+import threading
+import SocketServer
+import SimpleHTTPServer
+import shutil
 
 import zmq
 import mesos
@@ -48,7 +52,7 @@ def run_task(task, aid):
         except ValueError:
             flag, data = 1, cPickle.dumps(result)
 
-        if len(data) > TASK_RESULT_LIMIT:
+        if len(data) > TASK_RESULT_LIMIT and env.dfs:
             workdir = env.get('WORKDIR')
             path = os.path.join(workdir, str(task.id)+'.result')
             with open(path, 'w') as f:
@@ -64,9 +68,27 @@ def run_task(task, aid):
         setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
 
-def init_env(args):
+def init_env(args, port):
     setproctitle('dpark worker: idle')
-    env.start(False, args)
+    env.start(False, args, port=port)
+
+basedir = None
+class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
+    def translate_path(self, path):
+        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
+        return basedir + '/' + out[len(os.getcwd()):]
+    
+    def log_message(self, format, *args):
+        pass
+
+def startWebServer(path):
+    global basedir
+    basedir = path
+    ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
+    threading.Thread(target=ss.serve_forever).start()
+    return ss.server_address[1]
+    
+    
 
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
@@ -112,7 +134,13 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
-            self.pool = multiprocessing.Pool(parallel, init_env, [args])
+            if args['DPARK_HAS_DFS'] == 'True':
+                self.workdir = None
+                port = None
+            else:
+                self.workdir = args['WORKDIR']
+                port = startWebServer(args['WORKDIR'])
+            self.pool = multiprocessing.Pool(parallel, init_env, [args, port])
             logger.debug("executor started at %s", socket.gethostname())
         except Exception, e:
             import traceback
@@ -141,6 +169,10 @@ class MyExecutor(mesos.Executor):
         pass
 
     def shutdown(self, driver):
+        # clean work files
+        if self.workdir:
+            try: shutil.rmtree(self.workdir, True)
+            except: pass
         # flush
         sys.stdout.close()
         sys.stderr.close()
