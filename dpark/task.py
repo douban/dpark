@@ -4,6 +4,7 @@ import marshal
 import cPickle
 import logging
 import struct
+import zlib as comp
 
 from serialize import load_func, dump_func
 from shuffle import LocalFileShuffle
@@ -108,7 +109,7 @@ class ShuffleMapTask(DAGTask):
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
             f = open(tpath, 'wb', 1024*4096)
             f.write(flag)
-            f.write(d)
+            f.write(comp.compress(d, 1))
             f.close()
             if not os.path.exists(path):
                 os.rename(tpath, path)
