@@ -27,7 +27,7 @@ class OneToRangeDependency(NarrowDependency):
         return range(pid * self.splitSize, 
                 min((pid+1) * self.splitSize, self.length))
 
-class CartesionDependency(NarrowDependency):
+class CartesianDependency(NarrowDependency):
     def __init__(self, rdd, first, numSplitsInRdd2):
         NarrowDependency.__init__(self, rdd)
         self.first = first

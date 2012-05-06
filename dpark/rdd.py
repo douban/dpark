@@ -9,6 +9,7 @@ import operator
 import math
 import random
 import bz2
+from copy import copy
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -120,8 +121,8 @@ class RDD:
     def glom(self):
         return GlommedRDD(self)
 
-    def cartesion(self, other):
-        return CartesionRDD(self, other)
+    def cartesian(self, other):
+        return CartesianRDD(self, other)
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
@@ -166,6 +167,30 @@ class RDD:
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None)
         return g.map(lambda (x,y):x)
 
+    def fold(self, zero, f):
+        '''Aggregate the elements of each partition, and then the
+        results for all the partitions, using a given associative
+        function and a neutral "zero value". The function op(t1, t2)
+        is allowed to modify t1 and return it as its result value to
+        avoid object allocation; however, it should not modify t2.'''
+        return reduce(f,
+                      self.ctx.runJob(self, lambda x: reduce(f, x, copy(zero))),
+                      zero)
+
+    def aggregate(self, zero, seqOp, combOp):
+        '''Aggregate the elements of each partition, and then the
+        results for all the partitions, using given combine functions
+        and a neutral "zero value". This function can return a
+        different result type, U, than the type of this RDD, T. Thus,
+        we need one operation for merging a T into an U (seqOp(U, T))
+        and one operation for merging two U's (combOp(U, U)). Both of
+        these functions are allowed to modify and return their first
+        argument instead of creating a new U to avoid memory
+        allocation.'''
+        return reduce(combOp,
+                      self.ctx.runJob(self, lambda x: reduce(seqOp, x, copy(zero))),
+                      zero)
+
     def count(self):
         result = self.ctx.runJob(self, lambda x: ilen(x))
         return sum(result)
@@ -202,11 +227,12 @@ class RDD:
             return m1
         return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
 
-    def combineByKey(self,  aggregator, numSplits=None):
-        if numSplits is None:
-            numSplits = min(self.ctx.defaultMinSplits, len(self))
-        partitioner = HashPartitioner(numSplits)
-        return ShuffledRDD(self, aggregator, partitioner)
+    def combineByKey(self, aggregator, splits=None):
+        if splits is None:
+            splits = min(self.ctx.defaultMinSplits, len(self))
+        if type(splits) is int:
+            splits = HashPartitioner(splits)
+        return ShuffledRDD(self, aggregator, splits)
 
     def reduceByKey(self, func, numSplits=None):
         aggregator = Aggregator(lambda x:x, func, func)
@@ -218,6 +244,9 @@ class RDD:
         mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits)
+
+    def partitionBy(self, numSplits=None):
+        return self.groupByKey(numSplits).flatMap(lambda x: [(x[0], i) for i in x[1]])
 
     def join(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
@@ -452,28 +481,28 @@ class ShuffledRDD(RDD):
         fetcher.fetch(self.shuffleId, split.index, mergePair)
         return combiners.iteritems()
 
-class CartesionSplit(Split):
+class CartesianSplit(Split):
     def __init__(self, idx, s1, s2):
         self.index = idx
         self.s1 = s1
         self.s2 = s2
 
-class CartesionRDD(RDD):
+class CartesianRDD(RDD):
     def __init__(self, rdd1, rdd2):
         RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
         self.numSplitsInRdd2 = n = len(rdd2)
-        self._splits = [CartesionSplit(s1.index*n+s2.index, s1, s2)
+        self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
-        self.dependencies = [CartesionDependency(rdd1, True, n),
-                             CartesionDependency(rdd2, False, n)]
+        self.dependencies = [CartesianDependency(rdd1, True, n),
+                             CartesianDependency(rdd2, False, n)]
 
     def __len__(self):
         return len(self.rdd1) * len(self.rdd2)
 
     def __repr__(self):
-        return '<cartesion %s and %s>' % (self.rdd1, self.rdd2)
+        return '<cartesian %s and %s>' % (self.rdd1, self.rdd2)
 
     def preferredLocations(self, split):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
