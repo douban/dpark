@@ -7,6 +7,7 @@ import struct
 import socket
 import time
 import cPickle
+import zlib as comp
 
 import zmq
 
@@ -70,13 +71,14 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     try:
                         f = url[0](url[1])
                         flag = f.read(1)
+                        d = comp.decompress(f.read())
+                        f.close()
                         if flag == 'm':
-                            d = marshal.loads(f.read())
+                            d = marshal.loads(d)
                         elif flag == 'p':
-                            d = cPickle.loads(f.read())
+                            d = cPickle.loads(d)
                         else:
                             raise ValueError("invalid flag")
-                        f.close()
                         break
                     except IOError, e:
                         if not os.path.exists(uri): raise
