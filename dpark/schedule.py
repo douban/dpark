@@ -470,7 +470,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             info.executor_id.value = sys.argv[0]
         else:
             dir = os.path.dirname(__file__)
-            info.uri = os.path.abspath(os.path.join(dir, 'executor'))
+            info.uri = os.path.abspath(os.path.join(dir, 'executor.py'))
             info.executor_id.value = "default"
         
         mem = info.resources.add()
