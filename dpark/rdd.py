@@ -121,8 +121,8 @@ class RDD:
     def glom(self):
         return GlommedRDD(self)
 
-    def cartesion(self, other):
-        return CartesionRDD(self, other)
+    def cartesian(self, other):
+        return CartesianRDD(self, other)
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
@@ -481,28 +481,28 @@ class ShuffledRDD(RDD):
         fetcher.fetch(self.shuffleId, split.index, mergePair)
         return combiners.iteritems()
 
-class CartesionSplit(Split):
+class CartesianSplit(Split):
     def __init__(self, idx, s1, s2):
         self.index = idx
         self.s1 = s1
         self.s2 = s2
 
-class CartesionRDD(RDD):
+class CartesianRDD(RDD):
     def __init__(self, rdd1, rdd2):
         RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
         self.numSplitsInRdd2 = n = len(rdd2)
-        self._splits = [CartesionSplit(s1.index*n+s2.index, s1, s2)
+        self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
-        self.dependencies = [CartesionDependency(rdd1, True, n),
-                             CartesionDependency(rdd2, False, n)]
+        self.dependencies = [CartesianDependency(rdd1, True, n),
+                             CartesianDependency(rdd2, False, n)]
 
     def __len__(self):
         return len(self.rdd1) * len(self.rdd2)
 
     def __repr__(self):
-        return '<cartesion %s and %s>' % (self.rdd1, self.rdd2)
+        return '<cartesian %s and %s>' % (self.rdd1, self.rdd2)
 
     def preferredLocations(self, split):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
