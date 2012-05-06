@@ -7,6 +7,7 @@ import struct
 import socket
 import time
 import cPickle
+import zlib as comp
 
 import zmq
 
@@ -19,14 +20,17 @@ class LocalFileShuffle:
     serverUri = None
     shuffleDir = None
     @classmethod
-    def initialize(cls, isMaster):
+    def initialize(cls, isMaster, port):
         shuffleDir = env.get('WORKDIR')
         if not shuffleDir:
             return
-        while not os.path.exists(shuffleDir):
-            time.sleep(0.1) # HACK for moosefs
         cls.shuffleDir = shuffleDir
-        cls.serverUri = shuffleDir
+        if port is None:
+            while not os.path.exists(shuffleDir):
+                time.sleep(0.1) # HACK for moosefs
+            cls.serverUri = 'file://' + cls.shuffleDir
+        else:
+            cls.serverUri = 'http://%s:%d' % (socket.gethostname(), port)
         logger.debug("shuffle dir: %s", shuffleDir)
 
     @classmethod
@@ -56,21 +60,25 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             splitsByUri.setdefault(uri, []).append(i)
         for uri, parts in splitsByUri.items():
             for part in parts:
-                url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
-                logger.debug("fetch %s", url)
+                if uri == LocalFileShuffle.getServerUri():
+                    url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+                else:
+                    url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+                logger.debug("fetch %s", url[1])
                 
                 tries = 3
                 while True:
                     try:
-                        f = open(url, 'rb')
+                        f = url[0](url[1])
                         flag = f.read(1)
+                        d = comp.decompress(f.read())
+                        f.close()
                         if flag == 'm':
-                            d = marshal.load(f)
+                            d = marshal.loads(d)
                         elif flag == 'p':
-                            d = cPickle.load(f)
+                            d = cPickle.loads(d)
                         else:
                             raise ValueError("invalid flag")
-                        f.close()
                         break
                     except IOError, e:
                         if not os.path.exists(uri): raise
