@@ -17,18 +17,28 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}, isLocal=False):
+    def start(self, isMaster, environ={}, isLocal=False, port=None):
         if getattr(self, 'started', False):
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         if isMaster:
-            root = '/tmp/dpark'
-            if not isLocal:
+            if isLocal:
+                root = '/tmp/dpark'
+                self.dfs = True
+            elif os.environ.has_key('DPARK_SHARE_DIR'):
+                root = os.environ['DPARK_SHARE_DIR']
+                self.dfs = True
+            elif os.environ.has_key('DPARK_WORK_DIR'):
+                root = os.environ['DPARK_WORK_DIR']
+                self.dfs = False
+            else:
                 if os.path.exists('/home2/dpark'):
                     root = '/home2/dpark'
                 elif os.path.exists('/mfs/tmp'):
                     root = '/mfs/tmp/dpark'
+                self.dfs = True
+
             if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
@@ -37,14 +47,16 @@ class DparkEnv:
             self.workdir = os.path.join(root, name)
             os.makedirs(self.workdir)
             self.environ['WORKDIR'] = self.workdir
+            self.environ['DPARK_HAS_DFS'] = str(self.dfs)
         else:
             self.environ.update(environ)
+            self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
 
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)
         
         from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        LocalFileShuffle.initialize(isMaster)
+        LocalFileShuffle.initialize(isMaster, port)
         self.mapOutputTracker = MapOutputTracker(isMaster)
         self.shuffleFetcher = SimpleShuffleFetcher()
 

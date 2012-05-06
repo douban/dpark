@@ -19,14 +19,17 @@ class LocalFileShuffle:
     serverUri = None
     shuffleDir = None
     @classmethod
-    def initialize(cls, isMaster):
+    def initialize(cls, isMaster, port):
         shuffleDir = env.get('WORKDIR')
         if not shuffleDir:
             return
-        while not os.path.exists(shuffleDir):
-            time.sleep(0.1) # HACK for moosefs
         cls.shuffleDir = shuffleDir
-        cls.serverUri = shuffleDir
+        if port is None:
+            while not os.path.exists(shuffleDir):
+                time.sleep(0.1) # HACK for moosefs
+            cls.serverUri = 'file://' + cls.shuffleDir
+        else:
+            cls.serverUri = 'http://%s:%d' % (socket.gethostname(), port)
         logger.debug("shuffle dir: %s", shuffleDir)
 
     @classmethod
@@ -56,18 +59,21 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             splitsByUri.setdefault(uri, []).append(i)
         for uri, parts in splitsByUri.items():
             for part in parts:
-                url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
-                logger.debug("fetch %s", url)
+                if uri == LocalFileShuffle.getServerUri():
+                    url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+                else:
+                    url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+                logger.debug("fetch %s", url[1])
                 
                 tries = 3
                 while True:
                     try:
-                        f = open(url, 'rb')
+                        f = url[0](url[1])
                         flag = f.read(1)
                         if flag == 'm':
-                            d = marshal.load(f)
+                            d = marshal.loads(f.read())
                         elif flag == 'p':
-                            d = cPickle.load(f)
+                            d = cPickle.loads(f.read())
                         else:
                             raise ValueError("invalid flag")
                         f.close()
