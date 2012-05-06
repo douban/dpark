@@ -9,6 +9,7 @@ import operator
 import math
 import random
 import bz2
+from copy import copy
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -167,6 +168,30 @@ class RDD:
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None)
         return g.map(lambda (x,y):x)
 
+    def fold(self, zero, f):
+        '''Aggregate the elements of each partition, and then the
+        results for all the partitions, using a given associative
+        function and a neutral "zero value". The function op(t1, t2)
+        is allowed to modify t1 and return it as its result value to
+        avoid object allocation; however, it should not modify t2.'''
+        return reduce(f,
+                      self.ctx.runJob(self, lambda x: reduce(f, x, copy(zero))),
+                      zero)
+
+    def aggregate(self, zero, seqOp, combOp):
+        '''Aggregate the elements of each partition, and then the
+        results for all the partitions, using given combine functions
+        and a neutral "zero value". This function can return a
+        different result type, U, than the type of this RDD, T. Thus,
+        we need one operation for merging a T into an U (seqOp(U, T))
+        and one operation for merging two U's (combOp(U, U)). Both of
+        these functions are allowed to modify and return their first
+        argument instead of creating a new U to avoid memory
+        allocation.'''
+        return reduce(combOp,
+                      self.ctx.runJob(self, lambda x: reduce(seqOp, x, copy(zero))),
+                      zero)
+
     def count(self):
         result = self.ctx.runJob(self, lambda x: ilen(x))
         return sum(result)
@@ -203,11 +228,12 @@ class RDD:
             return m1
         return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
 
-    def combineByKey(self,  aggregator, numSplits=None):
-        if numSplits is None:
-            numSplits = min(self.ctx.defaultMinSplits, len(self))
-        partitioner = HashPartitioner(numSplits)
-        return ShuffledRDD(self, aggregator, partitioner)
+    def combineByKey(self, aggregator, splits=None):
+        if splits is None:
+            splits = min(self.ctx.defaultMinSplits, len(self))
+        if type(splits) is int:
+            splits = HashPartitioner(splits)
+        return ShuffledRDD(self, aggregator, splits)
 
     def reduceByKey(self, func, numSplits=None):
         aggregator = Aggregator(lambda x:x, func, func)
@@ -219,6 +245,9 @@ class RDD:
         mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits)
+
+    def partitionBy(self, numSplits=None):
+        return self.groupByKey(numSplits).flatMap(lambda x: [(x[0], i) for i in x[1]])
 
     def join(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
