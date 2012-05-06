@@ -536,8 +536,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 launchedTask = False
                 for i,o in enumerate(offers):
                     sid = o.slave_id.value
-                    g = self.getAttribute(o.attributes, 'group') or 'none'
-                    if self.group and g not in self.group:
+                    if self.group and (self.getAttribute(o.attributes, 'group') or 'none') not in self.group:
                         continue
                     if self.slaveFailed.get(sid, 0) >= MAX_FAILED:
                         continue
