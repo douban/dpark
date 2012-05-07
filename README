@@ -11,4 +11,16 @@ Word Count Example:
 >>> print wc
 
 This scripts can run locally or on Mesos cluster without
-any modification, just with different command arguments.
+any modification, just with different command arguments:
+
+$ python wc.py
+$ python wc.py -m process
+$ python wc.py -m mesos
+
+See examples/ for more examples.
+
+Some Chinese docs: https://github.com/jackfengji/test_pro/wiki
+
+DPark run on Mesos -r 1292597@trunk or 112ea04 of github mirror
+
+Mailing list: dpark-users@googlegroups.com (http://groups.google.com/group/dpark-users)
