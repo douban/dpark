@@ -21,7 +21,7 @@ from broadcast import Broadcast
 logger = logging.getLogger("scheduler")
 
 MAX_FAILED = 3
-EXECUTOR_MEMORY = 2096 + 1024 # cache
+EXECUTOR_MEMORY = 512 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
