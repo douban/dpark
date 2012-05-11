@@ -1,4 +1,22 @@
 import marshal, new, cPickle
+import itertools
+
+def marshalable(o):
+    if o is None: return True
+    t = type(o)
+    if t in (str, unicode, bool, int, long, float, complex):
+        return True
+    if t in (tuple, list, set):
+        for i in itertools.islice(o, 100):
+            if not marshalable(i):
+                return False
+        return True
+    if t == dict:
+        for k,v in itertools.islice(o.iteritems(), 100):
+            if not marshalable(k) or not marshalable(v):
+                return False
+        return True
+    return False
 
 def dump_object(o):
     if type(o) == type(marshal):
@@ -64,6 +82,19 @@ def reconstruct_closure(values):
     return f(values).func_closure
 
 if __name__ == "__main__":
+    assert marshalable(None)
+    assert marshalable("")
+    assert marshalable(u"")
+    assert marshalable(0)
+    assert marshalable(0L)
+    assert marshalable(0.0)
+    assert marshalable(True)
+    assert marshalable(complex(1,1))
+    assert marshalable((1,1))
+    assert marshalable([1,1])
+    assert marshalable(set([1,1]))
+    assert marshalable({1:None})
+
     some_global = 'some global'
     def glob_func(s):
         return "glob:" + s

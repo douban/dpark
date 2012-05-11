@@ -19,6 +19,7 @@ except ImportError:
         pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
@@ -43,11 +44,11 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accUpdate = Accumulator.values()
-        try:
-            flag, data = 0, marshal.dumps(result)
-        except ValueError:
-            flag, data = 1, cPickle.dumps(result)
 
+        if marshalable(result):
+            flag, data = 0, marshal.dumps(result)
+        else:
+            flag, data = 1, cPickle.dumps(result, -1)
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
             path = os.path.join(workdir, str(task.id)+'.result')

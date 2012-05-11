@@ -5,7 +5,7 @@ import cPickle
 import logging
 import struct
 
-from serialize import load_func, dump_func
+from serialize import marshalable, load_func, dump_func
 from shuffle import LocalFileShuffle
 
 logger = logging.getLogger("dpark")
@@ -102,9 +102,9 @@ class ShuffleMapTask(DAGTask):
             if os.path.exists(path):
                 continue
             tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
-            try:
+            if marshalable(buckets[i]):
                 flag, d = 'm', marshal.dumps(buckets[i])
-            except ValueError:
+            else:
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
             f = open(tpath, 'wb', 1024*4096)
             f.write(flag)

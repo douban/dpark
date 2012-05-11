@@ -17,6 +17,7 @@ except ImportError:
 import zmq
 
 import cache
+from serialize import marshalable
 from env import env
 
 logger = logging.getLogger("broadcast")
@@ -109,9 +110,9 @@ class Broadcast:
         raise NotImplementedError
 
     def blockifyObject(self, obj):
-        try:
+        if marshalable(obj):
             buf = marshal.dumps(obj)
-        except ValueError:
+        else:
             buf = cPickle.dumps(obj, -1)
         N = self.BlockSize
         blockNum = len(buf) / N
@@ -166,9 +167,9 @@ class FileBroadcast(Broadcast):
 
     def sendBroadcast(self):
         f = open(self.path, 'wb', 65536*100)
-        try:
+        if marshalable(self.value):
             marshal.dump(self.value, f)
-        except ValueError:
+        else:
             cPickle.dump(self.value, f, -1)
         f.close()
         logger.debug("dump to %s", self.path)
