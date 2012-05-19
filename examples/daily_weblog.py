@@ -71,6 +71,6 @@ def load_weblog(day):
 
 if __name__ == '__main__':
     today = date.today() 
-    for i in range(1, 3):
+    for i in range(1, 2):
         day = today - timedelta(days=i)
         load_weblog(day)
