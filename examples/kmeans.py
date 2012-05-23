@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 import sys, os, os.path
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import random
 from dpark import DparkContext
 dpark = DparkContext()

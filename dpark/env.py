@@ -37,6 +37,8 @@ class DparkEnv:
                     root = '/home2/dpark'
                 elif os.path.exists('/mfs/tmp'):
                     root = '/mfs/tmp/dpark'
+                else:
+                    root = '/tmp/dpark'
                 self.dfs = True
 
             if not os.path.exists(root):
