@@ -21,7 +21,7 @@ from broadcast import Broadcast
 logger = logging.getLogger("scheduler")
 
 MAX_FAILED = 3
-EXECUTOR_MEMORY = 512 # cache
+EXECUTOR_MEMORY = 256 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
@@ -501,16 +501,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("reviveOffers")
         self.driver.reviveOffers()
 
-    def jobFinished(self, job):
-        logger.debug("job %s finished", job.id)
-        if job.id in self.activeJobs:
-            del self.activeJobs[job.id]
-            self.activeJobsQueue.remove(job) 
-            for id in self.jobTasks[job.id]:
-                del self.taskIdToJobId[id]
-                del self.taskIdToSlaveId[id]
-            del self.jobTasks[job.id]
-
     @safe
     def resourceOffers(self, driver, offers):
         if not self.activeJobs:
@@ -615,38 +605,53 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         logger.debug("status update: %s %s", tid, state)
 
         jid = self.taskIdToJobId.get(tid)
-        if jid in self.activeJobs:
-            if self.isFinished(state):
-                del self.taskIdToJobId[tid]
-                self.jobTasks[jid].remove(tid)
-                slave_id = self.taskIdToSlaveId[tid]
-                self.slaveTasks[slave_id] -= 1
-                del self.taskIdToSlaveId[tid]
-           
-                if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
-                    try:
-                        tid,reason,result,accUpdate = cPickle.loads(status.data)
-                        if result:
-                            flag, data = result
-                            if flag >= 2:
-                                data = open(data).read()
-                                flag -= 2
-                            if flag == 0:
-                                result = marshal.loads(data)
-                            else:
-                                result = cPickle.loads(data)
-                        return self.activeJobs[jid].statusUpdate(tid, state, 
-                            reason, result, accUpdate)
-                    except EOFError, e:
-                        logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
-
-                # killed, lost, load failed
-                tid = int(tid.split(':')[1])
-                self.activeJobs[jid].statusUpdate(tid, state, status.data)
-                self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
-        else:
+        if jid not in self.activeJobs:
             logger.debug("Ignoring update from TID %s " +
                 "because its job is gone", tid)
+            return
+
+        job = self.activeJobs
+        if state == mesos_pb2.TASK_RUNNING:
+            task_id = int(tid.split(':')[1])
+            return job.statusUpdate(task_id, state)
+
+        del self.taskIdToJobId[tid]
+        self.jobTasks[jid].remove(tid)
+        slave_id = self.taskIdToSlaveId[tid]
+        self.slaveTasks[slave_id] -= 1
+        del self.taskIdToSlaveId[tid]
+   
+        if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
+            try:
+                tid,reason,result,accUpdate = cPickle.loads(status.data)
+                if result:
+                    flag, data = result
+                    if flag >= 2:
+                        data = open(data).read()
+                        flag -= 2
+                    if flag == 0:
+                        result = marshal.loads(data)
+                    else:
+                        result = cPickle.loads(data)
+                return job.statusUpdate(tid, state, 
+                    reason, result, accUpdate)
+            except EOFError, e:
+                logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
+
+        # killed, lost, load failed
+        tid = int(tid.split(':')[1])
+        job.statusUpdate(tid, state, status.data)
+        self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
+    
+    def jobFinished(self, job):
+        logger.debug("job %s finished", job.id)
+        if job.id in self.activeJobs:
+            del self.activeJobs[job.id]
+            self.activeJobsQueue.remove(job) 
+            for id in self.jobTasks[job.id]:
+                del self.taskIdToJobId[id]
+                del self.taskIdToSlaveId[id]
+            del self.jobTasks[job.id]
 
     @safe
     def error(self, driver, code, message):
