@@ -97,6 +97,9 @@ class DAGScheduler(Scheduler):
         self.cacheLocs = {}
         self._shutdown = False
 
+    def check(self):
+        pass
+
     def shutdown(self):
         self._shutdown = True
 
@@ -244,6 +247,7 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except Queue.Empty:
+                self.check()
                 if self._shutdown:
                     sys.exit(1)
 
@@ -254,7 +258,7 @@ class DAGScheduler(Scheduler):
                         submitStage(stage)
                     failed.clear()
                 else:
-                    time.sleep(0.01)
+                    time.sleep(0.1)
                 continue
                
             task = evt.task
@@ -404,6 +408,9 @@ def safe(f):
         return r
     return _
 
+def int2ip(n):
+    return "%d.%d.%d.%d" % (n & 0xff, (n>>8)&0xff, (n>>16)&0xff, n>>24)
+
 class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def __init__(self, master, options):
@@ -464,7 +471,9 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     @safe
     def registered(self, driver, frameworkId, masterInfo):
         self.isRegistered = True
-        logger.debug("registered as %s", frameworkId.value)
+        logger.debug("connect to master %s:%s(%s), registered as %s", 
+            int2ip(masterInfo.ip), masterInfo.port, masterInfo.id, 
+            frameworkId.value)
 
     @safe
     def reregistered(self, driver, masterInfo):
@@ -612,10 +621,6 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         mem.scalar.value = self.mem
         return task
 
-    def isFinished(self, state):
-        # finished, failed, killed, lost
-        return state >= mesos_pb2.TASK_FINISHED
-
     @safe
     def statusUpdate(self, driver, status):
         tid = status.task_id.value
@@ -628,7 +633,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 "because its job is gone", tid)
             return
 
-        job = self.activeJobs
+        job = self.activeJobs[jid]
         if state == mesos_pb2.TASK_RUNNING:
             task_id = int(tid.split(':')[1])
             return job.statusUpdate(task_id, state)
@@ -672,6 +677,12 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
             del self.jobTasks[job.id]
 
     @safe
+    def check(self):
+        for job in self.activeJobs.values():
+            if job.check_task_timeout():
+                self.requestMoreResources()
+
+    @safe
     def error(self, driver, code, message):
         logger.error("Mesos error: %s (code: %s)", message, code)
         self.requestMoreResources()
@@ -698,6 +709,17 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     def frameworkMessage(self, driver, slave, executor, data):
         logger.warning("[slave %s] %s", slave.value, data)
+
+    def disconnected(self, driver):
+        logger.warning("mesos master disconnected")
+
+    def reregistered(self, driver, masterInfo):
+        logger.warning("re-connect to mesos master %s:%s(%s)", 
+            int2ip(masterInfo.ip), masterInfo.port, masterInfo.id)
+
+    def executorLost(self, driver, executorId, slaveId, status):
+        logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
+        # TODO
 
     def slaveLost(self, driver, slave):
         logger.warning("slave %s lost", slave.value)

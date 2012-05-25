@@ -33,8 +33,10 @@ class Job:
         return cls.nextJobId
 
 LOCALITY_WAIT = 5
+WAIT_FOR_RUNNING = 5
 MAX_TASK_FAILURES = 4
 CPUS_PER_TASK = 1
+
 
 # A Job that runs a set of tasks with no interdependencies.
 class SimpleJob(Job):
@@ -108,34 +110,12 @@ class SimpleJob(Job):
 
     # Respond to an offer of a single slave from the scheduler by finding a task
     def slaveOffer(self, host, availableCpus): 
-        if self.tasksLaunched >= self.numTasks:
-            if (self.tasksFinished < self.numTasks 
-                    and self.tasksFinished > self.numTasks *.75):
-                # re-submit timeout task
-                avg = self.taskEverageTime
-                now = time.time()
-                task = sorted((task.start, task) 
-                    for i,task in enumerate(self.tasks) 
-                    if not self.finished[i])[0][1]
-                used = time.time() - task.start
-                if used > avg * 2 and used > 10:
-                    if task.tried <= MAX_TASK_FAILURES:
-                        logger.warning("re-submit task %s for timeout %s",
-                            task.id, used)
-                        task.start = time.time()
-                        task.tried += 1
-                        return task
-                    else:
-                        logger.error("tast %s timeout, aborting job %s",
-                            task, self.id)
-                        self.abort("task %s timeout" % task)
-            return
-
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
         i, preferred = self.findTask(host, localOnly)
         if i is not None:
             task = self.tasks[i]
+            task.status = TASK_STARTING
             task.start = now
             task.tried = 0
             prefStr = preferred and "preferred" or "non-preferred"
@@ -151,6 +131,18 @@ class SimpleJob(Job):
 
     def statusUpdate(self, tid, status, reason=None, result=None, update=None):
         logger.debug("job status update %s %s %s", tid, status, reason)
+        if tid not in self.tidToIndex:
+            logger.error("invalid tid: %s", tid)
+            return
+        i = self.tidToIndex[tid]
+        if self.finished[i]:
+            logger.info("Task %d is already finished, ignore it", i, tid)
+            return 
+
+        task = self.tasks[i]
+        task.status = status
+        task.start = time.time()
+        
         if status == TASK_FINISHED:
             self.taskFinished(tid, result, update)
         elif status in (TASK_LOST, 
@@ -159,60 +151,84 @@ class SimpleJob(Job):
 
     def taskFinished(self, tid, result, update):
         i = self.tidToIndex[tid]
-        if not self.finished[i]:
-            self.finished[i] = True
-            self.tasksFinished += 1
-            task = self.tasks[i]
-            task.used = time.time() - task.start
-            self.total_used += task.used
-            logger.info("Task %s finished in %.2fs (%d/%d)",
-                tid, task.used, self.tasksFinished, self.numTasks)
-            from schedule import Success
-            self.sched.taskEnded(task, Success(), result, update)
-            if self.tasksFinished == self.numTasks:
-                ts = [t.used for t in self.tasks]
-                tried = [t.tried for t in self.tasks]
-                logger.info("Job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
-                    self.id, time.time()-self.start, 
-                    min(ts), sum(ts)/len(ts), max(ts), max(tried))
-                self.sched.jobFinished(self)
-        else:
-            logger.info("Ignoring task-finished event for TID %d "
-                + "because task %d is already finished", tid, i)
+        self.finished[i] = True
+        self.tasksFinished += 1
+        task = self.tasks[i]
+        task.used = time.time() - task.start
+        self.total_used += task.used
+        logger.info("Task %s finished in %.2fs (%d/%d)",
+            tid, task.used, self.tasksFinished, self.numTasks)
+        from schedule import Success
+        self.sched.taskEnded(task, Success(), result, update)
+        if self.tasksFinished == self.numTasks:
+            ts = [t.used for t in self.tasks]
+            tried = [t.tried for t in self.tasks]
+            logger.info("Job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
+                self.id, time.time()-self.start, 
+                min(ts), sum(ts)/len(ts), max(ts), max(tried))
+            self.sched.jobFinished(self)
 
     def taskLost(self, tid, status, reason):
         index = self.tidToIndex[tid]
-        if not self.finished[index]:
-            logger.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
-            self.launched[index] = False
-            self.tasksLaunched -= 1
+        logger.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
+        self.launched[index] = False
+        self.tasksLaunched -= 1
 
-            from schedule import FetchFailed
-            if isinstance(reason, FetchFailed):
-                logger.warning("Loss was due to fetch failure from %s",
-                    reason.serverUri)
-                self.sched.taskEnded(self.tasks[index], reason, None, None)
-                self.finished[index] = True
-                self.tasksFinished += 1
-                if self.tasksFinished == self.numTasks:
-                    self.sched.jobFinished(self)
-                return
-            logger.warning("re-enqueue the task as pending for a max number of retries")
-            if status == TASK_FAILED:
-                logger.warning("task %s failed with: %s", 
-                    self.tasks[index], reason and reason.message)
-            self.addPendingTask(index)
-            self.sched.requestMoreResources()
-            if status in (TASK_FAILED, TASK_LOST):
-                self.numFailures[index] += 1
-                if self.numFailures[index] > MAX_TASK_FAILURES:
-                    logger.error("Task %d failed more than %d times; aborting job", index, MAX_TASK_FAILURES)
-                    self.abort("Task %d failed more than %d times" 
-                        % (index, MAX_TASK_FAILURES))
+        from schedule import FetchFailed
+        if isinstance(reason, FetchFailed):
+            logger.warning("Loss was due to fetch failure from %s",
+                reason.serverUri)
+            self.sched.taskEnded(self.tasks[index], reason, None, None)
+            self.finished[index] = True
+            self.tasksFinished += 1
+            if self.tasksFinished == self.numTasks:
+                self.sched.jobFinished(self)
+            return
+        logger.warning("re-enqueue the task as pending for a max number of retries")
+        if status == TASK_FAILED:
+            logger.warning("task %s failed with: %s", 
+                self.tasks[index], reason and reason.message)
+        self.addPendingTask(index)
+        self.sched.requestMoreResources()
+        if status in (TASK_FAILED, TASK_LOST):
+            self.numFailures[index] += 1
+            if self.numFailures[index] > MAX_TASK_FAILURES:
+                logger.error("Task %d failed more than %d times; aborting job", 
+                    index, MAX_TASK_FAILURES)
+                self.abort("Task %d failed more than %d times" 
+                    % (index, MAX_TASK_FAILURES))
 
-        else:
-            logger.warning("Ignoring task-lost event for TID %d "
-                +"because task %d is already finished")
+    def check_task_timeout(self):
+        now = time.time()
+        for i in xrange(self.numTasks):
+            if (self.launched[i] and self.tasks[i].status == TASK_STARTING
+                    and self.tasks[i].start + WAIT_FOR_RUNNING < now):
+                logging.info("task %d timeout, re-assign it", self.tasks[i].id)
+                self.launched[i] = False
+                self.tasksLaunched -= 1
+
+        if self.tasksLaunched >= self.numTasks:
+            if (self.tasksFinished < self.numTasks 
+                    and self.tasksFinished > self.numTasks *.75):
+                # re-submit timeout task
+                avg = self.taskEverageTime
+                _t, idx, task = sorted((task.start, i, task) 
+                    for i,task in enumerate(self.tasks) 
+                    if not self.finished[i])[0]
+                used = time.time() - task.start
+                if used > avg * 2 and used > 10:
+                    if task.tried <= MAX_TASK_FAILURES:
+                        logger.warning("re-submit task %s for timeout %s",
+                            task.id, used)
+                        task.tried += 1
+                        self.launched[idx] = False
+                        self.tasksLaunched -= 1 
+                    else:
+                        logger.error("tast %s timeout, aborting job %s",
+                            task, self.id)
+                        self.abort("task %s timeout" % task)
+
+        return self.tasksLaunched < self.numTasks
 
     def abort(self, message):
         logger.error("abort the job: %s", message)
