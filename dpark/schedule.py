@@ -6,6 +6,7 @@ import cPickle
 import threading, Queue
 import time
 import random
+import getpass
 
 import zmq
 import mesos
@@ -429,11 +430,15 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
         self.err_logger = self.start_logger(sys.stderr)
+        self.executor = self.getExecutorInfo()
 
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
-        self.driver = mesos.MesosSchedulerDriver(self, name,
-            self.getExecutorInfo(), self.master)
+        framework = mesos_pb2.FrameworkInfo()
+        framework.user = getpass.getuser()
+        framework.name = name
+        self.driver = mesos.MesosSchedulerDriver(self, framework,
+                                                 self.master)
         self.driver.start()
         logger.debug("Mesos Scheudler driver started")
 
@@ -457,20 +462,32 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         return addr
 
     @safe
-    def registered(self, driver, fid):
+    def registered(self, driver, frameworkId, masterInfo):
         self.isRegistered = True
-        logger.debug("registered as %s", fid)
+        logger.debug("registered as %s", frameworkId.value)
+
+    @safe
+    def reregistered(self, driver, masterInfo):
+        logger.debug("framework is reregistered")
+
+    @safe
+    def disconnected(self, driver):
+        logger.debug("framework is disconnected")
+
+    @safe
+    def executorlost(self, driver, executorId, slaveId, status):
+        logger.warning("executor %s is lost at %s", executorId.value, slaveId.value)
 
     @safe
     def getExecutorInfo(self):
         info = mesos_pb2.ExecutorInfo()
 
         if self.use_self_as_exec:
-            info.uri = os.path.abspath(sys.argv[0])
+            info.command.value = os.path.abspath(sys.argv[0])
             info.executor_id.value = sys.argv[0]
         else:
             dir = os.path.dirname(__file__)
-            info.uri = os.path.abspath(os.path.join(dir, 'executor.py'))
+            info.command.value = os.path.abspath(os.path.join(dir, 'executor.py'))
             info.executor_id.value = "default"
         
         mem = info.resources.add()
@@ -574,12 +591,13 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 return r.text.value
 
     def createTask(self, o, job, t):
-        task = mesos_pb2.TaskDescription()
+        task = mesos_pb2.TaskInfo()
         tid = "%s:%s:%s" % (job.id, t.id, t.tried)
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
         task.data = cPickle.dumps((t, 1), -1)
+        task.executor.MergeFrom(self.executor)
         if len(task.data) > 10*1024:
             logger.warning("task too large: %s %d", 
                 t, len(task.data))
