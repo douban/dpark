@@ -25,15 +25,14 @@ class DparkContext:
         options = parse_options()
         master = master or options.master
 
-        if master.startswith('local'):
+        if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
-        elif master.startswith('process'):
+        elif master == 'process':
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.isLocal = True
-        elif (master.startswith('mesos')
-              or master.startswith('zoo')):
-            if '://' not in master:
+        else:
+            if master == 'mesos':
                 master = os.environ.get('MESOS_MASTER')
                 if not master:
                     master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
@@ -45,12 +44,13 @@ class DparkContext:
                     master = master[master.rfind('//')+2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
-
+            
+            if ':' not in master:
+                master += ':5050'
+            
             self.master = master
             self.scheduler = MesosScheduler(master, options) 
             self.isLocal = False
-        else:
-            raise Exception("invalid master option: %s" % self.master)
 
         if options.parallel:
             self.defaultParallelism = options.parallel
