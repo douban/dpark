@@ -2,6 +2,7 @@ import os, sys, time
 import multiprocessing
 import pickle
 import unittest
+import socket
 
 import logging
 from dpark.executor import *
@@ -31,18 +32,23 @@ class TestExecute(unittest.TestCase):
     def test_executor(self):
         executor = MyExecutor()
         driver = MockExecutorDriver(executor)
-       
-        args = mesos_pb2.ExecutorArgs()
-        args.framework_id.value = "test"
-        args.executor_id.value = "test-id"
-        args.slave_id.value = "test-slave"
-        args.hostname = socket.gethostname()
-        args.data = marshal.dumps(("./", os.getcwd(), sys.path, 8, "", "", 1, 
+      
+        executorInfo = mesos_pb2.ExecutorInfo()
+        executorInfo.executor_id.value = "test-id"
+        executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, 8, "", "", 1, 
             {'DPARK_HAS_DFS':'False', 'WORKDIR':'/tmp/xxxxx'}))
-        executor.init(driver, args)
+
+        frameworkInfo = mesos_pb2.FrameworkInfo()
+        frameworkInfo.id.value = "test"
+
+        slaveInfo = mesos_pb2.SlaveInfo()
+        slaveInfo.id.value = "test-slave"
+        slaveInfo.hostname = socket.gethostname()
+
+        executor.registered(driver, executorInfo, frameworkInfo, slaveInfo)
         assert executor.pool
 
-        task = mesos_pb2.TaskDescription()
+        task = mesos_pb2.TaskInfo()
         task.name = 'test-task'
         task.task_id.value = '1'
         task.slave_id.value = 'test-slave'

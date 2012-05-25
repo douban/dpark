@@ -23,24 +23,34 @@ class DparkContext:
             sys.exit(0)
         
         options = parse_options()
-        self.master = master or options.master
+        master = master or options.master
 
-        if self.master.startswith('local'):
+        if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
-        elif self.master.startswith('process'):
+        elif master == 'process':
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.isLocal = True
-        elif (self.master.startswith('mesos')
-              or self.master.startswith('zoo')):
-            if '://' not in self.master:
-                self.master = os.environ.get('MESOS_MASTER')
-                if not self.master:
-                    self.master = 'zoo://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
-            self.scheduler = MesosScheduler(self.master, options) 
-            self.isLocal = False
         else:
-            raise Exception("invalid master option: %s" % self.master)
+            if master == 'mesos':
+                master = os.environ.get('MESOS_MASTER')
+                if not master:
+                    master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
+
+            if master.startswith('mesos://'):
+                if '@' in master:
+                    master = master[master.rfind('@')+1:]
+                else:
+                    master = master[master.rfind('//')+2:]
+            elif master.startswith('zoo://'):
+                master = 'zk' + master[3:]
+            
+            if ':' not in master:
+                master += ':5050'
+            
+            self.master = master
+            self.scheduler = MesosScheduler(master, options) 
+            self.isLocal = False
 
         if options.parallel:
             self.defaultParallelism = options.parallel

@@ -5,7 +5,6 @@ import os.path
 import threading
 import marshal
 import cPickle
-import socket
 import multiprocessing
 import threading
 import SocketServer
@@ -121,10 +120,10 @@ def start_forword(addr, prefix=''):
     return t, os.fdopen(wfd, 'w', 0) 
 
 class MyExecutor(mesos.Executor):
-    def init(self, driver, args):
+    def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
-            Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(args.data)
+            Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             try:
                 os.chdir(cwd)
             except OSError:
@@ -142,11 +141,17 @@ class MyExecutor(mesos.Executor):
                 self.workdir = args['WORKDIR']
                 port = startWebServer(args['WORKDIR'])
             self.pool = multiprocessing.Pool(parallel, init_env, [args, port])
-            logger.debug("executor started at %s", socket.gethostname())
+            logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
             driver.sendFrameworkMessage("init executor failed:\n " +  msg)
+
+    def reregitered(self, driver, slaveInfo):
+        logger.info("executor is reregistered at %s", slaveInfo.hostname)
+
+    def disconnected():
+        logger.info("executor is disconnected at %s", slaveInfo.hostname)
 
     def launchTask(self, driver, task):
         try:

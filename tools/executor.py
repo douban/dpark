@@ -93,7 +93,8 @@ def launch_task(self, driver, task):
 
 
 class MyExecutor(mesos.Executor):
-    def init(self, driver, args):
+    def registered(self, driver, executorInfo,
+                   frameworkInfo, slaveInfo):
         self.ps = {}
 
     def launchTask(self, driver, task):
