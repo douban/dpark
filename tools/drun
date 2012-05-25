@@ -1,2 +1,3 @@
 #!/bin/bash
+
 exec python "$(dirname "$(readlink -f "$0")")/scheduler.py" "$@"
