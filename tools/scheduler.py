@@ -41,7 +41,10 @@ def parse_mem(m):
 
 class SubmitScheduler(mesos.Scheduler):
     def __init__(self, options, command):
-        self.framework_name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
+        self.framework = mesos_pb2.FrameworkInfo()
+        self.framework.user = ""
+        self.framework.name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
+        self.executor = self.getExecutorInfo()
         self.cpus = options.cpus
         self.mem = parse_mem(options.mem)
         self.options = options
@@ -59,7 +62,7 @@ class SubmitScheduler(mesos.Scheduler):
         executorPath = os.path.join(frameworkDir, "executor.py")
         execInfo = mesos_pb2.ExecutorInfo()
         execInfo.executor_id.value = "default"
-        execInfo.uri = executorPath
+        execInfo.command.value = executorPath
         return execInfo
 
     def create_port(self, output):
@@ -77,7 +80,7 @@ class SubmitScheduler(mesos.Scheduler):
         t.start()
         return "tcp://%s:%d" % (host, port)
 
-    def registered(self, driver, fid):
+    def registered(self, driver, fid, masterInfo):
         logging.debug("Registered with Mesos, FID = %s" % fid.value)
         self.fid = fid.value
         self.std_port = self.create_port(sys.stdout)
@@ -131,10 +134,11 @@ class SubmitScheduler(mesos.Scheduler):
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
     def create_task(self, offer, t):
-        task = mesos_pb2.TaskDescription()
+        task = mesos_pb2.TaskInfo()
         task.task_id.value = str(t.id)
         task.slave_id.value = offer.slave_id.value
         task.name = "task %s/%d" % (t.id, self.options.tasks)
+        task.executor.MergeFrom(self.executor)
         env = dict(os.environ)
         env['DRUN_RANK'] = str(t.id)
         env['DRUN_SIZE'] = str(self.options.tasks)
@@ -356,7 +360,7 @@ if __name__ == "__main__":
     parser = OptionParser(usage="Usage: %prog [options] <command>")
     parser.allow_interspersed_args=False
     parser.add_option("-s", "--master", type="string",
-                default="zoo://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master",
+                default="zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master",
                         help="url of master (default: zookeeper")
     parser.add_option("-i", "--mpi", action="store_true",
                         help="run MPI tasks")
@@ -393,13 +397,24 @@ if __name__ == "__main__":
                         help="show more useful log", )
 
     (options, command) = parser.parse_args()
-    
+
+    if options.master.startswith('mesos://'):
+        if '@' in options.master:
+            options.master = options.master[options.master.rfind('@')+1:]
+        else:
+            options.master = options.master[options.master.rfind('//')+2:]
+    elif options.master.startswith('zoo://'):
+        options.master = 'zk' + options.master[3:]
+
+    if ':' not in options.master:
+        options.master += ':5050'
+
 #    if options.kill:
 #        sched = MPIScheduler(options, command)
 #        fid = mesos_pb2.FrameworkID()
 #        fid.value =  options.kill
-#        driver = mesos.MesosSchedulerDriver(sched, sched.framework_name, 
-#            sched.getExecutorInfo(), options.master, fid)
+#        driver = mesos.MesosSchedulerDriver(sched, sched.framework, 
+#            options.master, fid)
 #        driver.start()
 #        driver.stop(False)
 #        os._exit(0)
@@ -422,8 +437,8 @@ if __name__ == "__main__":
         sched = SubmitScheduler(options, command)
 
     logging.debug("Connecting to mesos master %s", options.master)
-    driver = mesos.MesosSchedulerDriver(sched, sched.framework_name,
-        sched.getExecutorInfo(), options.master)
+    driver = mesos.MesosSchedulerDriver(sched, sched.framework,
+        options.master)
 
     driver.start()
     def handler(signm, frame):
