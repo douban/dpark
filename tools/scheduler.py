@@ -12,6 +12,7 @@ from operator import itemgetter
 import logging
 import signal
 import zmq
+import getpass
 
 import mesos
 import mesos_pb2
@@ -42,7 +43,7 @@ def parse_mem(m):
 class SubmitScheduler(mesos.Scheduler):
     def __init__(self, options, command):
         self.framework = mesos_pb2.FrameworkInfo()
-        self.framework.user = ""
+        self.framework.user = getpass.getuser()
         self.framework.name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
         self.executor = self.getExecutorInfo()
         self.cpus = options.cpus

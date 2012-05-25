@@ -6,6 +6,7 @@ import cPickle
 import threading, Queue
 import time
 import random
+import getpass
 
 import zmq
 import mesos
@@ -434,7 +435,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
         framework = mesos_pb2.FrameworkInfo()
-        framework.user = ""
+        framework.user = getpass.getuser()
         framework.name = name
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
