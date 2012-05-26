@@ -142,15 +142,15 @@ class SimpleJob(Job):
             logger.info("Task %d is already finished, ignore it", i, tid)
             return 
 
-        task = self.tasks[i]
-        task.status = status
-        task.start = time.time()
-        
         if status == TASK_FINISHED:
             self.taskFinished(tid, result, update)
         elif status in (TASK_LOST, 
                     TASK_FAILED, TASK_KILLED):
             self.taskLost(tid, status, reason)
+        
+        task = self.tasks[i]
+        task.status = status
+        task.start = time.time()
 
     def taskFinished(self, tid, result, update):
         i = self.tidToIndex[tid]
