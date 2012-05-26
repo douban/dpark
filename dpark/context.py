@@ -35,7 +35,7 @@ class DparkContext:
             if master == 'mesos':
                 master = os.environ.get('MESOS_MASTER')
                 if not master:
-                    master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master'
+                    master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2'
 
             if master.startswith('mesos://'):
                 if '@' in master:
@@ -44,13 +44,17 @@ class DparkContext:
                     master = master[master.rfind('//')+2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
-            
+        
+            #FIXME
+            if master.endswith('mesos_master'):
+                master += '2'
             if ':' not in master:
                 master += ':5050'
             
-            self.master = master
             self.scheduler = MesosScheduler(master, options) 
             self.isLocal = False
+
+        self.master = master
 
         if options.parallel:
             self.defaultParallelism = options.parallel
