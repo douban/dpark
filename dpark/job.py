@@ -46,6 +46,8 @@ class SimpleJob(Job):
         self.sched = sched
         self.tasks = tasks
 
+        for t in tasks:
+            t.tried = 0
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
@@ -120,7 +122,6 @@ class SimpleJob(Job):
             task = self.tasks[i]
             task.status = TASK_STARTING
             task.start = now
-            task.tried = 0
             prefStr = preferred and "preferred" or "non-preferred"
             logger.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
                 self.id, i, task, host, prefStr)
@@ -211,6 +212,9 @@ class SimpleJob(Job):
                 self.tasksLaunched -= 1
                 return True
 
+        if self.tasksLaunched < self.numTasks:
+            return False
+
         if self.last_check + 5 < now and self.tasksLaunched > self.tasksFinished:
             # re-submit timeout task
             avg = self.taskEverageTime
@@ -225,13 +229,11 @@ class SimpleJob(Job):
                     task.tried += 1
                     self.launched[idx] = False
                     self.tasksLaunched -= 1 
-                    return True
                 else:
                     logger.error("tast %s timeout, aborting job %s",
                         task, self.id)
                     self.abort("task %s timeout" % task)
             self.last_check = now
-        return False
         return self.tasksLaunched < self.numTasks
 
     def abort(self, message):
