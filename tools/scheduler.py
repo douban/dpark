@@ -299,10 +299,11 @@ class MPIScheduler(SubmitScheduler):
         self.started = True
 
     def create_task(self, offer, t, command, k):
-        task = mesos_pb2.TaskDescription()
+        task = mesos_pb2.TaskInfo()
         task.task_id.value = str(t.id)
         task.slave_id.value = offer.slave_id.value
         task.name = "task %s" % t.id
+        task.executor.MergeFrom(self.executor)
         env = dict(os.environ)
         task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port])
 
@@ -361,7 +362,7 @@ if __name__ == "__main__":
     parser = OptionParser(usage="Usage: %prog [options] <command>")
     parser.allow_interspersed_args=False
     parser.add_option("-s", "--master", type="string",
-                default="zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master",
+                default="zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2",
                         help="url of master (default: zookeeper")
     parser.add_option("-i", "--mpi", action="store_true",
                         help="run MPI tasks")
