@@ -64,12 +64,15 @@ class SimpleJob(Job):
 
         self.failed = False
         self.causeOfFailure = ""
+        self.last_check = 0
 
         for i in range(len(tasks)):
             self.addPendingTask(i)
 
     @property
     def taskEverageTime(self):
+        if not self.tasksFinished:
+            return 10
         return self.total_used / self.tasksFinished
 
     def addPendingTask(self, i):
@@ -206,28 +209,29 @@ class SimpleJob(Job):
                 logging.info("task %d timeout, re-assign it", self.tasks[i].id)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
+                return True
 
-        if self.tasksLaunched >= self.numTasks:
-            if (self.tasksFinished < self.numTasks 
-                    and self.tasksFinished > self.numTasks *.75):
-                # re-submit timeout task
-                avg = self.taskEverageTime
-                _t, idx, task = sorted((task.start, i, task) 
-                    for i,task in enumerate(self.tasks) 
-                    if not self.finished[i])[0]
-                used = time.time() - task.start
-                if used > avg * 2 and used > 10:
-                    if task.tried <= MAX_TASK_FAILURES:
-                        logger.warning("re-submit task %s for timeout %s",
-                            task.id, used)
-                        task.tried += 1
-                        self.launched[idx] = False
-                        self.tasksLaunched -= 1 
-                    else:
-                        logger.error("tast %s timeout, aborting job %s",
-                            task, self.id)
-                        self.abort("task %s timeout" % task)
-
+        if self.last_check + 5 < now and self.tasksLaunched > self.tasksFinished:
+            # re-submit timeout task
+            avg = self.taskEverageTime
+            _t, idx, task = sorted((task.start, i, task) 
+                for i,task in enumerate(self.tasks) 
+                if self.launched[i] and not self.finished[i])[0]
+            used = time.time() - task.start
+            if used > avg * 2 and used > 5:
+                if task.tried <= MAX_TASK_FAILURES:
+                    logger.warning("re-submit task %s for timeout %s",
+                        task.id, used)
+                    task.tried += 1
+                    self.launched[idx] = False
+                    self.tasksLaunched -= 1 
+                    return True
+                else:
+                    logger.error("tast %s timeout, aborting job %s",
+                        task, self.id)
+                    self.abort("task %s timeout" % task)
+            self.last_check = now
+        return False
         return self.tasksLaunched < self.numTasks
 
     def abort(self, message):
