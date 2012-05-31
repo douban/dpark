@@ -75,7 +75,7 @@ class SimpleJob(Job):
     def taskEverageTime(self):
         if not self.tasksFinished:
             return 10
-        return self.total_used / self.tasksFinished
+        return max(self.total_used / self.tasksFinished, 5)
 
     def addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
@@ -222,7 +222,7 @@ class SimpleJob(Job):
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])[0]
             used = time.time() - task.start
-            if used > avg * 2 and used > 30:
+            if used > avg * (task.tried + 2) and used > 30:
                 if task.tried <= MAX_TASK_FAILURES:
                     logger.warning("re-submit task %s for timeout %s",
                         task.id, used)
