@@ -140,7 +140,7 @@ class SimpleJob(Job):
             return
         i = self.tidToIndex[tid]
         if self.finished[i]:
-            logger.info("Task %d is already finished, ignore it", i, tid)
+            logger.info("Task %d is already finished, ignore it", tid)
             return 
 
         if status == TASK_FINISHED:
@@ -222,7 +222,7 @@ class SimpleJob(Job):
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])[0]
             used = time.time() - task.start
-            if used > avg * 2 and used > 5:
+            if used > avg * 2 and used > 30:
                 if task.tried <= MAX_TASK_FAILURES:
                     logger.warning("re-submit task %s for timeout %s",
                         task.id, used)
