@@ -646,7 +646,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
    
         if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
             try:
-                tid,reason,result,accUpdate = cPickle.loads(status.data)
+                task_id,reason,result,accUpdate = cPickle.loads(status.data)
                 if result:
                     flag, data = result
                     if flag >= 2:
@@ -656,14 +656,14 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                         result = marshal.loads(data)
                     else:
                         result = cPickle.loads(data)
-                return job.statusUpdate(tid, state, 
+                return job.statusUpdate(task_id, state, 
                     reason, result, accUpdate)
             except EOFError, e:
                 logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
 
         # killed, lost, load failed
-        tid = int(tid.split(':')[1])
-        job.statusUpdate(tid, state, status.data)
+        task_id = int(tid.split(':')[1])
+        job.statusUpdate(task_id, state, status.data)
         self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
     
     def jobFinished(self, job):
