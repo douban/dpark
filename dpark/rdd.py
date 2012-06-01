@@ -9,12 +9,15 @@ import operator
 import math
 import random
 import bz2
+import logging
 from copy import copy
 
 from serialize import load_func, dump_func
 from dependency import *
 from env import env
 import moosefs
+
+logger = logging.getLogger("rdd")
 
 def ilen(x):
     try:
@@ -40,6 +43,7 @@ class RDD:
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = RDD.newId()
+        self.err = ctx.options.err
         self._splits = []
         self.dependencies = []
         self.aggregator = None
@@ -155,10 +159,34 @@ class RDD:
 
     def reduce(self, f):
         def reducePartition(it):
-            try:
-                return [reduce(f, it)]
-            except TypeError:
-                return []
+            if self.err < 1e-8:
+                try:
+                    return [reduce(f, it)]
+                except TypeError:
+                    return []
+            
+            s = None
+            total, err = 0, 0
+            for v in it:
+                try:
+                    total += 1
+                    if s is None:
+                        s = v
+                    else:
+                        s = f(s, v)
+                except Exception, e:
+                    logger.warning("skip bad record %s: %s", v, e)
+                    err += 1
+                    if total > 100 and err > total * self.err * 10:
+                        raise Exception("")
+                    if total > 100 and err > total * self.cerr * 10:
+                        raise Exception("too many error occured: %s" % (float(err)/total))
+
+            if err > total * self.err:
+                raise Exception("too many error occured: %s" % (float(err)/total))
+            
+            return [s] if s is not None else []
+
         options = self.ctx.runJob(self, reducePartition)
         s = sum(options, [])
         if s:
@@ -321,7 +349,7 @@ class RDD:
             return self.ctx.runJob(self, process, [index], False)[0]
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
-            
+
 
 class MappedRDD(RDD):
     def __init__(self, prev, func=lambda x:x):
@@ -341,7 +369,24 @@ class MappedRDD(RDD):
         return self.prev.splits
 
     def compute(self, split):
-        return itertools.imap(self.func, self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.imap(self.func, self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                yield self.func(v)
+            except Exception, e:
+                logger.warning("ignored record %s: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.cerr * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
     @cached
     def __getstate__(self):
@@ -359,12 +404,49 @@ class MappedRDD(RDD):
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
-        return itertools.chain.from_iterable(itertools.imap(self.func,
-            self.prev.iterator(split)))
+        if self.err < 1e-8:
+            return itertools.chain.from_iterable(itertools.imap(self.func,
+                self.prev.iterator(split)))
+        return self._compute_with_error(split)
+    
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                for k in self.func(v):
+                    yield k
+            except Exception, e:
+                logger.warning("ignored record %s: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.cerr * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
+
 
 class FilteredRDD(MappedRDD):
     def compute(self, split):
-        return itertools.ifilter(self.func, self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.ifilter(self.func, self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                if self.func(v):
+                    yield v
+            except Exception, e:
+                logger.warning("ignored record %s: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.cerr * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
            
 class GlommedRDD(RDD):
     def __init__(self, prev):
@@ -432,14 +514,43 @@ class MappedValuesRDD(MappedRDD):
 
     def compute(self, split):
         func = self.func
-        return itertools.imap(lambda (k,v):(k,func(v)),
-            self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.imap(lambda (k,v):(k,func(v)),
+                self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        func = self.func
+        total, err = 0, 0
+        for k,v in self.prev.iterator(split):
+            try:
+                total += 1
+                yield (k,func(v))
+            except Exception, e:
+                logger.warning("ignored record %s: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.cerr * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
 class FlatMappedValuesRDD(MappedValuesRDD):
     def compute(self, split):
+        total, err = 0, 0
         for k,v in self.prev.iterator(split):
-            for vv in self.func(v):
-                yield k,vv
+            try:
+                total += 1
+                for vv in self.func(v):
+                    yield k,vv
+            except Exception, e:
+                logger.warning("ignored record %s: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.cerr * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
 class ShuffledRDDSplit(Split):
     def __hash__(self):
