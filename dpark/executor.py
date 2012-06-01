@@ -32,7 +32,7 @@ logger = logging.getLogger("executor")
 TASK_RESULT_LIMIT = 1024 * 256
 
 Script = ''
-Webport = 0
+Webport = None
 
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()

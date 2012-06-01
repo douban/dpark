@@ -81,7 +81,6 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                             raise ValueError("invalid flag")
                         break
                     except IOError, e:
-                        if not os.path.exists(uri): raise
                         logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
                         tries -= 1
                         if not tries:

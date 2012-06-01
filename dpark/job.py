@@ -33,7 +33,7 @@ class Job:
         return cls.nextJobId
 
 LOCALITY_WAIT = 5
-WAIT_FOR_RUNNING = 5
+WAIT_FOR_RUNNING = 10
 MAX_TASK_FAILURES = 4
 CPUS_PER_TASK = 1
 
