@@ -48,6 +48,8 @@ class SimpleJob(Job):
 
         for t in tasks:
             t.tried = 0
+            t.used = 0
+
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
@@ -158,7 +160,7 @@ class SimpleJob(Job):
         self.finished[i] = True
         self.tasksFinished += 1
         task = self.tasks[i]
-        task.used = time.time() - task.start
+        task.used += time.time() - task.start
         self.total_used += task.used
         logger.info("Task %s finished in %.2fs (%d/%d)",
             tid, task.used, self.tasksFinished, self.numTasks)
@@ -207,7 +209,8 @@ class SimpleJob(Job):
         for i in xrange(self.numTasks):
             if (self.launched[i] and self.tasks[i].status == TASK_STARTING
                     and self.tasks[i].start + WAIT_FOR_RUNNING < now):
-                logging.info("task %d timeout, re-assign it", self.tasks[i].id)
+                logging.warning("task %d timeout, re-assign it", self.tasks[i].id)
+                self.tasks[i].tried += 1
                 self.launched[i] = False
                 self.tasksLaunched -= 1
                 return True
@@ -215,18 +218,21 @@ class SimpleJob(Job):
         if self.tasksLaunched < self.numTasks:
             return False
 
-        if self.last_check + 5 < now and self.tasksLaunched > self.tasksFinished:
+        if self.last_check + 5 < now and self.tasksLaunched > self.tasksFinished \
+                and self.tasksFinished > self.numTasks / 3:
             # re-submit timeout task
             avg = self.taskEverageTime
             _t, idx, task = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])[0]
-            used = time.time() - task.start
+            used = now - task.start
             if used > avg * (task.tried + 2) and used > 30:
                 if task.tried <= MAX_TASK_FAILURES:
                     logger.warning("re-submit task %s for timeout %s",
                         task.id, used)
                     task.tried += 1
+                    task.used += used
+                    task.start = now
                     self.launched[idx] = False
                     self.tasksLaunched -= 1 
                 else:

@@ -110,6 +110,8 @@ class ShuffleMapTask(DAGTask):
             f = open(tpath, 'wb', 1024*4096)
             f.write(flag)
             f.write(comp.compress(d, 1))
+            f.flush()
+            os.fsync(f.fileno())
             f.close()
             if not os.path.exists(path):
                 os.rename(tpath, path)

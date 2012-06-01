@@ -32,6 +32,7 @@ logger = logging.getLogger("executor")
 TASK_RESULT_LIMIT = 1024 * 256
 
 Script = ''
+Webport = 0
 
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()
@@ -54,10 +55,18 @@ def run_task(task, aid):
             flag, data = 1, cPickle.dumps(result, -1)
         if len(data) > TASK_RESULT_LIMIT and env.dfs:
             workdir = env.get('WORKDIR')
-            path = os.path.join(workdir, str(task.id)+'.result')
-            with open(path, 'w') as f:
-                f.write(data)
-            data = path
+            name = 'task_%s_%s.result' % (task.id, aid)
+            path = os.path.join(workdir, name) 
+            f = open(path, 'w')
+            f.write(data)
+            if env.dfs:
+                f.flush()
+                os.fsync(f.fileno())
+            f.close()
+            if env.dfs:
+                data = "file://" + path
+            else:
+                data = "http://%s:%d/%s" % (socket.gethostname(), Webport, name)
             flag += 2
 
         setproctitle('dpark worker: idle')
@@ -87,7 +96,6 @@ def startWebServer(path):
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     threading.Thread(target=ss.serve_forever).start()
     return ss.server_address[1]
-    
     
 
 def forword(fd, addr, prefix=''):
@@ -122,7 +130,7 @@ def start_forword(addr, prefix=''):
 class MyExecutor(mesos.Executor):
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
-            global Script
+            global Script, Webport
             Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             try:
                 os.chdir(cwd)
@@ -139,8 +147,8 @@ class MyExecutor(mesos.Executor):
                 port = None
             else:
                 self.workdir = args['WORKDIR']
-                port = startWebServer(args['WORKDIR'])
-            self.pool = multiprocessing.Pool(parallel, init_env, [args, port])
+                Webport = startWebServer(args['WORKDIR'])
+            self.pool = multiprocessing.Pool(parallel, init_env, [args, Webport])
             logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
             import traceback

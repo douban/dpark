@@ -61,15 +61,15 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         for uri, parts in splitsByUri.items():
             for part in parts:
                 if uri == LocalFileShuffle.getServerUri():
-                    url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+                    urlopen, url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
                 else:
-                    url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
-                logger.debug("fetch %s", url[1])
+                    urlopen, url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+                logger.debug("fetch %s", url)
                 
                 tries = 3
                 while True:
                     try:
-                        f = url[0](url[1])
+                        f = urlopen(url)
                         flag = f.read(1)
                         d = comp.decompress(f.read())
                         f.close()

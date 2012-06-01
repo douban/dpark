@@ -7,6 +7,7 @@ import threading, Queue
 import time
 import random
 import getpass
+import urllib
 
 import zmq
 import mesos
@@ -605,7 +606,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = cPickle.dumps((t, 1), -1)
+        task.data = cPickle.dumps((t, t.tried), -1)
         task.executor.MergeFrom(self.executor)
         if len(task.data) > 10*1024:
             logger.warning("task too large: %s %d", 
@@ -650,7 +651,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                 if result:
                     flag, data = result
                     if flag >= 2:
-                        data = open(data).read()
+                        data = urllib.urlopen(data).read()
                         flag -= 2
                     if flag == 0:
                         result = marshal.loads(data)
@@ -658,8 +659,10 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                         result = cPickle.loads(data)
                 return job.statusUpdate(task_id, state, 
                     reason, result, accUpdate)
-            except EOFError, e:
+            except Exception, e:
                 logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
+                state = mesos_pb2.TASK_FAILED
+                return job.statusUpdate(task_id, mesos_pb2.TASK_FAILED, 'load failed: %s' % e)
 
         # killed, lost, load failed
         task_id = int(tid.split(':')[1])
