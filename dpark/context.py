@@ -197,7 +197,7 @@ def add_default_options():
             help="memory used per task")
     group.add_option("-g", "--group", type="string", default="",
             help="which group of machines")
-    group.add_option("--err", type="float", default=0.0001,
+    group.add_option("--err", type="float", default=0.0,
             help="acceptable ignored error record ratio (0.01%)")
 
     group.add_option("--self", action="store_true",
