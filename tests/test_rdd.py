@@ -44,6 +44,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums[:1].collect(), range(2))
         self.assertEqual(len(nums.mergeSplit(2)), 1)
         self.assertEqual(nums.mergeSplit(2).collect(), range(4))
+        self.assertEqual(nums.zipWith(nums).collectAsMap(), dict(zip(d,d)))
 
     def test_ignore_bad_record(self):
         d = range(100)

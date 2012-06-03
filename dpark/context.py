@@ -133,6 +133,9 @@ class DparkContext:
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
+    def zip(self, rdds):
+        return ZippedRDD(self, rdds)
+
     def accumulator(self, init=0, param=None):
         return Accumulator(init, param)
 

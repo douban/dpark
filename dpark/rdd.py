@@ -128,6 +128,9 @@ class RDD:
 
     def cartesian(self, other):
         return CartesianRDD(self, other)
+    
+    def zipWith(self, other):
+        return ZippedRDD(self.ctx, [self, other])
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
@@ -773,7 +776,7 @@ class SliceRDD(RDD):
         return self.rdd.iterator(split)
 
 
-class MergeSplit(Split):
+class MultiSplit(Split):
     def __init__(self, index, splits):
         self.index = index
         self.splits = splits
@@ -789,7 +792,7 @@ class MergedRDD(RDD):
         self.numSplits = numSplits
 
         splits = rdd.splits
-        self._splits = [MergeSplit(i, splits[i*splitSize:(i+1)*splitSize])
+        self._splits = [MultiSplit(i, splits[i*splitSize:(i+1)*splitSize])
                for i in range(numSplits)]
         self.dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
 
@@ -804,6 +807,30 @@ class MergedRDD(RDD):
 
     def compute(self, split):
         return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
+
+
+class ZippedRDD(RDD):
+    def __init__(self, ctx, rdds):
+        assert len(set([len(rdd) for rdd in rdds])) == 1, 'rdds must have the same length'
+        RDD.__init__(self, ctx)
+        self.rdds = rdds
+        self._splits = [MultiSplit(i, splits) 
+                for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
+        self.dependencies = [OneToOneDependency(rdd) for rdd in rdds]
+
+    def __len__(self):
+        return len(self.rdds[0])
+
+    def __repr__(self):
+        return '<Zipped %s>' % (','.join(str(rdd) for rdd in self.rdds))
+
+    def preferredLocations(self, split):
+        return sum([rdd.preferredLocations(sp) 
+            for rdd,sp in zip(self.rdds, split.splits)], [])
+
+    def compute(self, split):
+        return itertools.izip(*[rdd.iterator(sp) 
+            for rdd, sp in zip(self.rdds, split.splits)])
 
 
 class CSVReaderRDD(RDD):
