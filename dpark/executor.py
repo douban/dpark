@@ -10,6 +10,7 @@ import threading
 import SocketServer
 import SimpleHTTPServer
 import shutil
+import socket
 
 import zmq
 import mesos
@@ -137,10 +138,11 @@ class MyExecutor(mesos.Executor):
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
+            prefix = '[%s] ' % socket.gethostname()
             if out_logger:
-                self.outt, sys.stdout = start_forword(out_logger)
+                self.outt, sys.stdout = start_forword(out_logger, prefix)
             if err_logger:
-                self.errt, sys.stderr = start_forword(err_logger)
+                self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
             if args['DPARK_HAS_DFS'] == 'True':
                 self.workdir = None
