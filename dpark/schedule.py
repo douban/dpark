@@ -300,7 +300,6 @@ class DAGScheduler(Scheduler):
                 return cached
         return rdd.preferredLocations(rdd.splits[partition])
 
-
 def run_task(task, aid):
     logger.debug("Running task %r", task)
     try:
