@@ -298,16 +298,7 @@ class DAGScheduler(Scheduler):
             cached = self.getCacheLocs(rdd)[partition]
             if cached:
                 return cached
-        rddPrefs = rdd.preferredLocations(rdd.splits[partition])
-        if rddPrefs:
-            return rddPrefs
-        for d in rdd.dependencies:
-            if isinstance(d, NarrowDependency):
-                for inPart in d.getParents(partition):
-                    locs = self.getPreferredLocs(d.rdd, inPart)
-                    if locs:
-                        return locs
-        return []
+        return rdd.preferredLocations(rdd.splits[partition])
 
 
 def run_task(task, aid):
