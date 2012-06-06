@@ -371,6 +371,9 @@ class MappedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
+    def preferredLocations(self, split): 
+        return self.prev.preferredLocations(split)
+
     def compute(self, split):
         if self.err < 1e-8:
             return itertools.imap(self.func, self.prev.iterator(split))
@@ -464,6 +467,9 @@ class GlommedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
+    def preferredLocations(self, split): 
+        return self.prev.preferredLocations(split)
+
     def compute(self, split):
         yield self.prev.iterator(split)
 
@@ -487,6 +493,9 @@ class PipedRDD(RDD):
     @property
     def splits(self):
         return self.prev.splits
+
+    def preferredLocations(self, split): 
+        return self.prev.preferredLocations(split)
 
     def compute(self, split):
         import subprocess
@@ -673,6 +682,10 @@ class CoGroupedRDD(RDD):
     def __repr__(self):
         return '<CoGrouped of %s>' % (','.join(str(dep.rdd) for dep in self.dependencies))
 
+    def preferredLocations(self, split): 
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
+                if isinstance(dep, NarrowCoGroupSplitDep)], [])
+
     def compute(self, split):
         m = {}
         def getSeq(k):
@@ -843,13 +856,16 @@ class CSVReaderRDD(RDD):
     def __len__(self):
         return len(self.rdd)
 
+    def __repr__(self):
+        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
+
     @property
     def splits(self):
         return self.rdd.splits
 
-    def __repr__(self):
-        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
-
+    def preferredLocations(self, split):
+        return self.rdd.preferredLocations(split)
+    
     def compute(self, split):
         return csv.reader(self.rdd.iterator(split), self.dialect)
 
@@ -1091,6 +1107,9 @@ class OutputTextFileRDD(RDD):
     def splits(self):
         return self.rdd.splits
 
+    def preferredLocations(self, split):
+        return self.rdd.preferredLocations(split)
+    
     def compute(self, split):
         path = os.path.join(self.path, 
             "%04d%s" % (split.index, self.ext))
