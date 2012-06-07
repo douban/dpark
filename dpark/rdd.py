@@ -178,7 +178,7 @@ class RDD:
                     else:
                         s = f(s, v)
                 except Exception, e:
-                    logger.warning("skip bad record %s: %s", v, e)
+                    logging.warning("skip bad record %s: %s", v, e)
                     err += 1
                     if total > 100 and err > total * self.err * 10:
                         raise Exception("")
