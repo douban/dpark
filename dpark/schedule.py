@@ -10,7 +10,6 @@ import getpass
 import urllib
 
 import zmq
-import mesos
 import mesos_pb2
 
 from dependency import NarrowDependency, ShuffleDependency 
@@ -403,7 +402,7 @@ def safe(f):
 def int2ip(n):
     return "%d.%d.%d.%d" % (n & 0xff, (n>>8)&0xff, (n>>16)&0xff, n>>24)
 
-class MesosScheduler(mesos.Scheduler, DAGScheduler):
+class MesosScheduler(DAGScheduler):
 
     def __init__(self, master, options):
         DAGScheduler.__init__(self)
@@ -436,6 +435,7 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
         framework = mesos_pb2.FrameworkInfo()
         framework.user = getpass.getuser()
         framework.name = name
+        import mesos
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
         self.driver.start()
@@ -521,11 +521,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
 
     @safe
     def resourceOffers(self, driver, offers):
+        rf = mesos_pb2.Filters()
+        rf.refuse_seconds = -1
         if not self.activeJobs:
-            rf = mesos_pb2.Filters()
-            rf.refuse_seconds = -1
             for o in offers:
-                driver.launchTasks(o.id, [], rf)
+                driver.declineOffer(o.id, rf)
             return
 
         random.shuffle(offers)
@@ -572,7 +572,11 @@ class MesosScheduler(mesos.Scheduler, DAGScheduler):
                     break
         
         for o in offers:
-            driver.launchTasks(o.id, tasks.get(o.id.value, []))
+            if o.id.value in tasks:
+                driver.launchTasks(o.id, tasks[o.id.value])
+            else:
+                driver.declineOffer(o.id, rf)
+
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
 
