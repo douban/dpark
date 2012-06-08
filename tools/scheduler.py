@@ -166,13 +166,27 @@ class SubmitScheduler(mesos.Scheduler):
         if tid not in self.task_launched:
             logging.error("Task %d not in task_launched", tid)
             return
+        
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
+
         if update.state == mesos_pb2.TASK_RUNNING:
             self.started = True
 
-        if update.state >= mesos_pb2.TASK_FINISHED:
+        elif update.state == mesos_pb2.TASK_LOST:
+            logging.warning("Task %s was lost, try again", tid)
+            if not self.total_tasks:
+                driver.reviveOffers() # request more offers again
+            t.state = -1
+            self.task_launched.pop(tid)
+            self.total_tasks.append(t)
+
+        elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
+            if not self.started:
+                logging.warning("Task %s has not started, ignore it %s", tid, update.state)
+                return
+
             t = self.task_launched.pop(tid)
             slave = None
             for s in self.slaveTasks:
