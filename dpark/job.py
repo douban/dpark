@@ -209,7 +209,7 @@ class SimpleJob(Job):
         for i in xrange(self.numTasks):
             if (self.launched[i] and self.tasks[i].status == TASK_STARTING
                     and self.tasks[i].start + WAIT_FOR_RUNNING < now):
-                logging.warning("task %d timeout, re-assign it", self.tasks[i].id)
+                logging.warning("task %d timeout %s, re-assign it", self.tasks[i].id, now - self.tasks[i].start)
                 self.tasks[i].tried += 1
                 self.launched[i] = False
                 self.tasksLaunched -= 1

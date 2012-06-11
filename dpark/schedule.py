@@ -522,8 +522,8 @@ class MesosScheduler(DAGScheduler):
     @safe
     def resourceOffers(self, driver, offers):
         rf = mesos_pb2.Filters()
-        rf.refuse_seconds = -1
         if not self.activeJobs:
+            rf.refuse_seconds = 60
             for o in offers:
                 driver.declineOffer(o.id, rf)
             return
@@ -571,6 +571,7 @@ class MesosScheduler(DAGScheduler):
                 if not launchedTask:
                     break
         
+        rf.refuse_seconds = 1
         for o in offers:
             if o.id.value in tasks:
                 driver.launchTasks(o.id, tasks[o.id.value])
