@@ -20,18 +20,12 @@ class LocalFileShuffle:
     serverUri = None
     shuffleDir = None
     @classmethod
-    def initialize(cls, isMaster, port):
-        shuffleDir = env.get('WORKDIR')
-        if not shuffleDir:
+    def initialize(cls, isMaster):
+        cls.shuffleDir = env.get('WORKDIR')
+        if not cls.shuffleDir:
             return
-        cls.shuffleDir = shuffleDir
-        if port is None:
-            while not os.path.exists(shuffleDir):
-                time.sleep(0.1) # HACK for moosefs
-            cls.serverUri = 'file://' + cls.shuffleDir
-        else:
-            cls.serverUri = 'http://%s:%d' % (socket.gethostname(), port)
-        logger.debug("shuffle dir: %s", shuffleDir)
+        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir)
+        logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId):
@@ -70,8 +64,12 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                 while True:
                     try:
                         f = urlopen(url)
-                        flag = f.read(1)
-                        d = comp.decompress(f.read())
+                        d = f.read()
+                        flag = d[:1]
+                        length, = struct.unpack("I", d[1:5])
+                        if length != len(d):
+                            raise IOError("length not match: expected %d, but got %d" % (length, len(d)))
+                        d = comp.decompress(d[5:])
                         f.close()
                         if flag == 'm':
                             d = marshal.loads(d)
@@ -80,7 +78,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                         else:
                             raise ValueError("invalid flag")
                         break
-                    except IOError, e:
+                    except Exception, e:
                         logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
                         tries -= 1
                         if not tries:

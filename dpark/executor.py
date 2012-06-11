@@ -11,6 +11,7 @@ import SocketServer
 import SimpleHTTPServer
 import shutil
 import socket
+import urllib
 
 import zmq
 import mesos
@@ -27,13 +28,14 @@ from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
+from dpark.shuffle import LocalFileShuffle
 
 logger = logging.getLogger("executor")
 
 TASK_RESULT_LIMIT = 1024 * 256
+DEFAULT_WEB_PORT = 5055
 
 Script = ''
-Webport = None
 
 def reply_status(driver, task, status, data=None):
     update = mesos_pb2.TaskStatus()
@@ -54,7 +56,7 @@ def run_task(task, aid):
             flag, data = 0, marshal.dumps(result)
         else:
             flag, data = 1, cPickle.dumps(result, -1)
-        if len(data) > TASK_RESULT_LIMIT and env.dfs:
+        if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
             name = 'task_%s_%s.result' % (task.id, aid)
             path = os.path.join(workdir, name) 
@@ -64,10 +66,7 @@ def run_task(task, aid):
                 f.flush()
                 os.fsync(f.fileno())
             f.close()
-            if env.dfs:
-                data = "file://" + path
-            else:
-                data = "http://%s:%d/%s" % (socket.gethostname(), Webport, name)
+            data = LocalFileShuffle.getServerUri() + '/' + name
             flag += 2
 
         setproctitle('dpark worker: idle')
@@ -78,26 +77,39 @@ def run_task(task, aid):
         setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
 
-def init_env(args, port):
+def init_env(args):
     setproctitle('dpark worker: idle')
-    env.start(False, args, port=port)
+    env.start(False, args)
 
-basedir = None
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
+    basedir = None
     def translate_path(self, path):
         out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
-        return basedir + '/' + out[len(os.getcwd()):]
+        return self.basedir + '/' + os.path.relpath(out)
     
     def log_message(self, format, *args):
         pass
 
 def startWebServer(path):
-    global basedir
-    basedir = path
+    # check the default web server
+    with open(os.path.join(path, 'test'), 'w') as f:
+        f.write('testdata')
+    default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
+            os.path.basename(path))
+    try:
+        data = urllib.urlopen(default_uri + '/' + 'test').read()
+        if data == 'testdata':
+            return default_uri
+    except IOError, e:
+        pass
+    
+    logger.warning("default webserver at %s not available", DEFAULT_WEBDEFAULT_WEB_PORTT)
+    LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     threading.Thread(target=ss.serve_forever).start()
-    return ss.server_address[1]
-    
+    uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1], 
+            os.path.basename(path))
+    return uri 
 
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
@@ -131,26 +143,29 @@ def start_forword(addr, prefix=''):
 class MyExecutor(mesos.Executor):
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
-            global Script, Webport
+            global Script
             Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             try:
                 os.chdir(cwd)
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
+            
             prefix = '[%s] ' % socket.gethostname()
             if out_logger:
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
+            
             if args['DPARK_HAS_DFS'] == 'True':
                 self.workdir = None
-                port = None
             else:
                 self.workdir = args['WORKDIR']
-                Webport = startWebServer(args['WORKDIR'])
-            self.pool = multiprocessing.Pool(parallel, init_env, [args, Webport])
+                if not os.path.exists(self.workdir):
+                    os.mkdir(self.workdir)
+                args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+            self.pool = multiprocessing.Pool(parallel, init_env, [args])
             logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
             import traceback

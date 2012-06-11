@@ -107,11 +107,12 @@ class ShuffleMapTask(DAGTask):
                 flag, d = 'm', marshal.dumps(buckets[i])
             else:
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
+            cd = comp.compress(d, 1)
             f = open(tpath, 'wb', 1024*4096)
-            f.write(flag)
-            f.write(comp.compress(d, 1))
-            f.flush()
-            os.fsync(f.fileno())
+            f.write(flag + struct.pack("I", 5 + len(cd)))
+            f.write(cd)
+#            f.flush()
+#            os.fsync(f.fileno())
             f.close()
             if not os.path.exists(path):
                 os.rename(tpath, path)

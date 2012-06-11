@@ -17,7 +17,7 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}, isLocal=False, port=None):
+    def start(self, isMaster, environ={}, isLocal=False):
         if getattr(self, 'started', False):
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
@@ -31,6 +31,9 @@ class DparkEnv:
                 self.dfs = True
             elif os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
+                self.dfs = False
+            elif os.path.exists('/data1/dpark'):
+                root = '/data1/dpark'
                 self.dfs = False
             else:
                 if os.path.exists('/home2/dpark'):
@@ -58,7 +61,7 @@ class DparkEnv:
         self.cacheTracker = CacheTracker(isMaster)
         
         from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        LocalFileShuffle.initialize(isMaster, port)
+        LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker(isMaster)
         self.shuffleFetcher = SimpleShuffleFetcher()
 
