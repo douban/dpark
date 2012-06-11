@@ -130,7 +130,6 @@ class File:
             self.fill_buffer()
             if not self.rbuf:
                 break
-
         return ''.join(buf)
 
     def fill_buffer(self):
@@ -143,6 +142,7 @@ class File:
             self.rbuf = self.reader.next()
         except StopIteration:
             self.reader = None
+            self.fill_buffer()
 
     def chunk_reader(self, roff):
         index = roff / CHUNKSIZE
@@ -180,8 +180,8 @@ class File:
 
         while not line or line[-1] != '\n':
             data = self.read(-1)
-            if not data and line:
-                return line
+            if not data:
+                break
             self.generator = StringIO(data)
             line += self.generator.next()
         return line

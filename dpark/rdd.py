@@ -1058,22 +1058,23 @@ class MFSTextFileRDD(RDD):
     def compute(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
-        MAX_RECORD_LENGTH =1024
+        MAX_RECORD_LENGTH = 1024
 
         f = self.file
         if start > 0:
             f.seek(start-1, end + MAX_RECORD_LENGTH)
             byte = f.read(1)
-            while byte != '\n':
+            while byte and byte != '\n':
                 byte = f.read(1)
                 start += 1
         else:
             f.seek(0, end + MAX_RECORD_LENGTH)
 
         for line in f:
-            if start >= end: break
+            if not line: break
             start += len(line)
             yield line
+            if start >= end: break
         f.close()
 
 
