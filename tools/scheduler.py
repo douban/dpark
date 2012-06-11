@@ -136,7 +136,7 @@ class SubmitScheduler(mesos.Scheduler):
 
     def create_task(self, offer, t):
         task = mesos_pb2.TaskInfo()
-        task.task_id.value = str(t.id)
+        task.task_id.value = "%d-%d" % (t.id, t.tried)
         task.slave_id.value = offer.slave_id.value
         task.name = "task %s/%d" % (t.id, self.options.tasks)
         task.executor.MergeFrom(self.executor)
@@ -162,7 +162,7 @@ class SubmitScheduler(mesos.Scheduler):
 
     def statusUpdate(self, driver, update):
         logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
-        tid = int(update.task_id.value)
+        tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
             logging.error("Task %d not in task_launched", tid)
             return
@@ -178,6 +178,7 @@ class SubmitScheduler(mesos.Scheduler):
             logging.warning("Task %s was lost, try again", tid)
             if not self.total_tasks:
                 driver.reviveOffers() # request more offers again
+            t.tried += 1
             t.state = -1
             self.task_launched.pop(tid)
             self.total_tasks.append(t)
@@ -209,10 +210,11 @@ class SubmitScheduler(mesos.Scheduler):
     def check(self, driver):
         now = time.time()
         for tid, t in self.task_launched.items():
-            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 5 < now:
+            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 10 < now:
                 logging.warning("task %d lauched failed, assign again", tid)
                 if not self.total_tasks:
                     driver.reviveOffers() # request more offers again
+                t.tried += 1
                 t.state = -1
                 self.task_launched.pop(tid)
                 self.total_tasks.append(t)
@@ -314,7 +316,7 @@ class MPIScheduler(SubmitScheduler):
 
     def create_task(self, offer, t, command, k):
         task = mesos_pb2.TaskInfo()
-        task.task_id.value = str(t.id)
+        task.task_id.value = "%s-%s" % (t.id, t.tried)
         task.slave_id.value = offer.slave_id.value
         task.name = "task %s" % t.id
         task.executor.MergeFrom(self.executor)
