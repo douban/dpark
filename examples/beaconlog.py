@@ -66,7 +66,8 @@ def calc_tti(day):
     logs = [dpark.textFile(p % (h,d.strftime("%Y%m%d")))
              for p in log_path
              for d in (day, day + timedelta(days=1)) 
-             for h in webservers]
+             for h in webservers
+             if os.path.exists(p % (h,d.strftime("%Y%m%d")))]
     rawlog = dpark.union(logs)
     beacon = rawlog.glom().flatMap(peek(day)).flatMap(format_line)
     tti = beacon.flatMap(gen_tti).reduceByKey(
@@ -101,7 +102,7 @@ def save(day, tti_stats):
 
 if __name__ == "__main__":
     today = date.today()
-    for i in range(1, 2):
+    for i in range(1, 3):
         day = today - timedelta(days=i)
         name = '/tmp/beacon-%s' % day
         if os.path.exists(name):
