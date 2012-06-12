@@ -13,6 +13,7 @@ import logging
 import signal
 import zmq
 import getpass
+from time import sleep
 
 import mesos
 import mesos_pb2
@@ -303,11 +304,13 @@ class MPIScheduler(SubmitScheduler):
         try:
             slaves = self.start_mpi(command, self.options.tasks, hosts.items())
         except Exception:
+            sleep(10)
             self.publisher.send(pickle.dumps({}));
             self.next_try = time.time() + 5 
             return
 
         commands = dict(zip(hosts.keys(), slaves))
+        sleep(10)
         self.publisher.send(pickle.dumps(commands))
         self.total_tasks = []
         self.started = True
