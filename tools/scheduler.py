@@ -147,7 +147,7 @@ class SubmitScheduler(mesos.Scheduler):
         if self.options.expand:
             for i, x in enumerate(command):
                 command[i] = x % {'RANK': t.id, 'SIZE': self.options.tasks}
-        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port])
+        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port, None])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -239,7 +239,21 @@ class SubmitScheduler(mesos.Scheduler):
 class MPIScheduler(SubmitScheduler):
     def __init__(self, options, command):
         SubmitScheduler.__init__(self, options, command)
-        self.offers = {}
+        self.used_hosts = {}
+        self.publisher = ctx.socket(zmq.PUB)
+        port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
+        host = socket.gethostname()
+        self.publisher_port = 'tcp://%s:%d' % (host, port)
+        
+
+    def start_task(self, driver, offer, k):
+        t = Task(len(self.task_launched))
+        self.task_launched[t.id] = t
+        task = self.create_task(offer, t, '', k)
+        logging.info("lauching %s task with offer %s on %s", t.id,
+                     offer.id.value, offer.hostname)
+        driver.launchTasks(offer.id, [task])
+
     
     def resourceOffers(self, driver, offers):
         for offer in offers:
@@ -252,65 +266,42 @@ class MPIScheduler(SubmitScheduler):
                 driver.launchTasks(o.id, [], REFUSE_FILTER)
             return
        
-        now = time.time()
-        offers = [(now, o) for o in offers]
-        for t, o in self.offers:
-            if t + 8 < now:
-                driver.launchTasks(o.id, [])
-            else:
-                offers.append((t, o))
-        self.offers = []
-
         random.shuffle(offers)
-        used_offers = []
-        used_hosts = set()
-        need = self.options.tasks
-        for t, offer in offers:
+        need = self.options.tasks - len(self.task_launched)
+        for offer in offers:
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
                 continue
             
             cpus, mem = self.getResource(offer)
             slots = min(cpus/self.cpus, mem/self.mem)
+            launched = self.used_hosts.get(offer.hostname, 0)
             if self.options.task_per_node:
-                slots = min((slots, self.options.task_per_node))
-            if slots >= 1 and offer.hostname not in used_hosts:
-                used_offers.append((t, offer, slots))
-                used_hosts.add(offer.hostname)
+                slots = min((slots, self.options.task_per_node - launched))
+            if slots >= 1:
+                self.used_hosts[offer.hostname] = launched + slots;
+                self.start_task(driver, offer, slots)
             else:
-                driver.launchTasks(o.id, [])
+                if self.options.task_per_node == launched:
+                    driver.launchTasks(offer.id, [], REFUSE_FILTER)
+                else:
+                    driver.launchTasks(offer.id, [])
 
-        got = sum(s for t,o,s in used_offers)
-        if got < need:
-            logging.warning('not enough offers: need %d offer %d, hold for 10 secs', need, got)
-            self.offers = [(t,o) for t, o, s in used_offers]
+        got = sum(self.used_hosts.values())
+        if got < self.options.tasks:
+            logging.warning('not enough offers: need %d offer %d, waiting more resources',
+                            self.options.tasks, got)
             return
 
-        hosts = []
-        c = 0
-        for _, offer, slots in sorted(used_offers, key=itemgetter(1), reverse=True):
-            k = min(need - c, slots)
-            hosts.append((offer, k))
-            c += k
-            if c >= need:
-                break
-        
         try:
-            slaves = self.start_mpi(command, self.options.tasks, hosts)
+            slaves = self.start_mpi(command, self.options.tasks, self.used_hosts.items())
         except Exception:
-            for _,o,_ in used_offers:
-                driver.launchTasks(o.id, [])
+            self.publisher.send({});
             self.next_try = time.time() + 5 
             return
-            
-        tasks = {}
-        for i, ((offer, k), slave) in enumerate(zip(hosts,slaves)):
-            t = Task(i)
-            self.task_launched[t.id] = t
-            tasks[offer.id.value] = [self.create_task(offer, t, slave.split(' '), k)]
 
-        for _,o,_ in used_offers:
-            driver.launchTasks(o.id, tasks.get(o.id.value, []), REFUSE_FILTER)
+        hosts = dict(zip(self.used_hosts.keys(), slaves))
+        self.publisher.send(hosts)
         self.total_tasks = []
         self.started = True
 
@@ -321,7 +312,7 @@ class MPIScheduler(SubmitScheduler):
         task.name = "task %s" % t.id
         task.executor.MergeFrom(self.executor)
         env = dict(os.environ)
-        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port])
+        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port, self.publisher_port])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -335,8 +326,8 @@ class MPIScheduler(SubmitScheduler):
 
         return task
 
-    def start_mpi(self, command, tasks, offers):
-        hosts = ','.join("%s:%d" % (offer.hostname, slots) for offer, slots in offers)
+    def start_mpi(self, command, tasks, items):
+        hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
         logging.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -349,9 +340,9 @@ class MPIScheduler(SubmitScheduler):
                 slaves.append(line[len(prefix):-1].strip())
             if line == 'HYDRA_LAUNCH_END\n':
                 break
-        if len(slaves) != len(offers):
-            logging.error("offers: %s, slaves: %s", offers, slaves)
-            raise Exception("slaves not match with offers")
+        if len(slaves) != len(items):
+            logging.error("hosts: %s, slaves: %s", items, slaves)
+            raise Exception("slaves not match with hosts")
         def output(f):
             while True:
                 line = f.readline()
@@ -370,6 +361,7 @@ class MPIScheduler(SubmitScheduler):
             self.p.wait()
             self.tout.join()
             self.terr.join()
+            self.publisher.send({});
         driver.stop(False)
         self.stopped = True
         logging.debug("scheduler stopped")

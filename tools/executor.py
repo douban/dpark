@@ -40,7 +40,7 @@ def launch_task(self, driver, task):
     reply_status(driver, task, mesos_pb2.TASK_RUNNING)
     
     host = socket.gethostname()
-    cwd, command, _env, shell, addr1, addr2 = pickle.loads(task.data)
+    cwd, command, _env, shell, addr1, addr2, addr3 = pickle.loads(task.data)
     stderr = ctx.socket(zmq.PUSH)
     stderr.connect(addr2)
 
@@ -55,6 +55,28 @@ def launch_task(self, driver, task):
     t2.start()
     wout = os.fdopen(outw,'w',0)
     werr = os.fdopen(errw,'w',0)
+
+
+    if addr3:
+        subscriber = ctx.socket(zmq.SUB)
+        subscriber.connect(addr3)
+        poller = zmq.Poller()
+        poller.register(subscriber, zmq.POLLIN)
+        socks = dict(poller.poll(60 * 1000))
+        if socks and socks.get(subscriber) == zmq.POLLIN:
+            hosts = subscriber.recv(zmq.NOBLOCK)
+            line = hosts.get(host)
+            if line:
+                command = line
+            else:
+                stderr.send('publisher canceled task')
+                reply_status(driver, task, mesos_pb2.TASK_FINISHED)
+            return
+        else:
+            stderr.send('waiting publisher timeout')
+            reply_status(driver, task, mesos_pb2.TASK_FINISHED)
+            return
+
     try:
         env = dict(os.environ)
         env.update(_env)
