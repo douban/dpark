@@ -62,9 +62,9 @@ def launch_task(self, driver, task):
         subscriber.connect(addr3)
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
-        socks = dict(poller.poll(60 * 1000))
+        socks = dict(poller.poll(10 * 60 * 1000))
         if socks and socks.get(subscriber) == zmq.POLLIN:
-            hosts = subscriber.recv(zmq.NOBLOCK)
+            hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
             if line:
                 command = line

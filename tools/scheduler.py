@@ -279,7 +279,7 @@ class MPIScheduler(SubmitScheduler):
             if self.options.task_per_node:
                 slots = min((slots, self.options.task_per_node - launched))
             if slots >= 1:
-                self.used_slaves[offer.slave_id.value] = (offser.hostname, launched + slots);
+                self.used_slaves[offer.slave_id.value] = (offer.hostname, launched + slots);
                 self.start_task(driver, offer, slots)
             else:
                 if self.options.task_per_node == launched:
@@ -295,17 +295,17 @@ class MPIScheduler(SubmitScheduler):
 
         hosts = {}
         for host, t in self.used_slaves.values():
-            hosts[host] += t
+            hosts[host] = hosts.get(host, 0) + t
 
         try:
             slaves = self.start_mpi(command, self.options.tasks, hosts.items())
         except Exception:
-            self.publisher.send({});
+            self.publisher.send(pickle.dumps({}));
             self.next_try = time.time() + 5 
             return
 
         commands = dict(zip(hosts.keys(), slaves))
-        self.publisher.send(commands)
+        self.publisher.send(pickle.dumps(commands))
         self.total_tasks = []
         self.started = True
 
@@ -365,7 +365,7 @@ class MPIScheduler(SubmitScheduler):
             self.p.wait()
             self.tout.join()
             self.terr.join()
-            self.publisher.send({});
+            self.publisher.send(pickle.dumps({}));
         driver.stop(False)
         self.stopped = True
         logging.debug("scheduler stopped")
