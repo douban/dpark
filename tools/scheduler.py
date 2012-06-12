@@ -267,8 +267,11 @@ class MPIScheduler(SubmitScheduler):
             return
        
         random.shuffle(offers)
-        need = self.options.tasks - len(self.task_launched)
         for offer in offers:
+            if len(self.task_launched) >= self.options.tasks:
+                driver.launchTasks(offer.id, [], REFUSE_FILTER)
+                continue
+
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
                 continue
@@ -287,7 +290,7 @@ class MPIScheduler(SubmitScheduler):
                 else:
                     driver.launchTasks(offer.id, [])
 
-        got = sum([s for _, s in self.used_slaves.values()])
+        got = len(self.task_launched)
         if got < self.options.tasks:
             logging.warning('not enough offers: need %d offer %d, waiting more resources',
                             self.options.tasks, got)

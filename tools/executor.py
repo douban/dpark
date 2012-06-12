@@ -62,7 +62,9 @@ def launch_task(self, driver, task):
         subscriber.connect(addr3)
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
+        print >> wout, 'start polling at %s' % host
         socks = dict(poller.poll(10 * 60 * 1000))
+        print >> wout, 'stop polling at %s' % host
         if socks and socks.get(subscriber) == zmq.POLLIN:
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
@@ -70,11 +72,11 @@ def launch_task(self, driver, task):
                 command = line
             else:
                 stderr.send('publisher canceled task')
-                reply_status(driver, task, mesos_pb2.TASK_FINISHED)
+                reply_status(driver, task, mesos_pb2.TASK_FAILED)
             return
         else:
             stderr.send('waiting publisher timeout')
-            reply_status(driver, task, mesos_pb2.TASK_FINISHED)
+            reply_status(driver, task, mesos_pb2.TASK_FAILED)
             return
 
     try:
