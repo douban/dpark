@@ -239,7 +239,7 @@ class SubmitScheduler(mesos.Scheduler):
 class MPIScheduler(SubmitScheduler):
     def __init__(self, options, command):
         SubmitScheduler.__init__(self, options, command)
-        self.used_hosts = {}
+        self.used_slaves = {}
         self.publisher = ctx.socket(zmq.PUB)
         port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
         host = socket.gethostname()
@@ -275,11 +275,11 @@ class MPIScheduler(SubmitScheduler):
             
             cpus, mem = self.getResource(offer)
             slots = min(cpus/self.cpus, mem/self.mem)
-            launched = self.used_hosts.get(offer.hostname, 0)
+            _, launched = self.used_slaves.get(offer.slave_id.value, (None, 0))
             if self.options.task_per_node:
                 slots = min((slots, self.options.task_per_node - launched))
             if slots >= 1:
-                self.used_hosts[offer.hostname] = launched + slots;
+                self.used_slaves[offer.slave_id.value] = (offser.hostname, launched + slots);
                 self.start_task(driver, offer, slots)
             else:
                 if self.options.task_per_node == launched:
@@ -287,21 +287,25 @@ class MPIScheduler(SubmitScheduler):
                 else:
                     driver.launchTasks(offer.id, [])
 
-        got = sum(self.used_hosts.values())
+        got = sum([s for _, s in self.used_slaves.values()])
         if got < self.options.tasks:
             logging.warning('not enough offers: need %d offer %d, waiting more resources',
                             self.options.tasks, got)
             return
 
+        hosts = {}
+        for host, t in self.used_slaves.values():
+            hosts[host] += t
+
         try:
-            slaves = self.start_mpi(command, self.options.tasks, self.used_hosts.items())
+            slaves = self.start_mpi(command, self.options.tasks, hosts.items())
         except Exception:
             self.publisher.send({});
             self.next_try = time.time() + 5 
             return
 
-        hosts = dict(zip(self.used_hosts.keys(), slaves))
-        self.publisher.send(hosts)
+        commands = dict(zip(hosts.keys(), slaves))
+        self.publisher.send(commands)
         self.total_tasks = []
         self.started = True
 
