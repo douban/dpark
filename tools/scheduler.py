@@ -241,6 +241,7 @@ class MPIScheduler(SubmitScheduler):
         SubmitScheduler.__init__(self, options, command)
         self.used_hosts = {}
         self.used_tasks = {}
+        self.mpi_started = False
         self.id = 0
         self.publisher = ctx.socket(zmq.PUB)
         port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
@@ -253,8 +254,8 @@ class MPIScheduler(SubmitScheduler):
         self.task_launched[t.id] = t
         self.used_tasks[t.id] = (offer.hostname, k)
         task = self.create_task(offer, t, k)
-        logging.info("lauching %s task with offer %s on %s", t.id,
-                     offer.id.value, offer.hostname)
+        logging.info("lauching %s task with offer %s on %s, slots %d", t.id,
+                     offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task])
     
     def resourceOffers(self, driver, offers):
@@ -287,6 +288,9 @@ class MPIScheduler(SubmitScheduler):
                             self.options.tasks, launched)
             return
 
+        if self.mpi_started:
+            return
+
         try:
             slaves = self.start_mpi(command, self.options.tasks, self.used_hosts.items())
         except Exception:
@@ -294,6 +298,7 @@ class MPIScheduler(SubmitScheduler):
             self.next_try = time.time() + 5 
             return
 
+        self.mpi_started = True
         commands = dict(zip(self.used_hosts.keys(), slaves))
         self.broadcast_command(commands)
 
@@ -319,18 +324,15 @@ class MPIScheduler(SubmitScheduler):
         t.state = update.state
         t.state_time = time.time()
         hostname, slots = self.used_tasks[tid]
-        launched = sum(self.used_hosts.values())
 
         if update.state == mesos_pb2.TASK_RUNNING:
             self.started = True
 
         elif update.state == mesos_pb2.TASK_LOST:
             logging.warning("Task %s was lost, try again", tid)
-            if launched >= self.options.tasks:
-                driver.reviveOffers() # request more offers again
+            driver.reviveOffers() # request more offers again
             t.tried += 1
             t.state = -1
-            launched -= slots
             self.used_hosts.pop(hostname)
             self.used_tasks.pop(tid)
             self.task_launched.pop(tid)
@@ -344,27 +346,24 @@ class MPIScheduler(SubmitScheduler):
                 t.tried += 1
                 self.used_hosts.pop(hostname)
                 self.used_tasks.pop(tid)
-                launched -= slots
-                logging.warning("task %d failed with %d on %s, retry %d", t.id, update.state, hostname, t.tried)
-                if launched >= self.options.tasks:
-                    driver.reviveOffers() # request more offers again
+                logging.warning("task %d failed with %d on %s, slots %d, retry %d",
+                        t.id, update.state, hostname, slots, t.tried)
+                driver.reviveOffers() # request more offers again
 
             t = self.task_launched.pop(tid)
 
-            if not self.task_launched and launched >= self.options.tasks:
+            launched = sum(self.used_hosts.values())
+            if (not self.task_launched) and (launched >= self.options.tasks) and self.mpi_started:
                 self.stop(driver) # all done
 
     def check(self, driver):
         now = time.time()
-        launched = sum(self.used_hosts.values())
         for tid, t in self.task_launched.items():
             if t.state == mesos_pb2.TASK_STARTING and t.state_time + 10 < now:
                 logging.warning("task %d lauched failed, assign again", tid)
-                if launched >= self.options.tasks:
-                    driver.reviveOffers() # request more offers again
+                driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
-                launched -= slots
                 self.used_hosts.pop(hostname)
                 self.used_tasks.pop(tid)
                 self.task_launched.pop(tid)

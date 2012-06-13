@@ -64,7 +64,7 @@ def launch_task(self, driver, task):
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
         print >> werr, 'start polling at %s' % host
-        socks = dict(poller.poll(10 * 60 * 1000))
+        socks = dict(poller.poll(60 * 1000))
         print >> werr, 'stop polling at %s' % host
         if socks and socks.get(subscriber) == zmq.POLLIN:
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
