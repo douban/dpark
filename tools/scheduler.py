@@ -147,7 +147,7 @@ class SubmitScheduler(mesos.Scheduler):
         if self.options.expand:
             for i, x in enumerate(command):
                 command[i] = x % {'RANK': t.id, 'SIZE': self.options.tasks}
-        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port])
+        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port, None])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -239,89 +239,144 @@ class SubmitScheduler(mesos.Scheduler):
 class MPIScheduler(SubmitScheduler):
     def __init__(self, options, command):
         SubmitScheduler.__init__(self, options, command)
-        self.offers = {}
+        self.used_hosts = {}
+        self.used_tasks = {}
+        self.mpi_started = False
+        self.id = 0
+        self.publisher = ctx.socket(zmq.PUB)
+        port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
+        host = socket.gethostname()
+        self.publisher_port = 'tcp://%s:%d' % (host, port)
+
+    def start_task(self, driver, offer, k):
+        t = Task(self.id)
+        self.id += 1
+        self.task_launched[t.id] = t
+        self.used_tasks[t.id] = (offer.hostname, k)
+        task = self.create_task(offer, t, k)
+        logging.info("lauching %s task with offer %s on %s, slots %d", t.id,
+                     offer.id.value, offer.hostname, k)
+        driver.launchTasks(offer.id, [task])
     
     def resourceOffers(self, driver, offers):
+        random.shuffle(offers)
+        launched = sum(self.used_hosts.values())
+
         for offer in offers:
             cpus, mem = self.getResource(offer)
             logging.debug("got resource offer %s: cpus:%s, mem:%s at %s", 
                 offer.id.value, cpus, mem, offer.hostname)
-        
-        if not self.total_tasks:
-            for o in offers:
-                driver.launchTasks(o.id, [], REFUSE_FILTER)
-            return
-       
-        now = time.time()
-        offers = [(now, o) for o in offers]
-        for t, o in self.offers:
-            if t + 8 < now:
-                driver.launchTasks(o.id, [])
-            else:
-                offers.append((t, o))
-        self.offers = []
+            if  launched >= self.options.tasks or offer.hostname in self.used_hosts:
+                driver.launchTasks(offer.id, [], REFUSE_FILTER)
+                continue
 
-        random.shuffle(offers)
-        used_offers = []
-        used_hosts = set()
-        need = self.options.tasks
-        for t, offer in offers:
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
                 continue
-            
-            cpus, mem = self.getResource(offer)
+
             slots = min(cpus/self.cpus, mem/self.mem)
             if self.options.task_per_node:
-                slots = min((slots, self.options.task_per_node))
-            if slots >= 1 and offer.hostname not in used_hosts:
-                used_offers.append((t, offer, slots))
-                used_hosts.add(offer.hostname)
-            else:
-                driver.launchTasks(o.id, [])
+                slots = min(slots, self.options.task_per_node)
+            slots = min(slots, self.options.tasks - launched)
+            if slots >= 1:
+                self.used_hosts[offer.hostname] = slots
+                launched += slots
+                self.start_task(driver, offer, slots)
 
-        got = sum(s for t,o,s in used_offers)
-        if got < need:
-            logging.warning('not enough offers: need %d offer %d, hold for 10 secs', need, got)
-            self.offers = [(t,o) for t, o, s in used_offers]
+        if launched < self.options.tasks:
+            logging.warning('not enough offers: need %d offer %d, waiting more resources',
+                            self.options.tasks, launched)
             return
 
-        hosts = []
-        c = 0
-        for _, offer, slots in sorted(used_offers, key=itemgetter(1), reverse=True):
-            k = min(need - c, slots)
-            hosts.append((offer, k))
-            c += k
-            if c >= need:
-                break
-        
+        if self.mpi_started:
+            return
+
         try:
-            slaves = self.start_mpi(command, self.options.tasks, hosts)
+            slaves = self.start_mpi(command, self.options.tasks, self.used_hosts.items())
         except Exception:
-            for _,o,_ in used_offers:
-                driver.launchTasks(o.id, [])
+            self.broadcast_command({})
             self.next_try = time.time() + 5 
             return
-            
-        tasks = {}
-        for i, ((offer, k), slave) in enumerate(zip(hosts,slaves)):
-            t = Task(i)
-            self.task_launched[t.id] = t
-            tasks[offer.id.value] = [self.create_task(offer, t, slave.split(' '), k)]
 
-        for _,o,_ in used_offers:
-            driver.launchTasks(o.id, tasks.get(o.id.value, []), REFUSE_FILTER)
-        self.total_tasks = []
-        self.started = True
+        self.mpi_started = True
+        commands = dict(zip(self.used_hosts.keys(), slaves))
+        self.broadcast_command(commands)
 
-    def create_task(self, offer, t, command, k):
+    def broadcast_command(self, command):
+        def repeat_pub():
+            for i in xrange(10):
+                self.publisher.send(pickle.dumps(command))
+                time.sleep(1)
+
+        t = Thread(target=repeat_pub)
+        t.deamon = True
+        t.start()
+        return t
+
+    def statusUpdate(self, driver, update):
+        logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
+        tid = int(update.task_id.value.split('-')[0])
+        if tid not in self.task_launched:
+            logging.error("Task %d not in task_launched", tid)
+            return
+        
+        t = self.task_launched[tid]
+        t.state = update.state
+        t.state_time = time.time()
+        hostname, slots = self.used_tasks[tid]
+
+        if update.state == mesos_pb2.TASK_RUNNING:
+            self.started = True
+
+        elif update.state == mesos_pb2.TASK_LOST:
+            logging.warning("Task %s was lost, try again", tid)
+            driver.reviveOffers() # request more offers again
+            t.tried += 1
+            t.state = -1
+            self.used_hosts.pop(hostname)
+            self.used_tasks.pop(tid)
+            self.task_launched.pop(tid)
+
+        elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
+            if not self.started:
+                logging.warning("Task %s has not started, ignore it %s", tid, update.state)
+                return
+
+            if update.state >= mesos_pb2.TASK_FAILED:
+                t.tried += 1
+                self.used_hosts.pop(hostname)
+                self.used_tasks.pop(tid)
+                logging.warning("task %d failed with %d on %s, slots %d, retry %d",
+                        t.id, update.state, hostname, slots, t.tried)
+                driver.reviveOffers() # request more offers again
+
+            t = self.task_launched.pop(tid)
+
+            launched = sum(self.used_hosts.values())
+            if (not self.task_launched) and (launched >= self.options.tasks) and self.mpi_started:
+                self.stop(driver) # all done
+
+    def check(self, driver):
+        now = time.time()
+        for tid, t in self.task_launched.items():
+            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 10 < now:
+                logging.warning("task %d lauched failed, assign again", tid)
+                driver.reviveOffers() # request more offers again
+                t.tried += 1
+                t.state = -1
+                self.used_hosts.pop(hostname)
+                self.used_tasks.pop(tid)
+                self.task_launched.pop(tid)
+            # TODO: check run time
+
+    def create_task(self, offer, t, k):
         task = mesos_pb2.TaskInfo()
         task.task_id.value = "%s-%s" % (t.id, t.tried)
         task.slave_id.value = offer.slave_id.value
         task.name = "task %s" % t.id
         task.executor.MergeFrom(self.executor)
         env = dict(os.environ)
-        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port])
+        task.data = pickle.dumps([os.getcwd(), None, env, self.options.shell, self.std_port, self.err_port, self.publisher_port])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -335,8 +390,8 @@ class MPIScheduler(SubmitScheduler):
 
         return task
 
-    def start_mpi(self, command, tasks, offers):
-        hosts = ','.join("%s:%d" % (offer.hostname, slots) for offer, slots in offers)
+    def start_mpi(self, command, tasks, items):
+        hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
         logging.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -349,9 +404,9 @@ class MPIScheduler(SubmitScheduler):
                 slaves.append(line[len(prefix):-1].strip())
             if line == 'HYDRA_LAUNCH_END\n':
                 break
-        if len(slaves) != len(offers):
-            logging.error("offers: %s, slaves: %s", offers, slaves)
-            raise Exception("slaves not match with offers")
+        if len(slaves) != len(items):
+            logging.error("hosts: %s, slaves: %s", items, slaves)
+            raise Exception("slaves not match with hosts")
         def output(f):
             while True:
                 line = f.readline()
