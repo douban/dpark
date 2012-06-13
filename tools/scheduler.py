@@ -241,7 +241,6 @@ class MPIScheduler(SubmitScheduler):
         SubmitScheduler.__init__(self, options, command)
         self.used_hosts = {}
         self.used_tasks = {}
-        self.mpi_started = False
         self.id = 0
         self.publisher = ctx.socket(zmq.PUB)
         port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
@@ -266,7 +265,7 @@ class MPIScheduler(SubmitScheduler):
             cpus, mem = self.getResource(offer)
             logging.debug("got resource offer %s: cpus:%s, mem:%s at %s", 
                 offer.id.value, cpus, mem, offer.hostname)
-            if  launched >= self.options.tasks or offer.hostname in self.used_hosts:
+            if launched >= self.options.tasks or offer.hostname in self.used_hosts:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
 
@@ -286,32 +285,6 @@ class MPIScheduler(SubmitScheduler):
         if launched < self.options.tasks:
             logging.warning('not enough offers: need %d offer %d, waiting more resources',
                             self.options.tasks, launched)
-            return
-
-        if self.mpi_started:
-            return
-
-        try:
-            slaves = self.start_mpi(command, self.options.tasks, self.used_hosts.items())
-        except Exception:
-            self.broadcast_command({})
-            self.next_try = time.time() + 5 
-            return
-
-        self.mpi_started = True
-        commands = dict(zip(self.used_hosts.keys(), slaves))
-        self.broadcast_command(commands)
-
-    def broadcast_command(self, command):
-        def repeat_pub():
-            for i in xrange(10):
-                self.publisher.send(pickle.dumps(command))
-                time.sleep(1)
-
-        t = Thread(target=repeat_pub)
-        t.deamon = True
-        t.start()
-        return t
 
     def statusUpdate(self, driver, update):
         logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
@@ -326,34 +299,33 @@ class MPIScheduler(SubmitScheduler):
         hostname, slots = self.used_tasks[tid]
 
         if update.state == mesos_pb2.TASK_RUNNING:
-            self.started = True
+            launched = sum(self.used_hosts.values())
+            ready = all(t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
+            if launched == self.options.tasks and ready:
+                logging.debug("all tasks are ready, start to run")    
+                self.start_mpi()
 
-        elif update.state == mesos_pb2.TASK_LOST:
-            logging.warning("Task %s was lost, try again", tid)
-            driver.reviveOffers() # request more offers again
-            t.tried += 1
-            t.state = -1
-            self.used_hosts.pop(hostname)
-            self.used_tasks.pop(tid)
-            self.task_launched.pop(tid)
+        elif update.state in (mesos_pb2.TASK_LOST, mesos_pb2.TASK_FAILED):
+            if not self.started:
+                logging.warning("Task %s was lost, try again", tid)
+                driver.reviveOffers() # request more offers again
+                t.tried += 1
+                t.state = -1
+                self.used_hosts.pop(hostname)
+                self.used_tasks.pop(tid)
+                self.task_launched.pop(tid)
+            else:
+                logging.error("Task %s failed, cancel all tasks", tid)
+                self.stop(driver) # stop mpi, not recovable
+                sys.exit(1)
 
-        elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
+        elif update.state == mesos_pb2.TASK_FINISHED:
             if not self.started:
                 logging.warning("Task %s has not started, ignore it %s", tid, update.state)
                 return
 
-            if update.state >= mesos_pb2.TASK_FAILED:
-                t.tried += 1
-                self.used_hosts.pop(hostname)
-                self.used_tasks.pop(tid)
-                logging.warning("task %d failed with %d on %s, slots %d, retry %d",
-                        t.id, update.state, hostname, slots, t.tried)
-                driver.reviveOffers() # request more offers again
-
             t = self.task_launched.pop(tid)
-
-            launched = sum(self.used_hosts.values())
-            if (not self.task_launched) and (launched >= self.options.tasks) and self.mpi_started:
+            if not self.task_launched:
                 self.stop(driver) # all done
 
     def check(self, driver):
@@ -390,7 +362,30 @@ class MPIScheduler(SubmitScheduler):
 
         return task
 
-    def start_mpi(self, command, tasks, items):
+    def start_mpi(self):
+        try:
+            slaves = self.try_to_start_mpi(self.command, self.options.tasks, self.used_hosts.items())
+        except Exception:
+            self.broadcast_command({})
+            self.next_try = time.time() + 5 
+            return
+
+        commands = dict(zip(self.used_hosts.keys(), slaves))
+        self.broadcast_command(commands)
+        self.started = True
+    
+    def broadcast_command(self, command):
+        def repeat_pub():
+            for i in xrange(10):
+                self.publisher.send(pickle.dumps(command))
+                time.sleep(1)
+
+        t = Thread(target=repeat_pub)
+        t.deamon = True
+        t.start()
+        return t
+
+    def try_to_start_mpi(self, command, tasks, items):
         hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
         logging.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
@@ -428,6 +423,7 @@ class MPIScheduler(SubmitScheduler):
         driver.stop(False)
         self.stopped = True
         logging.debug("scheduler stopped")
+
 
 if __name__ == "__main__":
     parser = OptionParser(usage="Usage: %prog [options] <command>")
