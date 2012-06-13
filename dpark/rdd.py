@@ -147,6 +147,7 @@ class RDD:
 
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
+    mapPartiton = mapPartitions
 
     def foreach(self, f):
         def mf(it):
