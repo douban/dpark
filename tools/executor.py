@@ -72,11 +72,11 @@ def launch_task(self, driver, task):
             if line:
                 command = line.split(' ')
             else:
-                stderr.send('publisher canceled task')
+                print >> wout, 'publisher canceled task'
                 reply_status(driver, task, mesos_pb2.TASK_FAILED)
                 return
         else:
-            stderr.send('waiting publisher timeout')
+            print >> wout, 'waiting publisher timeout'
             reply_status(driver, task, mesos_pb2.TASK_FAILED)
             return
 
