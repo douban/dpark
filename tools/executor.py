@@ -60,6 +60,7 @@ def launch_task(self, driver, task):
     if addr3:
         subscriber = ctx.socket(zmq.SUB)
         subscriber.connect(addr3)
+        subscriber.setsockopt(zmq.SUBSCRIBE, '')
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
         print >> wout, 'start polling at %s' % host
@@ -69,11 +70,11 @@ def launch_task(self, driver, task):
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
             if line:
-                command = line
+                command = line.split(' ')
             else:
                 stderr.send('publisher canceled task')
                 reply_status(driver, task, mesos_pb2.TASK_FAILED)
-            return
+                return
         else:
             stderr.send('waiting publisher timeout')
             reply_status(driver, task, mesos_pb2.TASK_FAILED)

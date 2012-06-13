@@ -13,7 +13,6 @@ import logging
 import signal
 import zmq
 import getpass
-from time import sleep
 
 import mesos
 import mesos_pb2
@@ -304,16 +303,26 @@ class MPIScheduler(SubmitScheduler):
         try:
             slaves = self.start_mpi(command, self.options.tasks, hosts.items())
         except Exception:
-            sleep(10)
-            self.publisher.send(pickle.dumps({}));
+            self.broadcast_command({})
             self.next_try = time.time() + 5 
             return
 
         commands = dict(zip(hosts.keys(), slaves))
-        sleep(10)
-        self.publisher.send(pickle.dumps(commands))
+        self.broadcast_command(commands)
         self.total_tasks = []
         self.started = True
+
+    def broadcast_command(self, command):
+        def repeat_pub():
+            for i in xrange(10):
+                self.publisher.send(pickle.dumps(command))
+                time.sleep(1)
+
+        t = Thread(target=repeat_pub)
+        t.deamon = True
+        t.start()
+        return t
+
 
     def create_task(self, offer, t, command, k):
         task = mesos_pb2.TaskInfo()
@@ -371,7 +380,6 @@ class MPIScheduler(SubmitScheduler):
             self.p.wait()
             self.tout.join()
             self.terr.join()
-            self.publisher.send(pickle.dumps({}));
         driver.stop(False)
         self.stopped = True
         logging.debug("scheduler stopped")
