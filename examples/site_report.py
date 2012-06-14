@@ -130,7 +130,8 @@ def save_report(day, sites, widgets, front_pages, rooms, site_shares, widget_sha
             (day, site.id, pv, uv, visits, avg_time,share))
 
         # front page is default room
-        rooms.setdefault(site.default_room.uid, []).extend(front_pages.get(site.default_room.uid, []))
+        if site.default_room:
+            rooms.setdefault(site.default_room.uid, []).extend(front_pages.get(site.uid, []))
 
     for wid in widgets:
         if wid.isdigit():
@@ -155,6 +156,7 @@ if __name__ == '__main__':
         if not os.path.exists(path):
             #print day
             sites, widgets, fronts, rooms, site_shares, widget_shares = site_log(day)
+            dpark.stop()
             if len(sites) > 1000 and len(widgets) > 1000:
-                save_report(day, sites, widgets, fronts, rooms, site_shares, widget_shares)
                 cPickle.dump((len(sites), len(rooms), len(widgets)), open(path,'w'))
+                save_report(day, sites, widgets, fronts, rooms, site_shares, widget_shares)
