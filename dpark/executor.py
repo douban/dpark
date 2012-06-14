@@ -103,7 +103,7 @@ def startWebServer(path):
     except IOError, e:
         pass
     
-    logger.warning("default webserver at %s not available", DEFAULT_WEBDEFAULT_WEB_PORTT)
+    logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     threading.Thread(target=ss.serve_forever).start()
@@ -158,9 +158,7 @@ class MyExecutor(mesos.Executor):
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
             
-            if args['DPARK_HAS_DFS'] == 'True':
-                self.workdir = None
-            else:
+            if args['DPARK_HAS_DFS'] != 'True':
                 self.workdir = args['WORKDIR']
                 if not os.path.exists(self.workdir):
                     os.mkdir(self.workdir)
@@ -201,7 +199,7 @@ class MyExecutor(mesos.Executor):
 
     def shutdown(self, driver):
         # clean work files
-        if self.workdir:
+        if getattr(self, 'workdir', None):
             try: shutil.rmtree(self.workdir, True)
             except: pass
         # flush
