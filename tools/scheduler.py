@@ -253,7 +253,7 @@ class MPIScheduler(SubmitScheduler):
         self.task_launched[t.id] = t
         self.used_tasks[t.id] = (offer.hostname, k)
         task = self.create_task(offer, t, k)
-        logging.info("lauching %s task with offer %s on %s, slots %d", t.id,
+        logging.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task])
     
