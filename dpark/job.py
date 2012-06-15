@@ -169,7 +169,7 @@ class SimpleJob(Job):
         if self.tasksFinished == self.numTasks:
             ts = [t.used for t in self.tasks]
             tried = [t.tried for t in self.tasks]
-            logger.info("Job %d finished in %ss: min=%s, avg=%s, max=%s, maxtry=%s",
+            logger.info("Job %d finished in %.2fs: min=%.2fs, avg=%.2fs, max=%.2fs, maxtry=%d",
                 self.id, time.time()-self.start, 
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
             self.sched.jobFinished(self)

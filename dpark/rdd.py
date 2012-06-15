@@ -880,7 +880,7 @@ class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices):
         RDD.__init__(self, ctx)
         self.size = len(data)
-        slices = self.slice(data, numSlices)
+        slices = self.slice(data, min(self.size, numSlices))
         self._splits = [ParallelCollectionSplit(i, slices[i]) 
                 for i in range(len(slices))]
         self.dependencies = []
@@ -1006,8 +1006,8 @@ class BZip2FileRDD(TextFileRDD):
 
             if last_line is None:
                 io.readline() # skip the first line
+                last_line = ''
             else:
-                yield last_line + io.readline()
                 last_line += io.readline()
                 if last_line.endswith('\n'):
                     yield last_line
@@ -1018,9 +1018,8 @@ class BZip2FileRDD(TextFileRDD):
                     yield line
                 else:
                     last_line = line
-                    break
 
-            np = d.find(self.magic, 1)
+            np = d.find(self.magic, len(self.magic))
             if np <= 0:
                 break
             d = d[np:]
