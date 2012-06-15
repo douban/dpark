@@ -60,10 +60,12 @@ class DparkEnv:
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)
         
-        from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
+        from shuffle import LocalFileShuffle, MapOutputTracker
+        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker(isMaster)
-        self.shuffleFetcher = SimpleShuffleFetcher()
+        #self.shuffleFetcher = SimpleShuffleFetcher()
+        self.shuffleFetcher = ParallelShuffleFetcher(8)
 
         from broadcast import Broadcast
         Broadcast.initialize(isMaster)

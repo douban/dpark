@@ -2,7 +2,6 @@
 import logging
 import os, sys, time
 import os.path
-import threading
 import marshal
 import cPickle
 import multiprocessing
