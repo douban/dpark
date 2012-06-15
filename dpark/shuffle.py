@@ -84,7 +84,9 @@ class SimpleShuffleFetcher(ShuffleFetcher):
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        for part, uri in enumerate(serverUris):
+        parts = zip(range(len(serverUris)), serverUris)
+        random.shuffle(parts)
+        for part, uri in parts:
             d = self.fetch_one(uri, shuffleId, part, reduceId) 
             for k,v in d.iteritems():
                 func(k,v)
@@ -117,21 +119,23 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        for part, uri in enumerate(serverUris):
+        parts = zip(range(len(serverUris)), serverUris)
+        random.shuffle(parts)
+        for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
-
-        completed = set() 
+        
+        #completed = set() 
         for i in xrange(len(serverUris)):
             r = self.results.get()
             if isinstance(r, Exception):
                 raise r
 
             sid, rid, part, d = r
-            assert shuffleId == sid
-            assert rid == reduceId
+            #assert shuffleId == sid
+            #assert rid == reduceId
             for k,v in d.iteritems():
                 func(k,v)
-            completed.add(part)
+            #completed.add(part)
 
     def stop(self):
         logger.debug("stop parallel shuffle fetcher ...")
