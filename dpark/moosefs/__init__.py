@@ -63,7 +63,7 @@ class MooseFS(object):
         self.mc.close()
 
 
-class File:
+class File(object):
     def __init__(self, inode, path, info, master):
         self.inode = inode
         self.path = path
@@ -71,10 +71,6 @@ class File:
         self.length = info.length
         self.master = master
         self.cscache = {}
-        self.roff = 0
-        self.rbuf = ''
-        self.reader = None
-        self.generator = None
 
     def __len__(self):
         return (self.length + CHUNKSIZE - 1) / CHUNKSIZE
@@ -91,6 +87,15 @@ class File:
             return [[host for host, _ in self.get_chunk(i).addrs]
                      for i in range(len(self))]
         return [host for host, _ in self.get_chunk(i).addrs]
+
+
+class ReadableFile(File):
+    def __init__(self, f):
+        self.__dict__.update(f.__dict__)
+        self.roff = 0
+        self.rbuf = ''
+        self.reader = None
+        self.generator = None
 
     def seek(self, offset, length=0):
         off = offset - self.roff
@@ -164,7 +169,7 @@ class File:
                 pass
 
         if offset < length:
-            raise Exception("unexpected error: %s < %s" % (offset, length))
+            raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
         
     def __iter__(self):
         return self

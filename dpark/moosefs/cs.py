@@ -1,7 +1,7 @@
 import os
 import socket
 
-from consts import CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
+from consts import CHUNKSIZE, CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
 from utils import uint64, pack, unpack
 
 mfsdirs = []
@@ -18,7 +18,6 @@ def _scan():
 _scan()
 
 CHUNKHDRSIZE = 1024 * 5
-CHUNKSIZE = 1 << 26
 
 def read_chunk(host, port, chunkid, version, size, offset=0):
     if offset + size > CHUNKSIZE:
