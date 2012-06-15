@@ -1,19 +1,21 @@
 import os
 import socket
-import struct
 
-from utils import *
+from consts import CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
+from utils import uint64, pack, unpack
 
 mfsdirs = []
-for conf in ('/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg'):
-    if not os.path.exists(conf):
-        continue
-    f = open(conf)
-    for line in f:
-        path = line.strip('#* \n')
-        if os.path.exists(path):
-            mfsdirs.append(path)
-    f.close()
+def _scan():
+    for conf in ('/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg'):
+        if not os.path.exists(conf):
+            continue
+        f = open(conf)
+        for line in f:
+            path = line.strip('#* \n')
+            if os.path.exists(path):
+                mfsdirs.append(path)
+        f.close()
+_scan()
 
 CHUNKHDRSIZE = 1024 * 5
 CHUNKSIZE = 1 << 26
@@ -82,7 +84,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             if bsize == 0 : # FIXME
                 raise Exception("readblock; empty block")
                 #yield ""
-                continue
+                #continue
             if bid != offset >> 16:
                 raise Exception("readblock; READ_DATA incorrect block number")
             if boff != offset & 0xFFFF:
@@ -106,9 +108,9 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
 
 
 def test():
-    d = list(read_block('192.168.11.3', 9422, 6544760, 1, 6, 0))
+    d = list(read_chunk('192.168.11.3', 9422, 6544760, 1, 6, 0))
     print len(d), sum(len(s) for s in d)
-    d = list(read_block('192.168.11.3', 9422, 6544936, 1, 46039893, 0))
+    d = list(read_chunk('192.168.11.3', 9422, 6544936, 1, 46039893, 0))
     print len(d), sum(len(s) for s in d)
 
 if __name__ == '__main__':

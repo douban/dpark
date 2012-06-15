@@ -1,12 +1,13 @@
+import os
 from cStringIO import StringIO
 
 from consts import *
 from master import MasterConn
-from cs import *
+from cs import read_chunk
 
 MFS_ROOT_INODE = 1
 
-class MooseFS:
+class MooseFS(object):
     def __init__(self, host='mfsmaster', port=9421):
         self.host = host
         self.mc = MasterConn(host, port)
@@ -27,13 +28,13 @@ class MooseFS:
         parent = MFS_ROOT_INODE
         info = None
         ps = path.split('/')
-        for i,n in enumerate(ps):
+        for i, n in enumerate(ps):
             if not n: continue
             info = self._lookup(parent, n)
             if not info:
                 return
             if info.is_symlink() and followSymlink:
-                target = self.mc.read_link(info.inode)
+                target = self.mc.readlink(info.inode)
                 if not target.startswith('/'):
                     target = os.path.join('/'.join(ps[:i]),
                         target)
@@ -87,9 +88,9 @@ class File:
 
     def locs(self, i=None):
         if i is None:
-            return [[host for host,_ in self.get_chunk(i).addrs]
+            return [[host for host, _ in self.get_chunk(i).addrs]
                      for i in range(len(self))]
-        return [host for host,_ in self.get_chunk(i).addrs]
+        return [host for host, _ in self.get_chunk(i).addrs]
 
     def seek(self, offset, length=0):
         off = offset - self.roff
@@ -211,7 +212,7 @@ def walk(path, master='mfsmaster'):
     while ds:
         root = ds.pop()
         cs = listdir(root, master)
-        dirs = [name for name,info in cs.iteritems() 
+        dirs = [name for name, info in cs.iteritems() 
                 if info.type == TYPE_DIRECTORY
                     and name not in '..']
         files = [i.name for i in cs.values() if i.type == TYPE_FILE]
@@ -233,7 +234,7 @@ def _test():
     f.seek(0)
     f2.seek(0)
     import csv
-    for row in csv.reader(f2):
+    for _ in csv.reader(f2):
         break
 
     #print listdir('/')
