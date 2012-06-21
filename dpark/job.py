@@ -2,6 +2,7 @@ import time
 import sys
 import logging
 import socket
+from operator import itemgetter
 
 logger = logging.getLogger("job")
 
@@ -72,6 +73,7 @@ class SimpleJob(Job):
 
         for i in range(len(tasks)):
             self.addPendingTask(i)
+        self.host_cache = {}
 
     @property
     def taskEverageTime(self):
@@ -90,11 +92,24 @@ class SimpleJob(Job):
 
     def getPendingTasksForHost(self, host):
         try:
+            return self.host_cache[host]
+        except KeyError:
+            v = self._getPendingTasksForHost(host)
+            self.host_cache[host] = v
+            return v
+
+    def _getPendingTasksForHost(self, host):
+        try:
             h, hs, ips = socket.gethostbyname_ex(host)
         except Exception:
             h, hs, ips = host, [], []
-        return sum((self.pendingTasksForHost.setdefault(h, []) 
+        tasks = sum((self.pendingTasksForHost.get(h, []) 
             for h in [h] + hs + ips), [])
+        st = {}
+        for t in tasks:
+            st[t] = st.get(t, 0) + 1
+        ts = sorted(st.items(), key=itemgetter(1), reverse=True)
+        return [t for t,_ in ts ]
 
     def findTaskFromList(self, l, host):
         for i in l:
@@ -194,7 +209,6 @@ class SimpleJob(Job):
         if status == TASK_FAILED:
             logger.warning("task %s failed with: %s", 
                 self.tasks[index], reason and reason.message)
-        self.addPendingTask(index)
         self.sched.requestMoreResources()
         if status in (TASK_FAILED, TASK_LOST):
             self.numFailures[index] += 1

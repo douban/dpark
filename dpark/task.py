@@ -23,10 +23,10 @@ class Task:
 
     def run(self, id):
         raise NotImplementedError
+    
     def preferredLocations(self):
-        return []
-    def generation(self):
         raise NotImplementedError
+
     
 class DAGTask(Task):
     def __init__(self, stageId):
@@ -80,6 +80,9 @@ class ShuffleMapTask(DAGTask):
 
     def __repr__(self):
         return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
+
+    def preferredLocations(self):
+        return self.locs
 
     def run(self, attempId):
         logger.debug("shuffling %d of %s", self.partition, self.rdd)

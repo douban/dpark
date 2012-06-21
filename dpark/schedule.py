@@ -230,7 +230,7 @@ class DAGScheduler(Scheduler):
                 for p in range(stage.numPartitions):
                     if not stage.outputLocs[p]:
                         if have_prefer:
-                            locs = self.getPreferredLocs(finalRdd, p)
+                            locs = self.getPreferredLocs(stage.rdd, p)
                             if not locs:
                                 have_prefer = False
                         else:
