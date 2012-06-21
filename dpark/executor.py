@@ -44,11 +44,11 @@ def reply_status(driver, task, status, data=None):
         update.data = data
     driver.sendStatusUpdate(update)
 
-def run_task(task, aid):
+def run_task(task, ntry):
     try:
         setproctitle('dpark worker %s: run task %s' % (Script, task))
         Accumulator.clear()
-        result = task.run(aid)
+        result = task.run(ntry)
         accUpdate = Accumulator.values()
 
         if marshalable(result):
@@ -57,7 +57,7 @@ def run_task(task, aid):
             flag, data = 1, cPickle.dumps(result, -1)
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
-            name = 'task_%s_%s.result' % (task.id, aid)
+            name = 'task_%s_%s.result' % (task.id, ntry)
             path = os.path.join(workdir, name) 
             f = open(path, 'w')
             f.write(data)
@@ -162,7 +162,12 @@ class MyExecutor(mesos.Executor):
                 if not os.path.exists(self.workdir):
                     os.mkdir(self.workdir)
                 args['SERVER_URI'] = startWebServer(args['WORKDIR'])
-            self.pool = multiprocessing.Pool(parallel, init_env, [args])
+           
+            self.init_env = init_env
+            self.init_args = [args]
+            self.idle_workers = []
+            self.busy_workers = {}
+
             logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
             import traceback
@@ -175,16 +180,29 @@ class MyExecutor(mesos.Executor):
     def disconnected():
         logger.info("executor is disconnected at %s", slaveInfo.hostname)
 
+    def get_idle_worker(self):
+        try:
+            return self.idle_workers.pop()
+        except IndexError:
+            return multiprocessing.Pool(1, self.init_env, self.init_args)
+
     def launchTask(self, driver, task):
         try:
-            t, aid = cPickle.loads(task.data)
+            t, ntry = cPickle.loads(task.data)
             
+            reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+            
+            logging.debug("launch task %s", t.id)
+            
+            pool = self.get_idle_worker()
+            self.busy_workers[task.task_id.value] = (task, pool)
+
             def callback((state, data)):
+                _, pool = self.busy_workers.pop(task.task_id.value)
+                self.idle_workers.append(pool)
                 reply_status(driver, task, state, data)
         
-            reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-            logging.debug("launch task %s", t.id) 
-            self.pool.apply_async(run_task, [t, aid], callback=callback)
+            pool.apply_async(run_task, [t, ntry], callback=callback)
     
         except Exception, e:
             import traceback
@@ -193,8 +211,10 @@ class MyExecutor(mesos.Executor):
             return
 
     def killTask(self, driver, taskId):
-        #driver.sendFrameworkMessage('kill task %s' % taskId)
-        pass
+        if taskId.value in self.busy_workers:
+            task, pool = self.busy_workers.pop(taskId.value)
+            pool.terminate()
+            reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
     def shutdown(self, driver):
         # clean work files
@@ -206,12 +226,12 @@ class MyExecutor(mesos.Executor):
         sys.stderr.close()
         self.outt.join()
         self.errt.join()
-        for p in self.pool._pool:
+        for p in self.idle_workers:
             try: p.terminate()
             except: pass
-        #for p in self.pool._pool:
-        #    try: p.join()
-        #    except: pass
+        for _, p in self.busy_workers.items():
+            try: p.terminate()
+            except: pass
 
     def error(self, driver, code, message):
         logger.error("error: %s, %s", code, message)

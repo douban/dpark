@@ -46,7 +46,7 @@ class TestExecute(unittest.TestCase):
         slaveInfo.hostname = socket.gethostname()
 
         executor.registered(driver, executorInfo, frameworkInfo, slaveInfo)
-        assert executor.pool
+        assert executor.init_env
 
         task = mesos_pb2.TaskInfo()
         task.name = 'test-task'

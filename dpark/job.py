@@ -150,46 +150,52 @@ class SimpleJob(Job):
             return task
         logger.debug("no task found %s", localOnly)
 
-    def statusUpdate(self, tid, status, reason=None, result=None, update=None):
+    def statusUpdate(self, tid, tried, status, reason=None, result=None, update=None):
         logger.debug("job status update %s %s %s", tid, status, reason)
         if tid not in self.tidToIndex:
             logger.error("invalid tid: %s", tid)
             return
         i = self.tidToIndex[tid]
         if self.finished[i]:
-            logger.info("Task %d is already finished, ignore it", tid)
+            if status == TASK_FINISHED:
+                logger.info("Task %d is already finished, ignore it", tid)
             return 
 
         if status == TASK_FINISHED:
-            self.taskFinished(tid, result, update)
+            self.taskFinished(tid, tried, result, update)
         elif status in (TASK_LOST, 
                     TASK_FAILED, TASK_KILLED):
-            self.taskLost(tid, status, reason)
+            self.taskLost(tid, tried, status, reason)
         
         task = self.tasks[i]
         task.status = status
         task.start = time.time()
 
-    def taskFinished(self, tid, result, update):
+    def taskFinished(self, tid, tried, result, update):
         i = self.tidToIndex[tid]
         self.finished[i] = True
         self.tasksFinished += 1
         task = self.tasks[i]
         task.used += time.time() - task.start
         self.total_used += task.used
-        logger.info("Task %s finished in %.2fs (%d/%d)",
+        logger.info("Task %s finished in %.1fs (%d/%d)",
             tid, task.used, self.tasksFinished, self.numTasks)
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
+
+        if tried < task.tried:
+            for t in range(tried, task.tried):
+                self.sched.killTask(self.id, task.id, t + 1)
+
         if self.tasksFinished == self.numTasks:
             ts = [t.used for t in self.tasks]
             tried = [t.tried for t in self.tasks]
-            logger.info("Job %d finished in %.2fs: min=%.2fs, avg=%.2fs, max=%.2fs, maxtry=%d",
+            logger.info("Job %d finished in %.1fs: min=%.1fs, avg=%.1fs, max=%.1fs, maxtry=%d",
                 self.id, time.time()-self.start, 
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
             self.sched.jobFinished(self)
 
-    def taskLost(self, tid, status, reason):
+    def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
         logger.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
         self.launched[index] = False

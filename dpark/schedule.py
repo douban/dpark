@@ -523,7 +523,7 @@ class MesosScheduler(DAGScheduler):
     def resourceOffers(self, driver, offers):
         rf = mesos_pb2.Filters()
         if not self.activeJobs:
-            rf.refuse_seconds = 60
+            rf.refuse_seconds = 60 * 5
             for o in offers:
                 driver.declineOffer(o.id, rf)
             return
@@ -571,7 +571,7 @@ class MesosScheduler(DAGScheduler):
                 if not launchedTask:
                     break
         
-        rf.refuse_seconds = 1
+        rf.refuse_seconds = 5
         for o in offers:
             if o.id.value in tasks:
                 driver.launchTasks(o.id, tasks[o.id.value])
@@ -631,9 +631,9 @@ class MesosScheduler(DAGScheduler):
             return
 
         job = self.activeJobs[jid]
+        _, task_id, tried = map(int, tid.split(':'))
         if state == mesos_pb2.TASK_RUNNING:
-            task_id = int(tid.split(':')[1])
-            return job.statusUpdate(task_id, state)
+            return job.statusUpdate(task_id, tried, state)
 
         del self.taskIdToJobId[tid]
         self.jobTasks[jid].remove(tid)
@@ -653,16 +653,15 @@ class MesosScheduler(DAGScheduler):
                         result = marshal.loads(data)
                     else:
                         result = cPickle.loads(data)
-                return job.statusUpdate(task_id, state, 
+                return job.statusUpdate(task_id, tried, state, 
                     reason, result, accUpdate)
             except Exception, e:
                 logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
                 state = mesos_pb2.TASK_FAILED
-                return job.statusUpdate(task_id, mesos_pb2.TASK_FAILED, 'load failed: %s' % e)
+                return job.statusUpdate(task_id, tried, mesos_pb2.TASK_FAILED, 'load failed: %s' % e)
 
         # killed, lost, load failed
-        task_id = int(tid.split(':')[1])
-        job.statusUpdate(task_id, state, status.data)
+        job.statusUpdate(task_id, tried, state, status.data)
         self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
     
     def jobFinished(self, job):
@@ -674,6 +673,9 @@ class MesosScheduler(DAGScheduler):
                 del self.taskIdToJobId[id]
                 del self.taskIdToSlaveId[id]
             del self.jobTasks[job.id]
+            if not self.activeJobs:
+                self.slaveTasks.clear()
+                self.slaveFailed.clear()
 
     @safe
     def check(self):
@@ -718,18 +720,14 @@ class MesosScheduler(DAGScheduler):
 
     def executorLost(self, driver, executorId, slaveId, status):
         logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
-        # TODO
+        del self.slaveTasks[slaveId.value]
 
     def slaveLost(self, driver, slave):
         logger.warning("slave %s lost", slave.value)
         self.slaveTasks.pop(slave.value, 0)
         self.slaveFailed[slave.value] = MAX_FAILED
 
-    def killTask(self, task):
-        jid = self.taskIdToJobId.get(task.id)
-        if jid :
-            tid = mesos_pb2.TaskID()
-            tid.value = "%s:%s:%s" % (jid, task.id, task.tried)
-            self.driver.killTask(tid)
-        else:
-            logger.warning("can not kill %s because of job had gone", task)
+    def killTask(self, job_id, task_id, tried):
+        tid = mesos_pb2.TaskID()
+        tid.value = "%s:%s:%s" % (job_id, task_id, tried)
+        self.driver.killTask(tid)

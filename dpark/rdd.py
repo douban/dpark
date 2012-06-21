@@ -153,7 +153,7 @@ class RDD:
         def mf(it):
             for i in it:
                 f(i)
-        return self.ctx.runJob(self, mf)
+        self.ctx.runJob(self, mf)
 
     def collect(self):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
