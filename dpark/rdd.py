@@ -633,7 +633,16 @@ class CartesianRDD(RDD):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
 
     def compute(self, split):
-        return itertools.product(self.rdd1.iterator(split.s1), self.rdd2.iterator(split.s2))
+        b = None
+        for i in self.rdd1.iterator(split.s1):
+            if b is None:
+                b = []
+                for j in self.rdd2.iterator(split.s2):
+                    yield (i, j)
+                    b.append(j)
+            else:
+                for j in b:
+                    yield (i,j)
 
 class CoGroupSplitDep: pass
 class NarrowCoGroupSplitDep(CoGroupSplitDep):
