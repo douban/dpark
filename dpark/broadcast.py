@@ -39,7 +39,7 @@ class SourceInfo:
     def __cmp__(self, other):
         return self.leechers - other.leechers
 
-    def __str__(self):
+    def __repr__(self):
         return "<source %s>" % (self.addr)
 
 class BroadcastBlock:
@@ -276,16 +276,28 @@ class TreeBroadcast(FileBroadcast):
         logger.debug("guide started...")
 
     def selectSuitableSource(self, skip):
+        def parse_host(si):
+            return si.addr.split(':')[1][2:]
+        host = parse_host(skip)
+        samehost = [s for s in self.listOfSources.values()
+                if parse_host(s) == host]
+        selected = self._selectSource(samehost, skip)
+        if not selected:
+            selected = self._selectSource(self.listOfSources.values(), skip)
+
+        selected.leechers += 1
+        return selected
+    
+    def _selectSource(self, sources, skip): 
         maxLeechers = -1
-        selectedSource = None
-        for s in self.listOfSources.values():
+        selected = None
+        for s in sources:
             if (s.addr != skip.addr 
                     and s.leechers < self.MaxDegree
                     and s.leechers > maxLeechers):
-                selectedSource = s
+                selected = s
                 maxLeechers = s.leechers
-        selectedSource.leechers += 1
-        return selectedSource
+        return selected
 
     def startServer(self):
         def run():
