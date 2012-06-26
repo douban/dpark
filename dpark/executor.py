@@ -140,10 +140,16 @@ def start_forword(addr, prefix=''):
     return t, os.fdopen(wfd, 'w', 0) 
 
 class MyExecutor(mesos.Executor):
+    def __init__(self):
+        self.workdir = None
+        self.idle_workers = []
+        self.busy_workers = {}
+        self.killed_tasks = set()
+
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
-            Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
+            Script, cwd, python_path, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             try:
                 os.chdir(cwd)
             except OSError:
@@ -163,10 +169,7 @@ class MyExecutor(mesos.Executor):
                     os.mkdir(self.workdir)
                 args['SERVER_URI'] = startWebServer(args['WORKDIR'])
            
-            self.init_env = init_env
             self.init_args = [args]
-            self.idle_workers = []
-            self.busy_workers = {}
 
             logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
@@ -184,7 +187,7 @@ class MyExecutor(mesos.Executor):
         try:
             return self.idle_workers.pop()
         except IndexError:
-            return multiprocessing.Pool(1, self.init_env, self.init_args)
+            return multiprocessing.Pool(1, init_env, self.init_args)
 
     def launchTask(self, driver, task):
         try:
@@ -199,8 +202,12 @@ class MyExecutor(mesos.Executor):
 
             def callback((state, data)):
                 _, pool = self.busy_workers.pop(task.task_id.value)
-                self.idle_workers.append(pool)
-                reply_status(driver, task, state, data)
+                if task.task_id.value not in self.killed_tasks:
+                    reply_status(driver, task, state, data)
+                if len(self.idle_workers) + len(self.busy_workers) < self.parallel:
+                    self.idle_workers.append(pool)
+                else:
+                    pool.terminate()
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
@@ -212,13 +219,16 @@ class MyExecutor(mesos.Executor):
 
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
-            task, pool = self.busy_workers.pop(taskId.value)
-            pool.terminate()
+            # FIXME should not terminate process, because of broadcasting need it
+            #task, pool = self.busy_workers.pop(taskId.value)
+            #pool.terminate()
+            task, pool = self.busy_workers[taskId.value]
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
+            self.killed_tasks.add(taskId.value)
 
     def shutdown(self, driver):
         # clean work files
-        if getattr(self, 'workdir', None):
+        if self.workdir:
             try: shutil.rmtree(self.workdir, True)
             except: pass
         # flush
