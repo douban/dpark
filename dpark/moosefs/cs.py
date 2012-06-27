@@ -19,13 +19,12 @@ _scan()
 
 CHUNKHDRSIZE = 1024 * 5
 
-def read_chunk(host, port, chunkid, version, size, offset=0):
+def read_chunk_from_local(chunkid, version, size, offset=0):
     if offset + size > CHUNKSIZE:
         raise ValueError("size too large %s > %s" % 
             (size, CHUNKSIZE-offset))
     
     from dpark.accumulator import ReadBytes, LocalReadBytes
-
     name = '%02X/chunk_%016X_%08X.mfs' % (chunkid & 0xFF, chunkid, version)
     for d in mfsdirs:
         p = os.path.join(d, name)
@@ -37,13 +36,20 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             while size > 0:
                 to_read = min(size, 1024*1024*4)
                 data = f.read(to_read)
+                if not data:
+                    return
                 LocalReadBytes.add(len(data))
                 yield data
                 size -= len(data)
-                if len(data) < to_read:
-                    break
             f.close()
             return
+
+def read_chunk(host, port, chunkid, version, size, offset=0):
+    if offset + size > CHUNKSIZE:
+        raise ValueError("size too large %s > %s" % 
+            (size, CHUNKSIZE-offset))
+    
+    from dpark.accumulator import ReadBytes, LocalReadBytes
 
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     conn.settimeout(10)
@@ -93,12 +99,16 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
                 breq = size
             if bsize != breq:
                 raise Exception("readblock; READ_DATA incorrect block size")
-            
+           
             while breq > 0:
                 data = conn.recv(breq)
+                if not data:
+                    #print chunkid, version, offset, size, bsize, breq
+                    raise IOError("unexpected ending: need %d" % breq)
                 ReadBytes.add(len(data))
                 yield data
                 breq -= len(data)
+
             offset += bsize
             size -= bsize
         else:

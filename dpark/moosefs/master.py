@@ -123,7 +123,7 @@ class MasterConn:
         while len(r) < n:
             rr = self.conn.recv(n - len(r))
             if not rr:
-                print self.conn, n, len(r)
+                self.close()
                 raise IOError("unexpected error: need %d" % (n-len(r)))
             r += rr
         return r

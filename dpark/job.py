@@ -248,8 +248,8 @@ class SimpleJob(Job):
             used = now - task.start
             if used > avg * (task.tried + 2) and used > 30:
                 if task.tried <= MAX_TASK_FAILURES:
-                    logger.warning("re-submit task %s for timeout %s",
-                        task.id, used)
+                    logger.warning("re-submit task %s for timeout %.1f, try %d",
+                        task.id, used, task.tried)
                     task.tried += 1
                     task.used += used
                     task.start = now

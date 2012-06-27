@@ -206,8 +206,6 @@ class MyExecutor(mesos.Executor):
                     reply_status(driver, task, state, data)
                 if len(self.idle_workers) + len(self.busy_workers) < self.parallel:
                     self.idle_workers.append(pool)
-                else:
-                    pool.terminate()
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     

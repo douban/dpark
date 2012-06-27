@@ -3,7 +3,7 @@ from cStringIO import StringIO
 
 from consts import *
 from master import MasterConn
-from cs import read_chunk
+from cs import read_chunk, read_chunk_from_local
 
 MFS_ROOT_INODE = 1
 
@@ -157,15 +157,24 @@ class ReadableFile(File):
         length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
         if offset > length:
             return
+            
+        for block in read_chunk_from_local(chunk.id,
+                chunk.version, length-offset, offset):
+            yield block
+            offset += len(block)
+            if offset >= length:
+                return
+
         for host, port in chunk.addrs:
             try:
                 for block in read_chunk(host, port, chunk.id,
                     chunk.version, length-offset, offset):
                     yield block
                     offset += len(block)
-                    if offset == length:
+                    if offset >= length:
                         return
-            except IOError:
+            except IOError, e:
+                #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
                 pass
 
         if offset < length:
