@@ -246,7 +246,7 @@ class SimpleJob(Job):
         if self.tasksLaunched < self.numTasks:
             return False
 
-        if self.last_check + 5 < now:
+        if self.last_check + 5 > now:
             return False
         self.last_check = now
 
@@ -263,6 +263,7 @@ class SimpleJob(Job):
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])[0]
             used = now - task.start
+            logging.debug("slowest task %s used %.1f (avg = %.1f)", task.id, used, avg)
             if used > avg * (task.tried + 1) and used > 30:
                 if task.tried <= MAX_TASK_FAILURES:
                     logger.warning("re-submit task %s for timeout %.1f, try %d",
