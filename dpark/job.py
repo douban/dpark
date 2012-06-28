@@ -168,7 +168,7 @@ class SimpleJob(Job):
         # when checking, task been masked as not launched
         if not self.launched[i]:
             self.launched[i] = True
-            self.tasksLaunched -= 1 
+            self.tasksLaunched += 1 
         
         if status == TASK_FINISHED:
             self.taskFinished(tid, tried, result, update)
@@ -190,8 +190,8 @@ class SimpleJob(Job):
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
 
-        if tried < task.tried:
-            for t in range(tried, task.tried):
+        for t in range(task.tried):
+            if t + 1 != tried:
                 self.sched.killTask(self.id, task.id, t + 1)
 
         if self.tasksFinished == self.numTasks:
@@ -243,9 +243,6 @@ class SimpleJob(Job):
                 self.tasksLaunched -= 1
                 return True
 
-        if self.tasksLaunched < self.numTasks:
-            return False
-
         if self.last_check + 5 > now:
             return False
         self.last_check = now
@@ -255,28 +252,30 @@ class SimpleJob(Job):
             logging.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
             self.tasksLaunched = n
 
-        if self.tasksLaunched > self.tasksFinished \
-                and self.tasksFinished > self.numTasks / 3:
-            # re-submit timeout task
+        if self.tasksFinished > self.numTasks / 3:
             avg = self.taskEverageTime
-            _t, idx, task = sorted((task.start, i, task) 
+            tasks = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
-                if self.launched[i] and not self.finished[i])[0]
-            used = now - task.start
-            logging.debug("slowest task %s used %.1f (avg = %.1f)", task.id, used, avg)
-            if used > avg * (task.tried + 1) and used > 30:
-                if task.tried <= MAX_TASK_FAILURES:
-                    logger.warning("re-submit task %s for timeout %.1f, try %d",
-                        task.id, used, task.tried)
-                    task.used += used
-                    task.start = now
-                    self.launched[idx] = False
-                    self.tasksLaunched -= 1 
-                    return True
+                if self.launched[i] and not self.finished[i])
+            for _t, idx, task in tasks:
+                used = now - task.start
+                logging.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
+                if used > avg * (task.tried + 1) and used > 30:
+                    # re-submit timeout task
+                    if task.tried <= MAX_TASK_FAILURES:
+                        logger.warning("re-submit task %s for timeout %.1f, try %d",
+                            task.id, used, task.tried)
+                        task.used += used
+                        task.start = now
+                        self.launched[idx] = False
+                        self.tasksLaunched -= 1 
+                    else:
+                        logger.error("tast %s timeout, aborting job %s",
+                            task, self.id)
+                        self.abort("task %s timeout" % task)
                 else:
-                    logger.error("tast %s timeout, aborting job %s",
-                        task, self.id)
-                    self.abort("task %s timeout" % task)
+                    break
+        return self.tasksLaunched < n
 
     def abort(self, message):
         logger.error("abort the job: %s", message)

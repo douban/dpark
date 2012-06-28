@@ -662,7 +662,7 @@ class MesosScheduler(DAGScheduler):
 
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, status.data)
-        self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
+        #self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
     
     def jobFinished(self, job):
         logger.debug("job %s finished", job.id)
