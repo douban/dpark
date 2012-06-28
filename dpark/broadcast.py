@@ -56,6 +56,7 @@ class VariableInfo:
 
 class Broadcast:
     initialized = False
+    ever_used = False
     is_master = False
     cache = cache.Cache() 
     broadcastFactory = None
@@ -65,6 +66,7 @@ class Broadcast:
     MaxKnockInterval = 999
         
     def __init__(self, value, is_local):
+        Broadcast.ever_used = True
         self.uuid = str(uuid.uuid4())
         self.value = value
         if is_local:
@@ -77,6 +79,7 @@ class Broadcast:
         return self.uuid
 
     def __setstate__(self, uuid):
+        Broadcast.ever_used = True
         self.uuid = uuid
     
     def __getattr__(self, name):
@@ -85,7 +88,7 @@ class Broadcast:
 
         # in the executor process, Broadcast is not initialized
         if not self.initialized:
-            return
+            raise AttributeError(name)
 
         uuid = self.uuid
         self.value = self.cache.get(uuid)

@@ -65,7 +65,7 @@ class DparkEnv:
         LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker(isMaster)
         #self.shuffleFetcher = SimpleShuffleFetcher()
-        self.shuffleFetcher = ParallelShuffleFetcher(8)
+        self.shuffleFetcher = ParallelShuffleFetcher(2)
 
         from broadcast import Broadcast
         Broadcast.initialize(isMaster)

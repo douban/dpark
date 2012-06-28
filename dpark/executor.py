@@ -28,6 +28,7 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
+from dpark.broadcast import Broadcast
 
 logger = logging.getLogger("executor")
 
@@ -217,10 +218,12 @@ class MyExecutor(mesos.Executor):
 
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
-            # FIXME should not terminate process, because of broadcasting need it
-            #task, pool = self.busy_workers.pop(taskId.value)
-            #pool.terminate()
-            task, pool = self.busy_workers[taskId.value]
+            if Broadcast.ever_used:
+                # should not terminate process, because of broadcasting need it
+                task, pool = self.busy_workers[taskId.value]
+            else:
+                task, pool = self.busy_workers.pop(taskId.value)
+                pool.terminate()
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
             self.killed_tasks.add(taskId.value)
 

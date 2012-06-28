@@ -57,8 +57,8 @@ class MasterConn:
             try:
                 self.nop()
             except Exception, e:
-                print 'nop', e
-            time.sleep(3)
+                self.close()
+            time.sleep(2)
 
     @lock
     def connect(self):
