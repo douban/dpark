@@ -64,15 +64,21 @@ class MasterConn:
     def connect(self):
         if self.conn is not None:
             return
-        try:
-            self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            self.conn.connect((self.host, self.port))
-        except socket.error, e:
-            self.conn = None
-            self.next_try = time.time() + 1.5 ** self.fail_count
-            self.fail_count += 1
-            raise
         
+        for _ in range(10):
+            try:
+                self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.conn.connect((self.host, self.port))
+                break
+            except socket.error, e:
+                self.conn = None
+                #self.next_try = time.time() + 1.5 ** self.fail_count
+                self.fail_count += 1
+                time.sleep(1.5 ** self.fail_count)
+
+        if not self.conn:
+            raise IOError("mfsmaster not availbale")
+
         if self.sessionid == 0:
             regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL,
                     uint8(REGISTER_NEWSESSION), VERSION, 2, "/\000", 2, "/\000")
@@ -106,17 +112,21 @@ class MasterConn:
             self.conn.close()
             self.conn = None
 
+    @lock
     def send(self, buf):
         #print 'send', len(buf), " ".join(str(ord(c)) for c in buf)
         n = self.conn.send(buf)
         while n < len(buf):
-            n += self.conn.send(buf[n:])
+            sent = self.conn.send(buf[n:])
+            if not sent:
+                self.close()
+                raise IOError("write to master failed")
+            n += sent 
 
-    @lock
     def nop(self):
         self.connect()
         msg = pack(ANTOAN_NOP, 0)
-        self.conn.send(msg)
+        self.send(msg)
 
     def recv(self, n):
         r = self.conn.recv(n)
@@ -143,7 +153,6 @@ class MasterConn:
         #print 'sendAndReceive', cmd, args
         packetid = 1
         msg = pack(cmd, packetid, *args)
-        # TODO lock
         self.connect()
         self.send(msg)
         r = self.recv_cmd(12)

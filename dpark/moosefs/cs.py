@@ -58,12 +58,18 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
     msg = pack(CUTOCS_READ, uint64(chunkid), version, offset, size) 
     n = conn.send(msg)
     while n < len(msg):
+        if not n:
+            raise IOError("write failed")
         msg = msg[n:]
+        n = conn.send(msg)
    
     def recv(n):
         d = conn.recv(n)
         while len(d) < n:
-            d += conn.recv(n-len(d))
+            nd = conn.recv(n-len(d))
+            if not nd:
+                raise IOError("not enough data")
+            d += nd 
         return d
 
     while size > 0:
