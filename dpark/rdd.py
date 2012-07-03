@@ -327,7 +327,10 @@ class RDD:
         return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def collectAsMap(self):
-        return dict(self.collect())
+        d = {}
+        for v in self.ctx.runJob(self, lambda x:list(x)):
+            d.update(dict(v))
+        return d
 
     def mapValue(self, f):
         return MappedValuesRDD(self, f)
@@ -383,7 +386,7 @@ class MappedRDD(RDD):
                 total += 1
                 yield self.func(v)
             except Exception, e:
-                logger.warning("ignored record %s: %s", v, e)
+                logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
                     raise Exception("too many error occured: %s" % (float(err)/total))
@@ -420,7 +423,7 @@ class FlatMappedRDD(MappedRDD):
                 for k in self.func(v):
                     yield k
             except Exception, e:
-                logger.warning("ignored record %s: %s", v, e)
+                logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
                     raise Exception("too many error occured: %s" % (float(err)/total))
@@ -443,7 +446,7 @@ class FilteredRDD(MappedRDD):
                 if self.func(v):
                     yield v
             except Exception, e:
-                logger.warning("ignored record %s: %s", v, e)
+                logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
                     raise Exception("too many error occured: %s" % (float(err)/total))
@@ -536,7 +539,7 @@ class MappedValuesRDD(MappedRDD):
                 total += 1
                 yield (k,func(v))
             except Exception, e:
-                logger.warning("ignored record %s: %s", v, e)
+                logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
                     raise Exception("too many error occured: %s" % (float(err)/total))
@@ -553,7 +556,7 @@ class FlatMappedValuesRDD(MappedValuesRDD):
                 for vv in self.func(v):
                     yield k,vv
             except Exception, e:
-                logger.warning("ignored record %s: %s", v, e)
+                logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
                     raise Exception("too many error occured: %s" % (float(err)/total))
