@@ -13,6 +13,8 @@ class MockSchduler:
         pass
     def jobFinished(self, job):
         pass
+    def killTask(self, job_id, task_id, tried):
+        pass
 
 class MockTask:
     def __init__(self, id):
