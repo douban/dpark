@@ -153,7 +153,7 @@ class RDD:
         def mf(it):
             for i in it:
                 f(i)
-        self.ctx.runJob(self, mf)
+        list(self.ctx.runJob(self, mf))
 
     def collect(self):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
@@ -191,8 +191,7 @@ class RDD:
             
             return [s] if s is not None else []
 
-        options = self.ctx.runJob(self, reducePartition)
-        s = sum(options, [])
+        s = sum(self.ctx.runJob(self, reducePartition), [])
         if s:
             return reduce(f, s)
 
@@ -225,8 +224,7 @@ class RDD:
                       zero)
 
     def count(self):
-        result = self.ctx.runJob(self, lambda x: ilen(x))
-        return sum(result)
+        return sum(self.ctx.runJob(self, lambda x: ilen(x)))
 
     def toList(self):
         return self.collect()
@@ -236,9 +234,9 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self):
-            res = self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True)
-            if res[0]:
-                r.extend(res[0])
+            res = list(self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True))[0]
+            if res:
+                r.extend(res)
             p += 1
         return r
 
@@ -350,7 +348,7 @@ class RDD:
                 for k,v in it:
                     if k == key:
                         return v
-            return self.ctx.runJob(self, process, [index], False)[0]
+            return list(self.ctx.runJob(self, process, [index], False))[0]
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
 

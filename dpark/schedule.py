@@ -180,6 +180,7 @@ class DAGScheduler(Scheduler):
         finalStage = self.newStage(finalRdd, None)
         results = [None]*numOutputParts
         finished = [None]*numOutputParts
+        lastFinished = 0
         numFinished = 0
 
         waiting = set()
@@ -196,7 +197,8 @@ class DAGScheduler(Scheduler):
        
         if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
-            return [func(finalRdd.iterator(split))]
+            yield func(finalRdd.iterator(split))
+            return
 
         def submitStage(stage):
             logger.debug("submit stage %s", stage)
@@ -271,6 +273,11 @@ class DAGScheduler(Scheduler):
                     results[task.outputId] = evt.result
                     finished[task.outputId] = True
                     numFinished += 1
+                    while lastFinished < numOutputParts and finished[lastFinished]:
+                        yield results[lastFinished]
+                        results[lastFinished] = None
+                        lastFinished += 1
+
                 elif isinstance(task, ShuffleMapTask):
                     stage = self.idToStage[task.stageId]
                     stage.addOutputLoc(task.partition, evt.result)
@@ -296,7 +303,8 @@ class DAGScheduler(Scheduler):
                     logger.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
                     raise evt.reason
 
-        return results
+        assert not any(results)
+        return
 
     def getPreferredLocs(self, rdd, partition):
         if rdd.shouldCache:
@@ -581,10 +589,10 @@ class MesosScheduler(DAGScheduler):
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
 
-    @safe
     def offerRescinded(self, driver, offer_id):
-        logger.warning("rescinded offer: %s", offer_id)
-        self.requestMoreResources()
+        logger.debug("rescinded offer: %s", offer_id)
+        if self.activeJobs:
+            self.requestMoreResources()
 
     def getResource(self, res, name):
         for r in res:
@@ -686,13 +694,8 @@ class MesosScheduler(DAGScheduler):
     @safe
     def error(self, driver, code, message):
         logger.error("Mesos error: %s (code: %s)", message, code)
-        self.requestMoreResources()
-#        if self.activeJobs:
-#            for id, job in self.activeJobs.items():
-#                try:
-#                    job.error(code, message)
-#                except Exception:
-#                    raise
+        if self.activeJobs:
+            self.requestMoreResources()
 
     #@safe
     def stop(self):
