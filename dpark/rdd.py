@@ -11,6 +11,7 @@ import random
 import bz2
 import logging
 from copy import copy
+import shutil
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -244,6 +245,9 @@ class RDD:
 
     def saveAsTextFile(self, path, ext='', overwrite=False):
         return OutputTextFileRDD(self, path, ext, overwrite).collect()
+
+    def saveAsTextFileByKey(self, path, ext='', overwrite=False):
+        return MultiOutputTextFileRDD(self, path, ext, overwrite).collect()
 
     def saveAsCSVFile(self, path, overwrite=False):
         return OutputCSVFileRDD(self, path, overwrite).collect()
@@ -1092,8 +1096,8 @@ class OutputTextFileRDD(RDD):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
             if overwrite:
-                for name in os.listdir(path):
-                    os.remove(os.path.join(path, name))
+                shutil.rmtree(path)
+                os.makedirs(path)
         else:
             os.makedirs(path)
 
@@ -1149,6 +1153,46 @@ class OutputTextFileRDD(RDD):
                 f.write('\n')
             empty = False
         return not empty
+
+class MultiOutputTextFileRDD(OutputTextFileRDD):
+    def __repr__(self):
+        return '<MultiOutputTextFileRDD %s>' % self.path
+   
+    def compute(self, split):
+        files, paths = {}, {}
+        def get_file(key):
+            f = files.get(key)
+            if f is None:
+                dpath = os.path.join(self.path, str(key))
+                if not os.path.exists(dpath):
+                    try: os.mkdir(dpath)
+                    except: pass
+                tpath = os.path.join(dpath, 
+                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+                    socket.gethostname(), os.getpid()))
+                try:
+                    f = open(tpath,'w', 4096 * 1024 * 16)
+                except IOError:
+                    time.sleep(1) # there are dir cache in mfs for 1 sec
+                    f = open(tpath,'w', 4096 * 1024 * 16)
+                files[key] = f
+                paths[key] = tpath
+            return f
+        
+        for k, v in self.rdd.iterator(split):
+            f = get_file(k)
+            f.write(v)
+            if not v.endswith('\n'):
+                f.write('\n')
+
+        for k in files:
+            files[k].close()
+            path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
+            if not os.path.exists(path):
+                os.rename(paths[k], path)
+            else:
+                os.remove(paths[k])
+            yield path
 
 
 class OutputCSVFileRDD(OutputTextFileRDD):
