@@ -228,20 +228,20 @@ class MyExecutor(mesos.Executor):
             self.killed_tasks.add(taskId.value)
 
     def shutdown(self, driver):
-        # clean work files
-        if self.workdir:
-            try: shutil.rmtree(self.workdir, True)
+        for p in self.idle_workers:
+            try: p.terminate()
+            except: pass
+        for p in self.busy_workers.values():
+            try: p.terminate()
             except: pass
         # flush
         sys.stdout.close()
         sys.stderr.close()
         self.outt.join()
         self.errt.join()
-        for p in self.idle_workers:
-            try: p.terminate()
-            except: pass
-        for _, p in self.busy_workers.items():
-            try: p.terminate()
+        # clean work files
+        if self.workdir:
+            try: shutil.rmtree(self.workdir, True)
             except: pass
 
     def error(self, driver, code, message):
