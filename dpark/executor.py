@@ -235,10 +235,13 @@ class MyExecutor(mesos.Executor):
             try: p.terminate()
             except: pass
         # flush
-        sys.stdout.close()
-        sys.stderr.close()
-        self.outt.join()
-        self.errt.join()
+        try:
+            sys.stdout.close()
+            sys.stderr.close()
+            self.outt.join()
+            self.errt.join()
+        except: pass
+        
         # clean work files
         if self.workdir:
             try: shutil.rmtree(self.workdir, True)
