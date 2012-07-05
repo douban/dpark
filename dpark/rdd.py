@@ -1014,22 +1014,26 @@ class BZip2FileRDD(TextFileRDD):
 
         last_line = None if split.index > 0 else ''
         while d:
-            io = cStringIO.StringIO(bz2.decompress(d))
-
-            if last_line is None:
-                io.readline() # skip the first line
-                last_line = ''
+            try:
+                io = cStringIO.StringIO(bz2.decompress(d))
+            except IOError, e:
+                #bad position, skip it
+                pass
             else:
-                last_line += io.readline()
-                if last_line.endswith('\n'):
-                    yield last_line
+                if last_line is None:
+                    io.readline() # skip the first line
                     last_line = ''
-            
-            for line in io:
-                if line.endswith('\n'): # drop last line
-                    yield line
                 else:
-                    last_line = line
+                    last_line += io.readline()
+                    if last_line.endswith('\n'):
+                        yield last_line
+                        last_line = ''
+                
+                for line in io:
+                    if line.endswith('\n'): # drop last line
+                        yield line
+                    else:
+                        last_line = line
 
             np = d.find(self.magic, len(self.magic))
             if np <= 0:
