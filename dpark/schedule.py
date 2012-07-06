@@ -646,7 +646,8 @@ class MesosScheduler(DAGScheduler):
         del self.taskIdToJobId[tid]
         self.jobTasks[jid].remove(tid)
         slave_id = self.taskIdToSlaveId[tid]
-        self.slaveTasks[slave_id] -= 1
+        if slave_id in self.slaveTasks:
+            self.slaveTasks[slave_id] -= 1
         del self.taskIdToSlaveId[tid]
    
         if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
