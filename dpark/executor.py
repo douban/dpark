@@ -145,7 +145,6 @@ class MyExecutor(mesos.Executor):
         self.workdir = None
         self.idle_workers = []
         self.busy_workers = {}
-        self.killed_tasks = set()
 
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
@@ -202,9 +201,10 @@ class MyExecutor(mesos.Executor):
             self.busy_workers[task.task_id.value] = (task, pool)
 
             def callback((state, data)):
+                if task.task_id.value not in self.busy_workers:
+                    return
                 _, pool = self.busy_workers.pop(task.task_id.value)
-                if task.task_id.value not in self.killed_tasks:
-                    reply_status(driver, task, state, data)
+                reply_status(driver, task, state, data)
                 if len(self.idle_workers) + len(self.busy_workers) < self.parallel:
                     self.idle_workers.append(pool)
         
@@ -218,14 +218,9 @@ class MyExecutor(mesos.Executor):
 
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
-            if Broadcast.ever_used:
-                # should not terminate process, because of broadcasting need it
-                task, pool = self.busy_workers[taskId.value]
-            else:
-                task, pool = self.busy_workers.pop(taskId.value)
-                pool.terminate()
+            task, pool = self.busy_workers.pop(taskId.value)
+            pool.terminate()
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
-            self.killed_tasks.add(taskId.value)
 
     def shutdown(self, driver):
         for p in self.idle_workers:
