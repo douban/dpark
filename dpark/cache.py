@@ -102,16 +102,14 @@ class CacheTrackerServer:
             time.sleep(0.01)
 
     def stop(self):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
+        sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
         self.t.join()
 
     def run(self):
         locs = {}
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REP)
+        sock = env.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("CacheTrackerServer started at %s", self.addr)
@@ -147,8 +145,7 @@ class CacheTrackerServer:
 class CacheTrackerClient:
     def __init__(self, addr):
         if addr:
-            ctx = zmq.Context()
-            self.sock = ctx.socket(zmq.REQ)
+            self.sock = env.ctx.socket(zmq.REQ)
             self.sock.connect(addr)
         else:
             self.sock = None

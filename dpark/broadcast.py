@@ -240,9 +240,7 @@ class TreeBroadcast(FileBroadcast):
         
     def startGuide(self):
         def run():
-            setOfCompletedSources = set()
-            ctx = zmq.Context()
-            sock = ctx.socket(zmq.REP)
+            sock = env.ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.guide_addr = "tcp://%s:%d" % (self.host, port)
             logger.debug("guide start at %s", self.guide_addr)
@@ -267,13 +265,15 @@ class TreeBroadcast(FileBroadcast):
                         o)
                     sources[addr] = o
                     self.listOfSources.append(o)
+                else:
+                    sources[addr].leechers += 1
                 sources[addr].parents.append(ssi)                
 
             sock.close()
             logger.debug("Sending stop notification ...")
 
             for source_info in self.listOfSources[1:]:
-                req = ctx.socket(zmq.REQ)
+                req = env.ctx.socket(zmq.REQ)
                 req.send_pyobj(SourceInfo.StopBroadcast)
                 #req.recv_pyobj()
                 req.close()
@@ -309,8 +309,7 @@ class TreeBroadcast(FileBroadcast):
 
     def startServer(self):
         def run():
-            ctx = zmq.Context()
-            sock = ctx.socket(zmq.REP)
+            sock = env.ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.serverAddr = 'tcp://%s:%d' % (self.host,port)
             logger.debug("server started at %s", self.serverAddr)
@@ -343,7 +342,7 @@ class TreeBroadcast(FileBroadcast):
 
     def recvBroadcast(self):
         self.initializeSlaveVariables()
-        
+                
         self.startServer()
 
         start = time.time()
@@ -354,8 +353,7 @@ class TreeBroadcast(FileBroadcast):
 
     def receiveBroadcast(self, uuid):
         master_addr = self.getMasterAddr(uuid)
-        ctx = zmq.Context()
-        guide_sock = ctx.socket(zmq.REQ)
+        guide_sock = env.ctx.socket(zmq.REQ)
         guide_sock.connect(master_addr)
         logger.debug("connect to guide %s", master_addr)
 
@@ -372,7 +370,6 @@ class TreeBroadcast(FileBroadcast):
             if self.receiveSingleTransmission(source_info):
                 break
         else:
-            source_info.failed = True
             raise Exception("receiveSingleTransmission failed")
         logger.debug("%s got broadcast in %.1fs from %s", self.serverAddr, time.time() - start, source_info.addr)
 
@@ -385,8 +382,7 @@ class TreeBroadcast(FileBroadcast):
         logger.debug("Inside receiveSingleTransmission")
         logger.debug("total_blocks: %s has %s", self.total_blocks,
                 len(self.blocks))
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
+        sock = env.ctx.socket(zmq.REQ)
         sock.connect(source_info.addr)
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
@@ -406,8 +402,7 @@ class TreeBroadcast(FileBroadcast):
         return len(self.blocks) == source_info.total_blocks
 
     def getMasterAddr(self, uuid):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
+        sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.master_addr)
         sock.send_pyobj(uuid)
         guide_addr = sock.recv_pyobj()
@@ -420,8 +415,7 @@ class TreeBroadcast(FileBroadcast):
         FileBroadcast.initialize(is_master)
 
         def run():
-            ctx = zmq.Context()
-            sock = ctx.socket(zmq.REP)
+            sock = env.ctx.socket(zmq.REP)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
             logger.debug("TreeBroadcast tracker started at %s", 

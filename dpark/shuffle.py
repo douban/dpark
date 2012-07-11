@@ -158,15 +158,13 @@ class MapOutputTrackerServer(CacheTrackerServer):
         self.serverUris = serverUris
     
     def stop(self):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
+        sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopMapOutputTracker())
         self.t.join()
 
     def run(self):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REP)
+        sock = env.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("MapOutputTrackerServer started at %s", self.addr)

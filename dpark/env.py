@@ -2,6 +2,7 @@ import os, logging
 import time
 import socket
 import threading
+import zmq
 
 logger = logging.getLogger("env")
 
@@ -44,7 +45,7 @@ class DparkEnv:
                     root = '/tmp/dpark'
                 self.dfs = True
 
-            if not os.path.exists(root):
+            if self.dfs and not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
@@ -56,6 +57,8 @@ class DparkEnv:
         else:
             self.environ.update(environ)
             self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
+
+        self.ctx = zmq.Context()
 
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)

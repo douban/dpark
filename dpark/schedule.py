@@ -450,8 +450,7 @@ class MesosScheduler(DAGScheduler):
         logger.debug("Mesos Scheudler driver started")
 
     def start_logger(self, output):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.PULL)
+        sock = env.ctx.socket(zmq.PULL)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
 
         def collect_log():
