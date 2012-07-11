@@ -34,9 +34,15 @@ class FetchFailed:
         self.shuffleId = shuffleId
         self.mapId = mapId
         self.reduceId = reduceId
+    def __str__(self):
+        return '<FetchFailed(%s, %d, %d, %d)>' % (self.serverUri, 
+                self.shuffleId, self.mapId, self.reduceId)
+
 class OtherFailure:
     def __init__(self, message):
         self.message = message
+    def __str__(self):
+        return '<OtherFailure %s>' % self.message
 
 class Stage:
     def __init__(self, rdd, shuffleDep, parents):
@@ -655,7 +661,11 @@ class MesosScheduler(DAGScheduler):
                 if result:
                     flag, data = result
                     if flag >= 2:
-                        data = urllib.urlopen(data).read()
+                        try:
+                            data = urllib.urlopen(data).read()
+                        except IOError:
+                            # try again
+                            data = urllib.urlopen(data).read()
                         flag -= 2
                     if flag == 0:
                         result = marshal.loads(data)

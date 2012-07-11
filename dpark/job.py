@@ -221,7 +221,7 @@ class SimpleJob(Job):
         logger.warning("re-enqueue the task as pending for a max number of retries")
         if status == TASK_FAILED:
             logger.warning("task %s failed with: %s", 
-                self.tasks[index], reason and reason.message)
+                self.tasks[index], reason)
         self.sched.requestMoreResources()
         if status in (TASK_FAILED, TASK_LOST):
             self.numFailures[index] += 1
