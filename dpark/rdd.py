@@ -1,3 +1,4 @@
+import sys
 import os, os.path
 import time
 import threading
@@ -194,8 +195,8 @@ class RDD:
         if s:
             return reduce(f, s)
 
-    def uniq(self):
-        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None)
+    def uniq(self, numSplits=None):
+        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
         return g.map(lambda (x,y):x)
 
     def fold(self, zero, f):
@@ -503,7 +504,8 @@ class PipedRDD(RDD):
 
     def compute(self, split):
         import subprocess
-        p = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=sys.stderr)
         def read(stdin):
             it = self.prev.iterator(split)
             if isinstance(it, list):
