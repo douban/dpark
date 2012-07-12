@@ -80,7 +80,17 @@ class DparkContext:
     def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
         if isinstance(path, (list, tuple)):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
-                for p in path]) 
+                for p in path])
+
+        def create_rdd(cls, path, *ka, **kw):
+            if cls is TextFileRDD:
+                rpath = os.path.realpath(path)
+                if rpath.startswith('/mfs/'):
+                    return MFSTextFileRDD(self, rpath[4:], 'mfsmaster', *ka, **kw)
+                if rpath.startswith('/home2/'):
+                    return MFSTextFileRDD(self, rpath[6:], 'mfsmaster2', *ka, **kw)
+            return cls(self, path, *ka, **kw)
+
         if os.path.isdir(path):
             paths = []
             for root,dirs,names in os.walk(path, followlinks=followLink):
@@ -98,11 +108,11 @@ class DparkContext:
                     if d.startswith('.'):
                         dirs.remove(d)
 
-            rdds = [cls(self, p, *ka, **kws) 
+            rdds = [create_rdd(cls, p, *ka, **kws) 
                      for p in paths]
             return self.union(rdds)
         else:
-            return cls(self, path, *ka, **kws)
+            return create_rdd(cls, path, *ka, **kws)
 
     def bzip2File(self, *args, **kwargs):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
