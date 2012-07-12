@@ -11,6 +11,8 @@ import SimpleHTTPServer
 import shutil
 import socket
 import urllib
+import gc
+gc.disable()
 
 import zmq
 import mesos
@@ -34,6 +36,7 @@ logger = logging.getLogger("executor")
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
+MAX_TASKS_PER_WORKER = 20
 
 Script = ''
 
@@ -187,7 +190,9 @@ class MyExecutor(mesos.Executor):
         try:
             return self.idle_workers.pop()
         except IndexError:
-            return multiprocessing.Pool(1, init_env, self.init_args)
+            p = multiprocessing.Pool(1, init_env, self.init_args)
+            p.done = 0
+            return p 
 
     def launchTask(self, driver, task):
         try:
@@ -204,9 +209,14 @@ class MyExecutor(mesos.Executor):
                 if task.task_id.value not in self.busy_workers:
                     return
                 _, pool = self.busy_workers.pop(task.task_id.value)
+                pool.done += 1
                 reply_status(driver, task, state, data)
-                if len(self.idle_workers) + len(self.busy_workers) < self.parallel:
+                if len(self.idle_workers) + len(self.busy_workers) < self.parallel \
+                        and pool.done < MAX_TASKS_PER_WORKER: # maybe memory leak in executor
                     self.idle_workers.append(pool)
+                else:
+                    try: pool.terminate() 
+                    except: pass
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
