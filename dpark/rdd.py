@@ -279,8 +279,8 @@ class RDD:
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits)
 
-    def partitionBy(self, numSplits=None):
-        return self.groupByKey(numSplits).flatMap(lambda x: [(x[0], i) for i in x[1]])
+    def partitionByKey(self, numSplits=None):
+        return self.groupByKey(numSplits).flatMapValue(lambda x: x)
 
     def join(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
@@ -292,6 +292,25 @@ class RDD:
                     vbuf.append(v)
                 elif n == 2:
                     wbuf.append(v)
+            for vv in vbuf:
+                for ww in wbuf:
+                    yield (k, (vv, ww))
+        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
+
+    def outerJoin(self, other, numSplits=None):
+        vs = self.map(lambda (k,v): (k,(1,v)))
+        ws = other.map(lambda (k,v): (k,(2,v)))
+        def dispatch((k,seq)):
+            vbuf, wbuf = [], []
+            for n,v in seq:
+                if n == 1:
+                    vbuf.append(v)
+                elif n == 2:
+                    wbuf.append(v)
+            if not vbuf:
+                vbuf.append(None)
+            if not wbuf:
+                wbuf.append(None)
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
