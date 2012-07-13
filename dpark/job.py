@@ -34,7 +34,7 @@ class Job:
         return cls.nextJobId
 
 LOCALITY_WAIT = 0
-WAIT_FOR_RUNNING = 30
+WAIT_FOR_RUNNING = 15
 MAX_TASK_FAILURES = 4
 CPUS_PER_TASK = 1
 
@@ -206,6 +206,8 @@ class SimpleJob(Job):
         index = self.tidToIndex[tid]
         logger.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
         self.launched[index] = False
+        if self.tasksLaunched == self.numTasks:    
+            self.sched.requestMoreResources()
         self.tasksLaunched -= 1
 
         from schedule import FetchFailed
@@ -213,16 +215,16 @@ class SimpleJob(Job):
             logger.warning("Loss was due to fetch failure from %s",
                 reason.serverUri)
             self.sched.taskEnded(self.tasks[index], reason, None, None)
+            #FIXME, handler fetch failure
             self.finished[index] = True
             self.tasksFinished += 1
             if self.tasksFinished == self.numTasks:
                 self.sched.jobFinished(self)
             return
-        logger.warning("re-enqueue the task as pending for a max number of retries")
+        
         if status == TASK_FAILED:
             logger.warning("task %s failed with: %s", 
                 self.tasks[index], reason)
-        self.sched.requestMoreResources()
         if status in (TASK_FAILED, TASK_LOST):
             self.numFailures[index] += 1
             if self.numFailures[index] > MAX_TASK_FAILURES:
@@ -232,25 +234,24 @@ class SimpleJob(Job):
                     % (index, MAX_TASK_FAILURES))
 
     def check_task_timeout(self):
+        if self.last_check + 5 > now:
+            return False
+        self.last_check = now
+        
+        n = self.launched.count(True)
+        if n != self.tasksLaunched:
+            logger.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
+            self.tasksLaunched = n
+
         now = time.time()
         for i in xrange(self.numTasks):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TASK_STARTING
                     and task.start + WAIT_FOR_RUNNING < now):
-                logging.warning("task %d timeout %.1f (at %s), re-assign it", 
+                logger.warning("task %d timeout %.1f (at %s), re-assign it", 
                         task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
-                return True
-
-        if self.last_check + 5 > now:
-            return False
-        self.last_check = now
-
-        n = self.launched.count(True)
-        if n != self.tasksLaunched:
-            logging.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
-            self.tasksLaunched = n
 
         if self.tasksFinished > self.numTasks / 3:
             avg = self.taskEverageTime
@@ -259,7 +260,7 @@ class SimpleJob(Job):
                 if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 used = now - task.start
-                logging.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
+                #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
                 if used > avg * (task.tried + 1) and used > 30:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
