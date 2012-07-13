@@ -234,6 +234,7 @@ class SimpleJob(Job):
                     % (index, MAX_TASK_FAILURES))
 
     def check_task_timeout(self):
+        now = time.time()
         if self.last_check + 5 > now:
             return False
         self.last_check = now
@@ -243,7 +244,6 @@ class SimpleJob(Job):
             logger.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
             self.tasksLaunched = n
 
-        now = time.time()
         for i in xrange(self.numTasks):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TASK_STARTING
