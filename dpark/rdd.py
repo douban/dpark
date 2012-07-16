@@ -709,12 +709,13 @@ class CoGroupedRDD(RDD):
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
+        self.name = '<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds))
 
     def __len__(self):
         return self.partitioner.numPartitions
 
     def __repr__(self):
-        return '<CoGrouped of %s>' % (','.join(str(dep.rdd) for dep in self.dependencies))
+        return self.name
 
     def preferredLocations(self, split): 
         return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
