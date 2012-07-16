@@ -165,7 +165,7 @@ class ReadableFile(File):
             if offset >= length:
                 return
 
-        for host, port in chunk.addrs:
+        for host, port in chunk.addrs * 2:
             try:
                 for block in read_chunk(host, port, chunk.id,
                     chunk.version, length-offset, offset):

@@ -36,7 +36,7 @@ logger = logging.getLogger("executor")
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_TASKS_PER_WORKER = 20
+MAX_TASKS_PER_WORKER = 50
 
 Script = ''
 

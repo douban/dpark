@@ -19,10 +19,11 @@ class DparkEnv:
         self.started = False
 
     def start(self, isMaster, environ={}, isLocal=False):
-        if getattr(self, 'started', False):
+        if self.started:
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
+        self.isMaster = isMaster
         if isMaster:
             if isLocal:
                 root = '/tmp/dpark'
@@ -83,19 +84,20 @@ class DparkEnv:
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
-        
-        logger.debug("cleaning workdir ...")
-        try:
-            for root,dirs,names in os.walk(self.workdir, topdown=False):
-                for name in names:
-                    path = os.path.join(root, name)
-                    os.remove(path)
-                for d in dirs:
-                    os.rmdir(os.path.join(root,d))
-            os.rmdir(self.workdir)
-        except OSError:
-            pass
-        logger.debug("done.")
+       
+        if self.isMaster:
+            logger.debug("cleaning workdir ...")
+            try:
+                for root,dirs,names in os.walk(self.workdir, topdown=False):
+                    for name in names:
+                        path = os.path.join(root, name)
+                        os.remove(path)
+                    for d in dirs:
+                        os.rmdir(os.path.join(root,d))
+                os.rmdir(self.workdir)
+            except OSError:
+                pass
+            logger.debug("done.")
 
         self.started = False
 

@@ -204,7 +204,7 @@ class SimpleJob(Job):
 
     def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
-        logger.warning("Lost TID %s (task %d:%d) %s", tid, self.id, index, reason)
+        logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:    
             self.sched.requestMoreResources()
