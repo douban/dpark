@@ -914,7 +914,7 @@ class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices):
         RDD.__init__(self, ctx)
         self.size = len(data)
-        slices = self.slice(data, min(self.size, numSlices))
+        slices = self.slice(data, max(1, min(self.size, numSlices)))
         self._splits = [ParallelCollectionSplit(i, slices[i]) 
                 for i in range(len(slices))]
         self.dependencies = []

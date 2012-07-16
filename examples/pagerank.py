@@ -28,7 +28,8 @@ if __name__ == '__main__':
     threshold = 0.01
     
     dpark = DparkContext()
-    input = dpark.textFile(inputFile)
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), inputFile)
+    input = dpark.textFile(path)
     numVertex = input.count()
     vertices = input.map(lambda line: parse_vertex(line, numVertex)).cache()
     epsilon = 0.01 / numVertex
