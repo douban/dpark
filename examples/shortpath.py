@@ -34,7 +34,7 @@ if __name__ == '__main__':
     
     print 'read', vertices.count(), 'vertices and ', messages.count(), 'messages.'
 
-    result = Bagel.run(ctx, vertices, messages, compute, MinCombiner())
+    result = Bagel.run(ctx, vertices, messages, compute, MinCombiner(), numSplits=2)
     
     print 'Shortest path from %s to all vertices:' % startVertex
     for v in result.collect():

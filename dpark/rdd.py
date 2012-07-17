@@ -362,8 +362,9 @@ class RDD:
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, *others):
-        part = self.partitioner or HashPartitioner(self.ctx.defaultParallelism)
+    def groupWith(self, *others, **kw):
+        numSplits = kw.get('numSplits') or self.ctx.defaultParallelism
+        part = self.partitioner or HashPartitioner(numSplits)
         return CoGroupedRDD([self]+list(others), part)
 
     def lookup(self, key):
