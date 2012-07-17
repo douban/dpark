@@ -54,6 +54,7 @@ class SubmitScheduler(mesos.Scheduler):
             for i in range(options.start, options.tasks)]))
         self.task_launched = {}
         self.slaveTasks = {}
+        self.refused = set()
         self.started = False
         self.stopped = False
         self.next_try = 0
@@ -132,7 +133,10 @@ class SubmitScheduler(mesos.Scheduler):
                 mem -= self.mem
                 if not self.total_tasks:
                     break
+            
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
+            if not tasks:
+                self.refused.add(sid)
 
     def create_task(self, offer, t):
         task = mesos_pb2.TaskInfo()
@@ -194,7 +198,12 @@ class SubmitScheduler(mesos.Scheduler):
                 if tid in self.slaveTasks[s]:
                     slave = s
                     self.slaveTasks[s].remove(tid)
+                    if s in self.refused:
+                        logging.debug("clear refuse for %s", s)
+                        driver.reviveOffers() # request more offers again
+                        self.refused.clear()
                     break
+
             if update.state >= mesos_pb2.TASK_FAILED:
                 if t.tried < self.options.retry:
                     t.tried += 1
