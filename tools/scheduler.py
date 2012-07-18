@@ -219,7 +219,7 @@ class SubmitScheduler(mesos.Scheduler):
     def check(self, driver):
         now = time.time()
         for tid, t in self.task_launched.items():
-            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 10 < now:
+            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
                 logging.warning("task %d lauched failed, assign again", tid)
                 if not self.total_tasks:
                     driver.reviveOffers() # request more offers again
@@ -340,15 +340,15 @@ class MPIScheduler(SubmitScheduler):
     def check(self, driver):
         now = time.time()
         for tid, t in self.task_launched.items():
-            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 10 < now:
+            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
                 logging.warning("task %d lauched failed, assign again", tid)
                 driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
+                hostname, slots = self.used_tasks[tid]
                 self.used_hosts.pop(hostname)
                 self.used_tasks.pop(tid)
                 self.task_launched.pop(tid)
-            # TODO: check run time
 
     def create_task(self, offer, t, k):
         task = mesos_pb2.TaskInfo()
@@ -536,6 +536,7 @@ if __name__ == "__main__":
             now = time.time()
             sched.check(driver)
             if not sched.started and sched.next_try > 0 and now > sched.next_try:
+                sched.next_try = 0
                 driver.reviveOffers()
 
             if now - start > options.timeout:
