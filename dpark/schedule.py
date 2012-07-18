@@ -408,8 +408,8 @@ def profile(f):
 
 def safe(f):
     def _(self, *a, **kw):
-#        with self.lock:
-        return f(self, *a, **kw)
+        with self.lock:
+            r = f(self, *a, **kw)
         return r
     return _
 
@@ -462,7 +462,8 @@ class MesosScheduler(DAGScheduler):
         def collect_log():
             while True:
                 line = sock.recv()
-                output.write(line)
+                if not self.options.quiet:
+                    output.write(line)
 
         t = threading.Thread(target=collect_log)
         t.daemon = True
@@ -522,9 +523,9 @@ class MesosScheduler(DAGScheduler):
         self.jobTasks[job.id] = set()
         
         while not self.isRegistered:
-#            self.lock.release()
+            self.lock.release()
             time.sleep(0.01)
-#            self.lock.acquire()
+            self.lock.acquire()
 
         self.requestMoreResources()
 
@@ -593,11 +594,12 @@ class MesosScheduler(DAGScheduler):
 
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
-
+    
+    @safe
     def offerRescinded(self, driver, offer_id):
-        logger.debug("rescinded offer: %s", offer_id)
-        if self.activeJobs:
-            self.requestMoreResources()
+        logger.info("rescinded offer: %s", offer_id)
+        #if self.activeJobs:
+        #    self.requestMoreResources()
 
     def getResource(self, res, name):
         for r in res:
@@ -704,8 +706,8 @@ class MesosScheduler(DAGScheduler):
     @safe
     def error(self, driver, code, message):
         logger.error("Mesos error: %s (code: %s)", message, code)
-        if self.activeJobs:
-            self.requestMoreResources()
+        #if self.activeJobs:
+        #    self.requestMoreResources()
 
     #@safe
     def stop(self):
