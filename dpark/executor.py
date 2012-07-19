@@ -80,9 +80,9 @@ def run_task(task, ntry):
         setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
 
-def init_env(args, port):
+def init_env(args):
     setproctitle('dpark worker: idle')
-    env.start(False, args, port=port)
+    env.start(False, args)
 
 basedir = None
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
