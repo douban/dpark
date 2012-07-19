@@ -21,6 +21,19 @@ See examples/ for more examples.
 
 Some Chinese docs: https://github.com/jackfengji/test_pro/wiki
 
-DPark run on Mesos -r 1292597@trunk or 112ea04 of github mirror
+To run DPark on Mesos (0.9 or latest), need MESOS_MASTER and DPARK_WORK_DIR, 
+such as: 
+
+$ export MESOS_MASTER = zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master 
+$ export DPARK_WORK_DIR = /data1/dpark
+
+In order to speed up shuffing, should deploy Nginx at port 5055 
+for accessing data in DPARK_WORK_DIR, such as:
+
+        server {
+                listen 5055;
+                server_name localhost;
+                root /data1/dpark/;
+        }
 
 Mailing list: dpark-users@googlegroups.com (http://groups.google.com/group/dpark-users)
