@@ -1,3 +1,4 @@
+import sys
 import time
 import logging
 from pprint import pprint
@@ -10,16 +11,23 @@ class Vertex:
         self.value = value
         self.outEdges = outEdges
         self.active = active
+    def __repr__(self):
+        return "<Vertex(%s, %s, %s)>" % (self.id, self.value, self.active)
 
 class Message:
     def __init__(self, target_id, value):
         self.target_id = target_id
         self.value = value
+    def __repr__(self):
+        return "<Message(%s, %s)>" % (self.target_id, self.value)
 
 class Edge:
     def __init__(self, target_id, value=0):
         self.target_id = target_id
         self.value = value
+    def __repr__(self):
+        return '<Edge(%s, %s)>' % (self.target_id, self.value)
+
 
 class Combiner:
     def createCombiner(self, msg): raise NotImplementedError
@@ -47,27 +55,22 @@ class DefaultValueCombiner(Combiner):
         return a + b
 
 
-class NullAggregator(Aggregator):
-    def createAggregator(self, vert):
-        pass
-    def mergeAggregator(self, a, b):
-        pass
-
 class Bagel:
     @classmethod
     def run(cls, ctx, verts, msgs, compute,
-            combiner=DefaultValueCombiner(), aggregator=NullAggregator(),
-            superstep=0, numSplits=None):
+            combiner=DefaultValueCombiner(), aggregator=None,
+            max_superstep=sys.maxint, numSplits=None):
 
-        while True:
+        superstep = 0
+        while superstep < max_superstep:
             logger.info("Starting superstep %d", superstep)
             start = time.time()
-            aggregated = cls.agg(verts, aggregator)
+            aggregated = cls.agg(verts, aggregator) if aggregator else None
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
-            grouped = verts.groupWith(combinedMsgs)
+            grouped = verts.groupWith(combinedMsgs, numSplits=numSplits)
             processed, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
                 lambda v, ms: compute(v, ms, aggregated, superstep))
-            logger.info("superstep %d took %s s", superstep, time.time()-start)
+            logger.info("superstep %d took %.1f s", superstep, time.time()-start)
 
             noActivity = numMsgs == 0 and numActiveVerts == 0
             if noActivity:
@@ -77,11 +80,11 @@ class Bagel:
             msgs = processed.flatMap(lambda (id, (vert, msgs)):
                     [(m.target_id, m) for m in msgs])
             superstep += 1
-        
+            
+        return verts.map(lambda (id, vert): vert)
+
     @classmethod
     def agg(cls, verts, aggregator):
-        if isinstance(aggregator, NullAggregator):
-            return 
         r = verts.map(lambda (id, vert): aggregator.createAggregator(vert))
         return r.reduce(aggregator.mergeAggregators)
 

@@ -13,6 +13,8 @@ class MockSchduler:
         pass
     def jobFinished(self, job):
         pass
+    def killTask(self, job_id, task_id, tried):
+        pass
 
 class MockTask:
     def __init__(self, id):
@@ -29,7 +31,7 @@ class TestJob(unittest.TestCase):
         assert len(ts) == 10
         assert job.tasksLaunched == 10
         assert job.slaveOffer('localhost', 5) is None
-        [job.statusUpdate(t.id, mesos_pb2.TASK_FINISHED) for t in ts]
+        [job.statusUpdate(t.id, 0, mesos_pb2.TASK_FINISHED) for t in ts]
         assert job.tasksFinished == 10
 
     def test_retry(self):
@@ -37,14 +39,14 @@ class TestJob(unittest.TestCase):
         tasks = [MockTask(i) for i in range(10)]
         job = SimpleJob(sched, tasks)
         ts = [job.slaveOffer('localhost', 5) for i in range(10)]
-        [job.statusUpdate(t.id, mesos_pb2.TASK_FINISHED) for t in ts[1:]]
+        [job.statusUpdate(t.id, 0, mesos_pb2.TASK_FINISHED) for t in ts[1:]]
         assert job.tasksFinished == 9
-        job.statusUpdate(ts[0].id, mesos_pb2.TASK_FAILED)
+        job.statusUpdate(ts[0].id, 0, mesos_pb2.TASK_FAILED)
         t = job.slaveOffer('localhost1', 5)
         assert t.id == 0
         assert job.slaveOffer('localhost', 5) is None
         assert job.tasksLaunched == 10
-        job.statusUpdate(t.id, mesos_pb2.TASK_FINISHED)
+        job.statusUpdate(t.id, 1, mesos_pb2.TASK_FINISHED)
         assert job.tasksFinished == 10
 
 if __name__ == '__main__':

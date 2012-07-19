@@ -115,9 +115,9 @@ class SharedDicts:
         if isinstance(value, basestring):
             flag, v = 0, value
         else:
-            try:
+            if marshalable(value):
                 flag, v = 1, marshal.dumps(value)
-            except ValueError:
+            else:
                 try:
                     flag, v = 2, cPickle.dumps(value, -1)
                 except Exception, e:

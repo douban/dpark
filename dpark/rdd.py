@@ -1,3 +1,4 @@
+import sys
 import os, os.path
 import time
 import threading
@@ -9,11 +10,15 @@ import operator
 import math
 import random
 import bz2
+import logging
 from copy import copy
+import shutil
 
 from serialize import load_func, dump_func
 from dependency import *
 from env import env
+
+logger = logging.getLogger("rdd")
 
 def ilen(x):
     try:
@@ -39,6 +44,7 @@ class RDD:
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = RDD.newId()
+        self.err = ctx.options.err
         self._splits = []
         self.dependencies = []
         self.aggregator = None
@@ -123,6 +129,9 @@ class RDD:
 
     def cartesian(self, other):
         return CartesianRDD(self, other)
+    
+    def zipWith(self, other):
+        return ZippedRDD(self.ctx, [self, other])
 
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
@@ -139,12 +148,13 @@ class RDD:
 
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
+    mapPartiton = mapPartitions
 
     def foreach(self, f):
         def mf(it):
             for i in it:
                 f(i)
-        return self.ctx.runJob(self, mf)
+        list(self.ctx.runJob(self, mf))
 
     def collect(self):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
@@ -154,17 +164,38 @@ class RDD:
 
     def reduce(self, f):
         def reducePartition(it):
-            try:
-                return [reduce(f, it)]
-            except TypeError:
-                return []
-        options = self.ctx.runJob(self, reducePartition)
-        s = sum(options, [])
+            if self.err < 1e-8:
+                try:
+                    return [reduce(f, it)]
+                except TypeError:
+                    return []
+            
+            s = None
+            total, err = 0, 0
+            for v in it:
+                try:
+                    total += 1
+                    if s is None:
+                        s = v
+                    else:
+                        s = f(s, v)
+                except Exception, e:
+                    logging.warning("skip bad record %s: %s", v, e)
+                    err += 1
+                    if total > 100 and err > total * self.err * 10:
+                        raise Exception("too many error occured: %s" % (float(err)/total))
+
+            if err > total * self.err:
+                raise Exception("too many error occured: %s" % (float(err)/total))
+            
+            return [s] if s is not None else []
+
+        s = sum(self.ctx.runJob(self, reducePartition), [])
         if s:
             return reduce(f, s)
 
-    def uniq(self):
-        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None)
+    def uniq(self, numSplits=None):
+        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
         return g.map(lambda (x,y):x)
 
     def fold(self, zero, f):
@@ -192,8 +223,7 @@ class RDD:
                       zero)
 
     def count(self):
-        result = self.ctx.runJob(self, lambda x: ilen(x))
-        return sum(result)
+        return sum(self.ctx.runJob(self, lambda x: ilen(x)))
 
     def toList(self):
         return self.collect()
@@ -203,9 +233,9 @@ class RDD:
         r = []
         p = 0
         while len(r) < n and p < len(self):
-            res = self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True)
-            if res[0]:
-                r.extend(res[0])
+            res = list(self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True))[0]
+            if res:
+                r.extend(res)
             p += 1
         return r
 
@@ -215,6 +245,9 @@ class RDD:
 
     def saveAsTextFile(self, path, ext='', overwrite=False):
         return OutputTextFileRDD(self, path, ext, overwrite).collect()
+
+    def saveAsTextFileByKey(self, path, ext='', overwrite=False):
+        return MultiOutputTextFileRDD(self, path, ext, overwrite).collect()
 
     def saveAsCSVFile(self, path, overwrite=False):
         return OutputCSVFileRDD(self, path, overwrite).collect()
@@ -245,8 +278,8 @@ class RDD:
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits)
 
-    def partitionBy(self, numSplits=None):
-        return self.groupByKey(numSplits).flatMap(lambda x: [(x[0], i) for i in x[1]])
+    def partitionByKey(self, numSplits=None):
+        return self.groupByKey(numSplits).flatMapValue(lambda x: x)
 
     def join(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
@@ -258,6 +291,25 @@ class RDD:
                     vbuf.append(v)
                 elif n == 2:
                     wbuf.append(v)
+            for vv in vbuf:
+                for ww in wbuf:
+                    yield (k, (vv, ww))
+        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
+
+    def outerJoin(self, other, numSplits=None):
+        vs = self.map(lambda (k,v): (k,(1,v)))
+        ws = other.map(lambda (k,v): (k,(2,v)))
+        def dispatch((k,seq)):
+            vbuf, wbuf = [], []
+            for n,v in seq:
+                if n == 1:
+                    vbuf.append(v)
+                elif n == 2:
+                    wbuf.append(v)
+            if not vbuf:
+                vbuf.append(None)
+            if not wbuf:
+                wbuf.append(None)
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
@@ -298,7 +350,10 @@ class RDD:
         return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
     def collectAsMap(self):
-        return dict(self.collect())
+        d = {}
+        for v in self.ctx.runJob(self, lambda x:list(x)):
+            d.update(dict(v))
+        return d
 
     def mapValue(self, f):
         return MappedValuesRDD(self, f)
@@ -306,8 +361,9 @@ class RDD:
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, *others):
-        part = self.partitioner or HashPartitioner(self.ctx.defaultParallelism)
+    def groupWith(self, *others, **kw):
+        numSplits = kw.get('numSplits') or self.ctx.defaultParallelism
+        part = self.partitioner or HashPartitioner(numSplits)
         return CoGroupedRDD([self]+list(others), part)
 
     def lookup(self, key):
@@ -317,10 +373,10 @@ class RDD:
                 for k,v in it:
                     if k == key:
                         return v
-            return self.ctx.runJob(self, process, [index], False)[0]
+            return list(self.ctx.runJob(self, process, [index], False))[0]
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
-            
+
 
 class MappedRDD(RDD):
     def __init__(self, prev, func=lambda x:x):
@@ -343,7 +399,24 @@ class MappedRDD(RDD):
         return self.prev.preferredLocations(split)
 
     def compute(self, split):
-        return itertools.imap(self.func, self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.imap(self.func, self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                yield self.func(v)
+            except Exception, e:
+                logger.warning("ignored record %r: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.err * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
     @cached
     def __getstate__(self):
@@ -361,12 +434,49 @@ class MappedRDD(RDD):
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
-        return itertools.chain.from_iterable(itertools.imap(self.func,
-            self.prev.iterator(split)))
+        if self.err < 1e-8:
+            return itertools.chain.from_iterable(itertools.imap(self.func,
+                self.prev.iterator(split)))
+        return self._compute_with_error(split)
+    
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                for k in self.func(v):
+                    yield k
+            except Exception, e:
+                logger.warning("ignored record %r: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.err * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
+
 
 class FilteredRDD(MappedRDD):
     def compute(self, split):
-        return itertools.ifilter(self.func, self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.ifilter(self.func, self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        total, err = 0, 0
+        for v in self.prev.iterator(split):
+            try:
+                total += 1
+                if self.func(v):
+                    yield v
+            except Exception, e:
+                logger.warning("ignored record %r: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.err * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
            
 class GlommedRDD(RDD):
     def __init__(self, prev):
@@ -413,7 +523,8 @@ class PipedRDD(RDD):
 
     def compute(self, split):
         import subprocess
-        p = subprocess.Popen(self.command, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+        p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE, stderr=sys.stderr)
         def read(stdin):
             it = self.prev.iterator(split)
             if isinstance(it, list):
@@ -440,14 +551,43 @@ class MappedValuesRDD(MappedRDD):
 
     def compute(self, split):
         func = self.func
-        return itertools.imap(lambda (k,v):(k,func(v)),
-            self.prev.iterator(split))
+        if self.err < 1e-8:
+            return itertools.imap(lambda (k,v):(k,func(v)),
+                self.prev.iterator(split))
+        return self._compute_with_error(split)
+
+    def _compute_with_error(self, split):
+        func = self.func
+        total, err = 0, 0
+        for k,v in self.prev.iterator(split):
+            try:
+                total += 1
+                yield (k,func(v))
+            except Exception, e:
+                logger.warning("ignored record %r: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.err * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
 class FlatMappedValuesRDD(MappedValuesRDD):
     def compute(self, split):
+        total, err = 0, 0
         for k,v in self.prev.iterator(split):
-            for vv in self.func(v):
-                yield k,vv
+            try:
+                total += 1
+                for vv in self.func(v):
+                    yield k,vv
+            except Exception, e:
+                logger.warning("ignored record %r: %s", v, e)
+                err += 1
+                if total > 100 and err > total * self.err * 10:
+                    raise Exception("too many error occured: %s" % (float(err)/total))
+
+        if err > total * self.err:
+            raise Exception("too many error occured: %s" % (float(err)/total))
 
 class ShuffledRDDSplit(Split):
     def __hash__(self):
@@ -517,7 +657,16 @@ class CartesianRDD(RDD):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
 
     def compute(self, split):
-        return itertools.product(self.rdd1.iterator(split.s1), self.rdd2.iterator(split.s2))
+        b = None
+        for i in self.rdd1.iterator(split.s1):
+            if b is None:
+                b = []
+                for j in self.rdd2.iterator(split.s2):
+                    yield (i, j)
+                    b.append(j)
+            else:
+                for j in b:
+                    yield (i,j)
 
 class CoGroupSplitDep: pass
 class NarrowCoGroupSplitDep(CoGroupSplitDep):
@@ -560,12 +709,17 @@ class CoGroupedRDD(RDD):
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
+        self.name = '<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds))
 
     def __len__(self):
         return self.partitioner.numPartitions
 
     def __repr__(self):
-        return '<CoGrouped of %s>' % (','.join(str(dep.rdd) for dep in self.dependencies))
+        return self.name
+
+    def preferredLocations(self, split): 
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
+                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def preferredLocations(self, split): 
         return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
@@ -674,7 +828,7 @@ class SliceRDD(RDD):
         return self.rdd.iterator(split)
 
 
-class MergeSplit(Split):
+class MultiSplit(Split):
     def __init__(self, index, splits):
         self.index = index
         self.splits = splits
@@ -690,7 +844,7 @@ class MergedRDD(RDD):
         self.numSplits = numSplits
 
         splits = rdd.splits
-        self._splits = [MergeSplit(i, splits[i*splitSize:(i+1)*splitSize])
+        self._splits = [MultiSplit(i, splits[i*splitSize:(i+1)*splitSize])
                for i in range(numSplits)]
         self.dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
 
@@ -707,6 +861,30 @@ class MergedRDD(RDD):
         return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
 
 
+class ZippedRDD(RDD):
+    def __init__(self, ctx, rdds):
+        assert len(set([len(rdd) for rdd in rdds])) == 1, 'rdds must have the same length'
+        RDD.__init__(self, ctx)
+        self.rdds = rdds
+        self._splits = [MultiSplit(i, splits) 
+                for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
+        self.dependencies = [OneToOneDependency(rdd) for rdd in rdds]
+
+    def __len__(self):
+        return len(self.rdds[0])
+
+    def __repr__(self):
+        return '<Zipped %s>' % (','.join(str(rdd) for rdd in self.rdds))
+
+    def preferredLocations(self, split):
+        return sum([rdd.preferredLocations(sp) 
+            for rdd,sp in zip(self.rdds, split.splits)], [])
+
+    def compute(self, split):
+        return itertools.izip(*[rdd.iterator(sp) 
+            for rdd, sp in zip(self.rdds, split.splits)])
+
+
 class CSVReaderRDD(RDD):
     def __init__(self, rdd, dialect='excel'):
         RDD.__init__(self, rdd.ctx)
@@ -716,6 +894,9 @@ class CSVReaderRDD(RDD):
     
     def __len__(self):
         return len(self.rdd)
+
+    def __repr__(self):
+        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
 
     @property
     def splits(self):
@@ -740,7 +921,7 @@ class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices):
         RDD.__init__(self, ctx)
         self.size = len(data)
-        slices = self.slice(data, numSlices)
+        slices = self.slice(data, max(1, min(self.size, numSlices)))
         self._splits = [ParallelCollectionSplit(i, slices[i]) 
                 for i in range(len(slices))]
         self.dependencies = []
@@ -862,28 +1043,84 @@ class BZip2FileRDD(TextFileRDD):
 
         last_line = None if split.index > 0 else ''
         while d:
-            io = cStringIO.StringIO(bz2.decompress(d))
-
-            if last_line is None:
-                io.readline() # skip the first line
+            try:
+                io = cStringIO.StringIO(bz2.decompress(d))
+            except IOError, e:
+                #bad position, skip it
+                pass
             else:
-                yield last_line + io.readline()
-                last_line += io.readline()
-                if last_line.endswith('\n'):
-                    yield last_line
+                if last_line is None:
+                    io.readline() # skip the first line
                     last_line = ''
-            
-            for line in io:
-                if line.endswith('\n'): # drop last line
-                    yield line
                 else:
-                    last_line = line
-                    break
+                    last_line += io.readline()
+                    if last_line.endswith('\n'):
+                        yield last_line
+                        last_line = ''
+                
+                for line in io:
+                    if line.endswith('\n'): # drop last line
+                        yield line
+                    else:
+                        last_line = line
 
-            np = d.find(self.magic, 1)
+            np = d.find(self.magic, len(self.magic))
             if np <= 0:
                 break
             d = d[np:]
+
+
+class MFSTextFileRDD(RDD):
+    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.file = moosefs.mfsopen(path, master)
+        size = self.file.length
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = 64*1024*1024
+            else:
+                splitSize = size / numSplits
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.splitSize = splitSize
+        self.len = n
+
+    def __len__(self):
+        return self.len
+    
+    @property
+    def splits(self):
+        return [Split(i) for i in range(self.len)]
+
+    def preferredLocations(self, split):
+        return self.file.locs(split.index)
+
+    def __repr__(self):
+        return '<TextFileRDD %s>' % self.path
+
+    def compute(self, split):
+        start = split.index * self.splitSize
+        end = start + self.splitSize
+        MAX_RECORD_LENGTH = 10240
+
+        f = moosefs.ReadableFile(self.file)
+        if start > 0:
+            f.seek(start-1, end + MAX_RECORD_LENGTH)
+            byte = f.read(1)
+            while byte and byte != '\n':
+                byte = f.read(1)
+                start += 1
+        else:
+            f.seek(0, end + MAX_RECORD_LENGTH)
+
+        for line in f:
+            if not line: break
+            start += len(line)
+            yield line
+            if start >= end: break
+        f.close()
 
 
 class OutputTextFileRDD(RDD):
@@ -892,8 +1129,8 @@ class OutputTextFileRDD(RDD):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
             if overwrite:
-                for name in os.listdir(path):
-                    os.remove(os.path.join(path, name))
+                shutil.rmtree(path)
+                os.makedirs(path)
         else:
             os.makedirs(path)
 
@@ -949,6 +1186,46 @@ class OutputTextFileRDD(RDD):
                 f.write('\n')
             empty = False
         return not empty
+
+class MultiOutputTextFileRDD(OutputTextFileRDD):
+    def __repr__(self):
+        return '<MultiOutputTextFileRDD %s>' % self.path
+   
+    def compute(self, split):
+        files, paths = {}, {}
+        def get_file(key):
+            f = files.get(key)
+            if f is None:
+                dpath = os.path.join(self.path, str(key))
+                if not os.path.exists(dpath):
+                    try: os.mkdir(dpath)
+                    except: pass
+                tpath = os.path.join(dpath, 
+                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+                    socket.gethostname(), os.getpid()))
+                try:
+                    f = open(tpath,'w', 4096 * 1024 * 16)
+                except IOError:
+                    time.sleep(1) # there are dir cache in mfs for 1 sec
+                    f = open(tpath,'w', 4096 * 1024 * 16)
+                files[key] = f
+                paths[key] = tpath
+            return f
+        
+        for k, v in self.rdd.iterator(split):
+            f = get_file(k)
+            f.write(v)
+            if not v.endswith('\n'):
+                f.write('\n')
+
+        for k in files:
+            files[k].close()
+            path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
+            if not os.path.exists(path):
+                os.rename(paths[k], path)
+            else:
+                os.remove(paths[k])
+            yield path
 
 
 class OutputCSVFileRDD(OutputTextFileRDD):

@@ -8,6 +8,8 @@ import socket
 import time
 import cPickle
 import zlib as comp
+import threading
+import Queue
 
 import zmq
 
@@ -20,18 +22,12 @@ class LocalFileShuffle:
     serverUri = None
     shuffleDir = None
     @classmethod
-    def initialize(cls, isMaster, port):
-        shuffleDir = env.get('WORKDIR')
-        if not shuffleDir:
+    def initialize(cls, isMaster):
+        cls.shuffleDir = env.get('WORKDIR')
+        if not cls.shuffleDir:
             return
-        cls.shuffleDir = shuffleDir
-        if port is None:
-            while not os.path.exists(shuffleDir):
-                time.sleep(0.1) # HACK for moosefs
-            cls.serverUri = 'file://' + cls.shuffleDir
-        else:
-            cls.serverUri = 'http://%s:%d' % (socket.gethostname(), port)
-        logger.debug("shuffle dir: %s", shuffleDir)
+        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir)
+        logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId):
@@ -52,45 +48,102 @@ class ShuffleFetcher:
         pass
 
 class SimpleShuffleFetcher(ShuffleFetcher):
+    def fetch_one(self, uri, shuffleId, part, reduceId):
+        if uri == LocalFileShuffle.getServerUri():
+            urlopen, url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+        else:
+            urlopen, url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+        logger.debug("fetch %s", url)
+        
+        tries = 3
+        while True:
+            try:
+                f = urlopen(url)
+                d = f.read()
+                flag = d[:1]
+                length, = struct.unpack("I", d[1:5])
+                if length != len(d):
+                    raise IOError("length not match: expected %d, but got %d" % (length, len(d)))
+                d = comp.decompress(d[5:])
+                f.close()
+                if flag == 'm':
+                    d = marshal.loads(d)
+                elif flag == 'p':
+                    d = cPickle.loads(d)
+                else:
+                    raise ValueError("invalid flag")
+                return d
+            except Exception, e:
+                logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
+                tries -= 1
+                if not tries:
+                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
+                    raise
+                time.sleep(1)
+
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
-        splitsByUri = {}
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        for i, uri in enumerate(serverUris):
-            splitsByUri.setdefault(uri, []).append(i)
-        for uri, parts in splitsByUri.items():
-            for part in parts:
-                if uri == LocalFileShuffle.getServerUri():
-                    url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
-                else:
-                    url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
-                logger.debug("fetch %s", url[1])
-                
-                tries = 3
-                while True:
-                    try:
-                        f = url[0](url[1])
-                        flag = f.read(1)
-                        d = comp.decompress(f.read())
-                        f.close()
-                        if flag == 'm':
-                            d = marshal.loads(d)
-                        elif flag == 'p':
-                            d = cPickle.loads(d)
-                        else:
-                            raise ValueError("invalid flag")
-                        break
-                    except IOError, e:
-                        if not os.path.exists(uri): raise
-                        logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
-                        tries -= 1
-                        if not tries:
-                            logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
-                            raise
-                        time.sleep(1)
-                
-                for k,v in d.iteritems():
-                    func(k,v)
+        parts = zip(range(len(serverUris)), serverUris)
+        random.shuffle(parts)
+        for part, uri in parts:
+            d = self.fetch_one(uri, shuffleId, part, reduceId) 
+            for k,v in d.iteritems():
+                func(k,v)
+
+
+class ParallelShuffleFetcher(SimpleShuffleFetcher):
+    def __init__(self, nthreads):
+        self.nthreads = nthreads
+        self.requests = Queue.Queue()
+        self.results = Queue.Queue()
+        for i in range(nthreads):
+            t = threading.Thread(target=self._worker_thread)
+            t.daemon = True
+            t.start()
+
+    def _worker_thread(self):
+        while True:
+            r = self.requests.get()
+            if r is None:
+                self.results.put(r)
+                break
+
+            uri, shuffleId, part, reduceId = r
+            try:
+                d = self.fetch_one(*r)
+                self.results.put((shuffleId, reduceId, part, d))
+            except Exception, e:
+                self.results.put(e)
+
+    def fetch(self, shuffleId, reduceId, func):
+        logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
+        serverUris = env.mapOutputTracker.getServerUris(shuffleId)
+        parts = zip(range(len(serverUris)), serverUris)
+        random.shuffle(parts)
+        for part, uri in parts:
+            self.requests.put((uri, shuffleId, part, reduceId))
+        
+        #completed = set() 
+        for i in xrange(len(serverUris)):
+            r = self.results.get()
+            if isinstance(r, Exception):
+                raise r
+
+            sid, rid, part, d = r
+            #assert shuffleId == sid
+            #assert rid == reduceId
+            for k,v in d.iteritems():
+                func(k,v)
+            #completed.add(part)
+
+    def stop(self):
+        logger.debug("stop parallel shuffle fetcher ...")
+        for i in range(self.nthreads):
+            self.requests.put(None)
+        for i in range(self.nthreads):
+            self.results.get()
+
 
 class MapOutputTrackerMessage: pass
 class GetMapOutputLocations:
@@ -105,15 +158,13 @@ class MapOutputTrackerServer(CacheTrackerServer):
         self.serverUris = serverUris
     
     def stop(self):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REQ)
+        sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopMapOutputTracker())
         self.t.join()
 
     def run(self):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.REP)
+        sock = env.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("MapOutputTrackerServer started at %s", self.addr)

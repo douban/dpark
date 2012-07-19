@@ -44,6 +44,16 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums[:1].collect(), range(2))
         self.assertEqual(len(nums.mergeSplit(2)), 1)
         self.assertEqual(nums.mergeSplit(2).collect(), range(4))
+        self.assertEqual(nums.zipWith(nums).collectAsMap(), dict(zip(d,d)))
+
+    def test_ignore_bad_record(self):
+        d = range(100)
+        self.sc.options.err = 0.02
+        nums = self.sc.makeRDD(d, 2)
+        self.assertEqual(nums.filter(lambda x:1.0/x).count(), 99)
+        self.assertEqual(nums.map(lambda x:1/x).count(), 99)
+        self.assertEqual(nums.flatMap(lambda x:[1/x]).count(), 99)
+        self.assertEqual(nums.reduce(lambda x,y:x+100/y), 431)
 
     def test_pair_operation(self):
         d = zip([1,2,3,3], range(4,8))
@@ -103,13 +113,15 @@ class TestRDD(unittest.TestCase):
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000']) 
+        self.assertEqual(f.map(lambda x:('test', prefix+x)).saveAsTextFileByKey('/tmp/tout', overwrite=True),
+            ['/tmp/tout/test/0000']) 
         d = self.sc.textFile('/tmp/tout')
         n = len(open(path).readlines())
         self.assertEqual(d.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout', overwrite=True),
             ['/tmp/tout/0000.csv'])
-
+        
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

@@ -23,24 +23,34 @@ class DparkContext:
             sys.exit(0)
         
         options = parse_options()
-        self.master = master or options.master
+        self.options = options
+        master = master or options.master
 
-        if self.master.startswith('local'):
+        if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
-        elif self.master.startswith('process'):
+        elif master == 'process':
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.isLocal = True
-        elif (self.master.startswith('mesos')
-              or self.master.startswith('zoo')):
-            if '://' not in self.master:
-                self.master = os.environ.get('MESOS_MASTER')
-                if not self.master:
-                    raise Exception("invalid uri of mesos master: %s" % self.master)
-            self.scheduler = MesosScheduler(self.master, options) 
-            self.isLocal = False
         else:
-            raise Exception("invalid master option: %s" % self.master)
+            if master == 'mesos':
+                master = os.environ.get('MESOS_MASTER')
+                if not master:
+                    raise Exception("invalid uri of mesos master: %s" % master)
+            if master.startswith('mesos://'):
+                if '@' in master:
+                    master = master[master.rfind('@')+1:]
+                else:
+                    master = master[master.rfind('//')+2:]
+            elif master.startswith('zoo://'):
+                master = 'zk' + master[3:]
+
+            if ':' not in master:
+                master += ':5050'
+            self.scheduler = MesosScheduler(master, options) 
+            self.isLocal = False
+            
+        self.master = master
 
         if options.parallel:
             self.defaultParallelism = options.parallel
@@ -65,7 +75,17 @@ class DparkContext:
     def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
         if isinstance(path, (list, tuple)):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
-                for p in path]) 
+                for p in path])
+
+        def create_rdd(cls, path, *ka, **kw):
+            if cls is TextFileRDD:
+                rpath = os.path.realpath(path)
+                if rpath.startswith('/mfs/'):
+                    return MFSTextFileRDD(self, rpath[4:], 'mfsmaster', *ka, **kw)
+                if rpath.startswith('/home2/'):
+                    return MFSTextFileRDD(self, rpath[6:], 'mfsmaster2', *ka, **kw)
+            return cls(self, path, *ka, **kw)
+
         if os.path.isdir(path):
             paths = []
             for root,dirs,names in os.walk(path, followlinks=followLink):
@@ -83,11 +103,11 @@ class DparkContext:
                     if d.startswith('.'):
                         dirs.remove(d)
 
-            rdds = [cls(self, p, *ka, **kws) 
+            rdds = [create_rdd(cls, p, *ka, **kws) 
                      for p in paths]
             return self.union(rdds)
         else:
-            return cls(self, path, *ka, **kws)
+            return create_rdd(cls, path, *ka, **kws)
 
     def bzip2File(self, *args, **kwargs):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
@@ -98,6 +118,9 @@ class DparkContext:
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
+
+    def zip(self, rdds):
+        return ZippedRDD(self, rdds)
 
     def accumulator(self, init=0, param=None):
         return Accumulator(init, param)
@@ -159,10 +182,12 @@ def add_default_options():
 
     group.add_option("-c", "--cpus", type="float", default=1.0,
             help="cpus used per task")
-    group.add_option("--mem", type="float", default=1000.0,
+    group.add_option("-M", "--mem", type="float", default=1000.0,
             help="memory used per task")
     group.add_option("-g", "--group", type="string", default="",
             help="which group of machines")
+    group.add_option("--err", type="float", default=0.0,
+            help="acceptable ignored error record ratio (0.01%)")
 
     group.add_option("--self", action="store_true",
             help="user self as exectuor")

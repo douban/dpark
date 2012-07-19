@@ -2,6 +2,7 @@ import os, logging
 import time
 import socket
 import threading
+import zmq
 
 logger = logging.getLogger("env")
 
@@ -17,11 +18,12 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}, isLocal=False, port=None):
-        if getattr(self, 'started', False):
+    def start(self, isMaster, environ={}, isLocal=False):
+        if self.started:
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
+        self.isMaster = isMaster
         if isMaster:
             if isLocal:
                 root = '/tmp/dpark'
@@ -34,6 +36,7 @@ class DparkEnv:
                 self.dfs = False
             else:
                 raise Exception("no shuffle dir exists")
+            
             if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
@@ -47,13 +50,17 @@ class DparkEnv:
             self.environ.update(environ)
             self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
 
+        self.ctx = zmq.Context()
+
         from cache import CacheTracker
         self.cacheTracker = CacheTracker(isMaster)
         
-        from shuffle import LocalFileShuffle, MapOutputTracker, SimpleShuffleFetcher
-        LocalFileShuffle.initialize(isMaster, port)
+        from shuffle import LocalFileShuffle, MapOutputTracker
+        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
+        LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker(isMaster)
-        self.shuffleFetcher = SimpleShuffleFetcher()
+        #self.shuffleFetcher = SimpleShuffleFetcher()
+        self.shuffleFetcher = ParallelShuffleFetcher(2)
 
         from broadcast import Broadcast
         Broadcast.initialize(isMaster)
@@ -68,19 +75,20 @@ class DparkEnv:
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
-        
-        logger.debug("cleaning workdir ...")
-        try:
-            for root,dirs,names in os.walk(self.workdir, topdown=False):
-                for name in names:
-                    path = os.path.join(root, name)
-                    os.remove(path)
-                for d in dirs:
-                    os.rmdir(os.path.join(root,d))
-            os.rmdir(self.workdir)
-        except OSError:
-            pass
-        logger.debug("done.")
+       
+        if self.isMaster:
+            logger.debug("cleaning workdir ...")
+            try:
+                for root,dirs,names in os.walk(self.workdir, topdown=False):
+                    for name in names:
+                        path = os.path.join(root, name)
+                        os.remove(path)
+                    for d in dirs:
+                        os.rmdir(os.path.join(root,d))
+                os.rmdir(self.workdir)
+            except OSError:
+                pass
+            logger.debug("done.")
 
         self.started = False
 

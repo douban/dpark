@@ -6,7 +6,7 @@ import logging
 import struct
 import zlib as comp
 
-from serialize import load_func, dump_func
+from serialize import marshalable, load_func, dump_func
 from shuffle import LocalFileShuffle
 
 logger = logging.getLogger("dpark")
@@ -23,10 +23,10 @@ class Task:
 
     def run(self, id):
         raise NotImplementedError
+    
     def preferredLocations(self):
-        return []
-    def generation(self):
         raise NotImplementedError
+
     
 class DAGTask(Task):
     def __init__(self, stageId):
@@ -81,6 +81,9 @@ class ShuffleMapTask(DAGTask):
     def __repr__(self):
         return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
 
+    def preferredLocations(self):
+        return self.locs
+
     def run(self, attempId):
         logger.debug("shuffling %d of %s", self.partition, self.rdd)
         numOutputSplits = self.partitioner.numPartitions
@@ -103,13 +106,16 @@ class ShuffleMapTask(DAGTask):
             if os.path.exists(path):
                 continue
             tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
-            try:
+            if marshalable(buckets[i]):
                 flag, d = 'm', marshal.dumps(buckets[i])
-            except ValueError:
+            else:
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
+            cd = comp.compress(d, 1)
             f = open(tpath, 'wb', 1024*4096)
-            f.write(flag)
-            f.write(comp.compress(d, 1))
+            f.write(flag + struct.pack("I", 5 + len(cd)))
+            f.write(cd)
+#            f.flush()
+#            os.fsync(f.fileno())
             f.close()
             if not os.path.exists(path):
                 os.rename(tpath, path)

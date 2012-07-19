@@ -2,7 +2,7 @@ from setuptools import setup
 
 version = '0.1'
 
-setup(name='Dpark',
+setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "
             +"computing framework supporting iterative algorithms.",
@@ -16,7 +16,7 @@ setup(name='Dpark',
       author='Davies Liu',
       author_email='davies.liu@gmail.com',
       license= 'BSD License',
-      packages=['dpark'],
+      packages=['dpark', 'dpark.moosefs'],
       include_package_data=True,
       zip_safe=False,
       install_requires=[

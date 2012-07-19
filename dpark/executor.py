@@ -2,15 +2,17 @@
 import logging
 import os, sys, time
 import os.path
-import threading
 import marshal
 import cPickle
-import socket
 import multiprocessing
 import threading
 import SocketServer
 import SimpleHTTPServer
 import shutil
+import socket
+import urllib
+import gc
+gc.disable()
 
 import zmq
 import mesos
@@ -23,13 +25,18 @@ except ImportError:
         pass
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
+from dpark.shuffle import LocalFileShuffle
+from dpark.broadcast import Broadcast
 
 logger = logging.getLogger("executor")
 
 TASK_RESULT_LIMIT = 1024 * 256
+DEFAULT_WEB_PORT = 5055
+MAX_TASKS_PER_WORKER = 50
 
 Script = ''
 
@@ -41,23 +48,28 @@ def reply_status(driver, task, status, data=None):
         update.data = data
     driver.sendStatusUpdate(update)
 
-def run_task(task, aid):
+def run_task(task, ntry):
     try:
         setproctitle('dpark worker %s: run task %s' % (Script, task))
         Accumulator.clear()
-        result = task.run(aid)
+        result = task.run(ntry)
         accUpdate = Accumulator.values()
-        try:
-            flag, data = 0, marshal.dumps(result)
-        except ValueError:
-            flag, data = 1, cPickle.dumps(result)
 
-        if len(data) > TASK_RESULT_LIMIT and env.dfs:
+        if marshalable(result):
+            flag, data = 0, marshal.dumps(result)
+        else:
+            flag, data = 1, cPickle.dumps(result, -1)
+        if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
-            path = os.path.join(workdir, str(task.id)+'.result')
-            with open(path, 'w') as f:
-                f.write(data)
-            data = path
+            name = 'task_%s_%s.result' % (task.id, ntry)
+            path = os.path.join(workdir, name) 
+            f = open(path, 'w')
+            f.write(data)
+            if env.dfs:
+                f.flush()
+                os.fsync(f.fileno())
+            f.close()
+            data = LocalFileShuffle.getServerUri() + '/' + name
             flag += 2
 
         setproctitle('dpark worker: idle')
@@ -90,6 +102,36 @@ def startWebServer(path):
     
     
 
+class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
+    basedir = None
+    def translate_path(self, path):
+        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
+        return self.basedir + '/' + os.path.relpath(out)
+    
+    def log_message(self, format, *args):
+        pass
+
+def startWebServer(path):
+    # check the default web server
+    with open(os.path.join(path, 'test'), 'w') as f:
+        f.write('testdata')
+    default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
+            os.path.basename(path))
+    try:
+        data = urllib.urlopen(default_uri + '/' + 'test').read()
+        if data == 'testdata':
+            return default_uri
+    except IOError, e:
+        pass
+    
+    logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
+    LocalizedHTTP.basedir = os.path.dirname(path)
+    ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
+    threading.Thread(target=ss.serve_forever).start()
+    uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1], 
+            os.path.basename(path))
+    return uri 
+
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
     ctx = zmq.Context()
@@ -120,43 +162,81 @@ def start_forword(addr, prefix=''):
     return t, os.fdopen(wfd, 'w', 0) 
 
 class MyExecutor(mesos.Executor):
-    def init(self, driver, args):
+    def __init__(self):
+        self.workdir = None
+        self.idle_workers = []
+        self.busy_workers = {}
+
+    def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
-            Script, cwd, python_path, parallel, out_logger, err_logger, logLevel, args = marshal.loads(args.data)
+            Script, cwd, python_path, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             try:
                 os.chdir(cwd)
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
+            
+            prefix = '[%s] ' % socket.gethostname()
             if out_logger:
-                self.outt, sys.stdout = start_forword(out_logger)
+                self.outt, sys.stdout = start_forword(out_logger, prefix)
             if err_logger:
-                self.errt, sys.stderr = start_forword(err_logger)
+                self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
-            if args['DPARK_HAS_DFS'] == 'True':
-                self.workdir = None
-                port = None
-            else:
+            
+            if args['DPARK_HAS_DFS'] != 'True':
                 self.workdir = args['WORKDIR']
-                port = startWebServer(args['WORKDIR'])
-            self.pool = multiprocessing.Pool(parallel, init_env, [args, port])
-            logger.debug("executor started at %s", socket.gethostname())
+                if not os.path.exists(self.workdir):
+                    os.mkdir(self.workdir)
+                args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+           
+            self.init_args = [args]
+
+            logger.debug("executor started at %s", slaveInfo.hostname)
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
             driver.sendFrameworkMessage("init executor failed:\n " +  msg)
 
+    def reregitered(self, driver, slaveInfo):
+        logger.info("executor is reregistered at %s", slaveInfo.hostname)
+
+    def disconnected():
+        logger.info("executor is disconnected at %s", slaveInfo.hostname)
+
+    def get_idle_worker(self):
+        try:
+            return self.idle_workers.pop()
+        except IndexError:
+            p = multiprocessing.Pool(1, init_env, self.init_args)
+            p.done = 0
+            return p 
+
     def launchTask(self, driver, task):
         try:
-            t, aid = cPickle.loads(task.data)
+            t, ntry = cPickle.loads(task.data)
             
-            def callback((state, data)):
-                reply_status(driver, task, state, data)
-        
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-            logging.debug("launch task %s", t.id) 
-            self.pool.apply_async(run_task, [t, aid], callback=callback)
+            
+            logging.debug("launch task %s", t.id)
+            
+            pool = self.get_idle_worker()
+            self.busy_workers[task.task_id.value] = (task, pool)
+
+            def callback((state, data)):
+                if task.task_id.value not in self.busy_workers:
+                    return
+                _, pool = self.busy_workers.pop(task.task_id.value)
+                pool.done += 1
+                reply_status(driver, task, state, data)
+                if len(self.idle_workers) + len(self.busy_workers) < self.parallel \
+                        and pool.done < MAX_TASKS_PER_WORKER: # maybe memory leak in executor
+                    self.idle_workers.append(pool)
+                else:
+                    try: pool.terminate() 
+                    except: pass
+        
+            pool.apply_async(run_task, [t, ntry], callback=callback)
     
         except Exception, e:
             import traceback
@@ -165,25 +245,30 @@ class MyExecutor(mesos.Executor):
             return
 
     def killTask(self, driver, taskId):
-        #driver.sendFrameworkMessage('kill task %s' % taskId)
-        pass
+        if taskId.value in self.busy_workers:
+            task, pool = self.busy_workers.pop(taskId.value)
+            pool.terminate()
+            reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
     def shutdown(self, driver):
+        for p in self.idle_workers:
+            try: p.terminate()
+            except: pass
+        for p in self.busy_workers.values():
+            try: p.terminate()
+            except: pass
+        # flush
+        try:
+            sys.stdout.close()
+            sys.stderr.close()
+            self.outt.join()
+            self.errt.join()
+        except: pass
+        
         # clean work files
         if self.workdir:
             try: shutil.rmtree(self.workdir, True)
             except: pass
-        # flush
-        sys.stdout.close()
-        sys.stderr.close()
-        self.outt.join()
-        self.errt.join()
-        for p in self.pool._pool:
-            try: p.terminate()
-            except: pass
-        #for p in self.pool._pool:
-        #    try: p.join()
-        #    except: pass
 
     def error(self, driver, code, message):
         logger.error("error: %s, %s", code, message)
