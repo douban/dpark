@@ -462,8 +462,7 @@ class MesosScheduler(DAGScheduler):
         def collect_log():
             while True:
                 line = sock.recv()
-                if not self.options.quiet:
-                    output.write(line)
+                output.write(line)
 
         t = threading.Thread(target=collect_log)
         t.daemon = True
