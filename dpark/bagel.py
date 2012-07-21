@@ -59,7 +59,7 @@ class Bagel:
     @classmethod
     def run(cls, ctx, verts, msgs, compute,
             combiner=DefaultValueCombiner(), aggregator=None,
-            max_superstep=sys.maxint, numSplits=None):
+            max_superstep=sys.maxint, numSplits=None, snapshot_dir=None):
 
         superstep = 0
         while superstep < max_superstep:
@@ -69,7 +69,7 @@ class Bagel:
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs, numSplits=numSplits)
             processed, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
-                lambda v, ms: compute(v, ms, aggregated, superstep))
+                lambda v, ms: compute(v, ms, aggregated, superstep), snapshot_dir)
             logger.info("superstep %d took %.1f s", superstep, time.time()-start)
 
             noActivity = numMsgs == 0 and numActiveVerts == 0
@@ -89,7 +89,7 @@ class Bagel:
         return r.reduce(aggregator.mergeAggregators)
 
     @classmethod
-    def comp(cls, ctx, grouped, compute):
+    def comp(cls, ctx, grouped, compute, snapshot_dir=None):
         numMsgs = ctx.accumulator(0)
         numActiveVerts = ctx.accumulator(0)
         def proc((vs, cs)):
@@ -100,7 +100,11 @@ class Bagel:
             if newVert.active:
                 numActiveVerts.add(1)
             return [(newVert, newMsgs)]
-        processed = grouped.flatMapValue(proc).cache()
+        processed = grouped.flatMapValue(proc)
+        if snapshot_dir:
+            processed = processed.snapshot(snapshot_dir)
+        else:
+            processed = processed.cache()
         # force evaluation of processed RDD for accurate performance measurements
         processed.count()
         return processed, numMsgs.value, numActiveVerts.value

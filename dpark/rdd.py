@@ -8,6 +8,7 @@ import cStringIO
 import itertools
 import operator
 import math
+import cPickle
 import random
 import bz2
 import logging
@@ -51,6 +52,7 @@ class RDD:
         self.aggregator = None
         self._partitioner = None
         self.shouldCache = False
+        self.snapshot_path = None
 
     nextId = 0
     @classmethod
@@ -90,10 +92,28 @@ class RDD:
         return []
 
     def cache(self):
-#        self.shouldCache = True
+        self.shouldCache = True
+        return self
+
+    def snapshot(self, path):
+        ident = '%d_%x' % (self.id, hash(str(self)))
+        path = os.path.join(path, ident)
+        if not os.path.exists(path):
+            os.makedirs(path)
+        self.snapshot_path = path
         return self
 
     def iterator(self, split):
+        if self.snapshot_path:
+            p = os.path.join(self.snapshot_path, str(split.index))
+            if os.path.exists(p):
+                v = cPickle.loads(open(p).read())
+            else:
+                v = list(self.compute(split))
+                with open(p, 'w') as f:
+                    f.write(cPickle.dumps(v))
+            return v
+
         if self.shouldCache:
             return env.cacheTracker.getOrCompute(self, split)
         else:
@@ -710,7 +730,7 @@ class CoGroupedRDD(RDD):
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
-        self.name = '<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds))
+        self.name = ('<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds)))[:80]
 
     def __len__(self):
         return self.partitioner.numPartitions
