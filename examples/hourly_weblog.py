@@ -18,7 +18,7 @@ def format_weblog(dpark, hour):
     logs = [dpark.textFile(log_path % (h,hour.strftime("%Y/%m/%d/%H/")), splitSize=10<<20)
              for h in sinkservers if os.path.exists(log_path % (h,hour.strftime("%Y/%m/%d/%H/")))]
     rawlog = dpark.union(logs)
-    return rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream')
+    return rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream', True)
 
 def parse(line):
     return csv.reader(StringIO(line)).next()
@@ -72,6 +72,6 @@ def load_weblog(hour):
 
 if __name__ == '__main__':
     now = datetime.now() 
-    for i in range(1, 24):
+    for i in range(1, 72):
         hour = now - timedelta(seconds=3600*i)
         load_weblog(hour)

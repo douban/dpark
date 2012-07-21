@@ -6,7 +6,7 @@ import cPickle
 from dpark import DparkContext
 from operator import itemgetter
 from dpark.dependency import Aggregator
-
+from MySQLdb import IntegrityError
 dpark = DparkContext()
 
 DATE,TIME,UID,IP,BID,METHOD,NURL,URL,CODE,LENGTH,PT,NREFERER,REFERER = range(13)
@@ -77,7 +77,7 @@ def get_pvstat(theday):
     pv = weblog.combineByKey(agg, 32).mapValue(
             lambda (upv,apv,pt,uid,bid,ip):
                 (upv,apv,pt/(upv+apv),len(uid),len(bid),len(ip))
-        ).collectAsMap()
+         ).filter(lambda v:v[0]+v[1]>10).collectAsMap()
     return pv
 
 def get_parent(nurl):
@@ -98,7 +98,7 @@ def save(day, pvstats):
                 store.execute('insert into pvstat2 (day,nurl,pv,upv,apv,ip,uid,bid,pt) '
                 'values (%s,%s,%s,%s,%s,%s,%s,%s,%s)', 
                 (day, nurl[:120], pv,upv,apv,ip,uid,bid,pt*1000))
-            except Exception:
+            except IntegrityError:
                 #print nurl
                 pass
         else:
@@ -108,7 +108,7 @@ def save(day, pvstats):
                 store.execute('insert into rooturl3 (day,parent,nurl,pv,upv,apv,ip,uid,bid,pt)' 
                     ' values (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)',
                     (day,parent[:120],nurl[:120],pv,upv,apv,ip,uid,bid,pt*1000))
-            except Exception:
+            except IntegrityError:
                 #print parent, nurl
                 pass
     store.commit()
@@ -120,6 +120,7 @@ if __name__ == '__main__':
         name = '/mfs/tmp/pvstat-%s' % day
         if os.path.exists(name):
             #pv = cPickle.load(open(name))
+            #save(day, pv)
             pass
         else:
             try:

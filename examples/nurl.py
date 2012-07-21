@@ -21,7 +21,7 @@ for i in range(30):
     if len(alllog) < 400:
         continue
     print alllog, len(alllog.splits)
-    weblog = alllog.pipe('/mfs/log/nginx-log/format_access_log --stream')
+    weblog = alllog.pipe('/mfs/log/nginx-log/format_access_log --stream', quiet=True)
     alllog.saveAsTextFile(tpath)
 
 #weblog = dpark.textFile('/mfs/log/weblog/%s/' % dpath)
