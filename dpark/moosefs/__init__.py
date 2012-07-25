@@ -177,6 +177,7 @@ class ReadableFile(File):
                         if offset >= length:
                             return
                         nerror = 0
+                    break
                 except IOError, e:
                     #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
                     nerror += 1
