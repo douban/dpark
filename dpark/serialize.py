@@ -80,16 +80,13 @@ def load_func((flag, bytes)):
     code, glob, name, defaults, closure = marshal.loads(bytes)
     glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    # Simulate a function pointer, so we can create globals that refer to the function itself
-    func = []
-    def selfCall(*args, **kwargs): return func[0](*args, **kwargs)
-    # Replace the recursive function placeholders with this simulated function pointer
-    for (key, value) in glob.items():
-        if value == RECURSIVE_FUNCTION_PLACEHOLDER:
-            glob[key] = selfCall
     closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
-    func.append(new.function(code, glob, name, defaults, closure))
-    return func[0]
+    f = new.function(code, glob, name, defaults, closure)
+    # Replace the recursive function placeholders with this simulated function pointer
+    for key, value in glob.items():
+        if value == RECURSIVE_FUNCTION_PLACEHOLDER:
+            f.func_globals[key] = f
+    return f
 
 def reconstruct_closure(values):
     ns = range(len(values))
