@@ -1,4 +1,5 @@
 import os
+import socket
 from cStringIO import StringIO
 
 from consts import *
@@ -157,13 +158,15 @@ class ReadableFile(File):
         length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
         if offset > length:
             return
-            
-        for block in read_chunk_from_local(chunk.id,
-                chunk.version, length-offset, offset):
-            yield block
-            offset += len(block)
-            if offset >= length:
-                return
+        
+        local_ip = socket.gethostbyname(socket.gethostname())
+        if any(ip == local_ip for ip,port in chunk.addrs):
+            for block in read_chunk_from_local(chunk.id,
+                    chunk.version, length-offset, offset):
+                yield block
+                offset += len(block)
+                if offset >= length:
+                    return
 
         for host, port in chunk.addrs:
             # give up after two continuous errors
