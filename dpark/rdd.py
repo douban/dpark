@@ -159,10 +159,10 @@ class RDD:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         return self.map(lambda x: (f(x), x)).groupByKey(numSplits)
 
-    def pipe(self, command):
+    def pipe(self, command, quiet=False):
         if isinstance(command, str):
             command = command.split(' ')
-        return PipedRDD(self, command)
+        return PipedRDD(self, command, quiet)
 
     def fromCsv(self, dialect='excel'):
         return CSVReaderRDD(self, dialect)
@@ -523,10 +523,11 @@ class MapPartitionsRDD(MappedRDD):
         return self.func(self.prev.iterator(split))
 
 class PipedRDD(RDD):
-    def __init__(self, prev, command):
+    def __init__(self, prev, command, quiet=False):
         RDD.__init__(self, prev.ctx)
         self.prev = prev
         self.command = command
+        self.quiet = quiet
         self.dependencies = [OneToOneDependency(prev)]
 
     def __len__(self):
@@ -545,7 +546,8 @@ class PipedRDD(RDD):
     def compute(self, split):
         import subprocess
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, stderr=sys.stderr)
+                stdout=subprocess.PIPE, 
+                stderr=self.quiet and subprocess.PIPE or sys.stderr)
         def read(stdin):
             it = self.prev.iterator(split)
             if isinstance(it, list):
@@ -1117,7 +1119,7 @@ class MFSTextFileRDD(RDD):
     def compute(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
-        MAX_RECORD_LENGTH = 10240
+        MAX_RECORD_LENGTH = 1<<20 # 1M
 
         f = moosefs.ReadableFile(self.file)
         if start > 0:

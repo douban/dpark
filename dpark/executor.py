@@ -10,7 +10,7 @@ import SocketServer
 import SimpleHTTPServer
 import shutil
 import socket
-import urllib
+import urllib2
 import gc
 gc.disable()
 
@@ -100,7 +100,7 @@ def startWebServer(path):
     default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
             os.path.basename(path))
     try:
-        data = urllib.urlopen(default_uri + '/' + 'test').read()
+        data = urllib2.urlopen(default_uri + '/' + 'test').read()
         if data == 'testdata':
             return default_uri
     except IOError, e:
@@ -153,6 +153,7 @@ class MyExecutor(mesos.Executor):
         try:
             global Script
             Script, cwd, python_path, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
+            self.init_args = [args]
             try:
                 os.chdir(cwd)
             except OSError:
@@ -171,10 +172,9 @@ class MyExecutor(mesos.Executor):
                 if not os.path.exists(self.workdir):
                     os.mkdir(self.workdir)
                 args['SERVER_URI'] = startWebServer(args['WORKDIR'])
-           
-            self.init_args = [args]
 
             logger.debug("executor started at %s", slaveInfo.hostname)
+
         except Exception, e:
             import traceback
             msg = traceback.format_exc()

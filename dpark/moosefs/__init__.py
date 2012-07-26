@@ -1,4 +1,5 @@
 import os
+import socket
 from cStringIO import StringIO
 
 from consts import *
@@ -157,28 +158,34 @@ class ReadableFile(File):
         length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
         if offset > length:
             return
-            
-        for block in read_chunk_from_local(chunk.id,
-                chunk.version, length-offset, offset):
-            yield block
-            offset += len(block)
-            if offset >= length:
-                return
-
-        for host, port in chunk.addrs * 2:
-            try:
-                for block in read_chunk(host, port, chunk.id,
+        
+        local_ip = socket.gethostbyname(socket.gethostname())
+        if any(ip == local_ip for ip,port in chunk.addrs):
+            for block in read_chunk_from_local(chunk.id,
                     chunk.version, length-offset, offset):
-                    yield block
-                    offset += len(block)
-                    if offset >= length:
-                        return
-            except IOError, e:
-                #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
-                pass
+                yield block
+                offset += len(block)
+                if offset >= length:
+                    return
 
-        if offset < length:
-            raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
+        for host, port in chunk.addrs:
+            # give up after two continuous errors
+            nerror = 0
+            while nerror < 2:
+                try:
+                    for block in read_chunk(host, port, chunk.id,
+                        chunk.version, length-offset, offset):
+                        yield block
+                        offset += len(block)
+                        if offset >= length:
+                            return
+                        nerror = 0
+                    break
+                except IOError, e:
+                    #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
+                    nerror += 1
+
+        raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
         
     def __iter__(self):
         return self

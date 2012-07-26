@@ -10,7 +10,7 @@ webservers = ['theoden', 'balin']
 log_path = ["/mfs/log/access-log/current/weblog/%s/%s",]
 
 today = date.today()
-for i in range(1, 5):
+for i in range(1, 2):
     day = today - timedelta(days=i)
     path = '/mfs/log/weblog/%s/' % day.strftime("%Y/%m/%d")
     #print 'target', path
@@ -26,7 +26,7 @@ for i in range(1, 5):
         rawlog = dpark.union(logs)
         #rawlog = rawlog.glom().flatMap(peek(day))
 #        print rawlog.take(10)
-        weblog = rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream')
+        weblog = rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream', quiet=True)
         weblog.saveAsTextFile(path)
     except IOError:
         pass
