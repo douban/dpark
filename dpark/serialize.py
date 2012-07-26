@@ -1,6 +1,16 @@
 import marshal, new, cPickle
 import itertools
 
+class RecursiveFunctionPlaceholder(object):
+    """
+    Placeholder for a recursive reference to the current function,
+    to avoid infinite recursion when serializing recursive functions.
+    """
+    def __eq__(self, other):
+        return isinstance(other, RecursiveFunctionPlaceholder)
+
+RECURSIVE_FUNCTION_PLACEHOLDER = RecursiveFunctionPlaceholder()
+
 def marshalable(o):
     if o is None: return True
     t = type(o)
@@ -55,8 +65,13 @@ def dump_func(f):
     for n in code.co_names:
         r = f.func_globals.get(n)
         if r is not None:
-            glob[n] = dump_object(r)
-    closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None 
+            if r is f:
+                # Prevent infinite recursion when dumping a recursive function
+                glob[n] = dump_object(RECURSIVE_FUNCTION_PLACEHOLDER)
+            else:
+                glob[n] = dump_object(r)
+
+    closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None
     return 0, marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
 def load_func((flag, bytes)):
@@ -66,7 +81,12 @@ def load_func((flag, bytes)):
     glob = dict((k, load_object(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
     closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
-    return new.function(code, glob, name, defaults, closure)
+    f = new.function(code, glob, name, defaults, closure)
+    # Replace the recursive function placeholders with this simulated function pointer
+    for key, value in glob.items():
+        if value == RECURSIVE_FUNCTION_PLACEHOLDER:
+            f.func_globals[key] = f
+    return f
 
 def reconstruct_closure(values):
     ns = range(len(values))
@@ -114,3 +134,7 @@ if __name__ == "__main__":
     #print globals()
     print f(2)
     print ff(2)
+
+    # Test recursive functions
+    def fib(n): return n if n <= 1 else fib(n-1) + fib(n-2)
+    assert fib(8) == load_func(dump_func(fib))(8)
