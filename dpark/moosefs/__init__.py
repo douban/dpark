@@ -165,20 +165,24 @@ class ReadableFile(File):
             if offset >= length:
                 return
 
-        for host, port in chunk.addrs * 2:
-            try:
-                for block in read_chunk(host, port, chunk.id,
-                    chunk.version, length-offset, offset):
-                    yield block
-                    offset += len(block)
-                    if offset >= length:
-                        return
-            except IOError, e:
-                #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
-                pass
+        for host, port in chunk.addrs:
+            # give up after two continuous errors
+            nerror = 0
+            while nerror < 2:
+                try:
+                    for block in read_chunk(host, port, chunk.id,
+                        chunk.version, length-offset, offset):
+                        yield block
+                        offset += len(block)
+                        if offset >= length:
+                            return
+                        nerror = 0
+                    break
+                except IOError, e:
+                    #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
+                    nerror += 1
 
-        if offset < length:
-            raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
+        raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
         
     def __iter__(self):
         return self

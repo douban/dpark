@@ -271,7 +271,7 @@ class SimpleJob(Job):
                         self.launched[idx] = False
                         self.tasksLaunched -= 1 
                     else:
-                        logger.error("tast %s timeout, aborting job %s",
+                        logger.error("task %s timeout, aborting job %s",
                             task, self.id)
                         self.abort("task %s timeout" % task)
                 else:
