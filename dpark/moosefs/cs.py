@@ -30,7 +30,9 @@ def read_chunk_from_local(chunkid, version, size, offset=0):
         p = os.path.join(d, name)
         if os.path.exists(p):
             if os.path.getsize(p) < CHUNKHDRSIZE + offset + size:
-                raise ValueError("size too large")
+                print p, 'is not completed', os.path.getsize(p), '<', CHUNKHDRSIZE + offset + size
+                return
+                #raise ValueError("size too large")
             f = open(p)
             f.seek(CHUNKHDRSIZE + offset)
             while size > 0:
