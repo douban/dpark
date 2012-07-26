@@ -34,19 +34,10 @@ class DparkEnv:
             elif os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
                 self.dfs = False
-            elif os.path.exists('/data1/dpark'):
-                root = '/data1/dpark'
-                self.dfs = False
             else:
-                if os.path.exists('/home2/dpark'):
-                    root = '/home2/dpark'
-                elif os.path.exists('/mfs/tmp'):
-                    root = '/mfs/tmp/dpark'
-                else:
-                    root = '/tmp/dpark'
-                self.dfs = True
-
-            if self.dfs and not os.path.exists(root):
+                raise Exception("no shuffle dir exists")
+            
+            if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),

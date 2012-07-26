@@ -36,8 +36,7 @@ class DparkContext:
             if master == 'mesos':
                 master = os.environ.get('MESOS_MASTER')
                 if not master:
-                    master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2'
-
+                    raise Exception("invalid uri of mesos master: %s" % master)
             if master.startswith('mesos://'):
                 if '@' in master:
                     master = master[master.rfind('@')+1:]
@@ -45,16 +44,12 @@ class DparkContext:
                     master = master[master.rfind('//')+2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
-        
-            #FIXME
-            if master.endswith('mesos_master'):
-                master += '2'
+
             if ':' not in master:
                 master += ':5050'
-            
             self.scheduler = MesosScheduler(master, options) 
             self.isLocal = False
-
+            
         self.master = master
 
         if options.parallel:
@@ -116,25 +111,6 @@ class DparkContext:
 
     def bzip2File(self, *args, **kwargs):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
-
-    def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
-        import moosefs
-        f = moosefs.mfsopen(path, master)
-        if f.info.type == 'd':
-            paths = []
-            for root, dirs, names in moosefs.walk(path, master):
-                for n in names:
-                    if n.endswith(ext) and not n.startswith('.'):
-                        paths.append(os.path.join(root, n))
-                for d in dirs[:]:
-                    if d.startswith('.'):
-                        dirs.remove(d)
-
-            rdds = [MFSTextFileRDD(self, p, master, **kw) 
-                     for p in paths]
-            return self.union(rdds)
-        else:
-            return MFSTextFileRDD(self, path, master, **kw)
 
     def csvFile(self, path, dialect='excel', *args, **kwargs):
         """ deprecated. """

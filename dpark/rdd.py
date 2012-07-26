@@ -17,7 +17,6 @@ import shutil
 from serialize import load_func, dump_func
 from dependency import *
 from env import env
-import moosefs
 
 logger = logging.getLogger("rdd")
 
@@ -724,6 +723,10 @@ class CoGroupedRDD(RDD):
         return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
+    def preferredLocations(self, split): 
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
+                if isinstance(dep, NarrowCoGroupSplitDep)], [])
+
     def compute(self, split):
         m = {}
         def getSeq(k):
@@ -900,6 +903,9 @@ class CSVReaderRDD(RDD):
     @property
     def splits(self):
         return self.rdd.splits
+
+    def __repr__(self):
+        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
 
     def preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
