@@ -1099,7 +1099,7 @@ class MFSTextFileRDD(RDD):
     def compute(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
-        MAX_RECORD_LENGTH = 102400
+        MAX_RECORD_LENGTH = 1<<20 # 1M
 
         f = moosefs.ReadableFile(self.file)
         if start > 0:
