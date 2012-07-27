@@ -95,12 +95,15 @@ class RDD:
         self.shouldCache = True
         return self
 
-    def snapshot(self, path):
-        ident = '%d_%x' % (self.id, hash(str(self)))
-        path = os.path.join(path, ident)
-        if not os.path.exists(path):
-            os.makedirs(path)
-        self.snapshot_path = path
+    def snapshot(self, path=None):
+        if path is None:
+            path = self.ctx.options.snapshot_dir
+        if path:
+            ident = '%d_%x' % (self.id, hash(str(self)))
+            path = os.path.join(path, ident)
+            if not os.path.exists(path):
+                os.makedirs(path)
+            self.snapshot_path = path
         return self
 
     def iterator(self, split):
