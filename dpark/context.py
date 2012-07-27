@@ -212,6 +212,8 @@ def add_default_options():
             help="which group of machines")
     group.add_option("--err", type="float", default=0.0,
             help="acceptable ignored error record ratio (0.01%)")
+    group.add_option("--snapshot_dir", type="string", default="",
+            help="shared dir to keep snapshot of RDDs")
 
     group.add_option("--self", action="store_true",
             help="user self as exectuor")

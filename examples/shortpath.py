@@ -1,14 +1,9 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2.6
 import sys, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark import Bagel, DparkContext
-from dpark.bagel import Vertex, Edge, Message
-
-class MinCombiner:
-    def createCombiner(self, msg): return msg.value
-    def mergeValue(self, comb, msg): return min(comb, msg.value)
-    def mergeCombiners(self, a, b): return min(a,b)
+from dpark.bagel import Vertex, Edge, BasicCombiner
 
 def to_vertex((id, lines)):
     outEdges = [Edge(tid, int(v)) 
@@ -18,7 +13,7 @@ def to_vertex((id, lines)):
 def compute(self, vs, agg, superstep):
     newValue = min(self.value, vs[0]) if vs else self.value
     if newValue != self.value:
-        outbox = [Message(edge.target_id, newValue + edge.value)
+        outbox = [(edge.target_id, newValue + edge.value)
                 for edge in self.outEdges]
     else:
         outbox = []
@@ -30,14 +25,14 @@ if __name__ == '__main__':
     lines = ctx.textFile(path).map(lambda line:line.split(' '))
     vertices = lines.groupBy(lambda line:line[0]).map(to_vertex)
     startVertex = str(0)
-    messages = ctx.makeRDD([(startVertex, Message(startVertex, 0))])
+    messages = ctx.makeRDD([(startVertex, 0)])
     
     print 'read', vertices.count(), 'vertices and ', messages.count(), 'messages.'
 
-    result = Bagel.run(ctx, vertices, messages, compute, MinCombiner(), numSplits=2)
+    result = Bagel.run(ctx, vertices, messages, compute, BasicCombiner(min), numSplits=2)
     
     print 'Shortest path from %s to all vertices:' % startVertex
-    for v in result.collect():
+    for id, v in result.collect():
         if v.value == sys.maxint:
             v.value = 'inf'
         print v.id, v.value

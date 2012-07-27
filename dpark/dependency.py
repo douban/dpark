@@ -141,6 +141,6 @@ class RangePartitioner(Partitioner):
         return bisect.bisect(self.keys, key)
 
     def __eq__(self, other):
-        if isinstance(other, Partitioner):
-            return other.numPartitions == self.numPartitions
+        if isinstance(other, RangePartitioner):
+            return other.keys == self.keys
         return False
