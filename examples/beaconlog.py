@@ -10,7 +10,7 @@ from dpark.dependency import Aggregator
 
 dpark = DparkContext()
 
-webservers = ['bifur', 'bofur', 'faramir']
+webservers = ['bifur', 'bofur', 'ori']#'faramir']
 log_path = ["/mfs/log/nginx-log/current/%s/beacon_log-%s",]
 
 def peek(day):

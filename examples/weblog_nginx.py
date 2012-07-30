@@ -45,6 +45,6 @@ for i in range(1, 2):
         rawlog = dpark.union(logs)
         rawlog = rawlog.glom().flatMap(peek(day))
         weblog = rawlog.pipe('/mfs/log/nginx-log/format_access_log --stream', quiet=True)
-        weblog.saveAsTextFile(path)
+        weblog.saveAsTextFile(path, overwrite=False)
     except IOError:
         pass

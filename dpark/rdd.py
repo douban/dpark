@@ -267,13 +267,13 @@ class RDD:
         r = self.take(1)
         if r: return r[0]
 
-    def saveAsTextFile(self, path, ext='', overwrite=False):
+    def saveAsTextFile(self, path, ext='', overwrite=True):
         return OutputTextFileRDD(self, path, ext, overwrite).collect()
 
-    def saveAsTextFileByKey(self, path, ext='', overwrite=False):
+    def saveAsTextFileByKey(self, path, ext='', overwrite=True):
         return MultiOutputTextFileRDD(self, path, ext, overwrite).collect()
 
-    def saveAsCSVFile(self, path, overwrite=False):
+    def saveAsCSVFile(self, path, overwrite=True):
         return OutputCSVFileRDD(self, path, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD

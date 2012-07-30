@@ -45,7 +45,7 @@ def load_weblog(day):
         g = weblog.map(clean(dpark, topreferers)).groupByKey()
         s = g.flatMap(
                 lambda (u,ls): len(ls) > 1000 and ls or [drop_nurl(l) for l in ls]
-            ).saveAsTextFile(path, ext='csv')
+            ).saveAsTextFile(path, ext='csv', overwrite=False)
         dpark.stop()
 
     for name in sorted(os.listdir(path)):
