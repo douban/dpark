@@ -8,9 +8,14 @@ import time
 import random
 import getpass
 import urllib
+import warnings
 
 import zmq
-import mesos_pb2
+try:
+    import mesos_pb2
+except ImportError:
+    warnings.warn("no mesos module available, can not run in mesos mode",
+        ImportWarning)
 
 from dependency import NarrowDependency, ShuffleDependency 
 from accumulator import Accumulator
