@@ -37,6 +37,14 @@ def lock(f):
             return f(self, *a, **kw)
     return _
 
+def try_again(f):
+    def _(*a, **kw):
+        try:
+            return f(*a, **kw)
+        except IOError, e:
+            return f(*a, **kw)
+    return _
+
 class MasterConn:
     def __init__(self, host='mfsmaster', port=9421):
         self.host = host
@@ -148,6 +156,7 @@ class MasterConn:
         assert len(d) == n, 'unexpected end: %s != %s' % (len(d), n)
         return d
 
+    @try_again
     @lock
     def sendAndReceive(self, cmd, *args):
         #print 'sendAndReceive', cmd, args
