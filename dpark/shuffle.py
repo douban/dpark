@@ -55,7 +55,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             urlopen, url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
         logger.debug("fetch %s", url)
         
-        tries = 3
+        tries = 4
         while True:
             try:
                 f = urlopen(url)
@@ -74,12 +74,14 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                     raise ValueError("invalid flag")
                 return d
             except Exception, e:
-                logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again", shuffleId, reduceId, part, url, e)
+                logger.debug("Fetch failed for shuffle %d, reduce %d, %d, %s, %s, try again",
+                        shuffleId, reduceId, part, url, e)
                 tries -= 1
                 if not tries:
-                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", shuffleId, reduceId, part, url, e)
+                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", 
+                            shuffleId, reduceId, part, url, e)
                     raise
-                time.sleep(1)
+                time.sleep(2**(3-tries))
 
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
