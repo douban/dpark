@@ -1097,7 +1097,7 @@ class MFSTextFileRDD(RDD):
         size = self.file.length
         if splitSize is None:
             if numSplits is None:
-                splitSize = 64*1024*1024
+                splitSize = moosefs.CHUNKSIZE
             else:
                 splitSize = size / numSplits
         n = size / splitSize
@@ -1114,7 +1114,12 @@ class MFSTextFileRDD(RDD):
         return [Split(i) for i in range(self.len)]
 
     def preferredLocations(self, split):
-        return self.file.locs(split.index)
+        if self.splitSize != moosefs.CHUNKSIZE:
+            start = self.splitSize * split.index / moosefs.CHUNKSIZE
+            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
+            return sum((self.file.locs(i) for i in range(start, end)), [])
+        else:
+            return self.file.locs(split.index)
 
     def __repr__(self):
         return '<TextFileRDD %s>' % self.path
