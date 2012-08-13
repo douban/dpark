@@ -11,6 +11,7 @@ import SimpleHTTPServer
 import shutil
 import socket
 import urllib2
+import platform
 import gc
 gc.disable()
 
@@ -143,11 +144,40 @@ def start_forword(addr, prefix=''):
     t.start()    
     return t, os.fdopen(wfd, 'w', 0) 
 
+def get_pool_memory(pool):
+    if platform.system() == 'Linux':
+        for line in open('/proc/%d/status' % pool._pool[0].pid):
+            if line.startswith('VmRSS:'):
+                return int(line.split()[1]) >> 10
+    return 0
+
+def get_task_memory(task):
+    for r in task.resources:
+        if r.name == 'mem':
+            return r.scalar.value
+    return 0
+
 class MyExecutor(mesos.Executor):
     def __init__(self):
         self.workdir = None
         self.idle_workers = []
         self.busy_workers = {}
+
+    def check_memory(self, driver):
+        while True:
+            for tid, (task, pool) in self.busy_workers.items():
+                rss = get_pool_memory(pool)
+                offered = get_task_memory(task)
+                if rss > offered * 3:
+                    driver.sendFrameworkMessage("task %s used too much memory: %d MB > %d MB" % (tid, rss, offered))
+                    reply_status(driver, task, mesos_pb2.TASK_KILLED)
+                    self.busy_workers.pop(tid)
+                    pool.terminate()
+                elif rss > offered:
+                    import warnings
+                    warnings.warn("task %s used too much memory: %d MB > %d MB" % (tid, rss, offered))
+
+            time.sleep(1)                
 
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
@@ -173,6 +203,10 @@ class MyExecutor(mesos.Executor):
                     os.mkdir(self.workdir)
                 args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
+            t = threading.Thread(target=self.check_memory, args=[driver])
+            t.daemon = True
+            t.start()
+ 
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
@@ -183,7 +217,7 @@ class MyExecutor(mesos.Executor):
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
 
-    def disconnected():
+    def disconnected(self, driver, slaveInfo):
         logger.info("executor is disconnected at %s", slaveInfo.hostname)
 
     def get_idle_worker(self):
@@ -212,7 +246,8 @@ class MyExecutor(mesos.Executor):
                 pool.done += 1
                 reply_status(driver, task, state, data)
                 if len(self.idle_workers) + len(self.busy_workers) < self.parallel \
-                        and pool.done < MAX_TASKS_PER_WORKER: # maybe memory leak in executor
+                        and pool.done < MAX_TASKS_PER_WORKER \
+                        and get_pool_memory(pool) < get_task_memory(task): # maybe memory leak in executor
                     self.idle_workers.append(pool)
                 else:
                     try: pool.terminate() 
