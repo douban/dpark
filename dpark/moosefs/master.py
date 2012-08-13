@@ -38,11 +38,12 @@ def lock(f):
     return _
 
 def try_again(f):
-    def _(*a, **kw):
+    def _(self, *a, **kw):
         try:
-            return f(*a, **kw)
+            return f(self, *a, **kw)
         except IOError, e:
-            return f(*a, **kw)
+            self.close()
+            return f(self, *a, **kw)
     return _
 
 class MasterConn:
@@ -120,7 +121,6 @@ class MasterConn:
             self.conn.close()
             self.conn = None
 
-    @lock
     def send(self, buf):
         #print 'send', len(buf), " ".join(str(ord(c)) for c in buf)
         n = self.conn.send(buf)
@@ -131,6 +131,7 @@ class MasterConn:
                 raise IOError("write to master failed")
             n += sent 
 
+    @lock
     def nop(self):
         self.connect()
         msg = pack(ANTOAN_NOP, 0)
