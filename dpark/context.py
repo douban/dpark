@@ -84,6 +84,10 @@ class DparkContext:
 
         def create_rdd(cls, path, *ka, **kw):
             if cls is TextFileRDD:
+                if path.endswith('.bz2'):
+                    return BZip2FileRDD(self, path, *ka, **kw)
+                elif path.endswith('.gz'):
+                    return GZipFileRDD(self, path, *ka, **kw)
                 rpath = os.path.realpath(path)
                 if rpath.startswith('/mfs/'):
                     return MFSTextFileRDD(self, rpath[4:], 'mfsmaster', *ka, **kw)
@@ -115,6 +119,8 @@ class DparkContext:
             return create_rdd(cls, path, *ka, **kws)
 
     def bzip2File(self, *args, **kwargs):
+        "deprecated"
+        logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
     def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):

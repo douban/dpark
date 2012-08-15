@@ -11,6 +11,8 @@ import math
 import cPickle
 import random
 import bz2
+import gzip
+import zlib
 import logging
 from copy import copy
 import shutil
@@ -172,7 +174,7 @@ class RDD:
 
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
-    mapPartiton = mapPartitions
+    mapPartition = mapPartitions
 
     def foreach(self, f):
         def mf(it):
@@ -1027,6 +1029,67 @@ class TextFileRDD(RDD):
             start += len(line)
             yield line
         f.close()
+
+
+class GZipFileRDD(TextFileRDD):
+    "the gziped file must be seekable, compressed by pigz -i"    
+    DEFAULT_SPLIT_SIZE = 16<<20
+
+    def __init__(self, ctx, path, splitSize=None):
+        TextFileRDD.__init__(self, ctx, path, None, splitSize)
+
+    def __repr__(self):
+        return '<GZipFileRDD %s>' % self.path
+
+    def find_block(self, f, pos):
+        f.seek(pos)
+        block = f.read(32*1024)
+        if len(block) < 4:
+            f.seek(0, 2)
+            return f.tell() # EOF
+        ENDING = '\x00\x00\xff'
+        while True:
+            p = block.find(ENDING)
+            while p < 0:
+                pos += len(block) - 3 
+                block = block[-3:] + f.read(32<<10)
+                if len(block) == 3:
+                    return pos + 3 # EOF
+                p = block.find(ENDING)
+            pos += p + 4
+            block = block[p+4:]
+            if not block:
+                block += f.read(4096)
+                if not block:
+                    return pos # EOF
+            try:
+                if zlib.decompressobj(-zlib.MAX_WBITS).decompress(block):
+                    return pos # FOUND 
+            except Exception, e:
+                pass
+
+    def compute(self, split):
+        f = open(self.path, 'rb', 4096 * 1024)
+        if split.index == 0:
+            zf = gzip.GzipFile(fileobj=f)
+            zf._read_gzip_header()
+            start = f.tell()
+        else:
+            start = self.find_block(f, split.index * self.splitSize)
+            if start >= split.index * self.splitSize + self.splitSize:
+                return
+        end = self.find_block(f, split.index * self.splitSize + self.splitSize)
+        f.seek(start)
+        d = f.read(end-start)
+        f.close()
+
+        dz = zlib.decompressobj(-zlib.MAX_WBITS)
+        io = cStringIO.StringIO(dz.decompress(d))
+        if split.index > 0:
+            io.readline() # skip the first line
+        for line in io:
+            if line.endswith('\n'): # drop last line
+                yield line
 
 
 class BZip2FileRDD(TextFileRDD):
