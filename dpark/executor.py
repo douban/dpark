@@ -164,20 +164,23 @@ class MyExecutor(mesos.Executor):
         self.busy_workers = {}
 
     def check_memory(self, driver):
+        mem_limit = {}
         while True:
             for tid, (task, pool) in self.busy_workers.items():
                 rss = get_pool_memory(pool)
                 offered = get_task_memory(task)
                 if rss > offered * 3:
-                    driver.sendFrameworkMessage("task %s used too much memory: %d MB > %d MB" % (tid, rss, offered))
+                    logger.error("task %s used too much memory: %dMB > %dMB * 3, kill it. "
+                            + "use -M argument to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
                     pool.terminate()
-                elif rss > offered:
-                    import warnings
-                    warnings.warn("task %s used too much memory: %d MB > %d MB" % (tid, rss, offered))
+                elif rss > offered * mem_limit.get(tid, 1.0):
+                    logger.warning("task %s used too much memory: %dMB > %dMB, "
+                            + "use -M to request more memory", tid, rss, offered)
+                    mem_limit[tid] = rss / offered + 0.2
 
-            time.sleep(1)                
+            time.sleep(10) 
 
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
@@ -196,7 +199,7 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
-            
+
             if args['DPARK_HAS_DFS'] != 'True':
                 self.workdir = args['WORKDIR']
                 if not os.path.exists(self.workdir):
