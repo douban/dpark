@@ -1294,7 +1294,7 @@ class OutputTextFileRDD(RDD):
 
     def write_compress_data(self, f, lines):
         empty = True
-        f = gzip.GzipFile(mode='w', fileobj=f)
+        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
         size = 0
         for line in lines:
             f.write(line)
@@ -1333,7 +1333,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                     time.sleep(1) # there are dir cache in mfs for 1 sec
                     f = open(tpath,'w', 4096 * 1024 * 16)
                 if self.compress:
-                    f = gzip.GzipFile(mode='w', fileobj=f)
+                    f = gzip.GzipFile(filename='', mode='w', fileobj=f)
                 files[key] = f
                 paths[key] = tpath
             return f
