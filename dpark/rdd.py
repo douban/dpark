@@ -1034,6 +1034,7 @@ class TextFileRDD(RDD):
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
     DEFAULT_SPLIT_SIZE = 32<<20
+    BLOCK_SIZE = 64 << 10
 
     def __init__(self, ctx, path, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, None, splitSize)
@@ -1047,7 +1048,7 @@ class GZipFileRDD(TextFileRDD):
         if len(block) < 4:
             f.seek(0, 2)
             return f.tell() # EOF
-        ENDING = '\x00\x00\xff'
+        ENDING = '\x00\x00\xff\xff'
         while True:
             p = block.find(ENDING)
             while p < 0:
@@ -1070,6 +1071,7 @@ class GZipFileRDD(TextFileRDD):
 
     def compute(self, split):
         f = open(self.path, 'rb', 4096 * 1024)
+        last_line = ''
         if split.index == 0:
             zf = gzip.GzipFile(fileobj=f)
             zf._read_gzip_header()
@@ -1078,15 +1080,26 @@ class GZipFileRDD(TextFileRDD):
             start = self.find_block(f, split.index * self.splitSize)
             if start >= split.index * self.splitSize + self.splitSize:
                 return
+            for i in xrange(1, 100):
+                if start - i * self.BLOCK_SIZE <= 4:
+                    break
+                last_block = self.find_block(f, start - i * self.BLOCK_SIZE)
+                if last_block < start:
+                    f.seek(last_block)
+                    d = f.read(start - last_block)
+                    dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                    last_line = dz.decompress(d).split('\n')[-1]
+                    break
+
         end = self.find_block(f, split.index * self.splitSize + self.splitSize)
         f.seek(start)
-        d = f.read(end-start)
+        d = f.read(end - start)
         f.close()
+        if not d: return
 
         dz = zlib.decompressobj(-zlib.MAX_WBITS)
         io = cStringIO.StringIO(dz.decompress(d))
-        if split.index > 0:
-            io.readline() # skip the first line
+        yield last_line + io.readline()
         for line in io:
             if line.endswith('\n'): # drop last line
                 yield line
