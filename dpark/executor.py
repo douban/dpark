@@ -169,8 +169,8 @@ class MyExecutor(mesos.Executor):
             for tid, (task, pool) in self.busy_workers.items():
                 rss = get_pool_memory(pool)
                 offered = get_task_memory(task)
-                if rss > offered * 3:
-                    logger.error("task %s used too much memory: %dMB > %dMB * 3, kill it. "
+                if rss > offered * 2:
+                    logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
                             + "use -M argument to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)

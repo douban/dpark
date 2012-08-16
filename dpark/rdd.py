@@ -1033,7 +1033,7 @@ class TextFileRDD(RDD):
 
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
-    DEFAULT_SPLIT_SIZE = 16<<20
+    DEFAULT_SPLIT_SIZE = 32<<20
 
     def __init__(self, ctx, path, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, None, splitSize)
