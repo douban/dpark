@@ -269,11 +269,11 @@ class RDD:
         r = self.take(1)
         if r: return r[0]
 
-    def saveAsTextFile(self, path, ext='', overwrite=True):
-        return OutputTextFileRDD(self, path, ext, overwrite).collect()
+    def saveAsTextFile(self, path, ext='', overwrite=True, compress=False):
+        return OutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsTextFileByKey(self, path, ext='', overwrite=True):
-        return MultiOutputTextFileRDD(self, path, ext, overwrite).collect()
+    def saveAsTextFileByKey(self, path, ext='', overwrite=True, compress=False):
+        return MultiOutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
     def saveAsCSVFile(self, path, overwrite=True):
         return OutputCSVFileRDD(self, path, overwrite).collect()
@@ -1224,7 +1224,7 @@ class MFSTextFileRDD(RDD):
 
 
 class OutputTextFileRDD(RDD):
-    def __init__(self, rdd, path, ext='', overwrite=False):
+    def __init__(self, rdd, path, ext='', overwrite=False, compress=False):
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
@@ -1239,8 +1239,11 @@ class OutputTextFileRDD(RDD):
         self.path = os.path.abspath(path)
         if ext and not ext.startswith('.'):
             ext = '.' + ext
+        if compress and not ext.endswith('gz'):
+            ext += '.gz'
         self.ext = ext
         self.overwrite = overwrite
+        self.compress = compress
         self.dependencies = [OneToOneDependency(rdd)]
 
     def __len__(self):
@@ -1269,8 +1272,10 @@ class OutputTextFileRDD(RDD):
         except IOError:
             time.sleep(1) # there are dir cache in mfs for 1 sec
             f = open(tpath,'w', 4096 * 1024 * 16)
-        
-        have_data = self.writedata(f, self.rdd.iterator(split))
+        if self.compress:
+            have_data = self.write_compress_data(f, self.rdd.iterator(split))
+        else:    
+            have_data = self.writedata(f, self.rdd.iterator(split))
         f.close()
         if have_data and not os.path.exists(path):
             os.rename(tpath, path)
@@ -1285,6 +1290,25 @@ class OutputTextFileRDD(RDD):
             if not line.endswith('\n'):
                 f.write('\n')
             empty = False
+        return not empty
+
+    def write_compress_data(self, f, lines):
+        empty = True
+        f = gzip.GzipFile(mode='w', fileobj=f)
+        size = 0
+        for line in lines:
+            f.write(line)
+            if not line.endswith('\n'):
+                f.write('\n')
+            size += len(line) + 1
+            if size >= 256 << 10:
+                f.flush()
+                f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                size = 0
+            empty = False
+        if not empty:
+            f.flush()
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
@@ -1308,17 +1332,30 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 except IOError:
                     time.sleep(1) # there are dir cache in mfs for 1 sec
                     f = open(tpath,'w', 4096 * 1024 * 16)
+                if self.compress:
+                    f = gzip.GzipFile(mode='w', fileobj=f)
                 files[key] = f
                 paths[key] = tpath
             return f
-        
+       
+        sizes = {}
         for k, v in self.rdd.iterator(split):
             f = get_file(k)
             f.write(v)
             if not v.endswith('\n'):
                 f.write('\n')
+            if self.compress:
+                size = sizes.get(k, 0) + len(v)
+                if size > 256 << 10: # 128k
+                    f.flush()
+                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                    size = 0
+                sizes[k] = size
 
         for k in files:
+            if self.compress:
+                files[k].flush()
             files[k].close()
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):

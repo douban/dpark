@@ -121,7 +121,18 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout'),
             ['/tmp/tout/0000.csv'])
+
+        # compress 
+        d = self.sc.makeRDD(range(100000), 1)
+        self.assertEqual(d.map(str).saveAsTextFile('/tmp/tout', compress=True), 
+            ['/tmp/tout/0000.gz'])
+        rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
+        self.assertEqual(rd.count(), 100000)
         
+        self.assertEqual(d.map(lambda i:('x', str(i))).saveAsTextFileByKey('/tmp/tout', compress=True), 
+            ['/tmp/tout/x/0000.gz'])
+        rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
+        self.assertEqual(rd.count(), 100000)
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
