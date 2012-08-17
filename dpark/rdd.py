@@ -19,6 +19,7 @@ import shutil
 
 from serialize import load_func, dump_func
 from dependency import *
+import shuffle
 from env import env
 import moosefs
 
@@ -646,17 +647,11 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        combiners = {}
-        mergeCombiners = self.aggregator.mergeCombiners
-        def mergePair(k, c):
-            o = combiners.get(k, None)
-            if o is None:
-                combiners[k] = c
-            else:
-                combiners[k] = mergeCombiners(o, c)
+        merger = shuffle.Merger(self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
-        fetcher.fetch(self.shuffleId, split.index, mergePair)
-        return combiners.iteritems()
+        fetcher.fetch(self.shuffleId, split.index, merger.merge)
+        return merger
+
 
 class CartesianSplit(Split):
     def __init__(self, idx, s1, s2):
@@ -750,18 +745,15 @@ class CoGroupedRDD(RDD):
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
-        m = {}
-        def getSeq(k):
-            return m.setdefault(k, tuple([[] for i in range(self.len)]))
+        m = shuffle.CoGroupMerger(self.len)
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
-                for k,v in dep.rdd.iterator(dep.split):
-                    getSeq(k)[i].append(v)
+                m.append(i, dep.rdd.iterator(dep.split))
             elif isinstance(dep, ShuffleCoGroupSplitDep):
-                def mergePair(k, vs):
-                    getSeq(k)[i].extend(vs)
-                env.shuffleFetcher.fetch(dep.shuffleId, split.index, mergePair)
-        return m.iteritems()
+                def merge(items):
+                    m.extend(i, items)
+                env.shuffleFetcher.fetch(dep.shuffleId, split.index, merge)
+        return m
         
 
 class SampleRDD(RDD):

@@ -89,10 +89,8 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         parts = zip(range(len(serverUris)), serverUris)
         random.shuffle(parts)
         for part, uri in parts:
-            d = self.fetch_one(uri, shuffleId, part, reduceId) 
-            for k,v in d.iteritems():
-                func(k,v)
-
+            d = self.fetch_one(uri, shuffleId, part, reduceId)
+            func(d.iteritems())
 
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def __init__(self, nthreads):
@@ -126,18 +124,13 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
         
-        #completed = set() 
         for i in xrange(len(serverUris)):
             r = self.results.get()
             if isinstance(r, Exception):
                 raise r
 
             sid, rid, part, d = r
-            #assert shuffleId == sid
-            #assert rid == reduceId
-            for k,v in d.iteritems():
-                func(k,v)
-            #completed.add(part)
+            func(d.iteritems())
 
     def stop(self):
         logger.debug("stop parallel shuffle fetcher ...")
@@ -145,6 +138,42 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             self.requests.put(None)
         for i in range(self.nthreads):
             self.results.get()
+
+
+class Merger(object):
+
+    def __init__(self, mergeCombiner):
+        self.mergeCombiner = mergeCombiner
+        self.combined = {}
+
+    def merge(self, items):
+        combined = self.combined
+        mergeCombiner = self.mergeCombiner
+        for k,v in items:
+            o = combined.get(k)
+            combined[k] = mergeCombiner(o, v) if o is not None else v
+    
+    def __iter__(self):
+        return self.combined.iteritems()
+
+class CoGroupMerger(object):
+    def __init__(self, size):
+        self.size = size
+        self.combined = {}
+
+    def get_seq(self, k):
+        return self.combined.setdefault(k, tuple([[] for i in range(self.size)]))
+
+    def append(self, i, items):
+        for k, v in items:
+            self.get_seq(k)[i].append(v)
+
+    def extend(self, i, items):
+        for k, v in items:
+            self.get_seq(k)[i].extend(v)
+
+    def __iter__(self):
+        return self.combined.iteritems()
 
 
 class MapOutputTrackerMessage: pass
