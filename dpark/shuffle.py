@@ -12,11 +12,14 @@ import gzip
 import threading
 import Queue
 import heapq
+import platform
 
 import zmq
 
 from env import env
 from cache import CacheTrackerServer, CacheTrackerClient
+
+MAX_SHUFFLE_MEMORY = 800 << 20  # 800 MB
 
 logger = logging.getLogger("shuffle")
 
@@ -265,16 +268,37 @@ class DiskMerger(Merger):
     def __init__(self, c):
         Merger.__init__(self, c)
         self.archives = []
+        self.base_memory = self.get_used_memory()
+        self.max_merge = None
+        self.merged = 0
+
+    def get_used_memory(self):
+        if platform.system() == 'Linux':
+            for line in open('/proc/%d/status' % os.getpid()):
+                if line.startswith('VmRSS:'):
+                    return int(line.split()[1]) >> 10
+        return 0
 
     def merge(self, items):
         Merger.merge(self, items)
-        self.rotate()
+        
+        self.merged += 1
+        if self.max_merge is None:
+            if self.get_used_memory() - self.base_memory > MAX_SHUFFLE_MEMORY:
+                self.max_merge = self.merged
+
+        if self.merged >= self.max_merge: 
+            self.rotate()
+            self.merged = 0
 
     def rotate(self):
         self.archives.append(sorted_items(self.combined.items()))
         self.combined = {}
 
     def __iter__(self):
+        if not self.archives:
+            return self.combined.iteritems()
+
         if self.combined:
             self.rotate()
         return heap_merged(self.archives, self.mergeCombiner)
