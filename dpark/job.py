@@ -172,10 +172,8 @@ class SimpleJob(Job):
         
         if status == TASK_FINISHED:
             self.taskFinished(tid, tried, result, update)
-        elif status in (TASK_LOST, 
-                    TASK_FAILED, TASK_KILLED):
+        elif status in (TASK_LOST, TASK_FAILED, TASK_KILLED): 
             self.taskLost(tid, tried, status, reason)
-        
         task.start = time.time()
 
     def taskFinished(self, tid, tried, result, update):
@@ -225,13 +223,13 @@ class SimpleJob(Job):
         if status == TASK_FAILED:
             logger.warning("task %s failed with: %s", 
                 self.tasks[index], reason)
-        if status in (TASK_FAILED, TASK_LOST):
-            self.numFailures[index] += 1
-            if self.numFailures[index] > MAX_TASK_FAILURES:
-                logger.error("Task %d failed more than %d times; aborting job", 
-                    index, MAX_TASK_FAILURES)
-                self.abort("Task %d failed more than %d times" 
-                    % (index, MAX_TASK_FAILURES))
+        
+        self.numFailures[index] += 1
+        if self.numFailures[index] > MAX_TASK_FAILURES:
+            logger.error("Task %d failed more than %d times; aborting job", 
+                index, MAX_TASK_FAILURES)
+            self.abort("Task %d failed more than %d times" 
+                % (index, MAX_TASK_FAILURES))
 
     def check_task_timeout(self):
         now = time.time()
