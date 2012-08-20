@@ -573,6 +573,8 @@ class MesosScheduler(DAGScheduler):
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
+                    if mems[i] < self.mem * t.tried:
+                        continue # re-tried task need more memory
                     task = self.createTask(o, job, t)
                     tasks.setdefault(o.id.value, []).append(task)
 
@@ -583,7 +585,7 @@ class MesosScheduler(DAGScheduler):
                     self.taskIdToSlaveId[tid] = sid
                     self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
                     cpus[i] -= self.cpus
-                    mems[i] -= self.mem
+                    mems[i] -= self.mem * t.tried
                     launchedTask = True
 
                 if not launchedTask:
@@ -634,7 +636,7 @@ class MesosScheduler(DAGScheduler):
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.mem
+        mem.scalar.value = self.mem * t.tried
         return task
 
     @safe
