@@ -38,6 +38,8 @@ logger = logging.getLogger("executor")
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
+MAX_IDLE_TIME = 30
+MAX_IDLE_WORKERS = 1
 
 Script = ''
 
@@ -180,7 +182,14 @@ class MyExecutor(mesos.Executor):
                             + "use -M to request more memory", tid, rss, offered)
                     mem_limit[tid] = rss / offered + 0.2
 
-            time.sleep(10) 
+            now = time.time() 
+            n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
+            if n:
+                for _, p in self.idle_workers[:n]:
+                    p.terminate()
+                self.idle_workers = self.idle_workers[n:]
+
+            time.sleep(5) 
 
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
@@ -225,7 +234,7 @@ class MyExecutor(mesos.Executor):
 
     def get_idle_worker(self):
         try:
-            return self.idle_workers.pop()
+            return self.idle_workers.pop()[1]
         except IndexError:
             p = multiprocessing.Pool(1, init_env, self.init_args)
             p.done = 0
@@ -248,10 +257,11 @@ class MyExecutor(mesos.Executor):
                 _, pool = self.busy_workers.pop(task.task_id.value)
                 pool.done += 1
                 reply_status(driver, task, state, data)
-                if len(self.idle_workers) + len(self.busy_workers) < self.parallel \
-                        and pool.done < MAX_TASKS_PER_WORKER \
-                        and get_pool_memory(pool) < get_task_memory(task): # maybe memory leak in executor
-                    self.idle_workers.append(pool)
+                if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
+                        and len(self.idle_workers) < MAX_IDLE_WORKERS
+                        and pool.done < MAX_TASKS_PER_WORKER 
+                        and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
+                    self.idle_workers.append((time.time(), pool))
                 else:
                     try: pool.terminate() 
                     except: pass
@@ -271,7 +281,7 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
     def shutdown(self, driver):
-        for p in self.idle_workers:
+        for _, p in self.idle_workers:
             try: p.terminate()
             except: pass
         for p in self.busy_workers.values():

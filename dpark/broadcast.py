@@ -38,7 +38,7 @@ class SourceInfo:
         return self.leechers - other.leechers
 
     def __repr__(self):
-        return "<source %s>" % (self.addr)
+        return "<source %s (%d)>" % (self.addr, self.leechers)
 
     def is_child_of(self, addr):
         for p in self.parents:
@@ -251,10 +251,16 @@ class TreeBroadcast(FileBroadcast):
                     break
                 
                 addr = sock.recv_pyobj()
-                ssi = self.selectSuitableSource(addr)
-                if not ssi:
-                    self.MaxDegree += 1
+                while True:
                     ssi = self.selectSuitableSource(addr)
+                    if not ssi:
+                        self.MaxDegree += 1
+                        ssi = self.selectSuitableSource(addr)
+                    if ssi:
+                        if not self.check_activity(ssi):
+                            ssi.failed = True
+                        else:
+                            break
                 logger.debug("sending selected sourceinfo %s", ssi.addr)
                 sock.send_pyobj(ssi)
                 
@@ -304,8 +310,20 @@ class TreeBroadcast(FileBroadcast):
     
     def _selectSource(self, sources, skip):
         for s in sources:
-            if (s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
+            if (not s.failed and s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
                 return s
+
+    def check_activity(self, source_info):
+        sock = env.ctx.socket(zmq.REQ)
+        sock.connect(source_info.addr)
+        poller = zmq.Poller()
+        poller.register(sock, zmq.POLLIN)
+        sock.send_pyobj(-1)
+        avail = dict(poller.poll(1 * 1000))
+        if not avail or avail.get(sock) != zmq.POLLIN:
+            return False
+        n = sock.recv_pyobj()
+        return n >= 0
 
     def startServer(self):
         def run():
@@ -322,6 +340,9 @@ class TreeBroadcast(FileBroadcast):
                     self.stop = True
                     # TODO send to gruide server
                     break
+                if id == -1:
+                    sock.send_pyobj(len(self.blocks))
+                    continue
                 while id >= len(self.blocks):
                     time.sleep(0.01)
                 if not isinstance(self.blocks[id], BroadcastBlock):
@@ -390,7 +411,7 @@ class TreeBroadcast(FileBroadcast):
             sock.send_pyobj(i)
             avail = dict(poller.poll(10 * 1000))
             if not avail or avail.get(sock) != zmq.POLLIN:
-                logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                logger.debug("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
                 return False
             block = sock.recv_pyobj()
             if not isinstance(block, BroadcastBlock) or i != block.id:
