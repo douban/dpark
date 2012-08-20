@@ -8,13 +8,18 @@ import socket
 import time
 import cPickle
 import zlib as comp
+import gzip
 import threading
 import Queue
+import heapq
+import platform
 
 import zmq
 
 from env import env
 from cache import CacheTrackerServer, CacheTrackerClient
+
+MAX_SHUFFLE_MEMORY = 800 << 20  # 800 MB
 
 logger = logging.getLogger("shuffle")
 
@@ -89,10 +94,8 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         parts = zip(range(len(serverUris)), serverUris)
         random.shuffle(parts)
         for part, uri in parts:
-            d = self.fetch_one(uri, shuffleId, part, reduceId) 
-            for k,v in d.iteritems():
-                func(k,v)
-
+            d = self.fetch_one(uri, shuffleId, part, reduceId)
+            func(d.iteritems())
 
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def __init__(self, nthreads):
@@ -126,18 +129,13 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
         
-        #completed = set() 
         for i in xrange(len(serverUris)):
             r = self.results.get()
             if isinstance(r, Exception):
                 raise r
 
             sid, rid, part, d = r
-            #assert shuffleId == sid
-            #assert rid == reduceId
-            for k,v in d.iteritems():
-                func(k,v)
-            #completed.add(part)
+            func(d.iteritems())
 
     def stop(self):
         logger.debug("stop parallel shuffle fetcher ...")
@@ -146,6 +144,164 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         for i in range(self.nthreads):
             self.results.get()
 
+
+class Merger(object):
+
+    def __init__(self, mergeCombiner):
+        self.mergeCombiner = mergeCombiner
+        self.combined = {}
+
+    def merge(self, items):
+        combined = self.combined
+        mergeCombiner = self.mergeCombiner
+        for k,v in items:
+            o = combined.get(k)
+            combined[k] = mergeCombiner(o, v) if o is not None else v
+    
+    def __iter__(self):
+        return self.combined.iteritems()
+
+class CoGroupMerger(object):
+    def __init__(self, size):
+        self.size = size
+        self.combined = {}
+
+    def get_seq(self, k):
+        return self.combined.setdefault(k, tuple([[] for i in range(self.size)]))
+
+    def append(self, i, items):
+        for k, v in items:
+            self.get_seq(k)[i].append(v)
+
+    def extend(self, i, items):
+        for k, v in items:
+            self.get_seq(k)[i].extend(v)
+
+    def __iter__(self):
+        return self.combined.iteritems()
+
+def heap_merged(items_lists, combiner):
+    heap = []
+    def pushback(it):
+        try:
+            k,v = it.next()
+            # put i before value, so do not compare the value
+            heapq.heappush(heap, (k, i, v))
+        except StopIteration:
+            pass
+    for i, it in enumerate(items_lists):
+        if isinstance(it, list):
+            items_lists[i] = it = (k for k in it)
+        pushback(it)
+    if not heap: return
+
+    last_key, i, last_value = heapq.heappop(heap)
+    pushback(items_lists[i])
+
+    while heap:
+        k, i, v = heapq.heappop(heap)
+        if k != last_key:
+            yield last_key, last_value 
+            last_key, last_value = k, v
+        else:
+            last_value = combiner(last_value, v)
+        pushback(items_lists[i])
+
+    yield last_key, last_value
+
+class sorted_items(object):
+    next_id = 0
+    @classmethod
+    def new_id(cls):
+        cls.next_id += 1
+        return cls.next_id
+
+    def __init__(self, items):
+        self.id = self.new_id()
+        self.N = len(items)
+        self.path = path = os.path.join(LocalFileShuffle.shuffleDir, 
+            'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
+        f = gzip.open(path, 'wb+')
+        items.sort()
+
+        try:
+            for i in items:
+                s = marshal.dumps(i)
+                f.write(struct.pack("I", len(s)))
+                f.write(s)
+            self.loads = marshal.loads
+        except Exception, e:
+            for i in items:
+                s = pickle.dumps(i)
+                f.write(struct.pack("I", len(s)))
+                f.write(s)
+            self.loads = pickle.loads
+        f.close()
+
+        self.f = gzip.open(path)
+        self.c = 0
+
+    def __iter__(self):
+        self.f = gzip.open(path)
+        self.c = 0
+        return self
+
+    def next(self):
+        f = self.f
+        if self.c >= self.N:
+            f.close()
+            if os.path.exists(self.path):
+                os.remove(self.path)
+            raise StopIteration
+        
+        sz, = struct.unpack("I", f.read(4))
+        self.c += 1
+        return self.loads(f.read(sz))
+
+    def __dealloc__(self):
+        f.close()
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+
+class DiskMerger(Merger):
+    def __init__(self, c):
+        Merger.__init__(self, c)
+        self.archives = []
+        self.base_memory = self.get_used_memory()
+        self.max_merge = None
+        self.merged = 0
+
+    def get_used_memory(self):
+        if platform.system() == 'Linux':
+            for line in open('/proc/%d/status' % os.getpid()):
+                if line.startswith('VmRSS:'):
+                    return int(line.split()[1]) >> 10
+        return 0
+
+    def merge(self, items):
+        Merger.merge(self, items)
+        
+        self.merged += 1
+        if self.max_merge is None:
+            if self.get_used_memory() - self.base_memory > MAX_SHUFFLE_MEMORY:
+                self.max_merge = self.merged
+
+        if self.merged >= self.max_merge: 
+            self.rotate()
+            self.merged = 0
+
+    def rotate(self):
+        self.archives.append(sorted_items(self.combined.items()))
+        self.combined = {}
+
+    def __iter__(self):
+        if not self.archives:
+            return self.combined.iteritems()
+
+        if self.combined:
+            self.rotate()
+        return heap_merged(self.archives, self.mergeCombiner)
 
 class MapOutputTrackerMessage: pass
 class GetMapOutputLocations:
@@ -260,6 +416,14 @@ class MapOutputTracker:
 
 
 def test():
+    l = []
+    for i in range(10):
+        d = zip(range(10000), range(10000))
+        l.append(sorted_items(d))
+    hl = heap_merged(l, lambda x,y:x+y)    
+    for i in range(10):
+        print i, hl.next()
+    
     import logging
     logging.basicConfig(level=logging.INFO)
     from env import env
