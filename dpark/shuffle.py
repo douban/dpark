@@ -8,8 +8,10 @@ import socket
 import time
 import cPickle
 import zlib as comp
+import gzip
 import threading
 import Queue
+import heapq
 
 import zmq
 
@@ -175,6 +177,107 @@ class CoGroupMerger(object):
     def __iter__(self):
         return self.combined.iteritems()
 
+def heap_merged(items_lists, combiner):
+    heap = []
+    def pushback(it):
+        try:
+            k,v = it.next()
+            # put i before value, so do not compare the value
+            heapq.heappush(heap, (k, i, v))
+        except StopIteration:
+            pass
+    for i, it in enumerate(items_lists):
+        if isinstance(it, list):
+            items_lists[i] = it = (k for k in it)
+        pushback(it)
+    if not heap: return
+
+    last_key, i, last_value = heapq.heappop(heap)
+    pushback(items_lists[i])
+
+    while heap:
+        k, i, v = heapq.heappop(heap)
+        if k != last_key:
+            yield last_key, last_value 
+            last_key, last_value = k, v
+        else:
+            last_value = combiner(last_value, v)
+        pushback(items_lists[i])
+
+    yield last_key, last_value
+
+class sorted_items(object):
+    next_id = 0
+    @classmethod
+    def new_id(cls):
+        cls.next_id += 1
+        return cls.next_id
+
+    def __init__(self, items):
+        self.id = self.new_id()
+        self.N = len(items)
+        self.path = path = os.path.join(LocalFileShuffle.shuffleDir, 
+            'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
+        f = gzip.open(path, 'wb+')
+        items.sort()
+
+        try:
+            for i in items:
+                s = marshal.dumps(i)
+                f.write(struct.pack("I", len(s)))
+                f.write(s)
+            self.loads = marshal.loads
+        except Exception, e:
+            for i in items:
+                s = pickle.dumps(i)
+                f.write(struct.pack("I", len(s)))
+                f.write(s)
+            self.loads = pickle.loads
+        f.close()
+
+        self.f = gzip.open(path)
+        self.c = 0
+
+    def __iter__(self):
+        self.f = gzip.open(path)
+        self.c = 0
+        return self
+
+    def next(self):
+        f = self.f
+        if self.c >= self.N:
+            f.close()
+            if os.path.exists(self.path):
+                os.remove(self.path)
+            raise StopIteration
+        
+        sz, = struct.unpack("I", f.read(4))
+        self.c += 1
+        return self.loads(f.read(sz))
+
+    def __dealloc__(self):
+        f.close()
+        if os.path.exists(self.path):
+            os.remove(self.path)
+
+
+class DiskMerger(Merger):
+    def __init__(self, c):
+        Merger.__init__(self, c)
+        self.archives = []
+
+    def merge(self, items):
+        Merger.merge(self, items)
+        self.rotate()
+
+    def rotate(self):
+        self.archives.append(sorted_items(self.combined.items()))
+        self.combined = {}
+
+    def __iter__(self):
+        if self.combined:
+            self.rotate()
+        return heap_merged(self.archives, self.mergeCombiner)
 
 class MapOutputTrackerMessage: pass
 class GetMapOutputLocations:
@@ -289,6 +392,14 @@ class MapOutputTracker:
 
 
 def test():
+    l = []
+    for i in range(10):
+        d = zip(range(10000), range(10000))
+        l.append(sorted_items(d))
+    hl = heap_merged(l, lambda x,y:x+y)    
+    for i in range(10):
+        print i, hl.next()
+    
     import logging
     logging.basicConfig(level=logging.INFO)
     from env import env

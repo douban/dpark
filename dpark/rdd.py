@@ -647,7 +647,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.Merger(self.aggregator.mergeCombiners) 
+        merger = shuffle.DiskMerger(self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
