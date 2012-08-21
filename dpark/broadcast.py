@@ -424,7 +424,7 @@ class TreeBroadcast(FileBroadcast):
             sock.send_pyobj(i)
             avail = dict(poller.poll(10 * 1000))
             if not avail or avail.get(sock) != zmq.POLLIN:
-                logger.debug("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
                 poller.unregister(sock)
                 sock.close()    
                 return False

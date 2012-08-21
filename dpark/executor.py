@@ -38,8 +38,8 @@ logger = logging.getLogger("executor")
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
-MAX_IDLE_TIME = 30
-MAX_IDLE_WORKERS = 2
+MAX_IDLE_TIME = 120
+MAX_IDLE_WORKERS = 8
 
 Script = ''
 
@@ -169,7 +169,13 @@ class MyExecutor(mesos.Executor):
         mem_limit = {}
         while True:
             for tid, (task, pool) in self.busy_workers.items():
-                rss = get_pool_memory(pool)
+                try:
+                    rss = get_pool_memory(pool)
+                except IOError:
+                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    self.busy_workers.pop(tid)
+                    continue
+
                 offered = get_task_memory(task)
                 if rss > offered * 2:
                     logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
