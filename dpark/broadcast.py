@@ -321,8 +321,10 @@ class TreeBroadcast(FileBroadcast):
         sock.send_pyobj(-1)
         avail = dict(poller.poll(1 * 1000))
         if not avail or avail.get(sock) != zmq.POLLIN:
+            sock.close()
             return False
         n = sock.recv_pyobj()
+        sock.close()
         return n >= 0
 
     def startServer(self):
@@ -392,10 +394,12 @@ class TreeBroadcast(FileBroadcast):
                 break
         else:
             raise Exception("receiveSingleTransmission failed")
+        
         logger.debug("%s got broadcast in %.1fs from %s", self.serverAddr, time.time() - start, source_info.addr)
 
 #        guide_sock.send_pyobj(source_info)
 #        guide_sock.recv_pyobj()
+        guide_sock.close()
 
         return len(self.blocks) == self.total_blocks
 
@@ -412,14 +416,17 @@ class TreeBroadcast(FileBroadcast):
             avail = dict(poller.poll(10 * 1000))
             if not avail or avail.get(sock) != zmq.POLLIN:
                 logger.debug("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                sock.close()    
                 return False
             block = sock.recv_pyobj()
             if not isinstance(block, BroadcastBlock) or i != block.id:
                 logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
+                sock.close()    
                 return False
             logger.debug("Received block: %s from %s", 
                 block.id, source_info.addr)
             self.blocks.append(block)
+        sock.close()    
         return len(self.blocks) == source_info.total_blocks
 
     def getMasterAddr(self, uuid):
