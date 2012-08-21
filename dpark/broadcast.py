@@ -255,6 +255,12 @@ class TreeBroadcast(FileBroadcast):
                     break
                 
                 addr = sock.recv_pyobj()
+                # use the first one to recover
+                if addr in sources:
+                    ssi = self.listOfSources[0]
+                    sock.send_pyobj(ssi)
+                    continue
+
                 while True:
                     ssi = self.selectSuitableSource(addr)
                     if not ssi:
@@ -265,18 +271,16 @@ class TreeBroadcast(FileBroadcast):
                             ssi.failed = True
                         else:
                             break
+
                 logger.debug("sending selected sourceinfo %s", ssi.addr)
                 sock.send_pyobj(ssi)
                 
-                if addr not in sources:
-                    o = SourceInfo(addr, self.total_blocks,
-                        self.total_bytes, self.block_size)
-                    logger.debug("Adding possible new source to listOfSource: %s",
-                        o)
-                    sources[addr] = o
-                    self.listOfSources.append(o)
-                else:
-                    sources[addr].leechers += 1
+                o = SourceInfo(addr, self.total_blocks,
+                    self.total_bytes, self.block_size)
+                logger.debug("Adding possible new source to listOfSource: %s",
+                    o)
+                sources[addr] = o
+                self.listOfSources.append(o)
                 sources[addr].parents.append(ssi)                
 
             sock.close()
@@ -319,20 +323,14 @@ class TreeBroadcast(FileBroadcast):
                 return s
 
     def check_activity(self, source_info):
-        sock = env.ctx.socket(zmq.REQ)
-        sock.setsockopt(zmq.LINGER, 0)
-        sock.connect(source_info.addr)
-        poller = zmq.Poller()
-        poller.register(sock, zmq.POLLIN)
-        sock.send_pyobj(-1)
-        avail = dict(poller.poll(1 * 1000))
-        poller.unregister(sock)
-        if not avail or avail.get(sock) != zmq.POLLIN:
-            sock.close()
+        try:
+            host, port = source_info.addr.split('://')[1].split(':')
+            c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            c.connect((host, int(port)))
+            c.close()
+            return True
+        except IOError, e:
             return False
-        n = sock.recv_pyobj()
-        sock.close()
-        return n >= 0
 
     def startServer(self):
         def run():
@@ -353,11 +351,8 @@ class TreeBroadcast(FileBroadcast):
                 if id == -1:
                     sock.send_pyobj(len(self.blocks))
                     continue
-                while id >= len(self.blocks):
-                    time.sleep(0.01)
-                if not isinstance(self.blocks[id], BroadcastBlock):
-                    raise Exception("bad block: %s" % repr(self.blocks[id]))
-                sock.send_pyobj(self.blocks[id])
+                sock.send_pyobj(id < len(self.blocks) and self.blocks[id] or None)
+
             sock.close()
             logger.debug("stop TreeBroadcast server %s", self.serverAddr)
 
@@ -421,14 +416,20 @@ class TreeBroadcast(FileBroadcast):
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
         for i in range(len(self.blocks), source_info.total_blocks):
-            sock.send_pyobj(i)
-            avail = dict(poller.poll(10 * 1000))
-            if not avail or avail.get(sock) != zmq.POLLIN:
-                logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
-                poller.unregister(sock)
-                sock.close()    
-                return False
-            block = sock.recv_pyobj()
+            while True:
+                sock.send_pyobj(i)
+                avail = dict(poller.poll(1 * 1000))
+                if not avail or avail.get(sock) != zmq.POLLIN:
+                    logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                    poller.unregister(sock)
+                    sock.close()    
+                    return False
+                block = sock.recv_pyobj()
+                if block is not None:
+                    break
+                # not available
+                time.sleep(0.1)
+
             if not isinstance(block, BroadcastBlock) or i != block.id:
                 logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
                 poller.unregister(sock)
