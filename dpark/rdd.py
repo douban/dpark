@@ -95,7 +95,7 @@ class RDD:
         return []
 
     def cache(self):
-        self.shouldCache = True
+        #self.shouldCache = True
         return self
 
     def snapshot(self, path=None):
