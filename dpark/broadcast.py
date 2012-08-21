@@ -80,11 +80,13 @@ class Broadcast:
             self.sendBroadcast()
 
     def __getstate__(self):
-        return self.uuid
+        return (self.uuid, self.bytes, self.bytes < self.BlockSize/2 and self.value or None)
 
-    def __setstate__(self, uuid):
+    def __setstate__(self, v):
+        self.uuid, self.bytes, value = v
+        if value is not None:
+            self.value = value
         Broadcast.ever_used = True
-        self.uuid = uuid
     
     def __getattr__(self, name):
         if name != 'value':
@@ -179,6 +181,7 @@ class FileBroadcast(Broadcast):
             marshal.dump(self.value, f)
         else:
             cPickle.dump(self.value, f, -1)
+        self.bytes = f.tell()
         f.close()
         logger.debug("dump to %s", self.path)
 
@@ -234,10 +237,11 @@ class TreeBroadcast(FileBroadcast):
         self.total_blocks = variableInfo.total_blocks
         logger.info("broadcast %s: %d bytes in %d blocks", self.uuid, 
                 self.total_bytes, self.total_blocks)
+        self.bytes = self.total_bytes
 
         self.startGuide()
         self.startServer()
-        
+    
     def startGuide(self):
         def run():
             sock = env.ctx.socket(zmq.REP)
@@ -280,6 +284,7 @@ class TreeBroadcast(FileBroadcast):
 
             for source_info in self.listOfSources[1:]:
                 req = env.ctx.socket(zmq.REQ)
+                req.setsockopt(zmq.LINGER, 0)
                 req.send_pyobj(SourceInfo.StopBroadcast)
                 #req.recv_pyobj()
                 req.close()
@@ -315,11 +320,13 @@ class TreeBroadcast(FileBroadcast):
 
     def check_activity(self, source_info):
         sock = env.ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.LINGER, 0)
         sock.connect(source_info.addr)
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
         sock.send_pyobj(-1)
         avail = dict(poller.poll(1 * 1000))
+        poller.unregister(sock)
         if not avail or avail.get(sock) != zmq.POLLIN:
             sock.close()
             return False
@@ -330,6 +337,7 @@ class TreeBroadcast(FileBroadcast):
     def startServer(self):
         def run():
             sock = env.ctx.socket(zmq.REP)
+            sock.setsockopt(zmq.LINGER, 0)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.serverAddr = 'tcp://%s:%d' % (self.host,port)
             logger.debug("server started at %s", self.serverAddr)
@@ -408,6 +416,7 @@ class TreeBroadcast(FileBroadcast):
         logger.debug("total_blocks: %s has %s", self.total_blocks,
                 len(self.blocks))
         sock = env.ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.LINGER, 0)
         sock.connect(source_info.addr)
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
@@ -416,21 +425,25 @@ class TreeBroadcast(FileBroadcast):
             avail = dict(poller.poll(10 * 1000))
             if not avail or avail.get(sock) != zmq.POLLIN:
                 logger.debug("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                poller.unregister(sock)
                 sock.close()    
                 return False
             block = sock.recv_pyobj()
             if not isinstance(block, BroadcastBlock) or i != block.id:
                 logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
+                poller.unregister(sock)
                 sock.close()    
                 return False
             logger.debug("Received block: %s from %s", 
                 block.id, source_info.addr)
             self.blocks.append(block)
+        poller.unregister(sock)
         sock.close()    
         return len(self.blocks) == source_info.total_blocks
 
     def getMasterAddr(self, uuid):
         sock = env.ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.LINGER, 0)
         sock.connect(self.master_addr)
         sock.send_pyobj(uuid)
         guide_addr = sock.recv_pyobj()
@@ -444,6 +457,7 @@ class TreeBroadcast(FileBroadcast):
 
         def run():
             sock = env.ctx.socket(zmq.REP)
+            sock.setsockopt(zmq.LINGER, 0)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
             logger.debug("TreeBroadcast tracker started at %s", 
