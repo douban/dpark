@@ -19,7 +19,7 @@ import zmq
 from env import env
 from cache import CacheTrackerServer, CacheTrackerClient
 
-MAX_SHUFFLE_MEMORY = 800 << 20  # 800 MB
+MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
 logger = logging.getLogger("shuffle")
 
@@ -101,7 +101,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def __init__(self, nthreads):
         self.nthreads = nthreads
         self.requests = Queue.Queue()
-        self.results = Queue.Queue()
+        self.results = Queue.Queue(1)
         for i in range(nthreads):
             t = threading.Thread(target=self._worker_thread)
             t.daemon = True
@@ -147,7 +147,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
 class Merger(object):
 
-    def __init__(self, mergeCombiner):
+    def __init__(self, total, mergeCombiner):
         self.mergeCombiner = mergeCombiner
         self.combined = {}
 
@@ -218,20 +218,18 @@ class sorted_items(object):
 
     def __init__(self, items):
         self.id = self.new_id()
-        self.N = len(items)
         self.path = path = os.path.join(LocalFileShuffle.shuffleDir, 
             'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
         f = gzip.open(path, 'wb+')
-        items.sort()
 
         try:
-            for i in items:
+            for i in sorted(items):
                 s = marshal.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
             self.loads = marshal.loads
         except Exception, e:
-            for i in items:
+            for i in sorted(items):
                 s = pickle.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
@@ -248,13 +246,13 @@ class sorted_items(object):
 
     def next(self):
         f = self.f
-        if self.c >= self.N:
+        b = f.read(4)
+        if not b:
             f.close()
             if os.path.exists(self.path):
                 os.remove(self.path)
             raise StopIteration
-        
-        sz, = struct.unpack("I", f.read(4))
+        sz, = struct.unpack("I", b)
         self.c += 1
         return self.loads(f.read(sz))
 
@@ -265,8 +263,8 @@ class sorted_items(object):
 
 
 class DiskMerger(Merger):
-    def __init__(self, c):
-        Merger.__init__(self, c)
+    def __init__(self, total, combiner):
+        Merger.__init__(self, total, combiner)
         self.archives = []
         self.base_memory = self.get_used_memory()
         self.max_merge = None
@@ -274,7 +272,7 @@ class DiskMerger(Merger):
 
     def get_used_memory(self):
         if platform.system() == 'Linux':
-            for line in open('/proc/%d/status' % os.getpid()):
+            for line in open('/proc/self/status'):
                 if line.startswith('VmRSS:'):
                     return int(line.split()[1]) >> 10
         return 0
@@ -283,16 +281,19 @@ class DiskMerger(Merger):
         Merger.merge(self, items)
         
         self.merged += 1
+        #print 'used', self.merged, self.total, self.get_used_memory() - self.base_memory, self.base_memory
         if self.max_merge is None:
-            if self.get_used_memory() - self.base_memory > MAX_SHUFFLE_MEMORY:
+            if self.merged < self.total/5 and self.get_used_memory() - self.base_memory > MAX_SHUFFLE_MEMORY:
                 self.max_merge = self.merged
 
-        if self.merged >= self.max_merge: 
+        if self.max_merge is not None and self.merged >= self.max_merge:
+            t = time.time()
             self.rotate()
             self.merged = 0
+            #print 'after rotate', self.get_used_memory() - self.base_memory, time.time() - t
 
     def rotate(self):
-        self.archives.append(sorted_items(self.combined.items()))
+        self.archives.append(sorted_items(self.combined.iteritems()))
         self.combined = {}
 
     def __iter__(self):

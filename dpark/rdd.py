@@ -626,6 +626,7 @@ class ShuffledRDD(RDD):
     def __init__(self, parent, aggregator, part):
         RDD.__init__(self, parent.ctx)
         self.parent = parent
+        self.numParts = len(parent)
         self.aggregator = aggregator
         self._partitioner = part
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
@@ -647,7 +648,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.DiskMerger(self.aggregator.mergeCombiners) 
+        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
