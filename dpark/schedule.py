@@ -31,6 +31,8 @@ EXECUTOR_MEMORY = 256 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
+MAX_TASK_MEMORY = 15 << 10 # 15GB
+
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
 class FetchFailed:
@@ -573,7 +575,8 @@ class MesosScheduler(DAGScheduler):
                     t = job.slaveOffer(str(o.hostname), cpus[i])
                     if not t:
                         continue
-                    if mems[i] < self.mem * (2 ** t.tried - 1):
+                    mem = self.task_memory(t)
+                    if mems[i] < mem:
                         continue # re-tried task need more memory
                     task = self.createTask(o, job, t)
                     tasks.setdefault(o.id.value, []).append(task)
@@ -585,7 +588,7 @@ class MesosScheduler(DAGScheduler):
                     self.taskIdToSlaveId[tid] = sid
                     self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
                     cpus[i] -= self.cpus
-                    mems[i] -= self.mem * (2 ** t.tried - 1)
+                    mems[i] -= mem
                     launchedTask = True
 
                 if not launchedTask:
@@ -600,7 +603,10 @@ class MesosScheduler(DAGScheduler):
 
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
-    
+   
+    def task_memory(self, task):
+        return min(self.mem * (2 ** task.tried -1), MAX_TASK_MEMORY)
+
     @safe
     def offerRescinded(self, driver, offer_id):
         logger.info("rescinded offer: %s", offer_id)
@@ -636,7 +642,7 @@ class MesosScheduler(DAGScheduler):
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.mem * (2 ** t.tried - 1)
+        mem.scalar.value = self.task_memory(t)
         return task
 
     @safe
