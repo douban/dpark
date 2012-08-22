@@ -5,6 +5,8 @@ import marshal
 import cPickle
 import threading
 import logging
+import zlib
+import gzip
 from multiprocessing import Lock
 try:
     from setproctitle import getproctitle, setproctitle
@@ -123,6 +125,7 @@ class Broadcast:
             buf = marshal.dumps(obj)
         else:
             buf = cPickle.dumps(obj, -1)
+        buf = zlib.compress(buf, 1)
         N = self.BlockSize
         blockNum = len(buf) / N
         if len(buf) % N != 0:
@@ -134,7 +137,8 @@ class Broadcast:
         return vi
 
     def unBlockifyObject(self, blocks):
-        s = ''.join(b.data for b in blocks)
+        z = zlib.decompressobj()
+        s = ''.join([z.decompress(b.data) for b in blocks] + [z.flush()])
         try:
             return marshal.loads(s)
         except ValueError:
@@ -176,20 +180,21 @@ class FileBroadcast(Broadcast):
         return os.path.join(self.workdir, self.uuid)
 
     def sendBroadcast(self):
-        f = open(self.path, 'wb', 65536*100)
+        f = gzip.open(self.path, 'wb')
         if marshalable(self.value):
             marshal.dump(self.value, f)
         else:
             cPickle.dump(self.value, f, -1)
+        f.flush()
         self.bytes = f.tell()
         f.close()
         logger.debug("dump to %s", self.path)
 
     def recvBroadcast(self):
         try:
-            self.value = marshal.load(open(self.path, 'rb', 65536*100))
+            self.value = marshal.load(gzip.open(self.path, 'rb'))
         except ValueError:
-            self.value = cPickle.load(open(self.path, 'rb', 65536*100))
+            self.value = cPickle.load(gzip.open(self.path, 'rb'))
         logger.debug("load from %s", self.path)
 
     @classmethod
@@ -418,7 +423,7 @@ class TreeBroadcast(FileBroadcast):
         for i in range(len(self.blocks), source_info.total_blocks):
             while True:
                 sock.send_pyobj(i)
-                avail = dict(poller.poll(1 * 1000))
+                avail = dict(poller.poll(3 * 1000))
                 if not avail or avail.get(sock) != zmq.POLLIN:
                     logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
                     poller.unregister(sock)

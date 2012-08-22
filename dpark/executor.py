@@ -12,6 +12,7 @@ import shutil
 import socket
 import urllib2
 import platform
+import zlib
 import gc
 gc.disable()
 
@@ -62,6 +63,8 @@ def run_task(task, ntry):
             flag, data = 0, marshal.dumps(result)
         else:
             flag, data = 1, cPickle.dumps(result, -1)
+        data = zlib.compress(data, 1)
+
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
             name = 'task_%s_%s.result' % (task.id, ntry)
@@ -248,7 +251,7 @@ class MyExecutor(mesos.Executor):
 
     def launchTask(self, driver, task):
         try:
-            t, ntry = cPickle.loads(task.data)
+            t, ntry = cPickle.loads(zlib.decompress(task.data))
             
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             

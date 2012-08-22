@@ -9,6 +9,7 @@ import random
 import getpass
 import urllib
 import warnings
+import zlib
 
 import zmq
 try:
@@ -629,7 +630,7 @@ class MesosScheduler(DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = cPickle.dumps((t, t.tried), -1)
+        task.data = zlib.compress(cPickle.dumps((t, t.tried), -1), 1)
         task.executor.MergeFrom(self.executor)
         if len(task.data) > 1000*1024:
             logger.warning("task too large: %s %d", 
@@ -681,6 +682,7 @@ class MesosScheduler(DAGScheduler):
                             # try again
                             data = urllib.urlopen(data).read()
                         flag -= 2
+                    data = zlib.decompress(data)
                     if flag == 0:
                         result = marshal.loads(data)
                     else:
