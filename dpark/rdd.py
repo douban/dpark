@@ -1222,8 +1222,12 @@ class OutputTextFileRDD(RDD):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
             if overwrite:
-                shutil.rmtree(path)
-                os.makedirs(path)
+                for n in os.listdir(path):
+                    p = os.path.join(path, n)
+                    if os.path.isdir(p):
+                        shutil.rmtree(p)
+                    else:
+                        os.remove(p)
         else:
             os.makedirs(path)
 
