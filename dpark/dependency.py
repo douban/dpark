@@ -130,17 +130,19 @@ class HashPartitioner(Partitioner):
         return False
 
 class RangePartitioner(Partitioner):
-    def __init__(self, keys):
+    def __init__(self, keys, reverse=False):
         self.keys = sorted(keys)
+        self.reverse = reverse
 
     @property        
     def numPartitions(self):
         return len(self.keys) + 1
 
     def getPartition(self, key):
-        return bisect.bisect(self.keys, key)
+        idx = bisect.bisect(self.keys, key)
+        return len(self.keys) - idx if self.reverse else idx
 
     def __eq__(self, other):
         if isinstance(other, RangePartitioner):
-            return other.keys == self.keys
+            return other.keys == self.keys and self.reverse == other.reverse
         return False

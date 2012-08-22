@@ -140,16 +140,16 @@ class RDD:
     def union(self, rdd):
         return UnionRDD(self.ctx, [self, rdd])
 
-    def sort(self, key=lambda x:x, numSplits=None):
+    def sort(self, key=lambda x:x, reverse=False, numSplits=None):
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
         samples = self.glom().flatMap(lambda x:itertools.islice(x, n)).map(key).collect()
-        keys = sorted(samples)[5::10][:numSplits-1]
+        keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
+        parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
-        parter = RangePartitioner(keys)
         parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
-        return parted.glom().flatMap(lambda x:sorted(x, key=key))
+        return parted.glom().flatMap(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
         return GlommedRDD(self)

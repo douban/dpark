@@ -102,6 +102,8 @@ class TestRDD(unittest.TestCase):
         random.shuffle(d)
         rdd = self.sc.makeRDD(d, 10)
         self.assertEqual(rdd.sort(numSplits=10).collect(), range(100))
+        self.assertEqual(rdd.sort(reverse=True, numSplits=5).collect(), list(reversed(range(100))))
+        self.assertEqual(rdd.sort(key=lambda x:-x, reverse=True, numSplits=4).collect(), range(100))       
 
     def test_file(self):
         path = 'tests/test_rdd.py'
