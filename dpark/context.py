@@ -62,7 +62,16 @@ class DparkContext:
         else:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
-       
+      
+        try:
+            from rfoo.utils import rconsole
+            try:
+                rconsole.spawn_server(locals())
+            except Exception:
+                rconsole.spawn_server(locals(), 0)
+        except ImportError:
+            pass
+
         self.started = False
 
     def newShuffleId(self):
