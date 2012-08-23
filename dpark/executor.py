@@ -13,6 +13,7 @@ import socket
 import urllib2
 import platform
 import zlib
+import psutil
 import gc
 gc.disable()
 
@@ -150,11 +151,11 @@ def start_forword(addr, prefix=''):
     return t, os.fdopen(wfd, 'w', 0) 
 
 def get_pool_memory(pool):
-    if platform.system() == 'Linux':
-        for line in open('/proc/%d/status' % pool._pool[0].pid):
-            if line.startswith('VmRSS:'):
-                return int(line.split()[1]) >> 10
-    return 0
+    try:
+        p = psutil.Process(pool._pool[0].pid)
+        return p.get_memory_info()[0]
+    except Exception:
+        return 0
 
 def get_task_memory(task):
     for r in task.resources:
@@ -162,19 +163,38 @@ def get_task_memory(task):
             return r.scalar.value
     return 0
 
+def safe(f):
+    def _(self, *a, **kw):
+        with self.lock:
+            r = f(self, *a, **kw)
+        return r
+    return _
+
 class MyExecutor(mesos.Executor):
     def __init__(self):
         self.workdir = None
         self.idle_workers = []
         self.busy_workers = {}
+        self.lock = threading.RLock()
 
     def check_memory(self, driver):
         mem_limit = {}
         while True:
+            self.lock.acquire()
+            
             for tid, (task, pool) in self.busy_workers.items():
+                pid = pool._pool[0].pid
                 try:
-                    rss = get_pool_memory(pool)
-                except IOError:
+                    p = psutil.Process(pid)
+                    rss = p.get_memory_info()[0] >> 20
+                except psutil.error.Error, e:
+                    logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
+                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    self.busy_workers.pop(tid)
+                    continue
+                
+                if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
+                    logger.error("worker process %d of task %s is zombie", pid, tid)
                     reply_status(driver, task, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
@@ -197,9 +217,12 @@ class MyExecutor(mesos.Executor):
                 for _, p in self.idle_workers[:n]:
                     p.terminate()
                 self.idle_workers = self.idle_workers[n:]
+            
+            self.lock.release()
 
             time.sleep(5) 
 
+    @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
@@ -249,6 +272,7 @@ class MyExecutor(mesos.Executor):
             p.done = 0
             return p 
 
+    @safe
     def launchTask(self, driver, task):
         try:
             t, ntry = cPickle.loads(zlib.decompress(task.data))
@@ -261,19 +285,20 @@ class MyExecutor(mesos.Executor):
             self.busy_workers[task.task_id.value] = (task, pool)
 
             def callback((state, data)):
-                if task.task_id.value not in self.busy_workers:
-                    return
-                _, pool = self.busy_workers.pop(task.task_id.value)
-                pool.done += 1
-                reply_status(driver, task, state, data)
-                if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
-                        and len(self.idle_workers) < MAX_IDLE_WORKERS
-                        and pool.done < MAX_TASKS_PER_WORKER 
-                        and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
-                    self.idle_workers.append((time.time(), pool))
-                else:
-                    try: pool.terminate() 
-                    except: pass
+                with self.lock:
+                    if task.task_id.value not in self.busy_workers:
+                        return
+                    _, pool = self.busy_workers.pop(task.task_id.value)
+                    pool.done += 1
+                    reply_status(driver, task, state, data)
+                    if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
+                            and len(self.idle_workers) < MAX_IDLE_WORKERS
+                            and pool.done < MAX_TASKS_PER_WORKER 
+                            and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
+                        self.idle_workers.append((time.time(), pool))
+                    else:
+                        try: pool.terminate() 
+                        except: pass
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
@@ -283,12 +308,14 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
             return
 
+    @safe
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
             pool.terminate()
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
+    @safe
     def shutdown(self, driver):
         for _, p in self.idle_workers:
             try: p.terminate()
