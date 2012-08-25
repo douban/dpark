@@ -32,8 +32,6 @@ EXECUTOR_MEMORY = 256 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 
-MAX_TASK_MEMORY = 15 << 10 # 15GB
-
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
 class FetchFailed:
@@ -523,7 +521,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def submitTasks(self, tasks):
         logger.info("Got a job with %d tasks", len(tasks))
-        job = SimpleJob(self, tasks)
+        job = SimpleJob(self, tasks, self.cpus, self.mem)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         logger.debug("Adding job with ID %d", job.id)
@@ -573,12 +571,9 @@ class MesosScheduler(DAGScheduler):
                         continue
                     if mems[i] < self.mem or cpus[i] < self.cpus:
                         continue
-                    t = job.slaveOffer(str(o.hostname), cpus[i])
+                    t = job.slaveOffer(str(o.hostname), cpus[i], mems[i])
                     if not t:
                         continue
-                    mem = self.task_memory(t)
-                    if mems[i] < mem:
-                        continue # re-tried task need more memory
                     task = self.createTask(o, job, t)
                     tasks.setdefault(o.id.value, []).append(task)
 
@@ -588,8 +583,8 @@ class MesosScheduler(DAGScheduler):
                     self.taskIdToJobId[tid] = job.id
                     self.taskIdToSlaveId[tid] = sid
                     self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
-                    cpus[i] -= self.cpus
-                    mems[i] -= mem
+                    cpus[i] -= t.cpus
+                    mems[i] -= t.mem
                     launchedTask = True
 
                 if not launchedTask:
@@ -605,9 +600,6 @@ class MesosScheduler(DAGScheduler):
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
    
-    def task_memory(self, task):
-        return min(self.mem * (2 ** task.tried -1), MAX_TASK_MEMORY)
-
     @safe
     def offerRescinded(self, driver, offer_id):
         logger.info("rescinded offer: %s", offer_id)
@@ -639,11 +631,11 @@ class MesosScheduler(DAGScheduler):
         cpu = task.resources.add()
         cpu.name = 'cpus'
         cpu.type = 0 #mesos_pb2.Value.SCALAR
-        cpu.scalar.value = self.cpus
+        cpu.scalar.value = t.cpus
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.task_memory(t)
+        mem.scalar.value = t.mem
         return task
 
     @safe
