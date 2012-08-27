@@ -12,8 +12,13 @@ from broadcast import Broadcast
 
 logger = logging.getLogger("context")
 
-class DparkContext:
+class DparkContext(object):
     nextShuffleId = 0
+    _instances = {}
+    def __new__(cls, master=None):
+        if master not in cls._instances:
+            cls._instances[master] = super(DparkContext, cls).__new__(cls)
+        return cls._instances[master]
 
     def __init__(self, master=None):
         
