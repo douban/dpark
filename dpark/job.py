@@ -41,7 +41,7 @@ MAX_TASK_MEMORY = 15 << 10 # 15GB
 # A Job that runs a set of tasks with no interdependencies.
 class SimpleJob(Job):
 
-    def __init__(self, sched, tasks, cpus, mem):
+    def __init__(self, sched, tasks, cpus=1, mem=100):
         Job.__init__(self)
         self.sched = sched
         self.tasks = tasks
@@ -136,7 +136,7 @@ class SimpleJob(Job):
         return None, False
 
     # Respond to an offer of a single slave from the scheduler by finding a task
-    def slaveOffer(self, host, availableCpus, availableMem): 
+    def slaveOffer(self, host, availableCpus=1, availableMem=100): 
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
         i, preferred = self.findTask(host, localOnly, availableCpus, availableMem)
