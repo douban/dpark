@@ -70,10 +70,7 @@ class DparkContext(object):
       
         try:
             from rfoo.utils import rconsole
-            try:
-                rconsole.spawn_server(locals())
-            except Exception:
-                rconsole.spawn_server(locals(), 0)
+            rconsole.spawn_server(locals(), 0)
         except ImportError:
             pass
 
