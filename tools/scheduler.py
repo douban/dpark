@@ -6,7 +6,7 @@ import time
 import socket
 import random
 from optparse import OptionParser
-from threading import Thread
+from threading import Thread, RLock
 import subprocess
 from operator import itemgetter
 import logging
@@ -40,6 +40,14 @@ def parse_mem(m):
             number /= 1024
         return number
 
+def safe(f):
+    def _(self, *a, **kw):
+        with self.lock:
+            r = f(self, *a, **kw)
+        return r
+    return _
+
+
 class SubmitScheduler(mesos.Scheduler):
     def __init__(self, options, command):
         self.framework = mesos_pb2.FrameworkInfo()
@@ -58,6 +66,7 @@ class SubmitScheduler(mesos.Scheduler):
         self.started = False
         self.stopped = False
         self.next_try = 0
+        self.lock = RLock()
 
     def getExecutorInfo(self):
         frameworkDir = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -82,6 +91,7 @@ class SubmitScheduler(mesos.Scheduler):
         t.start()
         return "tcp://%s:%d" % (host, port)
 
+    @safe
     def registered(self, driver, fid, masterInfo):
         logging.debug("Registered with Mesos, FID = %s" % fid.value)
         self.fid = fid.value
@@ -103,6 +113,7 @@ class SubmitScheduler(mesos.Scheduler):
             attrs[a.name] = a.text.value
         return attrs
 
+    @safe
     def resourceOffers(self, driver, offers):
         tpn = self.options.task_per_node
         random.shuffle(offers)
@@ -164,12 +175,20 @@ class SubmitScheduler(mesos.Scheduler):
         mem.scalar.value = self.mem
         return task
 
+    @safe
     def statusUpdate(self, driver, update):
         logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
-            logging.error("Task %d not in task_launched", tid)
-            return
+            # check failed after launched
+            for t in self.total_tasks:
+                if t.id == tid:
+                    self.task_launched[tid] = t
+                    self.total_tasks.remove(t)
+                    break
+            else:
+                logging.error("Task %d not in task_launched", tid)
+                return
         
         t = self.task_launched[tid]
         t.state = update.state
@@ -188,10 +207,6 @@ class SubmitScheduler(mesos.Scheduler):
             self.total_tasks.append(t)
 
         elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
-            if not self.started:
-                logging.warning("Task %s has not started, ignore it %s", tid, update.state)
-                return
-
             t = self.task_launched.pop(tid)
             slave = None
             for s in self.slaveTasks:
@@ -213,9 +228,11 @@ class SubmitScheduler(mesos.Scheduler):
                     self.total_tasks.append(t) # try again
                 else:
                     logging.error("task %d failed with %d on %s", t.id, update.state, slave)
+
             if not self.task_launched and not self.total_tasks:
                 self.stop(driver) # all done
 
+    @safe
     def check(self, driver):
         now = time.time()
         for tid, t in self.task_launched.items():
@@ -229,16 +246,20 @@ class SubmitScheduler(mesos.Scheduler):
                 self.total_tasks.append(t)
             # TODO: check run time
 
+    @safe
     def offerRescinded(self, driver, offer):
         logging.warning("resource rescinded: %s", offer)
         # task will retry by checking 
 
+    @safe
     def slaveLost(self, driver, slave):
         logging.warning("slave %s lost", slave.value)
 
+    @safe
     def error(self, driver, code, message):
         logging.error("Error from Mesos: %s (error code: %d)" % (message, code))
 
+    @safe
     def stop(self, driver):
         self.stopped = True
         driver.stop(False)
@@ -266,6 +287,7 @@ class MPIScheduler(SubmitScheduler):
                      offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task])
     
+    @safe
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
         launched = sum(self.used_hosts.values())
@@ -295,6 +317,7 @@ class MPIScheduler(SubmitScheduler):
             logging.warning('not enough offers: need %d offer %d, waiting more resources',
                             self.options.tasks, launched)
 
+    @safe
     def statusUpdate(self, driver, update):
         logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
@@ -337,6 +360,7 @@ class MPIScheduler(SubmitScheduler):
             if not self.task_launched:
                 self.stop(driver) # all done
 
+    @safe
     def check(self, driver):
         now = time.time()
         for tid, t in self.task_launched.items():
@@ -424,6 +448,7 @@ class MPIScheduler(SubmitScheduler):
         t.start()
         return slaves
 
+    @safe
     def stop(self, driver):
         if self.started:
             self.p.wait()
@@ -502,9 +527,9 @@ if __name__ == "__main__":
         exit(2)
 
     logging.basicConfig(format='[drun] %(asctime)-15s %(message)s',
-                    level=options.quiet and logging.WARNING
+                    level=options.quiet and logging.ERROR
                         or options.verbose and logging.DEBUG
-                        or logging.INFO)
+                        or logging.WARNING)
 
     if options.mpi:
         if options.retry > 0:
@@ -527,6 +552,12 @@ if __name__ == "__main__":
     signal.signal(signal.SIGHUP, handler)
     signal.signal(signal.SIGABRT, handler)
     signal.signal(signal.SIGQUIT, handler)
+
+    try:
+        from rfoo.utils import rconsole
+        rconsole.spawn_server(locals(), 0)
+    except ImportError:
+        pass
 
     start = time.time()
     try:
