@@ -248,7 +248,7 @@ class SubmitScheduler(mesos.Scheduler):
 
     @safe
     def offerRescinded(self, driver, offer):
-        logging.warning("resource rescinded: %s", offer)
+        logging.debug("resource rescinded: %s", offer)
         # task will retry by checking 
 
     @safe
