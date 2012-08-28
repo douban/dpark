@@ -16,6 +16,7 @@ import zlib
 import logging
 from copy import copy
 import shutil
+import heapq
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -224,6 +225,15 @@ class RDD:
     def uniq(self, numSplits=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
         return g.map(lambda (x,y):x)
+
+    def top(self, n=10, key=None):
+        def topk(it):
+            return heapq.nlargest(n, it, key)
+        return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
+
+    def hot(self, n=10, numSplits=None):
+        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits)
+        return st.top(n, key=lambda x:x[1])
 
     def fold(self, zero, f):
         '''Aggregate the elements of each partition, and then the

@@ -105,6 +105,15 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.sort(reverse=True, numSplits=5).collect(), list(reversed(range(100))))
         self.assertEqual(rdd.sort(key=lambda x:-x, reverse=True, numSplits=4).collect(), range(100))       
 
+        self.assertEqual(rdd.top(), range(90, 100)[::-1])
+        self.assertEqual(rdd.top(15, lambda x:-x), range(0, 15))
+
+        for i in range(10):
+            for j in range(i+1):
+                d.append(i)
+        rdd = self.sc.makeRDD(d, 10)
+        self.assertEqual(rdd.hot(), zip(range(9, -1, -1), range(11, 1, -1)))
+
     def test_file(self):
         path = 'tests/test_rdd.py'
         f = self.sc.textFile(path)
