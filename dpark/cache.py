@@ -1,5 +1,4 @@
 import os
-import weakref
 import socket
 import threading
 import multiprocessing

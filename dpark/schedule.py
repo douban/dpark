@@ -10,6 +10,7 @@ import getpass
 import urllib
 import warnings
 import zlib
+import weakref
 
 import zmq
 try:
@@ -105,8 +106,8 @@ class DAGScheduler(Scheduler):
     
     def __init__(self):
         self.completionEvents = Queue.Queue()
-        self.idToStage = {}
-        self.shuffleToMapStage = {}
+        self.idToStage = weakref.WeakValueDictionary()
+        self.shuffleToMapStage = weakref.WeakValueDictionary()
         self.cacheLocs = {}
         self._shutdown = False
 
