@@ -195,6 +195,10 @@ class DparkContext(object):
             partitions = range(len(rdd))
         return self.scheduler.runJob(rdd, func, partitions, allowLocal)
 
+    def clear(self):
+        RDD._pickle_cache.clear()
+        self.scheduler.clear()
+
     def stop(self):
         if not self.started:
             return

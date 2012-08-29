@@ -348,7 +348,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
 class MapOutputTrackerClient(CacheTrackerClient):
     pass
 
-class MapOutputTracker:
+class MapOutputTracker(object):
     def __init__(self, isMaster, addr=None):
         self.isMaster = isMaster
         self.serverUris = {}
@@ -363,6 +363,11 @@ class MapOutputTracker:
             addr = env.get('MapOutputTrackerAddr')
         self.client = MapOutputTrackerClient(addr)
         logger.debug("MapOutputTracker started")
+
+    def clear(self):
+        self.serverUris.clear()
+        self.fetching.clear()
+        self.server.clear()
 
     def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):
         self.serverUris.setdefault(shuffleId, [None] * numMaps)[mapId] = serverUri

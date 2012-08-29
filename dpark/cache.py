@@ -34,6 +34,9 @@ class Cache:
     def put(self, key, value):
         self.map[key] = value
         return True
+    
+    def clear(self):
+        self.map.clear()
 
 class KeySpace(Cache):
     def __init__(self, cache, id):
@@ -48,7 +51,6 @@ class KeySpace(Cache):
 
     def put(self, key, value):
         return self.map.put(self.newkey(key), value)
-
 
 class LocalCache(Cache):
     '''cache obj in current process'''
@@ -68,6 +70,9 @@ class LocalCache(Cache):
         self.map[key] = value
         self.cache.put(key, value)
 
+    def clear(self):
+        self.cache.clear()
+        self.map.clear()
 
 class CacheTrackerMessage:pass
 class AddedToCache(CacheTrackerMessage):
@@ -90,9 +95,10 @@ class RegisterRDD(CacheTrackerMessage):
 class GetCacheLocations(CacheTrackerMessage):pass
 class StopCacheTracker(CacheTrackerMessage):pass
 
-class CacheTrackerServer:
+class CacheTrackerServer(object):
     def __init__(self):
         self.addr = None
+        self.locs = {}
 
     def start(self):
         self.t = threading.Thread(target=self.run)
@@ -101,6 +107,9 @@ class CacheTrackerServer:
         while self.addr is None:
             time.sleep(0.01)
 
+    def clear(self):
+        self.locs.clear()
+
     def stop(self):
         sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
@@ -108,7 +117,7 @@ class CacheTrackerServer:
         self.t.join()
 
     def run(self):
-        locs = {}
+        locs = self.locs
         sock = env.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
@@ -158,7 +167,7 @@ class CacheTrackerClient:
         self.sock.close()
         #logger.debug("stop %s", self.__class__)
 
-class CacheTracker:
+class CacheTracker(object):
     def __init__(self, isMaster):
         self.isMaster = isMaster
         self.registeredRddIds = set()
@@ -176,6 +185,11 @@ class CacheTracker:
             addr = env.get('CacheTrackerAddr')
 
         self.client = CacheTrackerClient(addr)
+
+    def clear(self):
+        self.registeredRddIds.clear()
+        self.server.clear()
+        self.cache.clear()
 
     def registerRDD(self, rddId, numPartitions):
         if rddId not in self.registeredRddIds:

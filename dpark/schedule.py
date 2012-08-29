@@ -86,8 +86,9 @@ class Stage:
 
 
 class Scheduler:
-    def start(self):pass
+    def start(self): pass
     def runJob(self, rdd, func, partitions, allowLocal): pass
+    def clear(self): pass
     def stop(self): pass
     def defaultParallelism(self):
         return 2
@@ -111,6 +112,13 @@ class DAGScheduler(Scheduler):
 
     def check(self):
         pass
+
+    def clear(self):
+        self.idToStage.clear()
+        self.shuffleToMapStage.clear()
+        self.cacheLocs.clear()
+        self.cacheTracker.clear()
+        self.mapOutputTracker.clear()
 
     def shutdown(self):
         self._shutdown = True
@@ -435,15 +443,22 @@ class MesosScheduler(DAGScheduler):
         self.logLevel = options.logLevel
         self.options = options
         self.isRegistered = False
+        self.driver = None
+        self.lock = threading.RLock()
+        self.init_job()
+
+    def init_job(self):
         self.activeJobs = {}
         self.activeJobsQueue = []
         self.taskIdToJobId = {}
         self.taskIdToSlaveId = {}
         self.jobTasks = {}
-        self.driver = None
         self.slaveTasks = {}
         self.slaveFailed = {}
-        self.lock = threading.RLock()
+
+    def clear(self):
+        DAGScheduler.clear(self)
+        self.init_job()
 
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
