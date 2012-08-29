@@ -15,7 +15,6 @@ import platform
 import zlib
 import psutil
 import gc
-gc.disable()
 
 import zmq
 import mesos
@@ -57,6 +56,7 @@ def run_task(task, ntry):
     try:
         setproctitle('dpark worker %s: run task %s' % (Script, task))
         Accumulator.clear()
+        gc.disable()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
 
@@ -86,6 +86,9 @@ def run_task(task, ntry):
         msg = traceback.format_exc()
         setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
+    finally:
+        gc.collect()
+        gc.enable()
 
 def init_env(args):
     setproctitle('dpark worker: idle')

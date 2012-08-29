@@ -3,6 +3,7 @@ import atexit
 import optparse
 import signal
 import logging
+import gc
 
 from rdd import *
 from accumulator import Accumulator
@@ -193,11 +194,17 @@ class DparkContext(object):
 
         if partitions is None:
             partitions = range(len(rdd))
-        return self.scheduler.runJob(rdd, func, partitions, allowLocal)
+        try:
+            gc.disable()
+            return self.scheduler.runJob(rdd, func, partitions, allowLocal)
+        finally:
+            gc.collect()
+            gc.enable()
 
     def clear(self):
         RDD._pickle_cache.clear()
         self.scheduler.clear()
+        gc.collect()
 
     def stop(self):
         if not self.started:
