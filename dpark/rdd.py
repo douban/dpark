@@ -8,14 +8,19 @@ import cStringIO
 import itertools
 import operator
 import math
+import cPickle
 import random
 import bz2
+import gzip
+import zlib
 import logging
 from copy import copy
 import shutil
+import heapq
 
 from serialize import load_func, dump_func
 from dependency import *
+import shuffle
 from env import env
 
 logger = logging.getLogger("rdd")
@@ -50,6 +55,7 @@ class RDD:
         self.aggregator = None
         self._partitioner = None
         self.shouldCache = False
+        self.snapshot_path = None
 
     nextId = 0
     @classmethod
@@ -89,10 +95,31 @@ class RDD:
         return []
 
     def cache(self):
-#        self.shouldCache = True
+        #self.shouldCache = True
+        return self
+
+    def snapshot(self, path=None):
+        if path is None:
+            path = self.ctx.options.snapshot_dir
+        if path:
+            ident = '%d_%x' % (self.id, hash(str(self)))
+            path = os.path.join(path, ident)
+            if not os.path.exists(path):
+                os.makedirs(path)
+            self.snapshot_path = path
         return self
 
     def iterator(self, split):
+        if self.snapshot_path:
+            p = os.path.join(self.snapshot_path, str(split.index))
+            if os.path.exists(p):
+                v = cPickle.loads(open(p).read())
+            else:
+                v = list(self.compute(split))
+                with open(p, 'w') as f:
+                    f.write(cPickle.dumps(v))
+            return v
+
         if self.shouldCache:
             return env.cacheTracker.getOrCompute(self, split)
         else:
@@ -113,16 +140,16 @@ class RDD:
     def union(self, rdd):
         return UnionRDD(self.ctx, [self, rdd])
 
-    def sort(self, key=lambda x:x, numSplits=None):
+    def sort(self, key=lambda x:x, reverse=False, numSplits=None):
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
         samples = self.glom().flatMap(lambda x:itertools.islice(x, n)).map(key).collect()
-        keys = sorted(samples)[5::10][:numSplits-1]
+        keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
+        parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
-        parter = RangePartitioner(keys)
         parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
-        return parted.glom().flatMap(lambda x:sorted(x, key=key))
+        return parted.glom().flatMap(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
         return GlommedRDD(self)
@@ -148,7 +175,7 @@ class RDD:
 
     def mapPartitions(self, f):
         return MapPartitionsRDD(self, f)
-    mapPartiton = mapPartitions
+    mapPartition = mapPartitions
 
     def foreach(self, f):
         def mf(it):
@@ -198,6 +225,15 @@ class RDD:
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
         return g.map(lambda (x,y):x)
 
+    def top(self, n=10, key=None):
+        def topk(it):
+            return heapq.nlargest(n, it, key)
+        return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
+
+    def hot(self, n=10, numSplits=None):
+        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits)
+        return st.top(n, key=lambda x:x[1])
+
     def fold(self, zero, f):
         '''Aggregate the elements of each partition, and then the
         results for all the partitions, using a given associative
@@ -243,13 +279,13 @@ class RDD:
         r = self.take(1)
         if r: return r[0]
 
-    def saveAsTextFile(self, path, ext='', overwrite=False):
-        return OutputTextFileRDD(self, path, ext, overwrite).collect()
+    def saveAsTextFile(self, path, ext='', overwrite=True, compress=False):
+        return OutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsTextFileByKey(self, path, ext='', overwrite=False):
-        return MultiOutputTextFileRDD(self, path, ext, overwrite).collect()
+    def saveAsTextFileByKey(self, path, ext='', overwrite=True, compress=False):
+        return MultiOutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsCSVFile(self, path, overwrite=False):
+    def saveAsCSVFile(self, path, overwrite=True):
         return OutputCSVFileRDD(self, path, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD
@@ -599,6 +635,7 @@ class ShuffledRDD(RDD):
     def __init__(self, parent, aggregator, part):
         RDD.__init__(self, parent.ctx)
         self.parent = parent
+        self.numParts = len(parent)
         self.aggregator = aggregator
         self._partitioner = part
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
@@ -620,17 +657,11 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        combiners = {}
-        mergeCombiners = self.aggregator.mergeCombiners
-        def mergePair(k, c):
-            o = combiners.get(k, None)
-            if o is None:
-                combiners[k] = c
-            else:
-                combiners[k] = mergeCombiners(o, c)
+        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
-        fetcher.fetch(self.shuffleId, split.index, mergePair)
-        return combiners.iteritems()
+        fetcher.fetch(self.shuffleId, split.index, merger.merge)
+        return merger
+
 
 class CartesianSplit(Split):
     def __init__(self, idx, s1, s2):
@@ -711,7 +742,7 @@ class CoGroupedRDD(RDD):
                             or NarrowCoGroupSplitDep(r, r.splits[j]) 
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
-        self.name = '<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds))
+        self.name = ('<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds)))[:80]
 
     def __len__(self):
         return self.partitioner.numPartitions
@@ -728,18 +759,15 @@ class CoGroupedRDD(RDD):
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
-        m = {}
-        def getSeq(k):
-            return m.setdefault(k, tuple([[] for i in range(self.len)]))
+        m = shuffle.CoGroupMerger(self.len)
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
-                for k,v in dep.rdd.iterator(dep.split):
-                    getSeq(k)[i].append(v)
+                m.append(i, dep.rdd.iterator(dep.split))
             elif isinstance(dep, ShuffleCoGroupSplitDep):
-                def mergePair(k, vs):
-                    getSeq(k)[i].extend(vs)
-                env.shuffleFetcher.fetch(dep.shuffleId, split.index, mergePair)
-        return m.iteritems()
+                def merge(items):
+                    m.extend(i, items)
+                env.shuffleFetcher.fetch(dep.shuffleId, split.index, merge)
+        return m
         
 
 class SampleRDD(RDD):
@@ -1012,6 +1040,80 @@ class TextFileRDD(RDD):
         f.close()
 
 
+class GZipFileRDD(TextFileRDD):
+    "the gziped file must be seekable, compressed by pigz -i"    
+    DEFAULT_SPLIT_SIZE = 32<<20
+    BLOCK_SIZE = 64 << 10
+
+    def __init__(self, ctx, path, splitSize=None):
+        TextFileRDD.__init__(self, ctx, path, None, splitSize)
+
+    def __repr__(self):
+        return '<GZipFileRDD %s>' % self.path
+
+    def find_block(self, f, pos):
+        f.seek(pos)
+        block = f.read(32*1024)
+        if len(block) < 4:
+            f.seek(0, 2)
+            return f.tell() # EOF
+        ENDING = '\x00\x00\xff\xff'
+        while True:
+            p = block.find(ENDING)
+            while p < 0:
+                pos += len(block) - 3 
+                block = block[-3:] + f.read(32<<10)
+                if len(block) == 3:
+                    return pos + 3 # EOF
+                p = block.find(ENDING)
+            pos += p + 4
+            block = block[p+4:]
+            if not block:
+                block += f.read(4096)
+                if not block:
+                    return pos # EOF
+            try:
+                if zlib.decompressobj(-zlib.MAX_WBITS).decompress(block):
+                    return pos # FOUND 
+            except Exception, e:
+                pass
+
+    def compute(self, split):
+        f = open(self.path, 'rb', 4096 * 1024)
+        last_line = ''
+        if split.index == 0:
+            zf = gzip.GzipFile(fileobj=f)
+            zf._read_gzip_header()
+            start = f.tell()
+        else:
+            start = self.find_block(f, split.index * self.splitSize)
+            if start >= split.index * self.splitSize + self.splitSize:
+                return
+            for i in xrange(1, 100):
+                if start - i * self.BLOCK_SIZE <= 4:
+                    break
+                last_block = self.find_block(f, start - i * self.BLOCK_SIZE)
+                if last_block < start:
+                    f.seek(last_block)
+                    d = f.read(start - last_block)
+                    dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                    last_line = dz.decompress(d).split('\n')[-1]
+                    break
+
+        end = self.find_block(f, split.index * self.splitSize + self.splitSize)
+        f.seek(start)
+        d = f.read(end - start)
+        f.close()
+        if not d: return
+
+        dz = zlib.decompressobj(-zlib.MAX_WBITS)
+        io = cStringIO.StringIO(dz.decompress(d))
+        yield last_line + io.readline()
+        for line in io:
+            if line.endswith('\n'): # drop last line
+                yield line
+
+
 class BZip2FileRDD(TextFileRDD):
     
     DEFAULT_SPLIT_SIZE = 10*1024*1024
@@ -1080,7 +1182,7 @@ class MFSTextFileRDD(RDD):
         size = self.file.length
         if splitSize is None:
             if numSplits is None:
-                splitSize = 64*1024*1024
+                splitSize = moosefs.CHUNKSIZE
             else:
                 splitSize = size / numSplits
         n = size / splitSize
@@ -1097,7 +1199,12 @@ class MFSTextFileRDD(RDD):
         return [Split(i) for i in range(self.len)]
 
     def preferredLocations(self, split):
-        return self.file.locs(split.index)
+        if self.splitSize != moosefs.CHUNKSIZE:
+            start = self.splitSize * split.index / moosefs.CHUNKSIZE
+            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
+            return sum((self.file.locs(i) for i in range(start, end)), [])
+        else:
+            return self.file.locs(split.index)
 
     def __repr__(self):
         return '<TextFileRDD %s>' % self.path
@@ -1105,7 +1212,7 @@ class MFSTextFileRDD(RDD):
     def compute(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
-        MAX_RECORD_LENGTH = 102400
+        MAX_RECORD_LENGTH = 1<<20 # 1M
 
         f = moosefs.ReadableFile(self.file)
         if start > 0:
@@ -1126,13 +1233,17 @@ class MFSTextFileRDD(RDD):
 
 
 class OutputTextFileRDD(RDD):
-    def __init__(self, rdd, path, ext='', overwrite=False):
+    def __init__(self, rdd, path, ext='', overwrite=False, compress=False):
         if os.path.exists(path):
             if not os.path.isdir(path):
                 raise Exception("output must be dir")
             if overwrite:
-                shutil.rmtree(path)
-                os.makedirs(path)
+                for n in os.listdir(path):
+                    p = os.path.join(path, n)
+                    if os.path.isdir(p):
+                        shutil.rmtree(p)
+                    else:
+                        os.remove(p)
         else:
             os.makedirs(path)
 
@@ -1141,8 +1252,11 @@ class OutputTextFileRDD(RDD):
         self.path = os.path.abspath(path)
         if ext and not ext.startswith('.'):
             ext = '.' + ext
+        if compress and not ext.endswith('gz'):
+            ext += '.gz'
         self.ext = ext
         self.overwrite = overwrite
+        self.compress = compress
         self.dependencies = [OneToOneDependency(rdd)]
 
     def __len__(self):
@@ -1171,8 +1285,10 @@ class OutputTextFileRDD(RDD):
         except IOError:
             time.sleep(1) # there are dir cache in mfs for 1 sec
             f = open(tpath,'w', 4096 * 1024 * 16)
-        
-        have_data = self.writedata(f, self.rdd.iterator(split))
+        if self.compress:
+            have_data = self.write_compress_data(f, self.rdd.iterator(split))
+        else:    
+            have_data = self.writedata(f, self.rdd.iterator(split))
         f.close()
         if have_data and not os.path.exists(path):
             os.rename(tpath, path)
@@ -1187,6 +1303,25 @@ class OutputTextFileRDD(RDD):
             if not line.endswith('\n'):
                 f.write('\n')
             empty = False
+        return not empty
+
+    def write_compress_data(self, f, lines):
+        empty = True
+        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
+        size = 0
+        for line in lines:
+            f.write(line)
+            if not line.endswith('\n'):
+                f.write('\n')
+            size += len(line) + 1
+            if size >= 256 << 10:
+                f.flush()
+                f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                size = 0
+            empty = False
+        if not empty:
+            f.flush()
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
@@ -1210,17 +1345,30 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 except IOError:
                     time.sleep(1) # there are dir cache in mfs for 1 sec
                     f = open(tpath,'w', 4096 * 1024 * 16)
+                if self.compress:
+                    f = gzip.GzipFile(filename='', mode='w', fileobj=f)
                 files[key] = f
                 paths[key] = tpath
             return f
-        
+       
+        sizes = {}
         for k, v in self.rdd.iterator(split):
             f = get_file(k)
             f.write(v)
             if not v.endswith('\n'):
                 f.write('\n')
+            if self.compress:
+                size = sizes.get(k, 0) + len(v)
+                if size > 256 << 10: # 128k
+                    f.flush()
+                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                    size = 0
+                sizes[k] = size
 
         for k in files:
+            if self.compress:
+                files[k].flush()
             files[k].close()
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):

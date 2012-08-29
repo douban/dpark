@@ -11,8 +11,10 @@ import SimpleHTTPServer
 import shutil
 import socket
 import urllib2
+import platform
+import zlib
+import psutil
 import gc
-gc.disable()
 
 import zmq
 import mesos
@@ -37,6 +39,8 @@ logger = logging.getLogger("executor")
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
+MAX_IDLE_TIME = 120
+MAX_IDLE_WORKERS = 8
 
 Script = ''
 
@@ -52,6 +56,7 @@ def run_task(task, ntry):
     try:
         setproctitle('dpark worker %s: run task %s' % (Script, task))
         Accumulator.clear()
+        gc.disable()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
 
@@ -59,6 +64,8 @@ def run_task(task, ntry):
             flag, data = 0, marshal.dumps(result)
         else:
             flag, data = 1, cPickle.dumps(result, -1)
+        data = zlib.compress(data, 1)
+
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
             name = 'task_%s_%s.result' % (task.id, ntry)
@@ -79,6 +86,9 @@ def run_task(task, ntry):
         msg = traceback.format_exc()
         setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
+    finally:
+        gc.collect()
+        gc.enable()
 
 def init_env(args):
     setproctitle('dpark worker: idle')
@@ -161,12 +171,79 @@ def start_forword(addr, prefix=''):
     t.start()    
     return t, os.fdopen(wfd, 'w', 0) 
 
+def get_pool_memory(pool):
+    try:
+        p = psutil.Process(pool._pool[0].pid)
+        return p.get_memory_info()[0]
+    except Exception:
+        return 0
+
+def get_task_memory(task):
+    for r in task.resources:
+        if r.name == 'mem':
+            return r.scalar.value
+    return 0
+
+def safe(f):
+    def _(self, *a, **kw):
+        with self.lock:
+            r = f(self, *a, **kw)
+        return r
+    return _
+
 class MyExecutor(mesos.Executor):
     def __init__(self):
         self.workdir = None
         self.idle_workers = []
         self.busy_workers = {}
+        self.lock = threading.RLock()
 
+    def check_memory(self, driver):
+        mem_limit = {}
+        while True:
+            self.lock.acquire()
+            
+            for tid, (task, pool) in self.busy_workers.items():
+                pid = pool._pool[0].pid
+                try:
+                    p = psutil.Process(pid)
+                    rss = p.get_memory_info()[0] >> 20
+                except psutil.error.Error, e:
+                    logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
+                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    self.busy_workers.pop(tid)
+                    continue
+                
+                if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
+                    logger.error("worker process %d of task %s is zombie", pid, tid)
+                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    self.busy_workers.pop(tid)
+                    continue
+
+                offered = get_task_memory(task)
+                if rss > offered * 2:
+                    logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
+                            + "use -M argument to request more memory.", tid, rss, offered)
+                    reply_status(driver, task, mesos_pb2.TASK_KILLED)
+                    self.busy_workers.pop(tid)
+                    pool.terminate()
+                elif rss > offered * mem_limit.get(tid, 1.0):
+                    logger.warning("task %s used too much memory: %dMB > %dMB, "
+                            + "use -M to request more memory", tid, rss, offered)
+                    mem_limit[tid] = rss / offered + 0.2
+
+            now = time.time() 
+            n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
+            if n:
+                for _, p in self.idle_workers[:n]:
+                    p.terminate()
+                self.idle_workers = self.idle_workers[n:]
+            
+            self.lock.release()
+
+            time.sleep(5) 
+
+    @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
@@ -184,13 +261,17 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
-            
+
             if args['DPARK_HAS_DFS'] != 'True':
                 self.workdir = args['WORKDIR']
                 if not os.path.exists(self.workdir):
                     os.mkdir(self.workdir)
                 args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
+            t = threading.Thread(target=self.check_memory, args=[driver])
+            t.daemon = True
+            t.start()
+ 
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
@@ -201,20 +282,21 @@ class MyExecutor(mesos.Executor):
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
 
-    def disconnected():
+    def disconnected(self, driver, slaveInfo):
         logger.info("executor is disconnected at %s", slaveInfo.hostname)
 
     def get_idle_worker(self):
         try:
-            return self.idle_workers.pop()
+            return self.idle_workers.pop()[1]
         except IndexError:
             p = multiprocessing.Pool(1, init_env, self.init_args)
             p.done = 0
             return p 
 
+    @safe
     def launchTask(self, driver, task):
         try:
-            t, ntry = cPickle.loads(task.data)
+            t, ntry = cPickle.loads(zlib.decompress(task.data))
             
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             
@@ -224,17 +306,20 @@ class MyExecutor(mesos.Executor):
             self.busy_workers[task.task_id.value] = (task, pool)
 
             def callback((state, data)):
-                if task.task_id.value not in self.busy_workers:
-                    return
-                _, pool = self.busy_workers.pop(task.task_id.value)
-                pool.done += 1
-                reply_status(driver, task, state, data)
-                if len(self.idle_workers) + len(self.busy_workers) < self.parallel \
-                        and pool.done < MAX_TASKS_PER_WORKER: # maybe memory leak in executor
-                    self.idle_workers.append(pool)
-                else:
-                    try: pool.terminate() 
-                    except: pass
+                with self.lock:
+                    if task.task_id.value not in self.busy_workers:
+                        return
+                    _, pool = self.busy_workers.pop(task.task_id.value)
+                    pool.done += 1
+                    reply_status(driver, task, state, data)
+                    if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
+                            and len(self.idle_workers) < MAX_IDLE_WORKERS
+                            and pool.done < MAX_TASKS_PER_WORKER 
+                            and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
+                        self.idle_workers.append((time.time(), pool))
+                    else:
+                        try: pool.terminate() 
+                        except: pass
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
@@ -244,14 +329,16 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
             return
 
+    @safe
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
             pool.terminate()
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
+    @safe
     def shutdown(self, driver):
-        for p in self.idle_workers:
+        for _, p in self.idle_workers:
             try: p.terminate()
             except: pass
         for p in self.busy_workers.values():

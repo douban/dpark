@@ -1,7 +1,9 @@
 import sys
+import os, os.path
 import time
 import logging
-from pprint import pprint
+import shutil
+import operator
 
 logger = logging.getLogger("bagel")
 
@@ -14,13 +16,6 @@ class Vertex:
     def __repr__(self):
         return "<Vertex(%s, %s, %s)>" % (self.id, self.value, self.active)
 
-class Message:
-    def __init__(self, target_id, value):
-        self.target_id = target_id
-        self.value = value
-    def __repr__(self):
-        return "<Message(%s, %s)>" % (self.target_id, self.value)
-
 class Edge:
     def __init__(self, target_id, value=0):
         self.target_id = target_id
@@ -28,15 +23,34 @@ class Edge:
     def __repr__(self):
         return '<Edge(%s, %s)>' % (self.target_id, self.value)
 
+class Message:
+    def __init__(self, target_id, value):
+        self.target_id = target_id
+        self.value = value
+    def __repr__(self):
+        return "<Message(%s, %s)>" % (self.target_id, self.value)
 
-class Combiner:
+
+class Combiner(object):
     def createCombiner(self, msg): raise NotImplementedError
     def mergeValue(self, combiner, msg): raise NotImplementedError
     def mergeCombiners(self, a, b): raise NotImplementedError
 
-class Aggregator:
+class Aggregator(object):
     def createAggregator(self, vert): raise NotImplementedError
     def mergeAggregator(self, a, b): raise NotImplementedError
+
+class BasicCombiner(Combiner):
+    def __init__(self, op):
+        self.op = op
+    def createCombiner(self, msg):
+        return msg
+    def mergeValue(self, combiner, msg):
+        return self.op(combiner, msg)
+    def mergeCombiners(self, a, b):
+        return self.op(a, b)
+
+DefaultValueCombiner = BasicCombiner(operator.add)
 
 class DefaultListCombiner(Combiner):
     def createCombiner(self, msg):
@@ -46,42 +60,30 @@ class DefaultListCombiner(Combiner):
     def mergeCombiners(self, a, b):
         return a + b
 
-class DefaultValueCombiner(Combiner):
-    def createCombiner(self, msg):
-        return msg.value
-    def mergeValue(self, combiner, msg):
-        return combiner + msg.value
-    def mergeCombiners(self, a, b):
-        return a + b
-
-
-class Bagel:
+class Bagel(object):
     @classmethod
     def run(cls, ctx, verts, msgs, compute,
-            combiner=DefaultValueCombiner(), aggregator=None,
-            max_superstep=sys.maxint, numSplits=None):
+            combiner=DefaultValueCombiner, aggregator=None,
+            max_superstep=sys.maxint, numSplits=None, snapshot_dir=None):
 
         superstep = 0
+        snapshot_dir = snapshot_dir or ctx.options.snapshot_dir
+
         while superstep < max_superstep:
             logger.info("Starting superstep %d", superstep)
             start = time.time()
             aggregated = cls.agg(verts, aggregator) if aggregator else None
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs, numSplits=numSplits)
-            processed, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
-                lambda v, ms: compute(v, ms, aggregated, superstep))
-            logger.info("superstep %d took %.1f s", superstep, time.time()-start)
+            verts, msgs, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
+                lambda v, ms: compute(v, ms, aggregated, superstep), snapshot_dir)
+            logger.info("superstep %d took %.1f s %d messages, %d active nodes", 
+                    superstep, time.time()-start, numMsgs, numActiveVerts)
 
-            noActivity = numMsgs == 0 and numActiveVerts == 0
-            if noActivity:
-                return processed.map(lambda (id, (vert, msgs)): vert)
-            
-            verts = processed.mapValue(lambda (vert, msgs): vert)
-            msgs = processed.flatMap(lambda (id, (vert, msgs)):
-                    [(m.target_id, m) for m in msgs])
             superstep += 1
-            
-        return verts.map(lambda (id, vert): vert)
+            if numMsgs == 0 and numActiveVerts == 0:
+                break
+        return verts
 
     @classmethod
     def agg(cls, verts, aggregator):
@@ -89,7 +91,7 @@ class Bagel:
         return r.reduce(aggregator.mergeAggregators)
 
     @classmethod
-    def comp(cls, ctx, grouped, compute):
+    def comp(cls, ctx, grouped, compute, snapshot_dir=None):
         numMsgs = ctx.accumulator(0)
         numActiveVerts = ctx.accumulator(0)
         def proc((vs, cs)):
@@ -100,10 +102,16 @@ class Bagel:
             if newVert.active:
                 numActiveVerts.add(1)
             return [(newVert, newMsgs)]
-        processed = grouped.flatMapValue(proc).cache()
+        processed = grouped.flatMapValue(proc)
+        verts = processed.mapValue(lambda (vert, msgs): vert)
+        msgs = processed.flatMap(lambda (id, (vert, msgs)): msgs)
+        if snapshot_dir:
+            verts = verts.snapshot(snapshot_dir)
+        #else:
+        #    processed = processed.cache()
         # force evaluation of processed RDD for accurate performance measurements
-        processed.count()
-        return processed, numMsgs.value, numActiveVerts.value
+        n = verts.count()
+        return verts, msgs, numMsgs.value, numActiveVerts.value
 
     @classmethod
     def addAggregatorArg(cls, compute):

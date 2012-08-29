@@ -5,6 +5,8 @@ import marshal
 import cPickle
 import threading
 import logging
+import zlib
+import gzip
 from multiprocessing import Lock
 try:
     from setproctitle import getproctitle, setproctitle
@@ -24,6 +26,7 @@ logger = logging.getLogger("broadcast")
 
 class SourceInfo:
     StopBroadcast = -2
+
     def __init__(self, addr, total_blocks=0, total_bytes=0, block_size=0):
         self.addr = addr
         self.total_blocks = total_blocks
@@ -38,7 +41,7 @@ class SourceInfo:
         return self.leechers - other.leechers
 
     def __repr__(self):
-        return "<source %s>" % (self.addr)
+        return "<source %s (%d)>" % (self.addr, self.leechers)
 
     def is_child_of(self, addr):
         for p in self.parents:
@@ -58,7 +61,7 @@ class VariableInfo:
         self.total_bytes = total_bytes
         self.has_blocks = 0
 
-class Broadcast:
+class Broadcast(object):
     initialized = False
     ever_used = False
     is_master = False
@@ -73,18 +76,24 @@ class Broadcast:
         Broadcast.ever_used = True
         self.uuid = str(uuid.uuid4())
         self.value = value
+        self.is_local = is_local
         if is_local:
             if not self.cache.put(self.uuid, value):
                 raise Exception('object %s is too big to cache', repr(value))
         else:
             self.sendBroadcast()
 
-    def __getstate__(self):
-        return self.uuid
+    def clear(self):
+        self.cache.put(self.uuid, None)
 
-    def __setstate__(self, uuid):
+    def __getstate__(self):
+        return (self.uuid, self.bytes, self.bytes < self.BlockSize/2 and self.value or None)
+
+    def __setstate__(self, v):
+        self.uuid, self.bytes, value = v
+        if value is not None:
+            self.value = value
         Broadcast.ever_used = True
-        self.uuid = uuid
     
     def __getattr__(self, name):
         if name != 'value':
@@ -121,6 +130,7 @@ class Broadcast:
             buf = marshal.dumps(obj)
         else:
             buf = cPickle.dumps(obj, -1)
+        buf = zlib.compress(buf, 1)
         N = self.BlockSize
         blockNum = len(buf) / N
         if len(buf) % N != 0:
@@ -132,7 +142,8 @@ class Broadcast:
         return vi
 
     def unBlockifyObject(self, blocks):
-        s = ''.join(b.data for b in blocks)
+        z = zlib.decompressobj()
+        s = ''.join([z.decompress(b.data) for b in blocks] + [z.flush()])
         try:
             return marshal.loads(s)
         except ValueError:
@@ -160,12 +171,11 @@ class Broadcast:
     def newBroadcast(cls, value, is_local):
         return cls.broadcastFactory.newBroadcast(value, is_local)
 
-class BroadcastFactory:
+class BroadcastFactory(object):
     def initialize(self, is_master):
         raise NotImplementedError
     def newBroadcast(self, value, is_local):
         raise NotImplementedError
-
 
 class FileBroadcast(Broadcast):
     workdir = None
@@ -174,32 +184,37 @@ class FileBroadcast(Broadcast):
         return os.path.join(self.workdir, self.uuid)
 
     def sendBroadcast(self):
-        f = open(self.path, 'wb', 65536*100)
+        f = gzip.open(self.path, 'wb')
         if marshalable(self.value):
             marshal.dump(self.value, f)
         else:
             cPickle.dump(self.value, f, -1)
+        f.flush()
+        self.bytes = f.tell()
         f.close()
         logger.debug("dump to %s", self.path)
 
     def recvBroadcast(self):
         try:
-            self.value = marshal.load(open(self.path, 'rb', 65536*100))
+            self.value = marshal.load(gzip.open(self.path, 'rb'))
         except ValueError:
-            self.value = cPickle.load(open(self.path, 'rb', 65536*100))
+            self.value = cPickle.load(gzip.open(self.path, 'rb'))
         logger.debug("load from %s", self.path)
+
+    def clear(self):
+        Broadcast.clear(self)
+        os.remove(self.path())
 
     @classmethod
     def initialize(cls, is_master):
         cls.workdir = env.get('WORKDIR')
         logger.debug("FileBroadcast initialized")
 
-class FileBroadcastFactory:
+class FileBroadcastFactory(BroadcastFactory):
     def initialize(self, is_master):
         return FileBroadcast.initialize(is_master)
     def newBroadcast(self, value, is_local):
         return FileBroadcast(value, is_local)
-
 
 class TreeBroadcast(FileBroadcast):
     guides = {}
@@ -220,13 +235,15 @@ class TreeBroadcast(FileBroadcast):
         self.serverAddr = None
         self.guide_addr = None
 
-        self.has_copy_in_fs = False
-        self.stop = False
+    def clear(self):
+        Broadcast.clear(self)
+        if not self.is_local:
+            self.stopServer(self.guide_addr)
+            self.stopServer(self.serverAddr)
+            self.listOfSources = []
+            self.blocks = []
 
     def sendBroadcast(self):
-        # store a copy to file
-        # FileBroadcast.sendBroadcast(self)
-        # self.has_copy_in_fs = True
         logger.debug("start sendBroadcast %s", self.uuid)
         variableInfo = self.blockifyObject(self.value)
         self.blocks = variableInfo.blocks
@@ -234,10 +251,11 @@ class TreeBroadcast(FileBroadcast):
         self.total_blocks = variableInfo.total_blocks
         logger.info("broadcast %s: %d bytes in %d blocks", self.uuid, 
                 self.total_bytes, self.total_blocks)
+        self.bytes = self.total_bytes
 
         self.startGuide()
         self.startServer()
-        
+    
     def startGuide(self):
         def run():
             sock = env.ctx.socket(zmq.REP)
@@ -247,36 +265,42 @@ class TreeBroadcast(FileBroadcast):
            
             sources = {}
             while True:
-                if self.stop and self.has_copy_in_fs:
-                    break
-                
                 addr = sock.recv_pyobj()
-                ssi = self.selectSuitableSource(addr)
-                if not ssi:
-                    self.MaxDegree += 1
+                if addr == SourceInfo.StopBroadcast:
+                    break
+                # use the first one to recover
+                if addr in sources:
+                    ssi = self.listOfSources[0]
+                    sock.send_pyobj(ssi)
+                    continue
+
+                while True:
                     ssi = self.selectSuitableSource(addr)
+                    if not ssi:
+                        self.MaxDegree += 1
+                        ssi = self.selectSuitableSource(addr)
+                    if ssi:
+                        if not self.check_activity(ssi):
+                            ssi.failed = True
+                        else:
+                            break
+
                 logger.debug("sending selected sourceinfo %s", ssi.addr)
                 sock.send_pyobj(ssi)
                 
-                if addr not in sources:
-                    o = SourceInfo(addr, self.total_blocks,
-                        self.total_bytes, self.block_size)
-                    logger.debug("Adding possible new source to listOfSource: %s",
-                        o)
-                    sources[addr] = o
-                    self.listOfSources.append(o)
-                else:
-                    sources[addr].leechers += 1
+                o = SourceInfo(addr, self.total_blocks,
+                    self.total_bytes, self.block_size)
+                logger.debug("Adding possible new source to listOfSource: %s",
+                    o)
+                sources[addr] = o
+                self.listOfSources.append(o)
                 sources[addr].parents.append(ssi)                
 
             sock.close()
             logger.debug("Sending stop notification ...")
 
-            for source_info in self.listOfSources[1:]:
-                req = env.ctx.socket(zmq.REQ)
-                req.send_pyobj(SourceInfo.StopBroadcast)
-                #req.recv_pyobj()
-                req.close()
+            for source_info in self.listOfSources:
+                self.stopServer(source_info.addr)
             self.unregisterValue(self.uuid)
 
         t = threading.Thread(target=run)
@@ -304,31 +328,38 @@ class TreeBroadcast(FileBroadcast):
     
     def _selectSource(self, sources, skip):
         for s in sources:
-            if (s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
+            if (not s.failed and s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
                 return s
+
+    def check_activity(self, source_info):
+        try:
+            host, port = source_info.addr.split('://')[1].split(':')
+            c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            c.connect((host, int(port)))
+            c.close()
+            return True
+        except IOError, e:
+            return False
 
     def startServer(self):
         def run():
             sock = env.ctx.socket(zmq.REP)
+            sock.setsockopt(zmq.LINGER, 0)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             self.serverAddr = 'tcp://%s:%d' % (self.host,port)
             logger.debug("server started at %s", self.serverAddr)
 
             while True:
-                if self.stop:
-                    break
                 id = sock.recv_pyobj()
                 if id == SourceInfo.StopBroadcast:
-                    self.stop = True
-                    # TODO send to gruide server
                     break
-                while id >= len(self.blocks):
-                    time.sleep(0.01)
-                if not isinstance(self.blocks[id], BroadcastBlock):
-                    raise Exception("bad block: %s" % repr(self.blocks[id]))
-                sock.send_pyobj(self.blocks[id])
+                sock.send_pyobj(id < len(self.blocks) and self.blocks[id] or None)
+
             sock.close()
             logger.debug("stop TreeBroadcast server %s", self.serverAddr)
+
+            # clear cache
+            self.cache.put(self.uuid, None)
 
         t = threading.Thread(target=run)
         t.daemon = True
@@ -339,6 +370,14 @@ class TreeBroadcast(FileBroadcast):
         self.listOfSources = [SourceInfo(self.serverAddr, 
             self.total_blocks, self.total_bytes,
             self.block_size)]
+
+    def stopServer(self, addr):
+        req = env.ctx.socket(zmq.REQ)
+        req.setsockopt(zmq.LINGER, 0)
+        req.connect(addr)
+        req.send_pyobj(SourceInfo.StopBroadcast)
+        #req.recv_pyobj()
+        req.close()
 
     def recvBroadcast(self):
         self.initializeSlaveVariables()
@@ -371,10 +410,12 @@ class TreeBroadcast(FileBroadcast):
                 break
         else:
             raise Exception("receiveSingleTransmission failed")
+        
         logger.debug("%s got broadcast in %.1fs from %s", self.serverAddr, time.time() - start, source_info.addr)
 
 #        guide_sock.send_pyobj(source_info)
 #        guide_sock.recv_pyobj()
+        guide_sock.close()
 
         return len(self.blocks) == self.total_blocks
 
@@ -383,26 +424,40 @@ class TreeBroadcast(FileBroadcast):
         logger.debug("total_blocks: %s has %s", self.total_blocks,
                 len(self.blocks))
         sock = env.ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.LINGER, 0)
         sock.connect(source_info.addr)
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
         for i in range(len(self.blocks), source_info.total_blocks):
-            sock.send_pyobj(i)
-            avail = dict(poller.poll(10 * 1000))
-            if not avail or avail.get(sock) != zmq.POLLIN:
-                logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
-                return False
-            block = sock.recv_pyobj()
+            while True:
+                sock.send_pyobj(i)
+                avail = dict(poller.poll(3 * 1000))
+                if not avail or avail.get(sock) != zmq.POLLIN:
+                    logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                    poller.unregister(sock)
+                    sock.close()    
+                    return False
+                block = sock.recv_pyobj()
+                if block is not None:
+                    break
+                # not available
+                time.sleep(0.1)
+
             if not isinstance(block, BroadcastBlock) or i != block.id:
                 logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
+                poller.unregister(sock)
+                sock.close()    
                 return False
             logger.debug("Received block: %s from %s", 
                 block.id, source_info.addr)
             self.blocks.append(block)
+        poller.unregister(sock)
+        sock.close()    
         return len(self.blocks) == source_info.total_blocks
 
     def getMasterAddr(self, uuid):
         sock = env.ctx.socket(zmq.REQ)
+        sock.setsockopt(zmq.LINGER, 0)
         sock.connect(self.master_addr)
         sock.send_pyobj(uuid)
         guide_addr = sock.recv_pyobj()
@@ -416,6 +471,7 @@ class TreeBroadcast(FileBroadcast):
 
         def run():
             sock = env.ctx.socket(zmq.REP)
+            sock.setsockopt(zmq.LINGER, 0)
             port = sock.bind_to_random_port("tcp://0.0.0.0")
             cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
             logger.debug("TreeBroadcast tracker started at %s", 

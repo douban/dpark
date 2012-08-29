@@ -36,13 +36,12 @@ class Job:
 LOCALITY_WAIT = 0
 WAIT_FOR_RUNNING = 15
 MAX_TASK_FAILURES = 4
-CPUS_PER_TASK = 1
-
+MAX_TASK_MEMORY = 15 << 10 # 15GB
 
 # A Job that runs a set of tasks with no interdependencies.
 class SimpleJob(Job):
 
-    def __init__(self, sched, tasks):
+    def __init__(self, sched, tasks, cpus=1, mem=100):
         Job.__init__(self)
         self.sched = sched
         self.tasks = tasks
@@ -50,6 +49,8 @@ class SimpleJob(Job):
         for t in tasks:
             t.tried = 0
             t.used = 0
+            t.cpus = cpus
+            t.mem = mem
 
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
@@ -111,30 +112,34 @@ class SimpleJob(Job):
         ts = sorted(st.items(), key=itemgetter(1), reverse=True)
         return [t for t,_ in ts ]
 
-    def findTaskFromList(self, l, host):
+    def findTaskFromList(self, l, host, cpus, mem):
         for i in l:
-            if not self.launched[i] and not self.finished[i] and host not in self.blacklist[i]:
-                self.blacklist[i].append(host)
+            if self.launched[i] or self.finished[i]:
+                continue
+            if host in self.blacklist[i]:
+                continue
+            t = self.tasks[i]
+            if t.cpus <= cpus and t.mem <= mem:
                 return i
 
-    def findTask(self, host, localOnly):
-        localTask = self.findTaskFromList(self.getPendingTasksForHost(host), host)
+    def findTask(self, host, localOnly, cpus, mem):
+        localTask = self.findTaskFromList(self.getPendingTasksForHost(host), host, cpus, mem)
         if localTask is not None:
             return localTask, True
-        noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs, host)
+        noPrefTask = self.findTaskFromList(self.pendingTasksWithNoPrefs, host, cpus, mem)
         if noPrefTask is not None:
             return noPrefTask, True
         if not localOnly:
-            return self.findTaskFromList(self.allPendingTasks, host), False
+            return self.findTaskFromList(self.allPendingTasks, host, cpus, mem), False
 #        else:
 #            print repr(host), self.pendingTasksForHost
         return None, False
 
     # Respond to an offer of a single slave from the scheduler by finding a task
-    def slaveOffer(self, host, availableCpus): 
+    def slaveOffer(self, host, availableCpus=1, availableMem=100): 
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
-        i, preferred = self.findTask(host, localOnly)
+        i, preferred = self.findTask(host, localOnly, availableCpus, availableMem)
         if i is not None:
             task = self.tasks[i]
             task.status = TASK_STARTING
@@ -172,10 +177,8 @@ class SimpleJob(Job):
         
         if status == TASK_FINISHED:
             self.taskFinished(tid, tried, result, update)
-        elif status in (TASK_LOST, 
-                    TASK_FAILED, TASK_KILLED):
+        elif status in (TASK_LOST, TASK_FAILED, TASK_KILLED): 
             self.taskLost(tid, tried, status, reason)
-        
         task.start = time.time()
 
     def taskFinished(self, tid, tried, result, update):
@@ -204,7 +207,6 @@ class SimpleJob(Job):
 
     def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
-        logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:    
             self.sched.requestMoreResources()
@@ -221,17 +223,24 @@ class SimpleJob(Job):
             if self.tasksFinished == self.numTasks:
                 self.sched.jobFinished(self)
             return
-        
-        if status == TASK_FAILED:
-            logger.warning("task %s failed with: %s", 
+       
+        task = self.tasks[index]
+        if status == TASK_KILLED:
+            task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
+        elif status == TASK_FAILED:
+            self.blacklist[index].append(task.host)
+            logger.warning("task %s failed with: %s",  
                 self.tasks[index], reason)
-        if status in (TASK_FAILED, TASK_LOST):
-            self.numFailures[index] += 1
-            if self.numFailures[index] > MAX_TASK_FAILURES:
-                logger.error("Task %d failed more than %d times; aborting job", 
-                    index, MAX_TASK_FAILURES)
-                self.abort("Task %d failed more than %d times" 
-                    % (index, MAX_TASK_FAILURES))
+        elif status == TASK_LOST:
+            self.blacklist[index].append(task.host)
+            logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
+
+        self.numFailures[index] += 1
+        if self.numFailures[index] > MAX_TASK_FAILURES:
+            logger.error("Task %d failed more than %d times; aborting job", 
+                index, MAX_TASK_FAILURES)
+            self.abort("Task %d failed more than %d times" 
+                % (index, MAX_TASK_FAILURES))
 
     def check_task_timeout(self):
         now = time.time()

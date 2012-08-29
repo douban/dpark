@@ -37,6 +37,15 @@ def lock(f):
             return f(self, *a, **kw)
     return _
 
+def try_again(f):
+    def _(self, *a, **kw):
+        try:
+            return f(self, *a, **kw)
+        except IOError, e:
+            self.close()
+            return f(self, *a, **kw)
+    return _
+
 class MasterConn:
     def __init__(self, host='mfsmaster', port=9421):
         self.host = host
@@ -112,7 +121,6 @@ class MasterConn:
             self.conn.close()
             self.conn = None
 
-    @lock
     def send(self, buf):
         #print 'send', len(buf), " ".join(str(ord(c)) for c in buf)
         n = self.conn.send(buf)
@@ -123,6 +131,7 @@ class MasterConn:
                 raise IOError("write to master failed")
             n += sent 
 
+    @lock
     def nop(self):
         self.connect()
         msg = pack(ANTOAN_NOP, 0)
@@ -148,6 +157,7 @@ class MasterConn:
         assert len(d) == n, 'unexpected end: %s != %s' % (len(d), n)
         return d
 
+    @try_again
     @lock
     def sendAndReceive(self, cmd, *args):
         #print 'sendAndReceive', cmd, args

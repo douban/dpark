@@ -26,11 +26,11 @@ class TestJob(unittest.TestCase):
     def test_job(self):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
-        job = SimpleJob(sched, tasks)
-        ts = [job.slaveOffer('localhost', 5) for i in range(10)]
+        job = SimpleJob(sched, tasks, 1, 10)
+        ts = [job.slaveOffer('localhost') for i in range(10)]
         assert len(ts) == 10
         assert job.tasksLaunched == 10
-        assert job.slaveOffer('localhost', 5) is None
+        assert job.slaveOffer('localhost') is None
         [job.statusUpdate(t.id, 0, mesos_pb2.TASK_FINISHED) for t in ts]
         assert job.tasksFinished == 10
 
@@ -38,13 +38,13 @@ class TestJob(unittest.TestCase):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
         job = SimpleJob(sched, tasks)
-        ts = [job.slaveOffer('localhost', 5) for i in range(10)]
+        ts = [job.slaveOffer('localhost') for i in range(10)]
         [job.statusUpdate(t.id, 0, mesos_pb2.TASK_FINISHED) for t in ts[1:]]
         assert job.tasksFinished == 9
         job.statusUpdate(ts[0].id, 0, mesos_pb2.TASK_FAILED)
-        t = job.slaveOffer('localhost1', 5)
+        t = job.slaveOffer('localhost1')
         assert t.id == 0
-        assert job.slaveOffer('localhost', 5) is None
+        assert job.slaveOffer('localhost') is None
         assert job.tasksLaunched == 10
         job.statusUpdate(t.id, 1, mesos_pb2.TASK_FINISHED)
         assert job.tasksFinished == 10

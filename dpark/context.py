@@ -3,6 +3,7 @@ import atexit
 import optparse
 import signal
 import logging
+import gc
 
 from rdd import *
 from accumulator import Accumulator
@@ -12,8 +13,13 @@ from broadcast import Broadcast
 
 logger = logging.getLogger("context")
 
-class DparkContext:
+class DparkContext(object):
     nextShuffleId = 0
+    _instances = {}
+    def __new__(cls, master=None):
+        if master not in cls._instances:
+            cls._instances[master] = super(DparkContext, cls).__new__(cls)
+        return cls._instances[master]
 
     def __init__(self, master=None):
         
@@ -57,7 +63,13 @@ class DparkContext:
         else:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
-       
+      
+        try:
+            from rfoo.utils import rconsole
+            rconsole.spawn_server(locals(), 0)
+        except ImportError:
+            pass
+
         self.started = False
 
     def newShuffleId(self):
@@ -79,6 +91,10 @@ class DparkContext:
 
         def create_rdd(cls, path, *ka, **kw):
             if cls is TextFileRDD:
+                if path.endswith('.bz2'):
+                    return BZip2FileRDD(self, path, *ka, **kw)
+                elif path.endswith('.gz'):
+                    return GZipFileRDD(self, path, *ka, **kw)
                 rpath = os.path.realpath(path)
                 if rpath.startswith('/mfs/'):
                     return MFSTextFileRDD(self, rpath[4:], 'mfsmaster', *ka, **kw)
@@ -110,6 +126,8 @@ class DparkContext:
             return create_rdd(cls, path, *ka, **kws)
 
     def bzip2File(self, *args, **kwargs):
+        "deprecated"
+        logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
     def csvFile(self, path, dialect='excel', *args, **kwargs):
@@ -152,7 +170,17 @@ class DparkContext:
 
         if partitions is None:
             partitions = range(len(rdd))
-        return self.scheduler.runJob(rdd, func, partitions, allowLocal)
+        try:
+            gc.disable()
+            return self.scheduler.runJob(rdd, func, partitions, allowLocal)
+        finally:
+            gc.collect()
+            gc.enable()
+
+    def clear(self):
+        RDD._pickle_cache.clear()
+        self.scheduler.clear()
+        gc.collect()
 
     def stop(self):
         if not self.started:
@@ -188,6 +216,8 @@ def add_default_options():
             help="which group of machines")
     group.add_option("--err", type="float", default=0.0,
             help="acceptable ignored error record ratio (0.01%)")
+    group.add_option("--snapshot_dir", type="string", default="",
+            help="shared dir to keep snapshot of RDDs")
 
     group.add_option("--self", action="store_true",
             help="user self as exectuor")

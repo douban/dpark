@@ -8,9 +8,15 @@ import time
 import random
 import getpass
 import urllib
+import warnings
+import zlib
 
 import zmq
-import mesos_pb2
+try:
+    import mesos_pb2
+except ImportError:
+    warnings.warn("no mesos module available, can not run in mesos mode",
+        ImportWarning)
 
 from dependency import NarrowDependency, ShuffleDependency 
 from accumulator import Accumulator
@@ -80,8 +86,9 @@ class Stage:
 
 
 class Scheduler:
-    def start(self):pass
+    def start(self): pass
     def runJob(self, rdd, func, partitions, allowLocal): pass
+    def clear(self): pass
     def stop(self): pass
     def defaultParallelism(self):
         return 2
@@ -105,6 +112,13 @@ class DAGScheduler(Scheduler):
 
     def check(self):
         pass
+
+    def clear(self):
+        self.idToStage.clear()
+        self.shuffleToMapStage.clear()
+        self.cacheLocs.clear()
+        self.cacheTracker.clear()
+        self.mapOutputTracker.clear()
 
     def shutdown(self):
         self._shutdown = True
@@ -429,15 +443,22 @@ class MesosScheduler(DAGScheduler):
         self.logLevel = options.logLevel
         self.options = options
         self.isRegistered = False
+        self.driver = None
+        self.lock = threading.RLock()
+        self.init_job()
+
+    def init_job(self):
         self.activeJobs = {}
         self.activeJobsQueue = []
         self.taskIdToJobId = {}
         self.taskIdToSlaveId = {}
         self.jobTasks = {}
-        self.driver = None
         self.slaveTasks = {}
         self.slaveFailed = {}
-        self.lock = threading.RLock()
+
+    def clear(self):
+        DAGScheduler.clear(self)
+        self.init_job()
 
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
@@ -515,7 +536,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def submitTasks(self, tasks):
         logger.info("Got a job with %d tasks", len(tasks))
-        job = SimpleJob(self, tasks)
+        job = SimpleJob(self, tasks, self.cpus, self.mem)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         logger.debug("Adding job with ID %d", job.id)
@@ -565,7 +586,7 @@ class MesosScheduler(DAGScheduler):
                         continue
                     if mems[i] < self.mem or cpus[i] < self.cpus:
                         continue
-                    t = job.slaveOffer(str(o.hostname), cpus[i])
+                    t = job.slaveOffer(str(o.hostname), cpus[i], mems[i])
                     if not t:
                         continue
                     task = self.createTask(o, job, t)
@@ -577,8 +598,8 @@ class MesosScheduler(DAGScheduler):
                     self.taskIdToJobId[tid] = job.id
                     self.taskIdToSlaveId[tid] = sid
                     self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
-                    cpus[i] -= self.cpus
-                    mems[i] -= self.mem
+                    cpus[i] -= t.cpus
+                    mems[i] -= t.mem
                     launchedTask = True
 
                 if not launchedTask:
@@ -593,7 +614,7 @@ class MesosScheduler(DAGScheduler):
 
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))
-    
+   
     @safe
     def offerRescinded(self, driver, offer_id):
         logger.info("rescinded offer: %s", offer_id)
@@ -616,20 +637,20 @@ class MesosScheduler(DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = cPickle.dumps((t, t.tried), -1)
+        task.data = zlib.compress(cPickle.dumps((t, t.tried), -1), 1)
         task.executor.MergeFrom(self.executor)
-        if len(task.data) > 100*1024:
+        if len(task.data) > 1000*1024:
             logger.warning("task too large: %s %d", 
                 t, len(task.data))
 
         cpu = task.resources.add()
         cpu.name = 'cpus'
         cpu.type = 0 #mesos_pb2.Value.SCALAR
-        cpu.scalar.value = self.cpus
+        cpu.scalar.value = t.cpus
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.mem
+        mem.scalar.value = t.mem
         return task
 
     @safe
@@ -668,6 +689,7 @@ class MesosScheduler(DAGScheduler):
                             # try again
                             data = urllib.urlopen(data).read()
                         flag -= 2
+                    data = zlib.decompress(data)
                     if flag == 0:
                         result = marshal.loads(data)
                     else:
@@ -681,8 +703,8 @@ class MesosScheduler(DAGScheduler):
 
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, status.data)
-        if state in (mesos_pb2.TASK_FAILED, mesos_pb2.TASK_LOST):
-            self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
+        #if state in (mesos_pb2.TASK_FAILED, mesos_pb2.TASK_LOST):
+        #    self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
     
     def jobFinished(self, job):
         logger.debug("job %s finished", job.id)

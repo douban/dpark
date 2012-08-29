@@ -6,7 +6,7 @@ setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "
             +"computing framework supporting iterative algorithms.",
-      long_description=open("README").read(),
+      long_description=open("README.md").read(),
       # Get more strings from
       # http://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=[
