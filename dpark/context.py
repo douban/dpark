@@ -196,13 +196,13 @@ class DparkContext(object):
             partitions = range(len(rdd))
         try:
             gc.disable()
-            return self.scheduler.runJob(rdd, func, partitions, allowLocal)
+            for it in self.scheduler.runJob(rdd, func, partitions, allowLocal):
+                yield it
         finally:
             gc.collect()
             gc.enable()
 
     def clear(self):
-        RDD._pickle_cache.clear()
         self.scheduler.clear()
         gc.collect()
 

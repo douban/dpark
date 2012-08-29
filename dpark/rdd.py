@@ -38,15 +38,14 @@ class Split:
 
 def cached(func):
     def getstate(self):
-        d = self._pickle_cache.get(self.id)
+        d = getattr(self, '_pickle_cache', None)
         if d is None:
             d = func(self)
-            self._pickle_cache[self.id] = d
+            self._pickle_cache = d
         return d
     return getstate
 
 class RDD:
-    _pickle_cache = {}
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = RDD.newId()
