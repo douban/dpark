@@ -73,6 +73,7 @@ class Broadcast(object):
     MaxKnockInterval = 999
         
     def __init__(self, value, is_local):
+        assert value is not None, 'broadcast object should not been None'
         Broadcast.ever_used = True
         self.uuid = str(uuid.uuid4())
         self.value = value
@@ -87,7 +88,7 @@ class Broadcast(object):
         self.cache.put(self.uuid, None)
 
     def __getstate__(self):
-        return (self.uuid, self.bytes, self.bytes < self.BlockSize/2 and self.value or None)
+        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/2 else None)
 
     def __setstate__(self, v):
         self.uuid, self.bytes, value = v
