@@ -168,7 +168,8 @@ def get_task_memory(task):
     for r in task.resources:
         if r.name == 'mem':
             return r.scalar.value
-    return 0
+    logger.error("no memory in resource: %s", task.resources)
+    return 100 # 100M
 
 def safe(f):
     def _(self, *a, **kw):
@@ -213,6 +214,8 @@ class MyExecutor(mesos.Executor):
                     continue
 
                 offered = get_task_memory(task)
+                if not offered:
+                    continue
                 if rss > offered * 2:
                     logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
                             + "use -M argument to request more memory.", tid, rss, offered)
