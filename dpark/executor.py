@@ -13,7 +13,6 @@ import socket
 import urllib2
 import platform
 import zlib
-import psutil
 import gc
 
 import zmq
@@ -155,6 +154,7 @@ def start_forword(addr, prefix=''):
 
 def get_pool_memory(pool):
     try:
+        import psutil
         p = psutil.Process(pool._pool[0].pid)
         return p.get_memory_info()[0]
     except Exception:
@@ -181,6 +181,12 @@ class MyExecutor(mesos.Executor):
         self.lock = threading.RLock()
 
     def check_memory(self, driver):
+        try:
+            import psutil
+        except ImportError:
+            logger.error("no psutil module")
+            return
+
         mem_limit = {}
         while True:
             self.lock.acquire()
