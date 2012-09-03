@@ -471,6 +471,10 @@ class MesosScheduler(DAGScheduler):
         framework = mesos_pb2.FrameworkInfo()
         framework.user = getpass.getuser()
         framework.name = name
+
+        # ignore INFO and DEBUG log
+        os.environ['GLOG_logtostderr'] = '1'
+        os.environ['GLOG_minloglevel'] = '1'
         import mesos
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
