@@ -266,6 +266,15 @@ class MyExecutor(mesos.Executor):
             t = threading.Thread(target=self.check_memory, args=[driver])
             t.daemon = True
             t.start()
+           
+            # wait background threads to been initialized
+            time.sleep(0.1)
+            if out_logger:
+                os.close(1)
+                assert os.dup(sys.stdout.fileno()) == 1, 'redirect stdout failed'
+            if err_logger:
+                os.close(2)
+                assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
  
             logger.debug("executor started at %s", slaveInfo.hostname)
 
