@@ -158,6 +158,9 @@ class DparkContext(object):
         """ deprecated. """
         return self.textFile(path, cls=TextFileRDD, *args, **kwargs).fromCsv(dialect)
 
+    def binaryFile(self, path, fmt=None, length=None, *args, **kwargs):
+        return self.textFile(path, cls=BinaryFileRDD, fmt=fmt, length=length, *args, **kwargs)
+
     def union(self, rdds):
         return UnionRDD(self, rdds)
 

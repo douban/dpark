@@ -17,6 +17,7 @@ import logging
 from copy import copy
 import shutil
 import heapq
+import struct
 
 from serialize import load_func, dump_func
 from dependency import *
@@ -287,6 +288,9 @@ class RDD:
 
     def saveAsCSVFile(self, path, overwrite=True):
         return OutputCSVFileRDD(self, path, overwrite).collect()
+
+    def saveAsBinaryFile(self, path, fmt, overwrite=True):
+        return OutputBinaryFileRDD(self, path, fmt, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1224,6 +1228,48 @@ class MFSTextFileRDD(RDD):
             if start >= end: break
         f.close()
 
+class BinaryFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, fmt=None, length=None, numSplits=None, splitSize=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.fmt = fmt
+        if fmt:
+            length = struct.calcsize(fmt)
+        self.length = length
+        assert length, "fmt or length must been provided"
+
+        size = os.path.getsize(path)
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = self.DEFAULT_SPLIT_SIZE
+            else:
+                splitSize = size / numSplits
+        splitSize = max(splitSize / length, 1) * length
+        n = size / splitSize
+        if size % splitSize > 0:
+            n += 1
+        self.size = size
+        self.splitSize = splitSize
+        self.len = n
+
+    def __repr__(self):
+        return '<BinaryFileRDD(%s) %s>' % (self.fmt, self.path)
+
+    def compute(self, split):
+        start = split.index * self.splitSize
+        end = min(start + self.splitSize, self.size)
+
+        f = open(self.path, 'r', 4096 * 1024)
+        f.seek(start)
+        rlen = self.length
+        fmt = self.fmt
+        for i in xrange((end - start) / rlen):
+            d = f.read(rlen)
+            if len(d) < rlen: break
+            if fmt:
+                d = struct.unpack(fmt, d)
+            yield d
+
 
 class OutputTextFileRDD(RDD):
     def __init__(self, rdd, path, ext='', overwrite=False, compress=False):
@@ -1256,7 +1302,7 @@ class OutputTextFileRDD(RDD):
         return len(self.rdd)
 
     def __repr__(self):
-        return '<OutputTextFileRDD %s>' % self.path
+        return '<%s %s>' % (self.__class__, self.path)
 
     @property
     def splits(self):
@@ -1318,9 +1364,6 @@ class OutputTextFileRDD(RDD):
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
-    def __repr__(self):
-        return '<MultiOutputTextFileRDD %s>' % self.path
-   
     def compute(self, split):
         files, paths = {}, {}
         def get_file(key):
@@ -1375,9 +1418,6 @@ class OutputCSVFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, overwrite):
         OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
 
-    def __repr__(self):
-        return '<OutputCSVFileRDD %s>' % self.path
-
     def writedata(self, f, rows):
         writer = csv.writer(f)
         empty = True
@@ -1385,5 +1425,21 @@ class OutputCSVFileRDD(OutputTextFileRDD):
             if not isinstance(row, (tuple, list)):
                 row = (row,)
             writer.writerow(row)
+            empty = False
+        return not empty 
+
+        
+class OutputBinaryFileRDD(OutputTextFileRDD):
+    def __init__(self, rdd, path, fmt, overwrite):
+        OutputTextFileRDD.__init__(self, rdd, path, '.bin', overwrite)
+        self.fmt = fmt
+
+    def writedata(self, f, rows):
+        empty = True
+        for row in rows:
+            if isinstance(row, (tuple, list)):
+                f.write(struct.pack(self.fmt, *row))
+            else:
+                f.write(struct.pack(self.fmt, row))
             empty = False
         return not empty 
