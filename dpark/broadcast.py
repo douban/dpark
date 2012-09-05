@@ -7,7 +7,8 @@ import threading
 import logging
 import zlib
 import gzip
-from multiprocessing import Lock
+import gc
+
 try:
     from setproctitle import getproctitle, setproctitle
 except ImportError:
@@ -73,6 +74,7 @@ class Broadcast(object):
     MaxKnockInterval = 999
         
     def __init__(self, value, is_local):
+        assert value is not None, 'broadcast object should not been None'
         Broadcast.ever_used = True
         self.uuid = str(uuid.uuid4())
         self.value = value
@@ -85,9 +87,10 @@ class Broadcast(object):
 
     def clear(self):
         self.cache.put(self.uuid, None)
+        self.value = None
 
     def __getstate__(self):
-        return (self.uuid, self.bytes, self.bytes < self.BlockSize/2 and self.value or None)
+        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/2 else None)
 
     def __setstate__(self, v):
         self.uuid, self.bytes, value = v
@@ -239,9 +242,6 @@ class TreeBroadcast(FileBroadcast):
         Broadcast.clear(self)
         if not self.is_local:
             self.stopServer(self.guide_addr)
-            self.stopServer(self.serverAddr)
-            self.listOfSources = []
-            self.blocks = []
 
     def sendBroadcast(self):
         logger.debug("start sendBroadcast %s", self.uuid)
@@ -265,9 +265,11 @@ class TreeBroadcast(FileBroadcast):
            
             sources = {}
             while True:
-                addr = sock.recv_pyobj()
-                if addr == SourceInfo.StopBroadcast:
+                msg = sock.recv_pyobj()
+                if msg == SourceInfo.StopBroadcast:
+                    sock.send_pyobj(0)
                     break
+                addr = msg
                 # use the first one to recover
                 if addr in sources:
                     ssi = self.listOfSources[0]
@@ -297,10 +299,10 @@ class TreeBroadcast(FileBroadcast):
                 sources[addr].parents.append(ssi)                
 
             sock.close()
-            logger.debug("Sending stop notification ...")
-
+            logger.debug("Sending stop notification to %d servers ...", len(self.listOfSources))
             for source_info in self.listOfSources:
                 self.stopServer(source_info.addr)
+            self.listOfSources = []
             self.unregisterValue(self.uuid)
 
         t = threading.Thread(target=run)
@@ -350,9 +352,11 @@ class TreeBroadcast(FileBroadcast):
             logger.debug("server started at %s", self.serverAddr)
 
             while True:
-                id = sock.recv_pyobj()
-                if id == SourceInfo.StopBroadcast:
+                msg = sock.recv_pyobj()
+                if msg == SourceInfo.StopBroadcast:
+                    sock.send_pyobj(0)
                     break
+                id = msg
                 sock.send_pyobj(id < len(self.blocks) and self.blocks[id] or None)
 
             sock.close()
@@ -360,6 +364,8 @@ class TreeBroadcast(FileBroadcast):
 
             # clear cache
             self.cache.put(self.uuid, None)
+            self.blocks = []
+            self.value = None
 
         t = threading.Thread(target=run)
         t.daemon = True
@@ -376,7 +382,12 @@ class TreeBroadcast(FileBroadcast):
         req.setsockopt(zmq.LINGER, 0)
         req.connect(addr)
         req.send_pyobj(SourceInfo.StopBroadcast)
-        #req.recv_pyobj()
+        poller = zmq.Poller()
+        poller.register(req, zmq.POLLIN)
+        avail = dict(poller.poll(1 * 1000))
+        if avail and avail.get(req) == zmq.POLLIN:
+            req.recv_pyobj()
+        poller.unregister(req)
         req.close()
 
     def recvBroadcast(self):
@@ -428,31 +439,30 @@ class TreeBroadcast(FileBroadcast):
         sock.connect(source_info.addr)
         poller = zmq.Poller()
         poller.register(sock, zmq.POLLIN)
-        for i in range(len(self.blocks), source_info.total_blocks):
-            while True:
-                sock.send_pyobj(i)
-                avail = dict(poller.poll(3 * 1000))
-                if not avail or avail.get(sock) != zmq.POLLIN:
-                    logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
-                    poller.unregister(sock)
-                    sock.close()    
-                    return False
-                block = sock.recv_pyobj()
-                if block is not None:
-                    break
-                # not available
-                time.sleep(0.1)
+        try:
+            for i in range(len(self.blocks), source_info.total_blocks):
+                while True:
+                    sock.send_pyobj(i)
+                    avail = dict(poller.poll(3 * 1000))
+                    if not avail or avail.get(sock) != zmq.POLLIN:
+                        logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                        return False
+                    block = sock.recv_pyobj()
+                    if block is not None:
+                        break
+                    # not available
+                    time.sleep(0.1)
 
-            if not isinstance(block, BroadcastBlock) or i != block.id:
-                logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
-                poller.unregister(sock)
-                sock.close()    
-                return False
-            logger.debug("Received block: %s from %s", 
-                block.id, source_info.addr)
-            self.blocks.append(block)
-        poller.unregister(sock)
-        sock.close()    
+                if not isinstance(block, BroadcastBlock) or i != block.id:
+                    logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
+                    return False
+                logger.debug("Received block: %s from %s", 
+                    block.id, source_info.addr)
+                self.blocks.append(block)
+        finally:
+            poller.unregister(sock)
+            sock.close()
+
         return len(self.blocks) == source_info.total_blocks
 
     def getMasterAddr(self, uuid):

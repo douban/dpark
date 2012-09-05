@@ -471,6 +471,10 @@ class MesosScheduler(DAGScheduler):
         framework = mesos_pb2.FrameworkInfo()
         framework.user = getpass.getuser()
         framework.name = name
+
+        # ignore INFO and DEBUG log
+        os.environ['GLOG_logtostderr'] = '1'
+        os.environ['GLOG_minloglevel'] = '1'
         import mesos
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
@@ -560,7 +564,7 @@ class MesosScheduler(DAGScheduler):
         if not self.activeJobs:
             rf.refuse_seconds = 60 * 5
             for o in offers:
-                driver.declineOffer(o.id, rf)
+                driver.launchTasks(o.id, [], rf)
             return
 
         random.shuffle(offers)
@@ -608,10 +612,7 @@ class MesosScheduler(DAGScheduler):
         
         rf.refuse_seconds = 5
         for o in offers:
-            if o.id.value in tasks:
-                driver.launchTasks(o.id, tasks[o.id.value])
-            else:
-                driver.declineOffer(o.id, rf)
+            driver.launchTasks(o.id, tasks.get(o.id.value, []), rf)
 
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
             len(tasks), sum(cpus), sum(mems))

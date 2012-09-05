@@ -13,10 +13,13 @@ import socket
 import urllib2
 import platform
 import zlib
-import psutil
 import gc
 
 import zmq
+
+# ignore INFO and DEBUG log
+os.environ['GLOG_logtostderr'] = '1'
+os.environ['GLOG_minloglevel'] = '1'
 import mesos
 import mesos_pb2
 
@@ -173,6 +176,7 @@ def start_forword(addr, prefix=''):
 
 def get_pool_memory(pool):
     try:
+        import psutil
         p = psutil.Process(pool._pool[0].pid)
         return p.get_memory_info()[0]
     except Exception:
@@ -182,7 +186,8 @@ def get_task_memory(task):
     for r in task.resources:
         if r.name == 'mem':
             return r.scalar.value
-    return 0
+    logger.error("no memory in resource: %s", task.resources)
+    return 100 # 100M
 
 def safe(f):
     def _(self, *a, **kw):
@@ -199,6 +204,12 @@ class MyExecutor(mesos.Executor):
         self.lock = threading.RLock()
 
     def check_memory(self, driver):
+        try:
+            import psutil
+        except ImportError:
+            logger.error("no psutil module")
+            return
+
         mem_limit = {}
         while True:
             self.lock.acquire()
@@ -221,6 +232,8 @@ class MyExecutor(mesos.Executor):
                     continue
 
                 offered = get_task_memory(task)
+                if not offered:
+                    continue
                 if rss > offered * 2:
                     logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
                             + "use -M argument to request more memory.", tid, rss, offered)
@@ -271,6 +284,15 @@ class MyExecutor(mesos.Executor):
             t = threading.Thread(target=self.check_memory, args=[driver])
             t.daemon = True
             t.start()
+           
+            # wait background threads to been initialized
+            time.sleep(0.1)
+            if out_logger:
+                os.close(1)
+                assert os.dup(sys.stdout.fileno()) == 1, 'redirect stdout failed'
+            if err_logger:
+                os.close(2)
+                assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
  
             logger.debug("executor started at %s", slaveInfo.hostname)
 

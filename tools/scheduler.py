@@ -14,6 +14,10 @@ import signal
 import zmq
 import getpass
 
+# ignore INFO and DEBUG log
+os.environ['GLOG_logtostderr'] = '1'
+os.environ['GLOG_minloglevel'] = '1'
+
 import mesos
 import mesos_pb2
 
@@ -48,7 +52,7 @@ def safe(f):
     return _
 
 
-class SubmitScheduler(mesos.Scheduler):
+class SubmitScheduler(object, mesos.Scheduler):
     def __init__(self, options, command):
         self.framework = mesos_pb2.FrameworkInfo()
         self.framework.user = getpass.getuser()
@@ -65,6 +69,7 @@ class SubmitScheduler(mesos.Scheduler):
         self.refused = set()
         self.started = False
         self.stopped = False
+        self.status = 0
         self.next_try = 0
         self.lock = RLock()
 
@@ -228,9 +233,10 @@ class SubmitScheduler(mesos.Scheduler):
                     self.total_tasks.append(t) # try again
                 else:
                     logging.error("task %d failed with %d on %s", t.id, update.state, slave)
+                    self.stop(1)
 
             if not self.task_launched and not self.total_tasks:
-                self.stop(driver) # all done
+                self.stop(0)
 
     @safe
     def check(self, driver):
@@ -260,9 +266,9 @@ class SubmitScheduler(mesos.Scheduler):
         logging.error("Error from Mesos: %s (error code: %d)" % (message, code))
 
     @safe
-    def stop(self, driver):
+    def stop(self, status):
         self.stopped = True
-        driver.stop(False)
+        self.status = status
         logging.debug("scheduler stopped")
 
 
@@ -348,8 +354,7 @@ class MPIScheduler(SubmitScheduler):
                 self.task_launched.pop(tid)
             else:
                 logging.error("Task %s failed, cancel all tasks", tid)
-                self.stop(driver) # stop mpi, not recovable
-                sys.exit(1)
+                self.stop(1)
 
         elif update.state == mesos_pb2.TASK_FINISHED:
             if not self.started:
@@ -358,7 +363,7 @@ class MPIScheduler(SubmitScheduler):
 
             t = self.task_launched.pop(tid)
             if not self.task_launched:
-                self.stop(driver) # all done
+                self.stop(0)
 
     @safe
     def check(self, driver):
@@ -449,14 +454,12 @@ class MPIScheduler(SubmitScheduler):
         return slaves
 
     @safe
-    def stop(self, driver):
+    def stop(self, status):
         if self.started:
             self.p.wait()
             self.tout.join()
             self.terr.join()
-        driver.stop(False)
-        self.stopped = True
-        logging.debug("scheduler stopped")
+        super(MPIScheduler, self).stop(status)
 
 
 if __name__ == "__main__":
@@ -546,8 +549,7 @@ if __name__ == "__main__":
     driver.start()
     def handler(signm, frame):
         logging.warning("got signal %d, exit now", signm)
-        sched.stop(driver)
-        sys.exit(1)
+        sched.stop(3)
     signal.signal(signal.SIGTERM, handler)
     signal.signal(signal.SIGHUP, handler)
     signal.signal(signal.SIGABRT, handler)
@@ -572,9 +574,12 @@ if __name__ == "__main__":
 
             if now - start > options.timeout:
                 logging.warning("job timeout in %d seconds", options.timeout)
-                sched.stop(driver)
-                sys.exit(1)
+                sched.stop(2)
+                break
 
     except KeyboardInterrupt:
-        sched.stop(driver)
         logging.warning('stopped by KeyboardInterrupt')
+        sched.stop(4)
+    
+    driver.stop(False)
+    sys.exit(sched.status)
