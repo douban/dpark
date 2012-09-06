@@ -619,9 +619,9 @@ class MesosScheduler(DAGScheduler):
    
     @safe
     def offerRescinded(self, driver, offer_id):
-        logger.info("rescinded offer: %s", offer_id)
-        #if self.activeJobs:
-        #    self.requestMoreResources()
+        logger.debug("rescinded offer: %s", offer_id)
+        if self.activeJobs:
+            self.requestMoreResources()
 
     def getResource(self, res, name):
         for r in res:

@@ -98,17 +98,25 @@ class ReadableFile(File):
         self.reader = None
         self.generator = None
 
-    def seek(self, offset, length=0):
+    def seek(self, offset, whence=0):
+        if whence == 1:
+            offset = self.roff + offest
+        elif whence == 2:
+            offset = self.length + offset
+        assert offset >= 0, 'offset should greater than 0'
+
         off = offset - self.roff
         if off > 0 and off < len(self.rbuf):
             self.rbuf = self.rbuf[off:]
         else:
             self.rbuf = ''
+            self.reader = None
+        
         self.roff = offset
-        self.reader = None
         self.generator = None
-        if length > 0 and length < self.length:
-            self.length = length
+
+    def tell(self):
+        return self.roff
 
     def read(self, n):
         if n == -1:
@@ -191,21 +199,21 @@ class ReadableFile(File):
         return self
 
     def next(self):
-        if self.generator is not None:
+        line = ""
+        while not line or line[-1] != '\n':
+            if self.generator is None:
+                data = self.read(-1)
+                if not data:
+                    break
+                self.generator = StringIO(data)
+            
             try:
-                line = self.generator.next()
+                line += self.generator.next()
             except StopIteration:
                 self.generator = None
-                line = ""
-        else:
-            line = ""
 
-        while not line or line[-1] != '\n':
-            data = self.read(-1)
-            if not data:
-                break
-            self.generator = StringIO(data)
-            line += self.generator.next()
+        if not line:
+            raise StopIteration
         return line
 
     def close(self):

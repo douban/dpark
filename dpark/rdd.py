@@ -984,6 +984,13 @@ class ParallelCollection(RDD):
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
+def open_mfs_file(path):
+    rpath = os.path.realpath(path)
+    if rpath.startswith('/mfs/'):
+        return moosefs.mfsopen(rpath[4:], 'mfsmaster')
+    if rpath.startswith('/home2/'):
+        return moosefs.mfsopen(rpath[6:], 'mfsmaster2')
+
 class TextFileRDD(RDD):
 
     DEFAULT_SPLIT_SIZE = 64*1024*1024
@@ -991,7 +998,9 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        size = os.path.getsize(path)
+        self.fileinfo = open_mfs_file(path)
+        self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
+        
         if splitSize is None:
             if numSplits is None:
                 splitSize = self.DEFAULT_SPLIT_SIZE
@@ -1006,23 +1015,40 @@ class TextFileRDD(RDD):
     def __len__(self):
         return self.len
 
+    def __repr__(self):
+        return '<%s %s>' % (self.__class__, self.path)
+
     @property
     def splits(self):
         return [Split(i) for i in range(self.len)]
+    
+    def preferredLocations(self, split):
+        if not self.fileinfo:
+            return []
 
-    def __repr__(self):
-        return '<TextFileRDD %s>' % self.path
+        if self.splitSize != moosefs.CHUNKSIZE:
+            start = self.splitSize * split.index / moosefs.CHUNKSIZE
+            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
+            return sum((self.fileinfo.locs(i) for i in range(start, end)), [])
+        else:
+            return self.fileinfo.locs(split.index)
+
+    def open_file(self):
+        if self.fileinfo:
+            return moosefs.ReadableFile(self.fileinfo)
+        else:
+            return open(self.path, 'r', 4096 * 1024)
 
     def compute(self, split):
         if len(self) == 1 and split.index == 0:
-            return open(self.path, 'r', 4096 * 1024)
+            return self.open_file()
         return self.read(split)
 
     def read(self, split):
         start = split.index * self.splitSize
         end = start + self.splitSize
+        f = self.open_file() 
 
-        f = open(self.path, 'r', 4096 * 1024)
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
@@ -1031,22 +1057,17 @@ class TextFileRDD(RDD):
                 start += 1
 
         for line in f:
-            if start >= end: break
             start += len(line)
             yield line
+            if start >= end: break
         f.close()
-
 
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
-    DEFAULT_SPLIT_SIZE = 32<<20
     BLOCK_SIZE = 64 << 10
 
     def __init__(self, ctx, path, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, None, splitSize)
-
-    def __repr__(self):
-        return '<GZipFileRDD %s>' % self.path
 
     def find_block(self, f, pos):
         f.seek(pos)
@@ -1076,7 +1097,7 @@ class GZipFileRDD(TextFileRDD):
                 pass
 
     def compute(self, split):
-        f = open(self.path, 'rb', 4096 * 1024)
+        f = self.open_file()
         last_line = ''
         if split.index == 0:
             zf = gzip.GzipFile(fileobj=f)
@@ -1100,6 +1121,7 @@ class GZipFileRDD(TextFileRDD):
         end = self.find_block(f, split.index * self.splitSize + self.splitSize)
         f.seek(start)
         d = f.read(end - start)
+        assert len(d) == end-start, 'too short of read'
         f.close()
         if not d: return
 
@@ -1113,32 +1135,29 @@ class GZipFileRDD(TextFileRDD):
 
 class BZip2FileRDD(TextFileRDD):
     
-    DEFAULT_SPLIT_SIZE = 10*1024*1024
-    MAX_BLOCK_SIZE = 9000
+    DEFAULT_SPLIT_SIZE = 32*1024*1024
+    BLOCK_SIZE = 9000
 
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
-        self.magic = open(path).read(10)
-
-    def __repr__(self):
-        return '<BZip2FileRDD %s>' % self.path
 
     def compute(self, split):
-        f = open(self.path, 'r', 4096 * 1024)
+        f = self.open_file()
+        magic = f.read(10)
         f.seek(split.index * self.splitSize)
         d = f.read(self.splitSize)
-        fp = d.find(self.magic)
+        fp = d.find(magic)
         if fp > 0:
             d = d[fp:] # drop end of last block
 
         # real all the block    
-        nd = f.read(self.MAX_BLOCK_SIZE)
-        np = nd.find(self.magic)
+        nd = f.read(self.BLOCK_SIZE)
+        np = nd.find(magic)
         while nd and np < 0:
             t = f.read(len(nd))
             if not t: break
             nd += t
-            np = nd.find(self.magic)
+            np = nd.find(magic)
         d += nd[:np] if np >= 0 else nd
         f.close()
 
@@ -1165,91 +1184,25 @@ class BZip2FileRDD(TextFileRDD):
                     else:
                         last_line = line
 
-            np = d.find(self.magic, len(self.magic))
+            np = d.find(magic, len(magic))
             if np <= 0:
                 break
             d = d[np:]
 
 
-class MFSTextFileRDD(RDD):
-    def __init__(self, ctx, path, master, numSplits=None, splitSize=None):
-        RDD.__init__(self, ctx)
-        self.path = path
-        self.file = moosefs.mfsopen(path, master)
-        size = self.file.length
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = moosefs.CHUNKSIZE
-            else:
-                splitSize = size / numSplits
-        n = size / splitSize
-        if size % splitSize > 0:
-            n += 1
-        self.splitSize = splitSize
-        self.len = n
-
-    def __len__(self):
-        return self.len
-    
-    @property
-    def splits(self):
-        return [Split(i) for i in range(self.len)]
-
-    def preferredLocations(self, split):
-        if self.splitSize != moosefs.CHUNKSIZE:
-            start = self.splitSize * split.index / moosefs.CHUNKSIZE
-            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
-            return sum((self.file.locs(i) for i in range(start, end)), [])
-        else:
-            return self.file.locs(split.index)
-
-    def __repr__(self):
-        return '<TextFileRDD %s>' % self.path
-
-    def compute(self, split):
-        start = split.index * self.splitSize
-        end = start + self.splitSize
-        MAX_RECORD_LENGTH = 1<<20 # 1M
-
-        f = moosefs.ReadableFile(self.file)
-        if start > 0:
-            f.seek(start-1, end + MAX_RECORD_LENGTH)
-            byte = f.read(1)
-            while byte and byte != '\n':
-                byte = f.read(1)
-                start += 1
-        else:
-            f.seek(0, end + MAX_RECORD_LENGTH)
-
-        for line in f:
-            if not line: break
-            start += len(line)
-            yield line
-            if start >= end: break
-        f.close()
-
 class BinaryFileRDD(TextFileRDD):
     def __init__(self, ctx, path, fmt=None, length=None, numSplits=None, splitSize=None):
-        RDD.__init__(self, ctx)
-        self.path = path
+        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
         self.fmt = fmt
         if fmt:
             length = struct.calcsize(fmt)
         self.length = length
         assert length, "fmt or length must been provided"
 
-        size = os.path.getsize(path)
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = self.DEFAULT_SPLIT_SIZE
-            else:
-                splitSize = size / numSplits
-        splitSize = max(splitSize / length, 1) * length
-        n = size / splitSize
-        if size % splitSize > 0:
+        self.splitSize = max(self.splitSize / length, 1) * length
+        n = self.size / self.splitSize
+        if self.size % self.splitSize > 0:
             n += 1
-        self.size = size
-        self.splitSize = splitSize
         self.len = n
 
     def __repr__(self):
@@ -1259,7 +1212,7 @@ class BinaryFileRDD(TextFileRDD):
         start = split.index * self.splitSize
         end = min(start + self.splitSize, self.size)
 
-        f = open(self.path, 'r', 4096 * 1024)
+        f = self.open_file()
         f.seek(start)
         rlen = self.length
         fmt = self.fmt

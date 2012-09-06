@@ -12,6 +12,14 @@ TASK_FINISHED = 2
 TASK_FAILED   = 3
 TASK_KILLED   = 4
 TASK_LOST     = 5
+            
+def readable(size):
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    unit = 0
+    while size > 1024:
+        size /= 1024.0
+        unit += 1
+    return '%.1f%s' % (size, units[unit])
 
 class Job:
     def __init__(self):
@@ -190,6 +198,7 @@ class SimpleJob(Job):
         self.total_used += task.used
         logger.info("Task %s finished in %.1fs (%d/%d)",
             tid, task.used, self.tasksFinished, self.numTasks)
+
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
 
@@ -203,6 +212,12 @@ class SimpleJob(Job):
             logger.info("Job %d finished in %.1fs: min=%.1fs, avg=%.1fs, max=%.1fs, maxtry=%d",
                 self.id, time.time()-self.start, 
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
+            from accumulator import LocalReadBytes, RemoteReadBytes
+            lb, rb = LocalReadBytes.reset(), RemoteReadBytes.reset()
+            if rb > 0:
+                logger.info("read %s (%d%% localized)",  
+                    readable(lb+rb), lb*100/(rb+lb))
+
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):

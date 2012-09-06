@@ -100,11 +100,6 @@ class DparkContext(object):
                     return BZip2FileRDD(self, path, *ka, **kw)
                 elif path.endswith('.gz'):
                     return GZipFileRDD(self, path, *ka, **kw)
-                rpath = os.path.realpath(path)
-                if rpath.startswith('/mfs/'):
-                    return MFSTextFileRDD(self, rpath[4:], 'mfsmaster', *ka, **kw)
-                if rpath.startswith('/home2/'):
-                    return MFSTextFileRDD(self, rpath[6:], 'mfsmaster2', *ka, **kw)
             return cls(self, path, *ka, **kw)
 
         if os.path.isdir(path):
@@ -134,25 +129,6 @@ class DparkContext(object):
         "deprecated"
         logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
-
-    def mfsTextFile(self, path, master='mfsmaster', ext='', **kw):
-        import moosefs
-        f = moosefs.mfsopen(path, master)
-        if f.info.type == 'd':
-            paths = []
-            for root, dirs, names in moosefs.walk(path, master):
-                for n in names:
-                    if n.endswith(ext) and not n.startswith('.'):
-                        paths.append(os.path.join(root, n))
-                for d in dirs[:]:
-                    if d.startswith('.'):
-                        dirs.remove(d)
-
-            rdds = [MFSTextFileRDD(self, p, master, **kw) 
-                     for p in paths]
-            return self.union(rdds)
-        else:
-            return MFSTextFileRDD(self, path, master, **kw)
 
     def csvFile(self, path, dialect='excel', *args, **kwargs):
         """ deprecated. """

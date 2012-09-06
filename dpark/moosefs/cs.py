@@ -24,7 +24,7 @@ def read_chunk_from_local(chunkid, version, size, offset=0):
         raise ValueError("size too large %s > %s" % 
             (size, CHUNKSIZE-offset))
     
-    from dpark.accumulator import ReadBytes, LocalReadBytes
+    from dpark.accumulator import LocalReadBytes
     name = '%02X/chunk_%016X_%08X.mfs' % (chunkid & 0xFF, chunkid, version)
     for d in mfsdirs:
         p = os.path.join(d, name)
@@ -51,7 +51,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
         raise ValueError("size too large %s > %s" % 
             (size, CHUNKSIZE-offset))
     
-    from dpark.accumulator import ReadBytes, LocalReadBytes
+    from dpark.accumulator import RemoteReadBytes
 
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     conn.settimeout(10)
@@ -113,7 +113,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
                 if not data:
                     #print chunkid, version, offset, size, bsize, breq
                     raise IOError("unexpected ending: need %d" % breq)
-                ReadBytes.add(len(data))
+                RemoteReadBytes.add(len(data))
                 yield data
                 breq -= len(data)
 
