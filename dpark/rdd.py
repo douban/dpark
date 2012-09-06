@@ -21,17 +21,12 @@ import struct
 
 from serialize import load_func, dump_func
 from dependency import *
+from utils import ilen
 import shuffle
 from env import env
 import moosefs
 
 logger = logging.getLogger("rdd")
-
-def ilen(x):
-    try:
-        return len(x)
-    except TypeError:
-        return sum(1 for i in x)
 
 class Split:
     def __init__(self, idx):
@@ -1040,15 +1035,12 @@ class TextFileRDD(RDD):
             return open(self.path, 'r', 4096 * 1024)
 
     def compute(self, split):
+        f = self.open_file() 
         if len(self) == 1 and split.index == 0:
-            return self.open_file()
-        return self.read(split)
-
-    def read(self, split):
+            return f
+        
         start = split.index * self.splitSize
         end = start + self.splitSize
-        f = self.open_file() 
-
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
@@ -1056,6 +1048,19 @@ class TextFileRDD(RDD):
                 byte = f.read(1)
                 start += 1
 
+        if self.fileinfo:
+            # cut by end
+            if end < self.size:
+                f.seek(end-1)
+                while f.read(1) not in ('', '\n'):
+                    end += 1
+                f.length = end 
+            f.seek(start)
+            return f
+
+        return self.read(split)
+
+    def read(self, split, start, end):
         for line in f:
             start += len(line)
             yield line

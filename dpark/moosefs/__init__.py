@@ -73,9 +73,6 @@ class File(object):
         self.master = master
         self.cscache = {}
 
-    def __len__(self):
-        return (self.length + CHUNKSIZE - 1) / CHUNKSIZE
-
     def get_chunk(self, i):
         chunk = self.cscache.get(i)
         if not chunk:
@@ -194,27 +191,33 @@ class ReadableFile(File):
                     nerror += 1
 
         raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
-        
+    
     def __iter__(self):
-        return self
-
-    def next(self):
+        # TODO: speedup
         line = ""
-        while not line or line[-1] != '\n':
-            if self.generator is None:
-                data = self.read(-1)
-                if not data:
-                    break
-                self.generator = StringIO(data)
-            
-            try:
-                line += self.generator.next()
-            except StopIteration:
-                self.generator = None
+        while True:
+            data = self.read(-1)
+            if not data:
+                break
+            generator = StringIO(data)
+            assert '\n' not in line, line
+            line += generator.next()
+            if line.endswith('\n'):
+                yield line
+                line = ''
 
-        if not line:
-            raise StopIteration
-        return line
+                ll = list(generator)
+                if not ll: continue
+
+                for line in ll[:-1]:
+                    yield line
+                line = ll[-1]    
+                if line.endswith('\n'):
+                    yield line
+                    line = ''
+
+        if line:
+            yield line
 
     def close(self):
         self.roff = 0
