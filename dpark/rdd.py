@@ -1121,21 +1121,38 @@ class GZipFileRDD(TextFileRDD):
                     d = f.read(start - last_block)
                     dz = zlib.decompressobj(-zlib.MAX_WBITS)
                     last_line = dz.decompress(d).split('\n')[-1]
+                    if last_line.endswith('\n'):
+                        last_line = ''
                     break
 
         end = self.find_block(f, split.index * self.splitSize + self.splitSize)
+        # TODO: speed up
         f.seek(start)
-        d = f.read(end - start)
-        assert len(d) == end-start, 'too short of read'
-        f.close()
-        if not d: return
-
+        if self.fileinfo:
+            f.length = end
         dz = zlib.decompressobj(-zlib.MAX_WBITS)
-        io = cStringIO.StringIO(dz.decompress(d))
-        yield last_line + io.readline()
-        for line in io:
-            if line.endswith('\n'): # drop last line
+        while start < end:
+            d = f.read(min(64<<10, end-start))
+            start += len(d)
+            if not d: break
+
+            io = cStringIO.StringIO(dz.decompress(d))
+            
+            last_line += io.readline()
+            yield last_line
+            last_line = ''
+
+            ll = list(io)
+            if not ll: continue
+
+            last_line = ll.pop()
+            for line in ll:
                 yield line
+            if last_line.endswith('\n'):
+                yield last_line
+                last_line = ''
+
+        f.close()
 
 
 class BZip2FileRDD(TextFileRDD):
