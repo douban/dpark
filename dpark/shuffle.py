@@ -7,7 +7,6 @@ import struct
 import socket
 import time
 import cPickle
-import zlib as comp
 import gzip
 import threading
 import Queue
@@ -16,6 +15,7 @@ import platform
 
 import zmq
 
+from utils import decompress
 from env import env
 from cache import CacheTrackerServer, CacheTrackerClient
 
@@ -69,7 +69,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                 length, = struct.unpack("I", d[1:5])
                 if length != len(d):
                     raise IOError("length not match: expected %d, but got %d" % (length, len(d)))
-                d = comp.decompress(d[5:])
+                d = decompress(d[5:])
                 f.close()
                 if flag == 'm':
                     d = marshal.loads(d)

@@ -12,7 +12,6 @@ import shutil
 import socket
 import urllib2
 import platform
-import zlib
 import gc
 
 import zmq
@@ -23,13 +22,8 @@ os.environ['GLOG_minloglevel'] = '1'
 import mesos
 import mesos_pb2
 
-try:
-    from setproctitle import setproctitle
-except ImportError:
-    def setproctitle(s):
-        pass
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from utils import compress, decompress, getproctitle, setproctitle
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -67,7 +61,7 @@ def run_task(task, ntry):
             flag, data = 0, marshal.dumps(result)
         else:
             flag, data = 1, cPickle.dumps(result, -1)
-        data = zlib.compress(data, 1)
+        data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
@@ -300,7 +294,7 @@ class MyExecutor(mesos.Executor):
     @safe
     def launchTask(self, driver, task):
         try:
-            t, ntry = cPickle.loads(zlib.decompress(task.data))
+            t, ntry = cPickle.loads(decompress(task.data))
             
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             
