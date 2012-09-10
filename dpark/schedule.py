@@ -328,10 +328,6 @@ class DAGScheduler(Scheduler):
         return
 
     def getPreferredLocs(self, rdd, partition):
-        if rdd.shouldCache:
-            cached = self.getCacheLocs(rdd)[partition]
-            if cached:
-                return cached
         return rdd.preferredLocations(rdd.splits[partition])
 
 

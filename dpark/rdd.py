@@ -41,7 +41,7 @@ def cached(func):
         return d
     return getstate
 
-class RDD:
+class RDD(object):
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = RDD.newId()
@@ -86,13 +86,20 @@ class RDD:
     @property
     def partitioner(self):
         return self._partitioner
-    
-    def preferredLocations(self, split):
+
+    def _preferredLocations(self, split):
         return []
 
     def cache(self):
         #self.shouldCache = True
         return self
+
+    def preferredLocations(self, split):
+        if self.shouldCache:
+            locs = env.cacheTracker.getCachedLocs(self.id)
+            if locs:
+                return locs[split.index]
+        return self._preferredLocations(split)
 
     def snapshot(self, path=None):
         if path is None:
@@ -430,7 +437,7 @@ class MappedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
-    def preferredLocations(self, split): 
+    def _preferredLocations(self, split): 
         return self.prev.preferredLocations(split)
 
     def compute(self, split):
@@ -526,7 +533,7 @@ class GlommedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
-    def preferredLocations(self, split): 
+    def _preferredLocations(self, split): 
         return self.prev.preferredLocations(split)
 
     def compute(self, split):
@@ -554,7 +561,7 @@ class PipedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
-    def preferredLocations(self, split): 
+    def _preferredLocations(self, split): 
         return self.prev.preferredLocations(split)
 
     def compute(self, split):
@@ -685,7 +692,7 @@ class CartesianRDD(RDD):
     def __repr__(self):
         return '<cartesian %s and %s>' % (self.rdd1, self.rdd2)
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
 
     def compute(self, split):
@@ -749,7 +756,7 @@ class CoGroupedRDD(RDD):
     def __repr__(self):
         return self.name
 
-    def preferredLocations(self, split): 
+    def _preferredLocations(self, split): 
         return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
@@ -784,7 +791,7 @@ class SampleRDD(RDD):
     def __repr__(self):
         return '<SampleRDD(%s) of %s>' % (self.frac, self.prev)
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return self.prev.preferredLocations(split)
 
     def compute(self, split):
@@ -823,7 +830,7 @@ class UnionRDD(RDD):
     def __repr__(self):
         return self.name
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return split.rdd.preferredLocations(split.split)
 
     def compute(self, split):
@@ -846,7 +853,7 @@ class SliceRDD(RDD):
     def __repr__(self):
         return '<SliceRDD [%d:%d] of %s>' % (self.i, self.j, self.rdd)
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
     
     def compute(self, split):
@@ -879,7 +886,7 @@ class MergedRDD(RDD):
     def __repr__(self):
         return '<MergedRDD %s:1 of %s>' % (self.splitSize, self.rdd)
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return sum([self.rdd.preferredLocations(sp) for sp in split.splits], [])
 
     def compute(self, split):
@@ -901,7 +908,7 @@ class ZippedRDD(RDD):
     def __repr__(self):
         return '<Zipped %s>' % (','.join(str(rdd) for rdd in self.rdds))
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return sum([rdd.preferredLocations(sp) 
             for rdd,sp in zip(self.rdds, split.splits)], [])
 
@@ -927,7 +934,7 @@ class CSVReaderRDD(RDD):
     def splits(self):
         return self.rdd.splits
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
     
     def compute(self, split):
@@ -1006,6 +1013,7 @@ class TextFileRDD(RDD):
             n += 1
         self.splitSize = splitSize
         self.len = n
+        self._splits = [Split(i) for i in range(self.len)]
 
     def __len__(self):
         return self.len
@@ -1013,11 +1021,7 @@ class TextFileRDD(RDD):
     def __repr__(self):
         return '<%s %s>' % (self.__class__, self.path)
 
-    @property
-    def splits(self):
-        return [Split(i) for i in range(self.len)]
-    
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         if not self.fileinfo:
             return []
 
@@ -1283,7 +1287,7 @@ class OutputTextFileRDD(RDD):
     def splits(self):
         return self.rdd.splits
 
-    def preferredLocations(self, split):
+    def _preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
     
     def compute(self, split):

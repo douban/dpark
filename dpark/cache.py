@@ -199,6 +199,11 @@ class CacheTracker(object):
     def getLocationsSnapshot(self):
         return self.client.call(GetCacheLocations())
 
+    def getCachedLocs(self, rdd_id):
+        if self.isMaster:
+            return self.server.locs.get(rdd_id, [])
+        return self.client.call(GetCacheLocations()).get(rdd_id, [])
+
     def getOrCompute(self, rdd, split):
         key = "%s:%s" % (rdd.id, split.index)
         cachedVal = self.cache.get(key)
