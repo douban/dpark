@@ -228,9 +228,13 @@ class RDD(object):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
         return g.map(lambda (x,y):x)
 
-    def top(self, n=10, key=None):
-        def topk(it):
-            return heapq.nlargest(n, it, key)
+    def top(self, n=10, key=None, reverse=False):
+        if reverse: 
+            def topk(it):
+                return heapq.nsmallest(n, it, key)
+        else:
+            def topk(it):
+                return heapq.nlargest(n, it, key)
         return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
 
     def hot(self, n=10, numSplits=None):
@@ -418,6 +422,10 @@ class RDD(object):
             return list(self.ctx.runJob(self, process, [index], False))[0]
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
+
+    def asTable(self, fields):
+        from table import TableRDD
+        return TableRDD(self, fields)
 
 
 class MappedRDD(RDD):
