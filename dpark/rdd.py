@@ -578,21 +578,21 @@ class PipedRDD(RDD):
                 stdout=subprocess.PIPE, 
                 stderr=self.quiet and subprocess.PIPE or sys.stderr)
         def read(stdin):
-            it = self.prev.iterator(split)
-            if isinstance(it, list):
-                it = iter(it)
             try:
-                first = it.next()
-            except StopIteration:
+                it = self.prev.iterator(split)
+                # fetch the first item
+                for first in it:
+                    break
+                else:
+                    return
+                if isinstance(first, str) and first.endswith('\n'):
+                    stdin.write(first)
+                    stdin.writelines(it)
+                else:
+                    stdin.write("%s\n"%first)
+                    stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
+            finally:
                 stdin.close()
-                return
-            if isinstance(first, str) and first.endswith('\n'):
-                stdin.write(first)
-                stdin.writelines(it)
-            else:
-                stdin.write("%s\n"%first)
-                stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
-            stdin.close()
         threading.Thread(target=read, args=[p.stdin]).start()
         return p.stdout
 
