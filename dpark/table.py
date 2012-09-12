@@ -133,7 +133,15 @@ class TableRDD(DerivedRDD):
             r = r.groupBy(*[n.strip() for n in kw['group by'].split(',')])
 
         if 'select' in kw:
-            r = r.select(*[n.strip() for n in kw['select'].split(',')])
+            cols = []
+            named_cols = {}
+            for n in kw['select'].split(','):
+                cs = re.compile(r' as ', re.I).split(n)
+                if len(cs) > 1:
+                    named_cols[cs[1].strip()] = cs[0].strip()
+                else:
+                    cols.append(cs[0].strip())
+            r = r.select(*cols, **named_cols)
 
         if 'order by' in kw:
             keys = kw['order by']
@@ -143,7 +151,7 @@ class TableRDD(DerivedRDD):
                 keys = keys[:-5].strip()
             keys = [n.strip() for n in keys.split(',')]
             if 'limit' in kw:
-                return r.top(int(kw['limit']), keys, reverse)
+                return r.top(int(kw['limit']), keys, not reverse)
             r = r.sort(keys, reverse)
 
         if 'limit' in kw:
