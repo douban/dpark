@@ -334,25 +334,21 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def shutdown(self, driver):
-        print 'shutdown workdir', self.workdir
+        #sys.stdout = sys.stderr = open('/tmp/dpark_shutdown.log', 'a', 0)
+
+        #print time.time(), 'shutdown workdir', self.workdir
         for _, p in self.idle_workers:
             try: p.terminate()
             except: pass
         for p in self.busy_workers.values():
             try: p.terminate()
             except: pass
-        # flush
-        try:
-            sys.stdout.close()
-            sys.stderr.close()
-            self.outt.join()
-            self.errt.join()
-        except: pass
         
         # clean work files
-        if self.workdir:
-            try: shutil.rmtree(self.workdir, True)
-            except: pass
+        #print time.time(), 'clean', self.workdir
+        try: shutil.rmtree(self.workdir, True)
+        except: pass
+        #print time.time(), 'clean', self.workdir, 'done'
 
     def error(self, driver, code, message):
         logger.error("error: %s, %s", code, message)
