@@ -21,7 +21,7 @@ import struct
 
 from serialize import load_func, dump_func
 from dependency import *
-from utils import ilen
+from util import ilen
 import shuffle
 from env import env
 import moosefs

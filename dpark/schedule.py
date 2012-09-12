@@ -18,7 +18,7 @@ except ImportError:
     warnings.warn("no mesos module available, can not run in mesos mode",
         ImportWarning)
 
-from utils import compress, decompress
+from util import compress, decompress
 from dependency import NarrowDependency, ShuffleDependency 
 from accumulator import Accumulator
 from task import ResultTask, ShuffleMapTask

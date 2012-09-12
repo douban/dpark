@@ -9,7 +9,7 @@ import gc
 
 import zmq
 
-from utils import compress, decompress, getproctitle, setproctitle
+from util import compress, decompress, getproctitle, setproctitle
 import cache
 from serialize import marshalable
 from env import env

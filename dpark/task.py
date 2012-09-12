@@ -5,7 +5,7 @@ import cPickle
 import logging
 import struct
 
-from utils import compress, decompress
+from util import compress, decompress
 from serialize import marshalable, load_func, dump_func
 from shuffle import LocalFileShuffle
 

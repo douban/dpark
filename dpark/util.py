@@ -1,4 +1,4 @@
-# utils 
+# util 
 from zlib import compress as _compress, decompress
 
 def compress(s):

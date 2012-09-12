@@ -23,7 +23,7 @@ import mesos
 import mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from utils import compress, decompress, getproctitle, setproctitle
+from util import compress, decompress, getproctitle, setproctitle
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -242,7 +242,6 @@ class MyExecutor(mesos.Executor):
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
-            
             prefix = '[%s] ' % socket.gethostname()
             if out_logger:
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
