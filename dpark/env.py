@@ -27,26 +27,14 @@ class DparkEnv:
         if isMaster:
             if isLocal:
                 root = '/tmp/dpark'
-                self.dfs = True
-            elif os.environ.has_key('DPARK_SHARE_DIR'):
-                root = os.environ['DPARK_SHARE_DIR']
-                self.dfs = True
             elif os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
-                self.dfs = False
             elif os.path.exists('/data1/dpark'):
                 root = '/data1/dpark'
-                self.dfs = False
             else:
-                if os.path.exists('/home2/dpark'):
-                    root = '/home2/dpark'
-                elif os.path.exists('/mfs/tmp'):
-                    root = '/mfs/tmp/dpark'
-                else:
-                    root = '/tmp/dpark'
-                self.dfs = True
+                root = '/tmp/dpark'
 
-            if self.dfs and not os.path.exists(root):
+            if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
@@ -54,10 +42,8 @@ class DparkEnv:
             self.workdir = os.path.join(root, name)
             os.makedirs(self.workdir)
             self.environ['WORKDIR'] = self.workdir
-            self.environ['DPARK_HAS_DFS'] = str(self.dfs)
         else:
             self.environ.update(environ)
-            self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
 
         self.ctx = zmq.Context()
 

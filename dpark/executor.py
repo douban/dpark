@@ -69,9 +69,6 @@ def run_task(task, ntry):
             path = os.path.join(workdir, name) 
             f = open(path, 'w')
             f.write(data)
-            if env.dfs:
-                f.flush()
-                os.fsync(f.fileno())
             f.close()
             data = LocalFileShuffle.getServerUri() + '/' + name
             flag += 2
@@ -102,13 +99,15 @@ class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def startWebServer(path):
     # check the default web server
-    with open(os.path.join(path, 'test'), 'w') as f:
-        f.write('testdata')
+    testpath = os.path.join(path, 'test')
+    with open(testpath, 'w') as f:
+        f.write(path)
     default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
             os.path.basename(path))
     try:
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
-        if data == 'testdata':
+        os.remove(testpath)
+        if data == path:
             return default_uri
     except IOError, e:
         pass
@@ -251,11 +250,10 @@ class MyExecutor(mesos.Executor):
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
 
-            if args['DPARK_HAS_DFS'] != 'True':
-                self.workdir = args['WORKDIR']
-                if not os.path.exists(self.workdir):
-                    os.mkdir(self.workdir)
-                args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+            self.workdir = args['WORKDIR']
+            if not os.path.exists(self.workdir):
+                os.mkdir(self.workdir)
+            args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
             t = threading.Thread(target=self.check_memory, args=[driver])
             t.daemon = True
@@ -336,6 +334,7 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def shutdown(self, driver):
+        print 'shutdown workdir', self.workdir
         for _, p in self.idle_workers:
             try: p.terminate()
             except: pass
