@@ -350,6 +350,8 @@ class MyExecutor(mesos.Executor):
         except: pass
         #print time.time(), 'clean', self.workdir, 'done'
 
+        os._exit(0)
+
     def error(self, driver, code, message):
         logger.error("error: %s, %s", code, message)
 
