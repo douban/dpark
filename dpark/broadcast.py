@@ -137,7 +137,7 @@ class Broadcast(object):
         return vi
 
     def unBlockifyObject(self, blocks):
-        s = decompress(''.join(b for b in blocks))
+        s = decompress(''.join(b.data for b in blocks))
         try:
             return marshal.loads(s)
         except Exception :
