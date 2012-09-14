@@ -196,8 +196,10 @@ class SimpleJob(Job):
         task = self.tasks[i]
         task.used += time.time() - task.start
         self.total_used += task.used
-        logger.info("Task %s finished in %.1fs (%d/%d)",
-            tid, task.used, self.tasksFinished, self.numTasks)
+        title = "Job %d: task %s finished in %.1fs (%d/%d)" % (self.id, tid,
+                task.used, self.tasksFinished, self.numTasks)
+        logger.info("Task %s finished in %.1fs (%d/%d)\x1b]2;%s\x07\x1b[1A",
+             self.id, tid, task.used, self.tasksFinished, self.numTasks, title)
 
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
