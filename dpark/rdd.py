@@ -108,7 +108,8 @@ class RDD(object):
             ident = '%d_%x' % (self.id, hash(str(self)))
             path = os.path.join(path, ident)
             if not os.path.exists(path):
-                os.makedirs(path)
+                try: os.makedirs(path)
+                except OSError: pass
             self.snapshot_path = path
         return self
 

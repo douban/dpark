@@ -38,7 +38,8 @@ class LocalFileShuffle:
     def getOutputFile(cls, shuffleId, inputId, outputId):
         path = os.path.join(cls.shuffleDir, str(shuffleId), str(inputId))
         if not os.path.exists(path):
-            os.makedirs(path)
+            try: os.makedirs(path)
+            except OSError: pass
         return os.path.join(path, str(outputId))
 
     @classmethod
