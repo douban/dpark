@@ -25,12 +25,8 @@ class DparkEnv:
                 isMaster, environ)
         self.isMaster = isMaster
         if isMaster:
-            if isLocal:
-                root = '/tmp/dpark'
-            elif os.environ.has_key('DPARK_WORK_DIR'):
+            if os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
-            elif os.path.exists('/data1/dpark'):
-                root = '/data1/dpark'
             else:
                 root = '/tmp/dpark'
 
