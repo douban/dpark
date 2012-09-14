@@ -440,6 +440,7 @@ class MesosScheduler(DAGScheduler):
         self.logLevel = options.logLevel
         self.options = options
         self.isRegistered = False
+        self.executor = None
         self.driver = None
         self.lock = threading.RLock()
         self.init_job()
@@ -460,7 +461,6 @@ class MesosScheduler(DAGScheduler):
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
         self.err_logger = self.start_logger(sys.stderr)
-        self.executor = self.getExecutorInfo()
 
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
@@ -501,6 +501,7 @@ class MesosScheduler(DAGScheduler):
         logger.debug("connect to master %s:%s(%s), registered as %s", 
             int2ip(masterInfo.ip), masterInfo.port, masterInfo.id, 
             frameworkId.value)
+        self.executor = self.getExecutorInfo(str(frameworkId.value))
 
     @safe
     def reregistered(self, driver, masterInfo):
@@ -515,8 +516,10 @@ class MesosScheduler(DAGScheduler):
         logger.warning("executor %s is lost at %s", executorId.value, slaveId.value)
 
     @safe
-    def getExecutorInfo(self):
+    def getExecutorInfo(self, framework_id):
         info = mesos_pb2.ExecutorInfo()
+        if hasattr(info, 'framework_id'):
+            info.framework_id.value = framework_id
 
         if self.use_self_as_exec:
             info.command.value = os.path.abspath(sys.argv[0])

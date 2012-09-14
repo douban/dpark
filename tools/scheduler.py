@@ -54,6 +54,7 @@ def safe(f):
 
 class SubmitScheduler(object, mesos.Scheduler):
     def __init__(self, options, command):
+        self.framework_id = None
         self.framework = mesos_pb2.FrameworkInfo()
         self.framework.user = getpass.getuser()
         self.framework.name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
@@ -79,6 +80,8 @@ class SubmitScheduler(object, mesos.Scheduler):
         execInfo = mesos_pb2.ExecutorInfo()
         execInfo.executor_id.value = "default"
         execInfo.command.value = executorPath
+        if hasattr(execInfo, 'framework_id'):
+            execInfo.framework_id.value = str(self.framework_id)
         return execInfo
 
     def create_port(self, output):
@@ -99,7 +102,7 @@ class SubmitScheduler(object, mesos.Scheduler):
     @safe
     def registered(self, driver, fid, masterInfo):
         logging.debug("Registered with Mesos, FID = %s" % fid.value)
-        self.fid = fid.value
+        self.framework_id = fid.value
         self.std_port = self.create_port(sys.stdout)
         self.err_port = self.create_port(sys.stderr)
 
