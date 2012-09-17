@@ -107,7 +107,7 @@ class DAGScheduler(Scheduler):
     def __init__(self):
         self.completionEvents = Queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
-        self.shuffleToMapStage = weakref.WeakValueDictionary()
+        self.shuffleToMapStage = {}
         self.cacheLocs = {}
         self._shutdown = False
 
@@ -215,7 +215,7 @@ class DAGScheduler(Scheduler):
         logger.debug("Final stage: %s, %d", finalStage, numOutputParts)
         logger.debug("Parents of final stage: %s", finalStage.parents)
         logger.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
-       
+      
         if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
             yield func(finalRdd.iterator(split))
