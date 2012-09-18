@@ -7,8 +7,11 @@ import itertools
 import msgpack
 
 from rdd import DerivedRDD
-from dependency import OneToOneDependency
+from dependency import Aggregator, OneToOneDependency
 
+Aggs = {
+    'sum': lambda x,y: x+y,
+}
 
 class TableRDD(DerivedRDD):
     def __init__(self, rdd, fields):
@@ -21,9 +24,7 @@ class TableRDD(DerivedRDD):
 
     def iterator(self, split):
         cls = namedtuple(self.name, self.fields)
-        def f(v):
-            return cls(*v)
-        return itertools.imap(f, super(TableRDD, self).iterator(split))
+        return itertools.imap(lambda x:cls(*x), super(TableRDD, self).iterator(split))
 
     def compute(self, split):
         return self.prev.iterator(split)
@@ -31,14 +32,19 @@ class TableRDD(DerivedRDD):
     def _create_selector(self, e):
         if callable(e): 
             return e
+        e = re.compile(r' as (\w+)', re.I).split(e)[0]
         for i,n in enumerate(self.fields):
             e = re.sub(r'%s'%n, '_v[%d]' % i, e)
         return eval('lambda _v:' + e, globals())
 
+    def _create_field_name(self, e):
+        asp = re.compile(r' as (\w+)', re.I)
+        m = asp.search(e)
+        if m: return m.group(1)
+        return re.sub(r'[(, )+*/\-]', '_', e).strip('_') 
+
     def select(self, *fields, **named_fields):
-        def parser_name(e):
-            return re.sub(r'[(, )+*/\-]', '_', e).strip('_') 
-        new_fields = [parser_name(e) for e in fields] + named_fields.keys()
+        new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
         
@@ -50,6 +56,53 @@ class TableRDD(DerivedRDD):
         need_attr = any(callable(f) for f in named_fields.values())
         return (need_attr and self or self.prev).map(_select).asTable(new_fields)
 
+    def _create_reducer(self, index, e):
+        """ -> creater, merger, combiner"""
+        if '(' not in e:
+            e = '(%s)' % e
+
+        func_name, args = e.split('(', 1)
+        if func_name == 'count':
+            return '1', '_x[%d] + 1' % index, '_x[%d] + _y[%d]' % (index, index)
+
+        args = args.rsplit(')', 1)[0]
+        for i,n in enumerate(self.fields):
+            args = re.sub(n, '_v[%d]' % i, args)
+        
+        if func_name:
+            return (args, '%s(_x[%d],%s)' % (func_name, index, args),
+                '%s(_x[%d],_y[%d])' % (func_name, index, index))
+        else: # group by
+            return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index), 
+                    '_x[%d] + _y[%d]' % (index, index))
+
+    def selectOne(self, *fields, **named_fields):
+        new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
+        if len(set(new_fields)) != len(new_fields):
+            raise Exception("dupicated fields: " + (','.join(new_fields)))
+        
+        codes = ([self._create_reducer(i, e) for i,e in enumerate(fields)]
+              + [self._create_reducer(i + len(fields), named_fields[n]) 
+                    for i,n in enumerate(new_fields[len(fields):])])
+        
+        d = dict(globals())
+        d.update(Aggs)
+        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
+        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
+        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
+
+        def reducePartition(it):
+            r = None
+            iter(it)
+            for i in it:
+                if r is None:
+                    r = creater(i)
+                else:
+                    r = merger(r, i)
+            return r
+        rs = self.ctx.runJob(self.prev, reducePartition)
+        return reduce(combiner, (x for x in rs if x is not None)) 
+
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
         conditions = [self._create_selector(c) for c in conditions]
@@ -57,27 +110,27 @@ class TableRDD(DerivedRDD):
             return all(c(v) for c in conditions)
         return (need_attr and self or self.prev).filter(_filter).asTable(self.fields)
 
-    def groupBy(self, *fields, **kw):
-        keys = [self.fields.index(n) for n in fields]
-        others = [i for i in range(len(self.fields)) 
-            if self.fields[i] not in fields]
-        def gen_key(v):
-            return tuple(v[k] for k in keys)
-        def gen_others(v):
-            return tuple(v[k] for k in others)
+    def groupBy(self, *keys, **kw):
+        numSplits = kw.pop('numSplits', None)
         
-        numSplits = kw.get('numSplits', None)
-        g = self.prev.map(lambda v:(gen_key(v), gen_others(v))).groupByKey(numSplits)
+        key_names = [self._create_field_name(e) for e in keys] 
+        selector = [self._create_selector(e) for e in keys]
+        def gen_key(v):
+            return tuple(s(v) for s in selector)
 
-        def swap(ll):
-            r = [[] for i in range(len(ll[0]))]
-            for l in ll:
-                for i,v in enumerate(l):
-                    r[i].append(v)
-            return r
+        if not kw:
+            kw.update((k,k) for k in self.fields if k not in keys)
+        values = kw.keys()
+        codes = [self._create_reducer(i, kw[n]) for i,n in enumerate(values)]
+        d = dict(globals())
+        d.update(Aggs)
+        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
+        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
+        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
 
-        new_fields = [self.fields[i] for i in keys+others]
-        return g.map(lambda (k,v): tuple(list(k)+swap(v))).asTable(new_fields)
+        agg = Aggregator(creater, merger, combiner) 
+        g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
+        return g.map(lambda (k,v): list(k)+list(v)).asTable(key_names + values)
 
     def sort(self, fields, reverse=False, numSplits=None):
         if isinstance(fields, str):
@@ -114,18 +167,14 @@ class TableRDD(DerivedRDD):
             r = r.where(kw['where'])
 
         if 'group by' in kw:
-            r = r.groupBy(*[n.strip() for n in kw['group by'].split(',')])
+            keys = [n.strip() for n in kw['group by'].split(',')]
+            values = [n.strip() for n in kw['select'].split(',')]
+            values = dict([(self._create_field_name(n), n) for n in values if n not in keys])
+            r = r.groupBy(*keys, **values)
 
-        if 'select' in kw:
-            cols = []
-            named_cols = {}
-            for n in kw['select'].split(','):
-                cs = re.compile(r' as ', re.I).split(n)
-                if len(cs) > 1:
-                    named_cols[cs[1].strip()] = cs[0].strip()
-                else:
-                    cols.append(cs[0].strip())
-            r = r.select(*cols, **named_cols)
+        elif 'select' in kw:
+            cols = kw['select'].split(',')
+            r = r.select(*cols)
 
         if 'order by' in kw:
             keys = kw['order by']
@@ -149,7 +198,9 @@ def test():
     rdd = ctx.makeRDD(zip(range(1000), range(1000)))
     table = rdd.asTable(['f1', 'f2']) 
     print table.select('f1', 'f2').where('f1>10', 'f2<80', 'f1+f2>30 or f1*f2>200').groupBy('f1').select("-f1", f2="sum(f2)").sort('f1', reverse=True).take(5)
-    print table.execute('select -f1, sum(f2) from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by f1 limit 5')
+    print table.selectOne('count(*)', 'max(f1)', 'min(f2+f1)', 'sum(f1*f2+f1)')
+    print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)
+    print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
     #where(lambda x:x.f1>10, lambda v:v.f2<80
     #    ).groupBy('f1').select(f1=lambda x:-x, f2=sum).sort('f1').take(5)
 
