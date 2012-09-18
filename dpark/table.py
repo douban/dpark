@@ -6,24 +6,8 @@ import itertools
 
 import msgpack
 
-from rdd import RDD
+from rdd import DerivedRDD
 from dependency import OneToOneDependency
-
-class DerivedRDD(RDD):
-    def __init__(self, rdd):
-        RDD.__init__(self, rdd.ctx)
-        self.prev = rdd
-        self.dependencies = [OneToOneDependency(rdd)]
-
-    def __len__(self):
-        return len(self.prev)
-
-    @property
-    def splits(self):
-        return self.prev.splits
-
-    def _preferredLocations(self, split):
-        return self.prev.preferredLocations(split)
 
 
 class TableRDD(DerivedRDD):
@@ -39,7 +23,7 @@ class TableRDD(DerivedRDD):
         cls = namedtuple(self.name, self.fields)
         def f(v):
             return cls(*v)
-        return itertools.imap(f, RDD.iterator(self, split))
+        return itertools.imap(f, super(TableRDD, self).iterator(split))
 
     def compute(self, split):
         return self.prev.iterator(split)

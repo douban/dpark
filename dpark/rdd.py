@@ -429,13 +429,12 @@ class RDD(object):
         return TableRDD(self, fields)
 
 
-class MappedRDD(RDD):
-    def __init__(self, prev, func=lambda x:x):
-        RDD.__init__(self, prev.ctx)
-        self.prev = prev
-        self.func = func
-        self.dependencies = [OneToOneDependency(prev)]
-    
+class DerivedRDD(RDD):
+    def __init__(self, rdd):
+        RDD.__init__(self, rdd.ctx)
+        self.prev = rdd
+        self.dependencies = [OneToOneDependency(rdd)]
+
     def __len__(self):
         return len(self.prev)
 
@@ -446,9 +445,15 @@ class MappedRDD(RDD):
     def splits(self):
         return self.prev.splits
 
-    def _preferredLocations(self, split): 
+    def _preferredLocations(self, split):
         return self.prev.preferredLocations(split)
 
+
+class MappedRDD(DerivedRDD):
+    def __init__(self, prev, func=lambda x:x):
+        DerivedRDD.__init__(self, prev)
+        self.func = func
+    
     def compute(self, split):
         if self.err < 1e-8:
             return itertools.imap(self.func, self.prev.iterator(split))
@@ -529,22 +534,7 @@ class FilteredRDD(MappedRDD):
         if err > total * self.err:
             raise Exception("too many error occured: %s" % (float(err)/total))
            
-class GlommedRDD(RDD):
-    def __init__(self, prev):
-        RDD.__init__(self, prev.ctx)
-        self.prev = prev
-        self.dependencies = [OneToOneDependency(prev)]
-
-    def __len__(self):
-        return len(self.prev)
-
-    @property
-    def splits(self):
-        return self.prev.splits
-
-    def _preferredLocations(self, split): 
-        return self.prev.preferredLocations(split)
-
+class GlommedRDD(DerivedRDD):
     def compute(self, split):
         yield self.prev.iterator(split)
 
@@ -552,26 +542,14 @@ class MapPartitionsRDD(MappedRDD):
     def compute(self, split):
         return self.func(self.prev.iterator(split))
 
-class PipedRDD(RDD):
+class PipedRDD(DerivedRDD):
     def __init__(self, prev, command, quiet=False):
-        RDD.__init__(self, prev.ctx)
-        self.prev = prev
+        DerivedRDD.__init__(self, prev)
         self.command = command
         self.quiet = quiet
-        self.dependencies = [OneToOneDependency(prev)]
-
-    def __len__(self):
-        return len(self.prev)
 
     def __repr__(self):
         return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
-
-    @property
-    def splits(self):
-        return self.prev.splits
-
-    def _preferredLocations(self, split): 
-        return self.prev.preferredLocations(split)
 
     def compute(self, split):
         import subprocess
@@ -660,7 +638,7 @@ class ShuffledRDD(RDD):
         self.name = '<ShuffledRDD %s>' % self.parent
 
     def __len__(self):
-        return self._partitioner.numPartitions
+        return self.partitioner.numPartitions
 
     def __repr__(self):
         return self.name
@@ -745,7 +723,7 @@ class CoGroupedRDD(RDD):
         RDD.__init__(self, rdds[0].ctx)
         self.len = len(rdds)
         self.aggregator = CoGroupAggregator()
-        self.partitioner = partitioner
+        self._partitioner = partitioner
         self.dependencies = dep = [rdd.partitioner == partitioner
                 and OneToOneDependency(rdd)
                 or ShuffleDependency(self.ctx.newShuffleId(), 
@@ -781,27 +759,15 @@ class CoGroupedRDD(RDD):
         return m
         
 
-class SampleRDD(RDD):
+class SampleRDD(DerivedRDD):
     def __init__(self, prev, frac, withReplacement, seed):
-        RDD.__init__(self, prev.ctx)
-        self.prev = prev
+        DerivedRDD.__init__(self, prev)
         self.frac = frac
         self.withReplacement = withReplacement
         self.seed = seed
-        self.dependencies = [OneToOneDependency(prev)]
-
-    def __len__(self):
-        return len(self.prev)
-
-    @property
-    def splits(self):
-        return self.prev.splits
 
     def __repr__(self):
         return '<SampleRDD(%s) of %s>' % (self.frac, self.prev)
-
-    def _preferredLocations(self, split):
-        return self.prev.preferredLocations(split)
 
     def compute(self, split):
         rd = random.Random(self.seed + split.index)
@@ -926,26 +892,14 @@ class ZippedRDD(RDD):
             for rdd, sp in zip(self.rdds, split.splits)])
 
 
-class CSVReaderRDD(RDD):
-    def __init__(self, rdd, dialect='excel'):
-        RDD.__init__(self, rdd.ctx)
-        self.rdd = rdd
+class CSVReaderRDD(DerivedRDD):
+    def __init__(self, prev, dialect='excel'):
+        DerivedRDD.__init__(self, prev)
         self.dialect = dialect
-        self.dependencies = [OneToOneDependency(rdd)]
     
-    def __len__(self):
-        return len(self.rdd)
-
     def __repr__(self):
-        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.rdd)
+        return '<CSVReaderRDD %s of %s>' % (self.dialect, self.prev)
 
-    @property
-    def splits(self):
-        return self.rdd.splits
-
-    def _preferredLocations(self, split):
-        return self.rdd.preferredLocations(split)
-    
     def compute(self, split):
         return csv.reader(self.rdd.iterator(split), self.dialect)
 
@@ -1259,7 +1213,7 @@ class BinaryFileRDD(TextFileRDD):
             yield d
 
 
-class OutputTextFileRDD(RDD):
+class OutputTextFileRDD(DerivedRDD):
     def __init__(self, rdd, path, ext='', overwrite=False, compress=False):
         if os.path.exists(path):
             if not os.path.isdir(path):
@@ -1274,8 +1228,7 @@ class OutputTextFileRDD(RDD):
         else:
             os.makedirs(path)
 
-        RDD.__init__(self, rdd.ctx)
-        self.rdd = rdd
+        DerivedRDD.__init__(self, rdd)
         self.path = os.path.abspath(path)
         if ext and not ext.startswith('.'):
             ext = '.' + ext
@@ -1284,21 +1237,10 @@ class OutputTextFileRDD(RDD):
         self.ext = ext
         self.overwrite = overwrite
         self.compress = compress
-        self.dependencies = [OneToOneDependency(rdd)]
-
-    def __len__(self):
-        return len(self.rdd)
 
     def __repr__(self):
         return '<%s %s>' % (self.__class__, self.path)
 
-    @property
-    def splits(self):
-        return self.rdd.splits
-
-    def _preferredLocations(self, split):
-        return self.rdd.preferredLocations(split)
-    
     def compute(self, split):
         path = os.path.join(self.path, 
             "%04d%s" % (split.index, self.ext))
@@ -1313,9 +1255,9 @@ class OutputTextFileRDD(RDD):
             time.sleep(1) # there are dir cache in mfs for 1 sec
             f = open(tpath,'w', 4096 * 1024 * 16)
         if self.compress:
-            have_data = self.write_compress_data(f, self.rdd.iterator(split))
+            have_data = self.write_compress_data(f, self.prev.iterator(split))
         else:    
-            have_data = self.writedata(f, self.rdd.iterator(split))
+            have_data = self.writedata(f, self.prev.iterator(split))
         f.close()
         if have_data and not os.path.exists(path):
             os.rename(tpath, path)
@@ -1376,7 +1318,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
             return f
        
         sizes = {}
-        for k, v in self.rdd.iterator(split):
+        for k, v in self.prev.iterator(split):
             f = get_file(k)
             f.write(v)
             if not v.endswith('\n'):
