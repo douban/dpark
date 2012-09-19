@@ -11,7 +11,7 @@ try:
 except ImportError:    
     try:
         from snappy import compress, decompress
-         COMPRESS = 'snappy'
+        COMPRESS = 'snappy'
     except ImportError:
         pass
 
