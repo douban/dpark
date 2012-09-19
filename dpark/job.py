@@ -280,6 +280,7 @@ class SimpleJob(Job):
                 self.tasksLaunched -= 1
 
         if self.tasksFinished > self.numTasks / 3:
+            scale = 1.0 * self.numTasks / self.tasksFinished
             avg = self.taskEverageTime
             tasks = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
@@ -287,7 +288,7 @@ class SimpleJob(Job):
             for _t, idx, task in tasks:
                 used = now - task.start
                 #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
-                if used > avg * (task.tried + 1) and used > 30:
+                if used > avg * (task.tried + 1) * scale and used > 30:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
                         logger.warning("re-submit task %s for timeout %.1f, try %d",
