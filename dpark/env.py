@@ -48,13 +48,19 @@ class DparkEnv:
 
         self.ctx = zmq.Context()
 
-        from cache import CacheTracker
-        self.cacheTracker = CacheTracker(isMaster)
-        
-        from shuffle import LocalFileShuffle, MapOutputTracker
-        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
+        from cache import CacheTracker, LocalCacheTracker
+        if isLocal:
+            self.cacheTracker = LocalCacheTracker(isMaster)
+        else:
+            self.cacheTracker = CacheTracker(isMaster)
+
+        from shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
         LocalFileShuffle.initialize(isMaster)
-        self.mapOutputTracker = MapOutputTracker(isMaster)
+        if isLocal:
+            self.mapOutputTracker = LocalMapOutputTracker(isMaster)
+        else:
+            self.mapOutputTracker = MapOutputTracker(isMaster)
+        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 

@@ -95,9 +95,9 @@ class GetCacheLocations(CacheTrackerMessage):pass
 class StopCacheTracker(CacheTrackerMessage):pass
 
 class CacheTrackerServer(object):
-    def __init__(self):
+    def __init__(self, locs):
         self.addr = None
-        self.locs = {}
+        self.locs = locs
 
     def start(self):
         self.t = threading.Thread(target=self.run)
@@ -105,9 +105,6 @@ class CacheTrackerServer(object):
         self.t.start()
         while self.addr is None:
             time.sleep(0.01)
-
-    def clear(self):
-        self.locs.clear()
 
     def stop(self):
         sock = env.ctx.socket(zmq.REQ)
@@ -132,7 +129,8 @@ class CacheTrackerServer(object):
                 locs[msg.rddId][msg.partition].append(msg.host)
                 reply('OK')
             elif isinstance(msg, DroppedFromCache):
-                locs[msg.rddId][msg.partition].remove(msg.host)
+                if 'msg.host' in locs[msg.rddId][msg.partition]:
+                    locs[msg.rddId][msg.partition].remove(msg.host)
                 reply('OK')
             elif isinstance(msg, MemoryCacheLost):
                 for k,v in locs.iteritems():
@@ -166,17 +164,63 @@ class CacheTrackerClient:
         self.sock.close()
         #logger.debug("stop %s", self.__class__)
 
-class CacheTracker(object):
+class LocalCacheTracker(object):
     def __init__(self, isMaster):
         self.isMaster = isMaster
-        self.registeredRddIds = set()
+        self.locs = {}
+        self.cache = Cache()
+
+    def clear(self):
+        self.cache.clear()
+
+    def registerRDD(self, rddId, numPartitions):
+        if rddId not in self.locs:
+            logger.debug("Registering RDD ID %d with cache", rddId)
+            self.locs[rddId] = [[] for i in range(numPartitions)]
+    
+    def getLocationsSnapshot(self):
+        return self.locs
+
+    def getCachedLocs(self, rdd_id):
+        return self.locs[rdd_id]
+
+    def addHost(self, rdd_id, index, host):
+        self.locs[rdd_id][index].append(host)
+
+    def removeHost(self, rdd_id, index, host):
+        if host in self.locs[rdd_id][index]:
+            self.locs[rdd_id][index].remove(host)
+
+    def getOrCompute(self, rdd, split):
+        key = "%s:%s" % (rdd.id, split.index)
+        cachedVal = self.cache.get(key)
+        if cachedVal is not None:
+            logger.debug("Found partition in cache! %s", key)
+            return cachedVal
+        
+        logger.debug("partition not in cache, %s", key)
+        self.removeHost(rdd.id, split.index, host)
+        r = list(rdd.compute(split))
+        self.cache.put(key, r)
+        
+        host = socket.gethostname()
+        self.addHost(rdd.id, split.index, host)
+        return r
+
+    def stop(self):
+        pass
+
+
+class CacheTracker(LocalCacheTracker):
+    def __init__(self, isMaster):
+        LocalCacheTracker.__init__(self, isMaster)
         if isMaster:
             self.cache = Cache()
         else:
             self.cache = LocalCache(mmapCache).newKeySpace()
 
         if isMaster:
-            self.server = CacheTrackerServer()
+            self.server = CacheTrackerServer(self.locs)
             self.server.start()
             addr = self.server.addr
             env.register('CacheTrackerAddr', addr)
@@ -185,43 +229,11 @@ class CacheTracker(object):
 
         self.client = CacheTrackerClient(addr)
 
-    def clear(self):
-        self.registeredRddIds.clear()
-        self.server.clear()
-        self.cache.clear()
+    def addHost(self, rdd_id, index, host):
+        return self.client.call(AddedToCache(rdd.id, split.index, host))
 
-    def registerRDD(self, rddId, numPartitions):
-        if rddId not in self.registeredRddIds:
-            logger.debug("Registering RDD ID %d with cache", rddId)
-            self.registeredRddIds.add(rddId)
-            self.client.call(RegisterRDD(rddId, numPartitions))
-
-    def getLocationsSnapshot(self):
-        return self.client.call(GetCacheLocations())
-
-    def getCachedLocs(self, rdd_id):
-        if self.isMaster:
-            return self.server.locs.get(rdd_id, [])
-        return self.client.call(GetCacheLocations()).get(rdd_id, [])
-
-    def getOrCompute(self, rdd, split):
-        key = "%s:%s" % (rdd.id, split.index)
-        cachedVal = self.cache.get(key)
-        while cachedVal == 'loading':
-            time.sleep(0.01)
-            cachedVal = self.cache.get(key)
-        if cachedVal is not None:
-            logger.debug("Found partition in cache! %s", key)
-            #self.client.call("found " + key) 
-            return cachedVal
-        logger.debug("partition not in cache, %s", key)
-        #self.client.call("not found " + key)
-        self.cache.put(key, 'loading')
-        r = list(rdd.compute(split))
-        self.cache.put(key, r)
-        host = socket.gethostname()
-        self.client.call(AddedToCache(rdd.id, split.index, host))
-        return r
+    def removeHost(self, rdd_id, index, host):
+        return self.client.call(DroppedFromCache(rdd.id, split.index, host)) 
 
     def stop(self):
         self.client.stop()
@@ -230,6 +242,7 @@ class CacheTracker(object):
 
     def __getstate__(self):
         raise Exception("!!!")
+
 
 def set_cache():
     cache = mmapCache

@@ -37,7 +37,7 @@ class DparkContext(object):
             self.isLocal = True
         elif master == 'process':
             self.scheduler = MultiProcessScheduler(options.parallel)
-            self.isLocal = True
+            self.isLocal = False
         else:
             if master == 'mesos':
                 master = os.environ.get('MESOS_MASTER')
@@ -148,7 +148,7 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        return Broadcast.newBroadcast(v, self.master=='local')
+        return Broadcast.newBroadcast(v, self.isLocal)
 
     def start(self):
         if self.started:

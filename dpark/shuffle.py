@@ -313,9 +313,8 @@ class StopMapOutputTracker: pass
 
 
 class MapOutputTrackerServer(CacheTrackerServer):
-    def __init__(self, serverUris):
-        CacheTrackerServer.__init__(self)
-        self.serverUris = serverUris
+    def __init__(self, locs):
+        CacheTrackerServer.__init__(self, locs)
     
     def stop(self):
         sock = env.ctx.socket(zmq.REQ)
@@ -336,7 +335,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
             msg = sock.recv_pyobj()
             #logger.debug("MapOutputTrackerServer recv %s", msg)
             if isinstance(msg, GetMapOutputLocations):
-                reply(self.serverUris.get(msg.shuffleId, []))
+                reply(self.locs.get(msg.shuffleId, []))
             elif isinstance(msg, StopMapOutputTracker):
                 reply('OK')
                 break
@@ -349,26 +348,14 @@ class MapOutputTrackerServer(CacheTrackerServer):
 class MapOutputTrackerClient(CacheTrackerClient):
     pass
 
-class MapOutputTracker(object):
-    def __init__(self, isMaster, addr=None):
+class LocalMapOutputTracker(object):
+    def __init__(self, isMaster):
         self.isMaster = isMaster
         self.serverUris = {}
-        self.fetching = set()
         self.generation = 0
-        if isMaster:
-            self.server = MapOutputTrackerServer(self.serverUris)
-            self.server.start()
-            addr = self.server.addr
-            env.register('MapOutputTrackerAddr', addr)
-        else:
-            addr = env.get('MapOutputTrackerAddr')
-        self.client = MapOutputTrackerClient(addr)
-        logger.debug("MapOutputTracker started")
 
     def clear(self):
         self.serverUris.clear()
-        self.fetching.clear()
-        self.server.clear()
 
     def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):
         self.serverUris.setdefault(shuffleId, [None] * numMaps)[mapId] = serverUri
@@ -385,29 +372,13 @@ class MapOutputTracker(object):
         raise Exception("unregisterMapOutput called for nonexistent shuffle ID")
 
     def getServerUris(self, shuffleId):
-        while shuffleId in self.fetching:
-            logger.debug("wait for fetching mapOutput of %s", shuffleId)
-            time.sleep(0.01)
-        locs = self.serverUris.get(shuffleId)
-        if locs:
-            logger.debug("got mapOutput in cache: %s", locs)
-            return locs
-        logger.debug("Don't have map outputs for %d, fetching them", shuffleId)
-        self.fetching.add(shuffleId)
-        locs = self.client.call(GetMapOutputLocations(shuffleId))
-        logger.debug("Fetch done: %s", locs)
-        self.serverUris[shuffleId] = locs
-        self.fetching.remove(shuffleId)
-        return locs
+        return self.serverUris.get(shuffleId)
 
     def getMapOutputUri(self, serverUri, shuffleId, mapId, reduceId):
         return "%s/shuffle/%s/%s/%s" % (serverUri, shuffleId, mapId, reduceId)
 
     def stop(self):
-        self.serverUris.clear()
-        self.client.stop()
-        if self.isMaster:
-            self.server.stop()
+        self.clear()
 
     def incrementGeneration(self):
         self.generation += 1
@@ -420,6 +391,36 @@ class MapOutputTracker(object):
             logger.debug("Updating generation to %d and clearing cache", newGen)
             self.generation = newGen
             self.serverUris.clear()
+
+
+class MapOutputTracker(LocalMapOutputTracker):
+    def __init__(self, isMaster):
+        LocalMapOutputTracker.__init__(self, isMaster)
+        if isMaster:
+            self.server = MapOutputTrackerServer(self.serverUris)
+            self.server.start()
+            addr = self.server.addr
+            env.register('MapOutputTrackerAddr', addr)
+        else:
+            addr = env.get('MapOutputTrackerAddr')
+        self.client = MapOutputTrackerClient(addr)
+        logger.debug("MapOutputTracker started")
+
+    def getServerUris(self, shuffleId):
+        locs = self.serverUris.get(shuffleId)
+        if locs:
+            logger.debug("got mapOutput in cache: %s", locs)
+            return locs
+        locs = self.client.call(GetMapOutputLocations(shuffleId))
+        logger.debug("Fetch done: %s", locs)
+        self.serverUris[shuffleId] = locs
+        return locs
+
+    def stop(self):
+        self.clear()
+        self.client.stop()
+        if self.isMaster:
+            self.server.stop()
 
 
 def test():
