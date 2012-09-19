@@ -3,20 +3,18 @@ import random
 import os, sys
 from pprint import pprint
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dpark import DparkContext
+import dpark
 #import logging
 #logging.basicConfig(level=logging.ERROR,
 #    format="%(process)d:%(threadName)s:%(levelname)s %(message)s")
 
-ctx = DparkContext()
-
 # range
-nums = ctx.parallelize(range(100), 4)
+nums = dpark.parallelize(range(100), 4)
 print nums.count()
 print nums.reduce(lambda x,y:x+y)
 
 # text search
-f = ctx.textFile("./", ext='py').map(lambda x:x.strip())
+f = dpark.textFile("./", ext='py').map(lambda x:x.strip())
 log = f.filter(lambda line: 'logging' in line).cache()
 print 'logging', log.count()
 print 'error', log.filter(lambda line: 'error' in line).count()
@@ -37,7 +35,7 @@ def rand(i):
     return (x*x + y*y) < 1.0 and 1 or 0
 
 N = 100000
-count = ctx.parallelize(range(N), 4).map(rand).reduce(lambda x,y:x+y)
+count = dpark.parallelize(range(N), 4).map(rand).reduce(lambda x,y:x+y)
 print 'pi is ', 4.0 * count / N
 
 # Logistic Regression
@@ -58,7 +56,7 @@ def incm(w):
     return inc
 add = lambda x,y: [x[i]+y[i] for i in range(len(x))]
 
-points = ctx.textFile("point.txt").map(parsePoint).cache()
+points = dpark.textFile("point.txt").map(parsePoint).cache()
 print points.collect()
 w = [1,-160]
 for i in range(10):

@@ -1,9 +1,7 @@
 import sys
 sys.path.append('../')
 import logging
-from dpark import DparkContext
-
-dpark = DparkContext()
+import dpark
 
 name = 'rating.txt'
 
