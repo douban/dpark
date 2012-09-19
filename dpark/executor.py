@@ -23,7 +23,7 @@ import mesos
 import mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from util import compress, decompress, getproctitle, setproctitle
+from dpark.util import compress, decompress, getproctitle, setproctitle
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure

@@ -23,10 +23,10 @@ class DparkContext(object):
 
     def __init__(self, master=None):
         
-        if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
-            from executor import run
-            run()
-            sys.exit(0)
+        #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
+        #    from executor import run
+        #    run()
+        #    sys.exit(0)
         
         options = parse_options()
         self.options = options
