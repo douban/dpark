@@ -13,21 +13,25 @@ from broadcast import Broadcast
 
 logger = logging.getLogger("context")
 
+def singleton(cls):
+    instances = {}
+    def getinstance(*a, **kw):
+        key = (cls, tuple(a), tuple(sorted(kw.items())))
+        if key not in instances:
+            instances[key] = cls(*a, **kw)
+        return instances[key]
+    return getinstance
+
+@singleton
 class DparkContext(object):
     nextShuffleId = 0
-    _instances = {}
-    def __new__(cls, master=None):
-        if master not in cls._instances:
-            cls._instances[master] = super(DparkContext, cls).__new__(cls)
-        return cls._instances[master]
-
     def __init__(self, master=None):
         
         #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
         #    from executor import run
         #    run()
         #    sys.exit(0)
-        
+
         options = parse_options()
         self.options = options
         master = master or options.master
@@ -69,12 +73,6 @@ class DparkContext(object):
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
       
-        try:
-            from rfoo.utils import rconsole
-            rconsole.spawn_server(locals(), 0)
-        except ImportError:
-            pass
-
         self.started = False
 
     def newShuffleId(self):
@@ -167,6 +165,12 @@ class DparkContext(object):
         signal.signal(signal.SIGHUP, handler)
         signal.signal(signal.SIGABRT, handler)
         signal.signal(signal.SIGQUIT, handler)
+        
+        try:
+            from rfoo.utils import rconsole
+            rconsole.spawn_server(locals(), 0)
+        except ImportError:
+            pass
 
     def runJob(self, rdd, func, partitions=None, allowLocal=False):
         self.start()
