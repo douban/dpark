@@ -4,6 +4,8 @@ import socket
 import threading
 import zmq
 
+import util
+
 logger = logging.getLogger("env")
 
 class DparkEnv:
@@ -38,8 +40,11 @@ class DparkEnv:
             self.workdir = os.path.join(root, name)
             os.makedirs(self.workdir)
             self.environ['WORKDIR'] = self.workdir
+            self.environ['COMPRESS'] = util.COMPRESS
         else:
             self.environ.update(environ)
+            if self.environ['COMPRESS'] != util.COMPRESS:
+                raise Exception("no %s available" % self.environ['COMPRESS'])
 
         self.ctx = zmq.Context()
 

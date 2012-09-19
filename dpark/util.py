@@ -1,16 +1,19 @@
 # util 
 from zlib import compress as _compress, decompress
 
+COMPRESS = 'zlib'
 def compress(s):
     return _compress(s, 1)
+
 try:
     from lz4 import compress, decompress
+    COMPRESS = 'lz4'
 except ImportError:    
-    print 'no lz4 available'
-    #try:
-    #    from snappy import compress, decompress
-    #except ImportError:
-    #    pass
+    try:
+        from snappy import compress, decompress
+         COMPRESS = 'snappy'
+    except ImportError:
+        pass
 
 try:
     from setproctitle import getproctitle, setproctitle
