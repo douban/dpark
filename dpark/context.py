@@ -87,6 +87,7 @@ class DparkContext(object):
         return self.nextShuffleId
 
     def parallelize(self, seq, numSlices=None): 
+        self.init()
         if numSlices is None:
             numSlices = self.defaultParallelism
         return ParallelCollection(self, seq, numSlices)
