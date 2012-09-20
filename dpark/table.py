@@ -13,10 +13,29 @@ Aggs = {
     'sum': lambda x,y: x+y,
 }
 
+def table_join(f):
+    def _join(self, other, left_keys=None, right_keys=None):
+        if not left_keys:
+            left_keys = [n for n in self.fields if n in other.fields]
+        assert left_keys, 'need field names to join'
+        if right_keys is None:
+            right_keys = left_keys
+        
+        joined = f(self, other, left_keys, right_keys)
+
+        ln = [n for n in self.fields if n not in left_keys]
+        rn = [n for n in other.fields if n not in left_keys]
+        return joined.map(lambda (k,(v1,v2)): list(k)+v1+v2
+            ).asTable(left_keys + ln + rn)
+
+    return _join
+
 class TableRDD(DerivedRDD):
     def __init__(self, rdd, fields):
         DerivedRDD.__init__(self, rdd)
         self.name = 'Row%d' % self.id
+        if isinstance(fields, str):
+            fields = [n.strip() for n in fields.split(',')]
         self.fields = fields
 
     def __str__(self):
@@ -29,13 +48,13 @@ class TableRDD(DerivedRDD):
     def compute(self, split):
         return self.prev.iterator(split)
 
-    def _create_selector(self, e):
+    def _create_expression(self, e):
         if callable(e): 
             return e
         e = re.compile(r' as (\w+)', re.I).split(e)[0]
         for i,n in enumerate(self.fields):
             e = re.sub(r'%s'%n, '_v[%d]' % i, e)
-        return eval('lambda _v:' + e, globals())
+        return e
 
     def _create_field_name(self, e):
         asp = re.compile(r' as (\w+)', re.I)
@@ -48,10 +67,9 @@ class TableRDD(DerivedRDD):
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
         
-        selector = [self._create_selector(e) for e in fields] + \
-            [self._create_selector(named_fields[n]) for n in new_fields[len(fields):]]
-        def _select(v):
-            return tuple(s(v) for s in selector)
+        selector = [self._create_expression(e) for e in fields] + \
+            [self._create_expression(named_fields[n]) for n in new_fields[len(fields):]]
+        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector)), globals())    
 
         need_attr = any(callable(f) for f in named_fields.values())
         return (need_attr and self or self.prev).map(_select).asTable(new_fields)
@@ -105,18 +123,16 @@ class TableRDD(DerivedRDD):
 
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
-        conditions = [self._create_selector(c) for c in conditions]
-        def _filter(v):
-            return all(c(v) for c in conditions)
+        conditions = ' and '.join(['(%s)' % self._create_expression(c) for c in conditions])
+        _filter = eval('lambda _v: %s' % conditions, globals())
         return (need_attr and self or self.prev).filter(_filter).asTable(self.fields)
 
     def groupBy(self, *keys, **kw):
         numSplits = kw.pop('numSplits', None)
         
         key_names = [self._create_field_name(e) for e in keys] 
-        selector = [self._create_selector(e) for e in keys]
-        def gen_key(v):
-            return tuple(s(v) for s in selector)
+        expr = ','.join(self._create_expression(e) for e in keys)
+        gen_key = eval('lambda _v:(%s,)' % expr, globals())
 
         if not kw:
             kw.update((k,k) for k in self.fields if k not in keys)
@@ -132,31 +148,39 @@ class TableRDD(DerivedRDD):
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
         return g.map(lambda (k,v): list(k)+list(v)).asTable(key_names + values)
 
-    def innerJoin(self, other, left_keys=None, right_keys=None):
-        if not left_keys:
-            left_keys = [n for n in self.fields if n in other.fields]
-        if not isinstance(left_keys, (list, tuple)):
-            left_keys = (left_keys,)
-        assert left_keys, 'need field names to join'
-
-        if right_keys is None:
-            right_keys = left_keys
-        if not isinstance(right_keys, (list, tuple)):
-            right_keys = (right_keys,)
-
+    def indexBy(self, keys=None):
+        if keys is None:
+            keys = self.fields[:1]
+        if not isinstance(keys, (list, tuple)):
+            keys = (keys,)
+        
         def pick(keys, fields):
             ki = [fields.index(n) for n in keys]
             vi = [i for i in range(len(fields)) if fields[i] not in keys]
             def _(v):
                 return tuple(v[i] for i in ki), [v[i] for i in vi]
             return _
-        ov = other.map(pick(right_keys, other.fields))
-        joined = self.map(pick(left_keys, self.fields)).innerJoin(ov)
+        return self.prev.map(pick(keys, self.fields))
 
-        ln = [n for n in self.fields if n not in left_keys]
-        rn = [n for n in other.fields if n not in left_keys]
-        return joined.map(lambda (k,(v1,v2)): list(k)+v1+v2
-            ).asTable(left_keys + ln + rn)
+    @table_join
+    def join(self, other, left_keys=None, right_keys=None):
+        return self.indexBy(left_keys).join(other.indexBy(right_keys))
+
+    @table_join
+    def innerJoin(self, other, left_keys=None, right_keys=None):
+        return self.indexBy(left_keys).innerJoin(other.indexBy(right_keys))
+
+    @table_join
+    def outerJoin(self, other, left_keys=None, right_keys=None):
+        return self.indexBy(left_keys).outerJoin(other.indexBy(right_keys))
+
+    @table_join
+    def leftOutJoin(self, other, left_keys=None, right_keys=None):
+        return self.indexBy(left_keys).leftOuterJoin(other.indexBy(right_keys))
+
+    @table_join
+    def rightOuterJoin(self, other, left_keys=None, right_keys=None):
+        return self.indexBy(left_keys).rightOuterJoin(other.indexBy(right_keys))
 
     def sort(self, fields, reverse=False, numSplits=None):
         if isinstance(fields, str):
@@ -215,8 +239,8 @@ class TableRDD(DerivedRDD):
 
         if 'limit' in kw:
             return r.take(int(kw['limit']))
-        else:
-            return r.collect()
+        return r
+
 
 def test():
     from context import DparkContext
@@ -229,6 +253,7 @@ def test():
     print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
     table2 = rdd.asTable(['f1', 'f3'])
     print table.innerJoin(table2).take(10)
+    print table.join(table2).sort('f1').take(10)
 
 if __name__ == '__main__':
     test()
