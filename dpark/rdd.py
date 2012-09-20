@@ -902,7 +902,7 @@ class CSVReaderRDD(DerivedRDD):
         return '<CSVReaderRDD %s of %s>' % (self.dialect, self.prev)
 
     def compute(self, split):
-        return csv.reader(self.rdd.iterator(split), self.dialect)
+        return csv.reader(self.prev.iterator(split), self.dialect)
 
 
 class ParallelCollectionSplit:
