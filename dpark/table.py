@@ -132,6 +132,32 @@ class TableRDD(DerivedRDD):
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
         return g.map(lambda (k,v): list(k)+list(v)).asTable(key_names + values)
 
+    def innerJoin(self, other, left_keys=None, right_keys=None):
+        if not left_keys:
+            left_keys = [n for n in self.fields if n in other.fields]
+        if not isinstance(left_keys, (list, tuple)):
+            left_keys = (left_keys,)
+        assert left_keys, 'need field names to join'
+
+        if right_keys is None:
+            right_keys = left_keys
+        if not isinstance(right_keys, (list, tuple)):
+            right_keys = (right_keys,)
+
+        def pick(keys, fields):
+            ki = [fields.index(n) for n in keys]
+            vi = [i for i in range(len(fields)) if fields[i] not in keys]
+            def _(v):
+                return tuple(v[i] for i in ki), [v[i] for i in vi]
+            return _
+        ov = other.map(pick(right_keys, other.fields))
+        joined = self.map(pick(left_keys, self.fields)).innerJoin(ov)
+
+        ln = [n for n in self.fields if n not in left_keys]
+        rn = [n for n in other.fields if n not in left_keys]
+        return joined.map(lambda (k,(v1,v2)): list(k)+v1+v2
+            ).asTable(left_keys + ln + rn)
+
     def sort(self, fields, reverse=False, numSplits=None):
         if isinstance(fields, str):
             keys = [self.fields.index(fields)]
@@ -201,8 +227,8 @@ def test():
     print table.selectOne('count(*)', 'max(f1)', 'min(f2+f1)', 'sum(f1*f2+f1)')
     print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)
     print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
-    #where(lambda x:x.f1>10, lambda v:v.f2<80
-    #    ).groupBy('f1').select(f1=lambda x:-x, f2=sum).sort('f1').take(5)
+    table2 = rdd.asTable(['f1', 'f3'])
+    print table.innerJoin(table2).take(10)
 
 if __name__ == '__main__':
     test()

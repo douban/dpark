@@ -344,6 +344,10 @@ class RDD(object):
                     yield (k, (vv, ww))
         return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
 
+    def innerJoin(self, other):
+        o_b = self.ctx.broadcast(other.collectAsMap())
+        return self.filter(lambda (k,v):k in o_b.value).map(lambda (k,v):(k,(v,o_b.value[k])))
+
     def outerJoin(self, other, numSplits=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
         ws = other.map(lambda (k,v): (k,(2,v)))
