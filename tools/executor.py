@@ -7,11 +7,14 @@ import threading
 import time
 from threading import Thread
 import socket
+import logging
 
 import zmq
 
 import mesos
 import mesos_pb2
+
+logger = logging.getLogger('executor')
 
 ctx = zmq.Context()
 
@@ -118,13 +121,14 @@ def launch_task(self, driver, task):
 
 
 class MyExecutor(mesos.Executor):
-    def registered(self, driver, executorInfo,
-                   frameworkInfo, slaveInfo):
+    def __init__(self):
         self.ps = {}
 
+    def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
+        logger.debug("registered as %s", slaveInfo)
+
     def launchTask(self, driver, task):
-        t = Thread(target=launch_task, 
-            args=(self, driver, task))
+        t = Thread(target=launch_task, args=(self, driver, task)) 
         t.daemon = True
         t.start()
   

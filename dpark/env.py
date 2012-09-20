@@ -26,6 +26,7 @@ class DparkEnv:
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         self.isMaster = isMaster
+        self.isLocal = isLocal
         if isMaster:
             if os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
@@ -78,7 +79,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
        
-        if self.isMaster:
+        if self.isMaster and self.isLocal:
             logger.debug("cleaning workdir ...")
             try:
                 for root,dirs,names in os.walk(self.workdir, topdown=False):

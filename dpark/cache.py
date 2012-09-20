@@ -110,7 +110,8 @@ class CacheTrackerServer(object):
         sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
-        self.t.join()
+        sock.close()
+        self.t.join(.1)
 
     def run(self):
         locs = self.locs
