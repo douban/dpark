@@ -45,13 +45,14 @@ class RDD(object):
     def __init__(self, ctx):
         self.ctx = ctx
         self.id = RDD.newId()
-        self.err = ctx.options.err
         self._splits = []
         self.dependencies = []
         self.aggregator = None
         self._partitioner = None
         self.shouldCache = False
         self.snapshot_path = None
+        ctx.init()
+        self.err = ctx.options.err
 
     nextId = 0
     @classmethod

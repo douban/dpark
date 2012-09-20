@@ -27,9 +27,13 @@ class DparkContext(object):
     nextShuffleId = 0
     def __init__(self, master=None):
         self.master = master
+        self.initialized = False
         self.started = False
 
-    def init(self, master):
+    def init(self):
+        if self.initialized:
+            return
+
         #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
         #    from executor import run
         #    run()
@@ -37,7 +41,7 @@ class DparkContext(object):
         
         options = parse_options()
         self.options = options
-        master = master or options.master
+        master = self.master or options.master
 
         if master == 'local':
             self.scheduler = LocalScheduler()
@@ -75,6 +79,8 @@ class DparkContext(object):
         else:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
+
+        self.initialized = True
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -153,7 +159,7 @@ class DparkContext(object):
         if self.started:
             return
         
-        self.init(self.master)
+        self.init()
 
         env.start(True, isLocal=self.isLocal)
         self.scheduler.start()
@@ -189,6 +195,9 @@ class DparkContext(object):
             gc.enable()
 
     def clear(self):
+        if not self.started:
+            return
+        
         self.scheduler.clear()
         gc.collect()
 
