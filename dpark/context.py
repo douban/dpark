@@ -26,12 +26,15 @@ def singleton(cls):
 class DparkContext(object):
     nextShuffleId = 0
     def __init__(self, master=None):
-        
+        self.master = master
+        self.started = False
+
+    def init(self, master):
         #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
         #    from executor import run
         #    run()
         #    sys.exit(0)
-
+        
         options = parse_options()
         self.options = options
         master = master or options.master
@@ -72,8 +75,6 @@ class DparkContext(object):
         else:
             self.defaultParallelism = self.scheduler.defaultParallelism()
         self.defaultMinSplits = max(self.defaultParallelism, 2)
-      
-        self.started = False
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -151,6 +152,8 @@ class DparkContext(object):
     def start(self):
         if self.started:
             return
+        
+        self.init(self.master)
 
         env.start(True, isLocal=self.isLocal)
         self.scheduler.start()
