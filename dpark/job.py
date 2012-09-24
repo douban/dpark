@@ -246,7 +246,9 @@ class SimpleJob(Job):
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
         elif status == TASK_FAILED:
             self.blacklist[index].append(task.host)
-            logger.warning("task %s failed with: %s",  
+            _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
+                    else logger.warning
+            _logger("task %s failed with: %s",  
                 self.tasks[index], reason)
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
