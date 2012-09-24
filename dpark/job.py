@@ -248,8 +248,7 @@ class SimpleJob(Job):
             self.blacklist[index].append(task.host)
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
-            _logger("task %s failed with: %s",  
-                self.tasks[index], reason)
+            _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
             logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)

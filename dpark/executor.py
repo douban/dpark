@@ -31,7 +31,7 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.broadcast import Broadcast
 
-logger = logging.getLogger("executor")
+logger = logging.getLogger("executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
@@ -73,14 +73,13 @@ def run_task(task, ntry):
             data = LocalFileShuffle.getServerUri() + '/' + name
             flag += 2
 
-        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
     finally:
+        setproctitle('dpark worker: idle')
         gc.collect()
         gc.enable()
 
@@ -250,6 +249,10 @@ class MyExecutor(mesos.Executor):
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
+            root = os.path.dirname(self.workdir)
+            if not os.path.exists(root):
+                os.mkdir(root)
+                os.chmod(root, 0777) # because umask
             if not os.path.exists(self.workdir):
                 os.mkdir(self.workdir)
             args['SERVER_URI'] = startWebServer(args['WORKDIR'])
