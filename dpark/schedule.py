@@ -382,10 +382,16 @@ class MultiProcessScheduler(LocalScheduler):
         pass
 
     def submitTasks(self, tasks):
+        total, self.finished = len(tasks), 0
         def callback(args):
             logger.debug("got answer: %s", args)
             tid, reason, result, update = args
             task = self.tasks.pop(tid)
+            self.finished += 1
+            logger.info("Task %s finished (%d/%d)        \x1b[1A",
+                tid, self.finished, total)
+            if self.finished == total:
+                logger.info("\r" + " "*80 + "\x1b[1A") # erase the progress bar
             self.taskEnded(task, reason, result, update)
 
         for task in tasks:
