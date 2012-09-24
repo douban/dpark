@@ -114,7 +114,7 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.makeRDD(d, 10)
         self.assertEqual(rdd.hot(), zip(range(9, -1, -1), range(11, 1, -1)))
 
-    def test_file(self):
+    def test_text_file(self):
         path = 'tests/test_rdd.py'
         f = self.sc.textFile(path)
         n = len(open(path).read().split())
@@ -133,6 +133,7 @@ class TestRDD(unittest.TestCase):
             ).saveAsCSVFile('/tmp/tout'),
             ['/tmp/tout/0000.csv'])
 
+    def test_compressed_file(self):        
         # compress 
         d = self.sc.makeRDD(range(100000), 1)
         self.assertEqual(d.map(str).saveAsTextFile('/tmp/tout', compress=True), 
@@ -144,6 +145,14 @@ class TestRDD(unittest.TestCase):
             ['/tmp/tout/x/0000.gz'])
         rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
+
+    def test_binary_file(self): 
+        d = self.sc.makeRDD(range(100000), 1)
+        self.assertEqual(d.saveAsBinaryFile('/tmp/tout', fmt="I"),
+            ['/tmp/tout/0000.bin'])
+        rd = self.sc.binaryFile('/tmp/tout', fmt="I", splitSize=10<<10)
+        self.assertEqual(rd.count(), 100000)
+
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

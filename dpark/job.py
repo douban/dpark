@@ -12,6 +12,14 @@ TASK_FINISHED = 2
 TASK_FAILED   = 3
 TASK_KILLED   = 4
 TASK_LOST     = 5
+            
+def readable(size):
+    units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+    unit = 0
+    while size > 1024:
+        size /= 1024.0
+        unit += 1
+    return '%.1f%s' % (size, units[unit])
 
 class Job:
     def __init__(self):
@@ -188,8 +196,11 @@ class SimpleJob(Job):
         task = self.tasks[i]
         task.used += time.time() - task.start
         self.total_used += task.used
-        logger.info("Task %s finished in %.1fs (%d/%d)",
-            tid, task.used, self.tasksFinished, self.numTasks)
+        title = "Job %d: task %s finished in %.1fs (%d/%d)     " % (self.id, tid,
+                task.used, self.tasksFinished, self.numTasks)
+        logger.info("Task %s finished in %.1fs (%d/%d)      \x1b]2;%s\x07\x1b[1A",
+                tid, task.used, self.tasksFinished, self.numTasks, title)
+
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
 
@@ -203,6 +214,12 @@ class SimpleJob(Job):
             logger.info("Job %d finished in %.1fs: min=%.1fs, avg=%.1fs, max=%.1fs, maxtry=%d",
                 self.id, time.time()-self.start, 
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
+            from accumulator import LocalReadBytes, RemoteReadBytes
+            lb, rb = LocalReadBytes.reset(), RemoteReadBytes.reset()
+            if rb > 0:
+                logger.info("read %s (%d%% localized)",  
+                    readable(lb+rb), lb*100/(rb+lb))
+
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
@@ -229,8 +246,9 @@ class SimpleJob(Job):
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
         elif status == TASK_FAILED:
             self.blacklist[index].append(task.host)
-            logger.warning("task %s failed with: %s",  
-                self.tasks[index], reason)
+            _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
+                    else logger.warning
+            _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
             logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
@@ -263,6 +281,7 @@ class SimpleJob(Job):
                 self.tasksLaunched -= 1
 
         if self.tasksFinished > self.numTasks / 3:
+            scale = 1.0 * self.numTasks / self.tasksFinished
             avg = self.taskEverageTime
             tasks = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
@@ -270,7 +289,7 @@ class SimpleJob(Job):
             for _t, idx, task in tasks:
                 used = now - task.start
                 #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
-                if used > avg * (task.tried + 1) and used > 30:
+                if used > avg * (task.tried + 1) * scale and used > 30:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
                         logger.warning("re-submit task %s for timeout %.1f, try %d",

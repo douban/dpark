@@ -12,7 +12,6 @@ import shutil
 import socket
 import urllib2
 import platform
-import zlib
 import gc
 
 import zmq
@@ -23,13 +22,8 @@ os.environ['GLOG_minloglevel'] = '1'
 import mesos
 import mesos_pb2
 
-try:
-    from setproctitle import setproctitle
-except ImportError:
-    def setproctitle(s):
-        pass
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+from dpark.util import compress, decompress, getproctitle, setproctitle
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -37,7 +31,7 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.broadcast import Broadcast
 
-logger = logging.getLogger("executor")
+logger = logging.getLogger("executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
@@ -67,7 +61,7 @@ def run_task(task, ntry):
             flag, data = 0, marshal.dumps(result)
         else:
             flag, data = 1, cPickle.dumps(result, -1)
-        data = zlib.compress(data, 1)
+        data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
             workdir = env.get('WORKDIR')
@@ -75,21 +69,17 @@ def run_task(task, ntry):
             path = os.path.join(workdir, name) 
             f = open(path, 'w')
             f.write(data)
-            if env.dfs:
-                f.flush()
-                os.fsync(f.fileno())
             f.close()
             data = LocalFileShuffle.getServerUri() + '/' + name
             flag += 2
 
-        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        setproctitle('dpark worker: idle')
         return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
     finally:
+        setproctitle('dpark worker: idle')
         gc.collect()
         gc.enable()
 
@@ -126,13 +116,15 @@ class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def startWebServer(path):
     # check the default web server
-    with open(os.path.join(path, 'test'), 'w') as f:
-        f.write('testdata')
+    testpath = os.path.join(path, 'test')
+    with open(testpath, 'w') as f:
+        f.write(path)
     default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
             os.path.basename(path))
     try:
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
-        if data == 'testdata':
+        os.remove(testpath)
+        if data == path:
             return default_uri
     except IOError, e:
         pass
@@ -267,7 +259,6 @@ class MyExecutor(mesos.Executor):
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
-            
             prefix = '[%s] ' % socket.gethostname()
             if out_logger:
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
@@ -275,11 +266,14 @@ class MyExecutor(mesos.Executor):
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
 
-            if args['DPARK_HAS_DFS'] != 'True':
-                self.workdir = args['WORKDIR']
-                if not os.path.exists(self.workdir):
-                    os.mkdir(self.workdir)
-                args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+            self.workdir = args['WORKDIR']
+            root = os.path.dirname(self.workdir)
+            if not os.path.exists(root):
+                os.mkdir(root)
+                os.chmod(root, 0777) # because umask
+            if not os.path.exists(self.workdir):
+                os.mkdir(self.workdir)
+            args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
             t = threading.Thread(target=self.check_memory, args=[driver])
             t.daemon = True
@@ -318,7 +312,7 @@ class MyExecutor(mesos.Executor):
     @safe
     def launchTask(self, driver, task):
         try:
-            t, ntry = cPickle.loads(zlib.decompress(task.data))
+            t, ntry = cPickle.loads(decompress(task.data))
             
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             
@@ -360,24 +354,23 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def shutdown(self, driver):
+        #sys.stdout = sys.stderr = open('/tmp/dpark_shutdown.log', 'a', 0)
+
+        #print time.time(), 'shutdown workdir', self.workdir
         for _, p in self.idle_workers:
             try: p.terminate()
             except: pass
         for p in self.busy_workers.values():
             try: p.terminate()
             except: pass
-        # flush
-        try:
-            sys.stdout.close()
-            sys.stderr.close()
-            self.outt.join()
-            self.errt.join()
-        except: pass
         
         # clean work files
-        if self.workdir:
-            try: shutil.rmtree(self.workdir, True)
-            except: pass
+        #print time.time(), 'clean', self.workdir
+        try: shutil.rmtree(self.workdir, True)
+        except: pass
+        #print time.time(), 'clean', self.workdir, 'done'
+
+        os._exit(0)
 
     def error(self, driver, code, message):
         logger.error("error: %s, %s", code, message)

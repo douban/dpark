@@ -38,6 +38,8 @@ def dump_object(o):
     except Exception:
         if isinstance(o, new.function): # lambda in module
             return 1, dump_func(o)
+        if isinstance(o, list) and isinstance(o[0], new.function):
+            return 4, [dump_func(i) for i in o]
         print 'unable to pickle:', o
         raise
 
@@ -48,6 +50,8 @@ def load_object((t, d)):
         return __import__(d)
     elif t == 3:
         return cPickle.loads(d)
+    elif t == 4:
+        return [load_func(i) for i in d]
     else:
         raise Exception("invalid flag %d" % t)
 

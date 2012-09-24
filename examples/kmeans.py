@@ -2,8 +2,7 @@
 import sys, os, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import random
-from dpark import DparkContext
-dpark = DparkContext()
+import dpark
 from vector import Vector
 
 def parseVector(line):

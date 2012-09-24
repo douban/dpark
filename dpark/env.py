@@ -4,6 +4,8 @@ import socket
 import threading
 import zmq
 
+import util
+
 logger = logging.getLogger("env")
 
 class DparkEnv:
@@ -24,19 +26,13 @@ class DparkEnv:
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         self.isMaster = isMaster
+        self.isLocal = isLocal
         if isMaster:
-            if isLocal:
-                root = '/tmp/dpark'
-                self.dfs = True
-            elif os.environ.has_key('DPARK_SHARE_DIR'):
-                root = os.environ['DPARK_SHARE_DIR']
-                self.dfs = True
-            elif os.environ.has_key('DPARK_WORK_DIR'):
+            if os.environ.has_key('DPARK_WORK_DIR'):
                 root = os.environ['DPARK_WORK_DIR']
-                self.dfs = False
             else:
-                raise Exception("no shuffle dir exists")
-            
+                root = '/tmp/dpark'
+
             if not os.path.exists(root):
                 os.mkdir(root, 0777)
                 os.chmod(root, 0777) # because of umask
@@ -45,20 +41,27 @@ class DparkEnv:
             self.workdir = os.path.join(root, name)
             os.makedirs(self.workdir)
             self.environ['WORKDIR'] = self.workdir
-            self.environ['DPARK_HAS_DFS'] = str(self.dfs)
+            self.environ['COMPRESS'] = util.COMPRESS
         else:
             self.environ.update(environ)
-            self.dfs = (self.environ['DPARK_HAS_DFS'] == 'True')
+            if self.environ['COMPRESS'] != util.COMPRESS:
+                raise Exception("no %s available" % self.environ['COMPRESS'])
 
         self.ctx = zmq.Context()
 
-        from cache import CacheTracker
-        self.cacheTracker = CacheTracker(isMaster)
-        
-        from shuffle import LocalFileShuffle, MapOutputTracker
-        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
+        from cache import CacheTracker, LocalCacheTracker
+        if isLocal:
+            self.cacheTracker = LocalCacheTracker(isMaster)
+        else:
+            self.cacheTracker = CacheTracker(isMaster)
+
+        from shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
         LocalFileShuffle.initialize(isMaster)
-        self.mapOutputTracker = MapOutputTracker(isMaster)
+        if isLocal:
+            self.mapOutputTracker = LocalMapOutputTracker(isMaster)
+        else:
+            self.mapOutputTracker = MapOutputTracker(isMaster)
+        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
@@ -76,7 +79,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
        
-        if self.isMaster:
+        if self.isMaster and self.isLocal:
             logger.debug("cleaning workdir ...")
             try:
                 for root,dirs,names in os.walk(self.workdir, topdown=False):

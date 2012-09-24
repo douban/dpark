@@ -73,9 +73,6 @@ class File(object):
         self.master = master
         self.cscache = {}
 
-    def __len__(self):
-        return (self.length + CHUNKSIZE - 1) / CHUNKSIZE
-
     def get_chunk(self, i):
         chunk = self.cscache.get(i)
         if not chunk:
@@ -98,17 +95,25 @@ class ReadableFile(File):
         self.reader = None
         self.generator = None
 
-    def seek(self, offset, length=0):
+    def seek(self, offset, whence=0):
+        if whence == 1:
+            offset = self.roff + offest
+        elif whence == 2:
+            offset = self.length + offset
+        assert offset >= 0, 'offset should greater than 0'
+
         off = offset - self.roff
         if off > 0 and off < len(self.rbuf):
             self.rbuf = self.rbuf[off:]
         else:
             self.rbuf = ''
+            self.reader = None
+        
         self.roff = offset
-        self.reader = None
         self.generator = None
-        if length > 0 and length < self.length:
-            self.length = length
+
+    def tell(self):
+        return self.roff
 
     def read(self, n):
         if n == -1:
@@ -186,27 +191,33 @@ class ReadableFile(File):
                     nerror += 1
 
         raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
-        
+    
     def __iter__(self):
-        return self
-
-    def next(self):
-        if self.generator is not None:
-            try:
-                line = self.generator.next()
-            except StopIteration:
-                self.generator = None
-                line = ""
-        else:
-            line = ""
-
-        while not line or line[-1] != '\n':
+        # TODO: speedup
+        line = ""
+        while True:
             data = self.read(-1)
             if not data:
                 break
-            self.generator = StringIO(data)
-            line += self.generator.next()
-        return line
+            generator = StringIO(data)
+            assert '\n' not in line, line
+            line += generator.next()
+            if line.endswith('\n'):
+                yield line
+                line = ''
+
+                ll = list(generator)
+                if not ll: continue
+
+                for line in ll[:-1]:
+                    yield line
+                line = ll[-1]    
+                if line.endswith('\n'):
+                    yield line
+                    line = ''
+
+        if line:
+            yield line
 
     def close(self):
         self.roff = 0

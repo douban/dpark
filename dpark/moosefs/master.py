@@ -43,6 +43,7 @@ def try_again(f):
             return f(self, *a, **kw)
         except IOError, e:
             self.close()
+            time.sleep(1)
             return f(self, *a, **kw)
     return _
 

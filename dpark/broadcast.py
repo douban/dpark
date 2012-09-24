@@ -5,20 +5,11 @@ import marshal
 import cPickle
 import threading
 import logging
-import zlib
-import gzip
 import gc
-
-try:
-    from setproctitle import getproctitle, setproctitle
-except ImportError:
-    def getproctitle():
-        return ''
-    def setproctitle(x):
-        pass
 
 import zmq
 
+from util import compress, decompress, getproctitle, setproctitle
 import cache
 from serialize import marshalable
 from env import env
@@ -129,11 +120,12 @@ class Broadcast(object):
         raise NotImplementedError
 
     def blockifyObject(self, obj):
-        if marshalable(obj):
+        try:
             buf = marshal.dumps(obj)
-        else:
+        except Exception:
             buf = cPickle.dumps(obj, -1)
-        buf = zlib.compress(buf, 1)
+
+        buf = compress(buf)
         N = self.BlockSize
         blockNum = len(buf) / N
         if len(buf) % N != 0:
@@ -145,11 +137,10 @@ class Broadcast(object):
         return vi
 
     def unBlockifyObject(self, blocks):
-        z = zlib.decompressobj()
-        s = ''.join([z.decompress(b.data) for b in blocks] + [z.flush()])
+        s = decompress(''.join(b.data for b in blocks))
         try:
             return marshal.loads(s)
-        except ValueError:
+        except Exception :
             return cPickle.loads(s)
    
     @classmethod
@@ -187,21 +178,23 @@ class FileBroadcast(Broadcast):
         return os.path.join(self.workdir, self.uuid)
 
     def sendBroadcast(self):
-        f = gzip.open(self.path, 'wb')
-        if marshalable(self.value):
-            marshal.dump(self.value, f)
-        else:
-            cPickle.dump(self.value, f, -1)
-        f.flush()
-        self.bytes = f.tell()
+        try:
+            d = marshal.dumps(self.value)
+        except Exception:
+            d = cPickle.dumps(self.value, -1)
+        d = compress(d)
+        self.bytes = len(d)
+        f = open(self.path, 'wb')
+        f.write(d)
         f.close()
         logger.debug("dump to %s", self.path)
 
     def recvBroadcast(self):
+        d = decompress(open(self.path, 'rb').read())
         try:
-            self.value = marshal.load(gzip.open(self.path, 'rb'))
-        except ValueError:
-            self.value = cPickle.load(gzip.open(self.path, 'rb'))
+            self.value = marshal.loads(d)
+        except Exception:
+            self.value = cPickle.loads(d)
         logger.debug("load from %s", self.path)
 
     def clear(self):

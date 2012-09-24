@@ -9,7 +9,6 @@ import random
 import getpass
 import urllib
 import warnings
-import zlib
 import weakref
 
 import zmq
@@ -19,6 +18,7 @@ except ImportError:
     warnings.warn("no mesos module available, can not run in mesos mode",
         ImportWarning)
 
+from util import compress, decompress
 from dependency import NarrowDependency, ShuffleDependency 
 from accumulator import Accumulator
 from task import ResultTask, ShuffleMapTask
@@ -107,7 +107,7 @@ class DAGScheduler(Scheduler):
     def __init__(self):
         self.completionEvents = Queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
-        self.shuffleToMapStage = weakref.WeakValueDictionary()
+        self.shuffleToMapStage = {}
         self.cacheLocs = {}
         self._shutdown = False
 
@@ -215,7 +215,7 @@ class DAGScheduler(Scheduler):
         logger.debug("Final stage: %s, %d", finalStage, numOutputParts)
         logger.debug("Parents of final stage: %s", finalStage.parents)
         logger.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
-       
+      
         if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
             yield func(finalRdd.iterator(split))
@@ -328,10 +328,6 @@ class DAGScheduler(Scheduler):
         return
 
     def getPreferredLocs(self, rdd, partition):
-        if rdd.shouldCache:
-            cached = self.getCacheLocs(rdd)[partition]
-            if cached:
-                return cached
         return rdd.preferredLocations(rdd.splits[partition])
 
 
@@ -386,10 +382,16 @@ class MultiProcessScheduler(LocalScheduler):
         pass
 
     def submitTasks(self, tasks):
+        total, self.finished = len(tasks), 0
         def callback(args):
             logger.debug("got answer: %s", args)
             tid, reason, result, update = args
             task = self.tasks.pop(tid)
+            self.finished += 1
+            logger.info("Task %s finished (%d/%d)        \x1b[1A",
+                tid, self.finished, total)
+            if self.finished == total:
+                logger.info("\r" + " "*80 + "\x1b[1A") # erase the progress bar
             self.taskEnded(task, reason, result, update)
 
         for task in tasks:
@@ -444,6 +446,7 @@ class MesosScheduler(DAGScheduler):
         self.logLevel = options.logLevel
         self.options = options
         self.isRegistered = False
+        self.executor = None
         self.driver = None
         self.lock = threading.RLock()
         self.init_job()
@@ -464,7 +467,6 @@ class MesosScheduler(DAGScheduler):
     def start(self):
         self.out_logger = self.start_logger(sys.stdout) 
         self.err_logger = self.start_logger(sys.stderr)
-        self.executor = self.getExecutorInfo()
 
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
@@ -505,6 +507,7 @@ class MesosScheduler(DAGScheduler):
         logger.debug("connect to master %s:%s(%s), registered as %s", 
             int2ip(masterInfo.ip), masterInfo.port, masterInfo.id, 
             frameworkId.value)
+        self.executor = self.getExecutorInfo(str(frameworkId.value))
 
     @safe
     def reregistered(self, driver, masterInfo):
@@ -519,8 +522,10 @@ class MesosScheduler(DAGScheduler):
         logger.warning("executor %s is lost at %s", executorId.value, slaveId.value)
 
     @safe
-    def getExecutorInfo(self):
+    def getExecutorInfo(self, framework_id):
         info = mesos_pb2.ExecutorInfo()
+        if hasattr(info, 'framework_id'):
+            info.framework_id.value = framework_id
 
         if self.use_self_as_exec:
             info.command.value = os.path.abspath(sys.argv[0])
@@ -619,9 +624,9 @@ class MesosScheduler(DAGScheduler):
    
     @safe
     def offerRescinded(self, driver, offer_id):
-        logger.info("rescinded offer: %s", offer_id)
-        #if self.activeJobs:
-        #    self.requestMoreResources()
+        logger.debug("rescinded offer: %s", offer_id)
+        if self.activeJobs:
+            self.requestMoreResources()
 
     def getResource(self, res, name):
         for r in res:
@@ -639,7 +644,7 @@ class MesosScheduler(DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = zlib.compress(cPickle.dumps((t, t.tried), -1), 1)
+        task.data = compress(cPickle.dumps((t, t.tried), -1))
         task.executor.MergeFrom(self.executor)
         if len(task.data) > 1000*1024:
             logger.warning("task too large: %s %d", 
@@ -691,7 +696,7 @@ class MesosScheduler(DAGScheduler):
                             # try again
                             data = urllib.urlopen(data).read()
                         flag -= 2
-                    data = zlib.decompress(data)
+                    data = decompress(data)
                     if flag == 0:
                         result = marshal.loads(data)
                     else:
