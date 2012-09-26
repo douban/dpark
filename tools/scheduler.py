@@ -73,6 +73,7 @@ class SubmitScheduler(object, mesos.Scheduler):
         self.status = 0
         self.next_try = 0
         self.lock = RLock()
+        self.last_offer_time = time.time()
 
     def getExecutorInfo(self):
         frameworkDir = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -125,6 +126,7 @@ class SubmitScheduler(object, mesos.Scheduler):
     def resourceOffers(self, driver, offers):
         tpn = self.options.task_per_node
         random.shuffle(offers)
+        self.last_offer_time = time.time()
         for offer in offers:
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
@@ -300,6 +302,7 @@ class MPIScheduler(SubmitScheduler):
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
         launched = sum(self.used_hosts.values())
+        self.last_offer_time = time.time()
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
@@ -573,6 +576,11 @@ if __name__ == "__main__":
             sched.check(driver)
             if not sched.started and sched.next_try > 0 and now > sched.next_try:
                 sched.next_try = 0
+                driver.reviveOffers()
+
+            if not sched.started and now > sched.last_offer_time + 60:
+                logging.warning("too long to get offer, reviving...")
+                sched.last_offer_time = now
                 driver.reviveOffers()
 
             if now - start > options.timeout:
