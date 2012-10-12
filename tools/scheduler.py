@@ -31,7 +31,7 @@ class Task:
         self.state_time = 0
 
 REFUSE_FILTER = mesos_pb2.Filters()
-REFUSE_FILTER.refuse_seconds = -1
+REFUSE_FILTER.refuse_seconds = 2*60 # 2 mins
 
 def parse_mem(m):
     try:
