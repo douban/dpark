@@ -31,7 +31,7 @@ class Task:
         self.state_time = 0
 
 REFUSE_FILTER = mesos_pb2.Filters()
-REFUSE_FILTER.refuse_seconds = -1
+REFUSE_FILTER.refuse_seconds = 2*60 # 2 mins
 
 def parse_mem(m):
     try:
@@ -411,7 +411,7 @@ class MPIScheduler(SubmitScheduler):
             slaves = self.try_to_start_mpi(self.command, self.options.tasks, self.used_hosts.items())
         except Exception:
             self.broadcast_command({})
-            self.next_try = time.time() + 5 
+            self.next_try = time.time() + random.randint(5,10)
             return
 
         commands = dict(zip(self.used_hosts.keys(), slaves))
@@ -578,7 +578,7 @@ if __name__ == "__main__":
                 sched.next_try = 0
                 driver.reviveOffers()
 
-            if not sched.started and now > sched.last_offer_time + 60:
+            if not sched.started and now > sched.last_offer_time + 60 + random.randint(0,5):
                 logging.warning("too long to get offer, reviving...")
                 sched.last_offer_time = now
                 driver.reviveOffers()
