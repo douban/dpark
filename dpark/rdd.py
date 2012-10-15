@@ -548,20 +548,22 @@ class MapPartitionsRDD(MappedRDD):
         return self.func(self.prev.iterator(split))
 
 class PipedRDD(DerivedRDD):
-    def __init__(self, prev, command, quiet=False):
+    def __init__(self, prev, command, quiet=False, shell=False):
         DerivedRDD.__init__(self, prev)
         self.command = command
         self.quiet = quiet
+        self.shell = shell
 
     def __repr__(self):
         return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
 
     def compute(self, split):
         import subprocess
-        devnull = open(os.devnull, os.O_WRONLY)
+        devnull = open(os.devnull, 'w')
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, 
-                stderr=self.quiet and devnull or sys.stderr)
+                stderr=self.quiet and devnull or sys.stderr,
+                shell=self.shell)
         def read(stdin):
             try:
                 it = self.prev.iterator(split)
