@@ -89,19 +89,15 @@ class MasterConn:
         if not self.conn:
             raise IOError("mfsmaster not availbale")
 
-        if self.sessionid == 0:
-            regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL,
-                    uint8(REGISTER_NEWSESSION), VERSION, 2, "/\000", 2, "/\000")
-        else:
-            regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL,
-                    uint8(REGISTER_RECONNECT), self.sessionid, VERSION)
+        regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_NOACL,
+                      self.sessionid, VERSION)
         self.send(regbuf)
         recv = self.recv_cmd(8)
         cmd, i = unpack("II", recv)
         if cmd != MATOCU_FUSE_REGISTER:
             raise Exception("got incorrect answer from mfsmaster %s" % cmd)
 
-        if i not in (1, 13, 21, 25, 35):
+        if i not in (1, 4):
             raise Exception("got incorrect size from mfsmaster")
 
         data = self.recv(i)
@@ -111,11 +107,7 @@ class MasterConn:
                 raise Exception("mfsmaster register error: " 
                         + mfs_strerror(code))
         if self.sessionid == 0:
-            if i in (25, 35):
-                _,self.sessionid, = unpack("II", data)
-            else:
-                self.sessionid, = unpack("I", data)
-
+            self.sessionid, = unpack("I", data)
 
     def close(self):
         if self.conn:
