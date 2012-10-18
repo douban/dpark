@@ -1034,7 +1034,7 @@ class TextFileRDD(RDD):
             f.seek(start)
             return f
 
-        return self.read(split)
+        return self.read(split, start, end)
 
     def read(self, split, start, end):
         for line in f:
