@@ -466,7 +466,7 @@ class MPIScheduler(SubmitScheduler):
 
 
 if __name__ == "__main__":
-    parser = OptionParser(usage="Usage: %prog [options] <command>")
+    parser = OptionParser(usage="Usage: drun [options] <command>")
     parser.allow_interspersed_args=False
     parser.add_option("-s", "--master", type="string",
                 default="zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2",
