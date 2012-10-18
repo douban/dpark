@@ -558,9 +558,10 @@ class PipedRDD(DerivedRDD):
 
     def compute(self, split):
         import subprocess
+        devnull = open(os.devnull, os.O_WRONLY)
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, 
-                stderr=self.quiet and subprocess.PIPE or sys.stderr)
+                stderr=self.quiet and devnull or sys.stderr)
         def read(stdin):
             try:
                 it = self.prev.iterator(split)
@@ -577,6 +578,7 @@ class PipedRDD(DerivedRDD):
                     stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
             finally:
                 stdin.close()
+                devnull.close()
         threading.Thread(target=read, args=[p.stdin]).start()
         return p.stdout
 

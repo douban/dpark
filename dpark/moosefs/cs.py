@@ -1,12 +1,15 @@
 import os
 import socket
+import logging
 
 from consts import CHUNKSIZE, CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
 from utils import uint64, pack, unpack
 
+logger = logging.getLogger(__name__)
+
 mfsdirs = []
 def _scan():
-    for conf in ('/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg'):
+    for conf in ('/etc/mfs/mfshdd.cfg', '/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg'):
         if not os.path.exists(conf):
             continue
         f = open(conf)
@@ -30,13 +33,14 @@ def read_chunk_from_local(chunkid, version, size, offset=0):
         p = os.path.join(d, name)
         if os.path.exists(p):
             if os.path.getsize(p) < CHUNKHDRSIZE + offset + size:
-                print p, 'is not completed', os.path.getsize(p), '<', CHUNKHDRSIZE + offset + size
+                logger.error('%s is not completed: %d < %d', name,
+                        os.path.getsize(p), CHUNKHDRSIZE + offset + size)
                 return
                 #raise ValueError("size too large")
             f = open(p)
             f.seek(CHUNKHDRSIZE + offset)
             while size > 0:
-                to_read = min(size, 1024*1024*4)
+                to_read = min(size, 640*1024)
                 data = f.read(to_read)
                 if not data:
                     return
@@ -45,6 +49,9 @@ def read_chunk_from_local(chunkid, version, size, offset=0):
                 size -= len(data)
             f.close()
             return
+    else:
+        logger.warning("%s was not found", name)
+
 
 def read_chunk(host, port, chunkid, version, size, offset=0):
     if offset + size > CHUNKSIZE:

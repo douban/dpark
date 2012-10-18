@@ -256,7 +256,7 @@ def parse_options():
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
 
-    logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s',
+    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
         level=options.logLevel)
     
     return options

@@ -31,7 +31,7 @@ class Task:
         self.state_time = 0
 
 REFUSE_FILTER = mesos_pb2.Filters()
-REFUSE_FILTER.refuse_seconds = -1
+REFUSE_FILTER.refuse_seconds = 2*60 # 2 mins
 
 def parse_mem(m):
     try:
@@ -73,6 +73,7 @@ class SubmitScheduler(object, mesos.Scheduler):
         self.status = 0
         self.next_try = 0
         self.lock = RLock()
+        self.last_offer_time = time.time()
 
     def getExecutorInfo(self):
         frameworkDir = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -125,6 +126,7 @@ class SubmitScheduler(object, mesos.Scheduler):
     def resourceOffers(self, driver, offers):
         tpn = self.options.task_per_node
         random.shuffle(offers)
+        self.last_offer_time = time.time()
         for offer in offers:
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
@@ -300,6 +302,7 @@ class MPIScheduler(SubmitScheduler):
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
         launched = sum(self.used_hosts.values())
+        self.last_offer_time = time.time()
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
@@ -408,7 +411,7 @@ class MPIScheduler(SubmitScheduler):
             slaves = self.try_to_start_mpi(self.command, self.options.tasks, self.used_hosts.items())
         except Exception:
             self.broadcast_command({})
-            self.next_try = time.time() + 5 
+            self.next_try = time.time() + random.randint(5,10)
             return
 
         commands = dict(zip(self.used_hosts.keys(), slaves))
@@ -573,6 +576,11 @@ if __name__ == "__main__":
             sched.check(driver)
             if not sched.started and sched.next_try > 0 and now > sched.next_try:
                 sched.next_try = 0
+                driver.reviveOffers()
+
+            if not sched.started and now > sched.last_offer_time + 60 + random.randint(0,5):
+                logging.warning("too long to get offer, reviving...")
+                sched.last_offer_time = now
                 driver.reviveOffers()
 
             if now - start > options.timeout:
