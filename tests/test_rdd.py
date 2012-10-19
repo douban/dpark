@@ -116,7 +116,7 @@ class TestRDD(unittest.TestCase):
 
     def test_text_file(self):
         path = 'tests/test_rdd.py'
-        f = self.sc.textFile(path)
+        f = self.sc.textFile(path, splitSize=1000).mergeSplit(numSplits=1)
         n = len(open(path).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)

@@ -74,7 +74,7 @@ class RDD(object):
     def __getslice__(self, i,j):
         return SliceRDD(self, i, j)
 
-    def mergeSplit(self, splitSize=2, numSplits=None):
+    def mergeSplit(self, splitSize=None, numSplits=None):
         return MergedRDD(self, splitSize, numSplits)
 
     @property
@@ -1034,9 +1034,9 @@ class TextFileRDD(RDD):
             f.seek(start)
             return f
 
-        return self.read(split, start, end)
+        return self.read(f, start, end)
 
-    def read(self, split, start, end):
+    def read(self, f, start, end):
         for line in f:
             start += len(line)
             yield line
