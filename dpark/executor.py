@@ -246,7 +246,7 @@ class MyExecutor(mesos.Executor):
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
-            logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
+            logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
             root = os.path.dirname(self.workdir)
