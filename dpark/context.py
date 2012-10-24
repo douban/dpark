@@ -143,6 +143,14 @@ class DparkContext(object):
     def binaryFile(self, path, fmt=None, length=None, *args, **kwargs):
         return self.textFile(path, cls=BinaryFileRDD, fmt=fmt, length=length, *args, **kwargs)
 
+    def tableFile(self, path, *args, **kwargs):
+        return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
+
+    def table(self, path):
+        p = os.path.join(path, '.field_names')
+        fields = open(p).read().split('\t')
+        return self.tableFile(path).asTable(fields)
+
     def union(self, rdds):
         return UnionRDD(self, rdds)
 

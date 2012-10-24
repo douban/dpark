@@ -153,6 +153,17 @@ class TestRDD(unittest.TestCase):
         rd = self.sc.binaryFile('/tmp/tout', fmt="I", splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
 
+    def test_table_file(self):
+        N = 100000
+        d = self.sc.makeRDD(zip(range(N), range(N)), 1)
+        self.assertEqual(d.saveAsTableFile('/tmp/tout'), ['/tmp/tout/0000.tab',])
+        rd = self.sc.tableFile('/tmp/tout', splitSize=64<<10)
+        self.assertEqual(rd.count(), N)
+        self.assertEqual(rd.map(lambda x:x[0]).reduce(lambda x,y:x+y), sum(xrange(N)))
+
+        d.asTable(['f1', 'f2']).save('/tmp/tout')
+        rd = self.sc.table('/tmp/tout')
+        self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(xrange(N)))
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

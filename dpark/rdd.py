@@ -4,7 +4,7 @@ import time
 import threading
 import socket
 import csv
-import cStringIO
+from cStringIO import StringIO
 import itertools
 import operator
 import math
@@ -299,6 +299,9 @@ class RDD(object):
 
     def saveAsBinaryFile(self, path, fmt, overwrite=True):
         return OutputBinaryFileRDD(self, path, fmt, overwrite).collect()
+
+    def saveAsTableFile(self, path, overwrite=True):
+        return OutputTableFileRDD(self, path, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1112,7 +1115,7 @@ class GZipFileRDD(TextFileRDD):
             start += len(d)
             if not d: break
 
-            io = cStringIO.StringIO(dz.decompress(d))
+            io = StringIO(dz.decompress(d))
             
             last_line += io.readline()
             yield last_line
@@ -1128,6 +1131,50 @@ class GZipFileRDD(TextFileRDD):
                 yield last_line
                 last_line = ''
 
+        f.close()
+
+
+class TableFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, splitSize=None):
+        TextFileRDD.__init__(self, ctx, path, None, splitSize)
+    
+    def find_magic(self, f, pos, magic):
+        f.seek(pos)
+        block = f.read(32*1024)
+        if len(block) < len(magic):
+            return -1
+        p = block.find(magic)
+        while p < 0:
+            pos += len(block) - len(magic) + 1 
+            block = block[1 - len(magic):] + f.read(32<<10)
+            if len(block) == len(magic) - 1:
+                return -1
+            p = block.find(magic)
+        return pos + p
+
+    def compute(self, split):
+        import msgpack
+        f = self.open_file()
+        magic = f.read(8)
+        start = split.index * self.splitSize
+        end = (split.index + 1) * self.splitSize
+        start = self.find_magic(f, start, magic)
+        if start < 0:
+            return
+        f.seek(start)
+        hdr_size = 12
+        while start < end:
+            m = f.read(len(magic))
+            if m != magic:
+                break
+            compressed, count, size = struct.unpack("III", f.read(hdr_size))
+            d = f.read(size)
+            assert len(d) == size, 'unexpected end'
+            if compressed:
+                d = zlib.decompress(d)
+            for r in msgpack.Unpacker(StringIO(d)):
+                yield r
+            start += len(magic) + hdr_size + size
         f.close()
 
 
@@ -1162,7 +1209,7 @@ class BZip2FileRDD(TextFileRDD):
         last_line = None if split.index > 0 else ''
         while d:
             try:
-                io = cStringIO.StringIO(bz2.decompress(d))
+                io = StringIO(bz2.decompress(d))
             except IOError, e:
                 #bad position, skip it
                 pass
@@ -1382,3 +1429,36 @@ class OutputBinaryFileRDD(OutputTextFileRDD):
                 f.write(struct.pack(self.fmt, row))
             empty = False
         return not empty 
+
+class OutputTableFileRDD(OutputTextFileRDD):
+    MAGIC = '\x00\xDE\x00\xAD\xFF\xBE\xFF\xEF'
+    BLOCK_SIZE = 256 << 10 # 256K
+
+    def __init__(self, rdd, path, overwrite=True, compress=True):
+        OutputTextFileRDD.__init__(self, rdd, path, ext='.tab', overwrite=overwrite, compress=False)
+        self.compress = compress
+
+    def writedata(self, f, rows):
+        import msgpack
+        def flush(buf):
+            d = buf.getvalue()
+            if self.compress:
+                d = zlib.compress(d, 1)
+            f.write(self.MAGIC)
+            f.write(struct.pack("III", self.compress, count, len(d)))
+            f.write(d)
+        
+        count, buf = 0, StringIO()
+        for row in rows:
+            msgpack.pack(row, buf)
+            count += 1
+            if buf.tell() > self.BLOCK_SIZE:
+                flush(buf)
+                count, buf = 0, StringIO()
+
+        if count > 0:
+            flush(buf)
+
+        return f.tell() > 0
+
+    write_compress_data = writedata
