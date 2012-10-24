@@ -1110,15 +1110,28 @@ class GZipFileRDD(TextFileRDD):
         if self.fileinfo:
             f.length = end
         dz = zlib.decompressobj(-zlib.MAX_WBITS)
+        skip_first = False
         while start < end:
             d = f.read(min(64<<10, end-start))
             start += len(d)
             if not d: break
 
-            io = StringIO(dz.decompress(d))
-            
+            try:
+                io = StringIO(dz.decompress(d))
+            except Exception, e:
+                old = start
+                start = self.find_block(f, start)
+                f.seek(start)
+                logger.error("drop corrupted block (%d bytes) in %s",
+                        start - old + len(d), self.path)
+                skip_first = True
+                continue
+
             last_line += io.readline()
-            yield last_line
+            if skip_first:
+                skip_first = False
+            else:
+                yield last_line
             last_line = ''
 
             ll = list(io)
