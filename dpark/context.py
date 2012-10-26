@@ -146,10 +146,17 @@ class DparkContext(object):
     def tableFile(self, path, *args, **kwargs):
         return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
 
-    def table(self, path):
-        p = os.path.join(path, '.field_names')
+    def table(self, path, **kwargs):
+        p = None
+        for root, dirs, names in os.walk(path[0] 
+                if isinstance(path, (list, tuple)) else path):
+            if '.field_names' in names:
+                p = os.path.join(root, '.field_names')
+                break
+        if p is None:
+            raise Exception("no .field_names found in %s" % path)
         fields = open(p).read().split('\t')
-        return self.tableFile(path).asTable(fields)
+        return self.tableFile(path, **kwargs).asTable(fields)
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
