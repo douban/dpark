@@ -1120,6 +1120,8 @@ class GZipFileRDD(TextFileRDD):
             try:
                 io = StringIO(dz.decompress(d))
             except Exception, e:
+                if self.err < 1e-6:
+                    raise
                 old = start
                 start = self.find_block(f, start)
                 f.seek(start)
