@@ -35,7 +35,7 @@ class TestExecute(unittest.TestCase):
       
         executorInfo = mesos_pb2.ExecutorInfo()
         executorInfo.executor_id.value = "test-id"
-        executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, 8, "", "", 1, 
+        executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, {}, 8, "", "", 1, 
             {'DPARK_HAS_DFS':'False', 'WORKDIR':'/tmp/xxxxx'}))
 
         frameworkInfo = mesos_pb2.FrameworkInfo()

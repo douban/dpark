@@ -234,13 +234,14 @@ class MyExecutor(mesos.Executor):
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
-            Script, cwd, python_path, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
+            Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             self.init_args = [args]
             try:
                 os.chdir(cwd)
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
+            os.environ.update(osenv)
             prefix = '[%s] ' % socket.gethostname()
             if out_logger:
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
