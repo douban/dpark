@@ -146,6 +146,8 @@ class RDD(object):
         return UnionRDD(self.ctx, [self, rdd])
 
     def sort(self, key=lambda x:x, reverse=False, numSplits=None):
+        if not len(self):
+            return self
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)

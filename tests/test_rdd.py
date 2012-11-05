@@ -114,6 +114,11 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.makeRDD(d, 10)
         self.assertEqual(rdd.hot(), zip(range(9, -1, -1), range(11, 1, -1)))
 
+    def test_empty_rdd(self):
+        rdd = self.sc.union([])
+        self.assertEqual(rdd.count(), 0)
+        self.assertEqual(rdd.sort().collect(), [])
+
     def test_text_file(self):
         path = 'tests/test_rdd.py'
         f = self.sc.textFile(path, splitSize=1000).mergeSplit(numSplits=1)
