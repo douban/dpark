@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import logging
 import os, sys, time
+import signal
 import os.path
 import marshal
 import cPickle
@@ -86,6 +87,14 @@ def run_task(task, ntry):
 def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
+        
+def terminate(p):
+    try:
+        for pi in p._pool:
+            os.kill(pi.pid, signal.SIGKILL)
+    except Exception, e:
+        pass
+
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -188,7 +197,7 @@ class MyExecutor(mesos.Executor):
         while True:
             self.lock.acquire()
             
-            for tid, (task, pool) in self.busy_workers.items():
+            for tid, (task, pool) in self.busy_workers.iteritems():
                 pid = pool._pool[0].pid
                 try:
                     p = psutil.Process(pid)
@@ -213,7 +222,7 @@ class MyExecutor(mesos.Executor):
                             + "use -M argument to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
-                    pool.terminate()
+                    terminate(pool)
                 elif rss > offered * mem_limit.get(tid, 1.0):
                     logger.warning("task %s used too much memory: %dMB > %dMB, "
                             + "use -M to request more memory", tid, rss, offered)
@@ -223,7 +232,7 @@ class MyExecutor(mesos.Executor):
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
             if n:
                 for _, p in self.idle_workers[:n]:
-                    p.terminate()
+                    terminate(p)
                 self.idle_workers = self.idle_workers[n:]
             
             self.lock.release()
@@ -276,7 +285,7 @@ class MyExecutor(mesos.Executor):
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
-            driver.sendFrameworkMessage("init executor failed:\n " +  msg)
+            logger.error("init executor failed: %s", msg)
 
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
@@ -317,8 +326,7 @@ class MyExecutor(mesos.Executor):
                             and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
                         self.idle_workers.append((time.time(), pool))
                     else:
-                        try: pool.terminate() 
-                        except: pass
+                        terminate(pool)
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
@@ -332,26 +340,19 @@ class MyExecutor(mesos.Executor):
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            pool.terminate()
+            terminate(pool)
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
 
     @safe
     def shutdown(self, driver):
-        #sys.stdout = sys.stderr = open('/tmp/dpark_shutdown.log', 'a', 0)
-
-        #print time.time(), 'shutdown workdir', self.workdir
         for _, p in self.idle_workers:
-            try: p.terminate()
-            except: pass
-        for p in self.busy_workers.values():
-            try: p.terminate()
-            except: pass
-        
+            terminate(p)
+        for _, p in self.busy_workers.itervalues():
+            terminate(p)
+
         # clean work files
-        #print time.time(), 'clean', self.workdir
         try: shutil.rmtree(self.workdir, True)
         except: pass
-        #print time.time(), 'clean', self.workdir, 'done'
 
         os._exit(0)
 
