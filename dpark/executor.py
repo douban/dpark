@@ -88,13 +88,6 @@ def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
         
-def terminate(p):
-    try:
-        for pi in p._pool:
-            os.kill(pi.pid, signal.SIGKILL)
-    except Exception, e:
-        pass
-
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -161,7 +154,7 @@ def get_pool_memory(pool):
     try:
         import psutil
         p = psutil.Process(pool._pool[0].pid)
-        return p.get_memory_info()[0]
+        return p.get_memory_info()[0] >> 20
     except Exception:
         return 0
 
@@ -222,7 +215,7 @@ class MyExecutor(mesos.Executor):
                             + "use -M argument to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
-                    terminate(pool)
+                    pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
                     logger.warning("task %s used too much memory: %dMB > %dMB, "
                             + "use -M to request more memory", tid, rss, offered)
@@ -326,7 +319,8 @@ class MyExecutor(mesos.Executor):
                             and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
                         self.idle_workers.append((time.time(), pool))
                     else:
-                        terminate(pool)
+                        try: pool.terminate()
+                        except: pass
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
     
@@ -340,11 +334,17 @@ class MyExecutor(mesos.Executor):
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            terminate(pool)
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
+            pool.terminate()
 
     @safe
     def shutdown(self, driver):
+        def terminate(p):
+            try:
+                for pi in p._pool:
+                    os.kill(pi.pid, signal.SIGKILL)
+            except Exception, e:
+                pass
         for _, p in self.idle_workers:
             terminate(p)
         for _, p in self.busy_workers.itervalues():
