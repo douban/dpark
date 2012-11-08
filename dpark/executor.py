@@ -225,7 +225,7 @@ class MyExecutor(mesos.Executor):
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
             if n:
                 for _, p in self.idle_workers[:n]:
-                    terminate(p)
+                    p.terminate()
                 self.idle_workers = self.idle_workers[n:]
             
             self.lock.release()
