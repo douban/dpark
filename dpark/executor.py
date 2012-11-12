@@ -107,7 +107,6 @@ def startWebServer(path):
             os.path.basename(path))
     try:
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
-        os.remove(testpath)
         if data == path:
             return default_uri
     except IOError, e:
@@ -190,7 +189,7 @@ class MyExecutor(mesos.Executor):
         while True:
             self.lock.acquire()
             
-            for tid, (task, pool) in self.busy_workers.iteritems():
+            for tid, (task, pool) in self.busy_workers.items():
                 pid = pool._pool[0].pid
                 try:
                     p = psutil.Process(pid)
