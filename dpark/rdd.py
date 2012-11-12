@@ -1066,14 +1066,14 @@ class GZipFileRDD(TextFileRDD):
         while True:
             p = block.find(ENDING)
             while p < 0:
-                pos += len(block) - 3 
+                pos += max(len(block) - 3, 0)
                 block = block[-3:] + f.read(32<<10)
-                if len(block) == 3:
+                if len(block) < 4:
                     return pos + 3 # EOF
                 p = block.find(ENDING)
             pos += p + 4
             block = block[p+4:]
-            if not block:
+            if len(block) < 4096:
                 block += f.read(4096)
                 if not block:
                     return pos # EOF
