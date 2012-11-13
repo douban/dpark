@@ -1135,7 +1135,7 @@ class GZipFileRDD(TextFileRDD):
             last_line += io.readline()
             if skip_first:
                 skip_first = False
-            else:
+            elif last_line.endswith('\n'):
                 yield last_line
             last_line = ''
 
