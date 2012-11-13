@@ -37,8 +37,9 @@ logger = logging.getLogger("executor@%s" % socket.gethostname())
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
-MAX_IDLE_TIME = 120
+MAX_IDLE_TIME = 60
 MAX_IDLE_WORKERS = 8
+MAX_IDLE_CYCLE = 60 * 30
 
 Script = ''
 
@@ -170,6 +171,26 @@ def safe(f):
             r = f(self, *a, **kw)
         return r
     return _
+            
+# cleaner process
+def clean_work_dir(path):
+    setproctitle('dpark cleaner %s' % path)
+    exit = False
+
+    def handler(signm, frame):
+        exit = True
+    signal.signal(signal.SIGTERM, handler)
+    signal.signal(signal.SIGHUP, handler)
+    signal.signal(signal.SIGABRT, handler)
+    signal.signal(signal.SIGQUIT, handler)
+
+    while not exit and os.getppid() > 1:
+        time.sleep(1)
+
+    while os.path.exists(path):
+        try: shutil.rmtree(path, True)
+        except: pass
+
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
@@ -186,6 +207,8 @@ class MyExecutor(mesos.Executor):
             return
 
         mem_limit = {}
+        idle_cycle = 0
+
         while True:
             self.lock.acquire()
             
@@ -229,7 +252,15 @@ class MyExecutor(mesos.Executor):
             
             self.lock.release()
 
-            time.sleep(5) 
+            if self.idle_workers or self.busy_workers:
+                idle_cycle = 0
+            else:
+                idle_cycle += 1
+                if idle_cycle > MAX_IDLE_CYCLE:
+                    logger.warning("shutdown idle executor")
+                    self.shutdown()
+
+            time.sleep(1) 
 
     @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
@@ -271,13 +302,16 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 os.close(2)
                 assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
- 
+
+            multiprocessing.Pool(1).apply_async(clean_work_dir, [self.workdir])
+
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
             logger.error("init executor failed: %s", msg)
+            raise
 
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
@@ -337,7 +371,7 @@ class MyExecutor(mesos.Executor):
             pool.terminate()
 
     @safe
-    def shutdown(self, driver):
+    def shutdown(self, driver=None):
         def terminate(p):
             try:
                 for pi in p._pool:
