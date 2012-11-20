@@ -124,22 +124,28 @@ def startWebServer(path):
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
     ctx = zmq.Context()
-    out = ctx.socket(zmq.PUSH)
-    out.connect(addr)
+    out = [None]
     buf = []
+    def send(buf):
+        if not out[0]:
+            out[0] = ctx.socket(zmq.PUSH)
+            out[0].connect(addr)
+        out[0].send(prefix+''.join(buf))
+
     while True:
         try:
             line = f.readline()
             if not line: break
             buf.append(line)
             if line.endswith('\n'):
-                out.send(prefix+''.join(buf))
+                send(buf)
                 buf = []
         except IOError:
             break
     if buf:
-        out.send(''.join(buf))
-    out.close()
+        send(buf)
+    if out[0]:
+        out[0].close()
     f.close()
     ctx.shutdown()
 

@@ -321,6 +321,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
         sock.connect(self.addr)
         sock.send_pyobj(StopMapOutputTracker())
         self.t.join(0.1)
+        sock.close()
 
     def run(self):
         sock = env.ctx.socket(zmq.REP)
