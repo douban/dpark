@@ -197,6 +197,7 @@ def clean_work_dir(path):
         try: shutil.rmtree(path, True)
         except: pass
 
+    sys.exit(0)
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
