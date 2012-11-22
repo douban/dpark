@@ -110,6 +110,7 @@ class DAGScheduler(Scheduler):
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
         self._shutdown = False
+        self.keep_order = True
 
     def check(self):
         pass
@@ -291,13 +292,16 @@ class DAGScheduler(Scheduler):
             if isinstance(evt.reason, Success):
                 Accumulator.merge(evt.accumUpdates)
                 if isinstance(task, ResultTask):
-                    results[task.outputId] = evt.result
                     finished[task.outputId] = True
                     numFinished += 1
-                    while lastFinished < numOutputParts and finished[lastFinished]:
-                        yield results[lastFinished]
-                        results[lastFinished] = None
-                        lastFinished += 1
+                    if self.keep_order:
+                        results[task.outputId] = evt.result
+                        while lastFinished < numOutputParts and finished[lastFinished]:
+                            yield results[lastFinished]
+                            results[lastFinished] = None
+                            lastFinished += 1
+                    else:
+                        yield evt.result
 
                 elif isinstance(task, ShuffleMapTask):
                     stage = self.idToStage[task.stageId]
@@ -440,6 +444,7 @@ class MesosScheduler(DAGScheduler):
     def __init__(self, master, options):
         DAGScheduler.__init__(self)
         self.master = master
+        self.keep_order = self.options.keep_order
         self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
