@@ -223,10 +223,8 @@ class RDD(object):
                 raise Exception("too many error occured: %s" % (float(err)/total))
             
             return [s] if s is not None else []
-
-        s = sum(self.ctx.runJob(self, reducePartition), [])
-        if s:
-            return reduce(f, s)
+        
+        return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
 
     def uniq(self, numSplits=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
