@@ -444,7 +444,7 @@ class MesosScheduler(DAGScheduler):
     def __init__(self, master, options):
         DAGScheduler.__init__(self)
         self.master = master
-        self.keep_order = self.options.keep_order
+        self.keep_order = options.keep_order
         self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
