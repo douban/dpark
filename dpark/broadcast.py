@@ -3,13 +3,12 @@ import uuid
 import socket
 import marshal
 import cPickle
-import threading
 import logging
 import gc
 
 import zmq
 
-from util import compress, decompress, getproctitle, setproctitle
+from util import compress, decompress, getproctitle, setproctitle, spawn
 import cache
 from serialize import marshalable
 from env import env
@@ -298,9 +297,7 @@ class TreeBroadcast(FileBroadcast):
             self.listOfSources = []
             self.unregisterValue(self.uuid)
 
-        t = threading.Thread(target=run)
-        t.daemon = True
-        t.start()
+        spawn(run)
         # wait for guide to start
         while self.guide_addr is None:
             time.sleep(0.01)
@@ -360,9 +357,7 @@ class TreeBroadcast(FileBroadcast):
             self.blocks = []
             self.value = None
 
-        t = threading.Thread(target=run)
-        t.daemon = True
-        t.start()
+        spawn(run)
         while self.serverAddr is None:
             time.sleep(0.01)
         #logger.debug("server started...")
@@ -489,9 +484,7 @@ class TreeBroadcast(FileBroadcast):
             logger.debug("TreeBroadcast tracker stopped")
 
         if is_master:
-            t = threading.Thread(target=run)
-            t.daemon = True
-            t.start()
+            spawn(run)
             while cls.master_addr is None:
                 time.sleep(0.01)
             env.register('TreeBroadcastTrackerAddr', cls.master_addr)

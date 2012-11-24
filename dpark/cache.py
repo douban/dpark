@@ -1,6 +1,5 @@
 import os
 import socket
-import threading
 import multiprocessing
 import logging
 import cPickle
@@ -10,6 +9,7 @@ import zmq
 
 import shareddict
 from env import env
+from util import spawn
 
 logger = logging.getLogger("cache")
 
@@ -100,9 +100,7 @@ class CacheTrackerServer(object):
         self.locs = locs
 
     def start(self):
-        self.t = threading.Thread(target=self.run)
-        self.t.daemon = True
-        self.t.start()
+        spawn(self.run)
         while self.addr is None:
             time.sleep(0.01)
 
@@ -111,7 +109,6 @@ class CacheTrackerServer(object):
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
         sock.close()
-        self.t.join(.1)
 
     def run(self):
         locs = self.locs

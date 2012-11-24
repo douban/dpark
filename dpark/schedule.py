@@ -18,7 +18,7 @@ except ImportError:
     warnings.warn("no mesos module available, can not run in mesos mode",
         ImportWarning)
 
-from util import compress, decompress
+from util import compress, decompress, spawn
 from dependency import NarrowDependency, ShuffleDependency 
 from accumulator import Accumulator
 from task import ResultTask, ShuffleMapTask
@@ -499,9 +499,7 @@ class MesosScheduler(DAGScheduler):
                 line = sock.recv()
                 output.write(line)
 
-        t = threading.Thread(target=collect_log)
-        t.daemon = True
-        t.start()
+        spawn(collect_log)
 
         host = socket.gethostname()
         addr = "tcp://%s:%d" % (host, port)

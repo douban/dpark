@@ -1,7 +1,6 @@
 import sys
 import os, os.path
 import time
-import threading
 import socket
 import csv
 from cStringIO import StringIO
@@ -21,7 +20,7 @@ import struct
 
 from serialize import load_func, dump_func
 from dependency import *
-from util import ilen
+from util import ilen, spawn
 import shuffle
 from env import env
 import moosefs
@@ -584,7 +583,7 @@ class PipedRDD(DerivedRDD):
             finally:
                 stdin.close()
                 devnull.close()
-        threading.Thread(target=read, args=[p.stdin]).start()
+        spawn(read, p.stdin)
         return p.stdout
 
 class MappedValuesRDD(MappedRDD):
