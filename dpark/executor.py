@@ -24,7 +24,7 @@ import mesos
 import mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, getproctitle, setproctitle
+from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -85,10 +85,20 @@ def run_task(task, ntry):
         gc.collect()
         gc.enable()
 
-def init_env(args):
+def cleanup(workdir):
+    while os.getppid() > 1:
+        time.sleep(1)
+
+    while os.path.exists(workdir):
+        try: shutil.rmtree(workdir, True)
+        except: pass 
+    
+    sys.exit(0)
+
+def init_env(args, workdir):
     setproctitle('dpark worker: idle')
     env.start(False, args)
-        
+    spawn(cleanup, workdir)
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -116,7 +126,7 @@ def startWebServer(path):
     logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
-    threading.Thread(target=ss.serve_forever).start()
+    spawn(ss.serve_forever)
     uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1], 
             os.path.basename(path))
     return uri 
@@ -151,9 +161,7 @@ def forword(fd, addr, prefix=''):
 
 def start_forword(addr, prefix=''):
     rfd, wfd = os.pipe()
-    t = threading.Thread(target=forword, args=[rfd, addr, prefix])
-    t.daemon = True
-    t.start()    
+    t = spawn(forword, rfd, addr, prefix)
     return t, os.fdopen(wfd, 'w', 0) 
 
 def get_pool_memory(pool):
@@ -181,23 +189,8 @@ def safe(f):
 # cleaner process
 def clean_work_dir(path):
     setproctitle('dpark cleaner %s' % path)
-    exit = False
+    spawn(cleanup, path)
 
-    def handler(signm, frame):
-        exit = True
-    signal.signal(signal.SIGTERM, handler)
-    signal.signal(signal.SIGHUP, handler)
-    signal.signal(signal.SIGABRT, handler)
-    signal.signal(signal.SIGQUIT, handler)
-
-    while not exit and os.getppid() > 1:
-        time.sleep(1)
-
-    while os.path.exists(path):
-        try: shutil.rmtree(path, True)
-        except: pass
-
-    sys.exit(0)
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
@@ -274,7 +267,7 @@ class MyExecutor(mesos.Executor):
         try:
             global Script
             Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
-            self.init_args = [args]
+            self.init_args = args
             try:
                 os.chdir(cwd)
             except OSError:
@@ -297,10 +290,8 @@ class MyExecutor(mesos.Executor):
                 os.mkdir(self.workdir)
             args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
-            t = threading.Thread(target=self.check_memory, args=[driver])
-            t.daemon = True
-            t.start()
-           
+            spawn(self.check_memory, driver)
+
             # wait background threads to been initialized
             time.sleep(0.1)
             if out_logger:
@@ -330,7 +321,7 @@ class MyExecutor(mesos.Executor):
         try:
             return self.idle_workers.pop()[1]
         except IndexError:
-            p = multiprocessing.Pool(1, init_env, self.init_args)
+            p = multiprocessing.Pool(1, init_env, [self.init_args, self.workdir])
             p.done = 0
             return p 
 

@@ -1,5 +1,6 @@
 # util 
 from zlib import compress as _compress, decompress
+import threading
 
 COMPRESS = 'zlib'
 def compress(s):
@@ -28,3 +29,9 @@ def ilen(x):
         return len(x)
     except TypeError:
         return sum(1 for i in x)
+
+def spawn(target, *args, **kw):
+    t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
+    t.daemon = True
+    t.start()
+    return t
