@@ -93,12 +93,12 @@ def cleanup(workdir):
         try: shutil.rmtree(workdir, True)
         except: pass 
     
-    sys.exit(0)
+    os._exit(0)
 
 def init_env(args, workdir):
     setproctitle('dpark worker: idle')
     env.start(False, args)
-    spawn(cleanup, workdir)
+    threading.Thread(target=cleanup, args=[workdir]).start()
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -189,8 +189,7 @@ def safe(f):
 # cleaner process
 def clean_work_dir(path):
     setproctitle('dpark cleaner %s' % path)
-    spawn(cleanup, path)
-
+    threading.Thread(target=cleanup, args=[path]).start()
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
