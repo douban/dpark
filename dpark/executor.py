@@ -300,7 +300,7 @@ class MyExecutor(mesos.Executor):
                 os.close(2)
                 assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
 
-            multiprocessing.Pool(1).apply_async(clean_work_dir, [self.workdir])
+            multiprocessing.Pool(1, clean_work_dir, [self.workdir])
 
             logger.debug("executor started at %s", slaveInfo.hostname)
 
