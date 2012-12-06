@@ -382,7 +382,9 @@ class MultiProcessScheduler(LocalScheduler):
         pass
 
     def submitTasks(self, tasks):
-        total, self.finished = len(tasks), 0
+        logger.info("Got a job with %d tasks", len(tasks))
+        
+        total, self.finished, start = len(tasks), 0, time.time()
         def callback(args):
             logger.debug("got answer: %s", args)
             tid, reason, result, update = args
@@ -391,9 +393,9 @@ class MultiProcessScheduler(LocalScheduler):
             logger.info("Task %s finished (%d/%d)        \x1b[1A",
                 tid, self.finished, total)
             if self.finished == total:
-                logger.info("\r" + " "*80 + "\x1b[1A") # erase the progress bar
+                logger.info("Job finished in %.1f seconds" + " "*20,  time.time() - start)
             self.taskEnded(task, reason, result, update)
-
+        
         for task in tasks:
             logger.debug("put task async: %s", task)
             self.tasks[task.id] = task
@@ -539,8 +541,8 @@ class MesosScheduler(DAGScheduler):
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = marshal.dumps((os.path.realpath(sys.argv[0]), os.getcwd(), sys.path, self.task_per_node,
-            self.out_logger, self.err_logger, self.logLevel, env.environ))
+        info.data = marshal.dumps((os.path.realpath(sys.argv[0]), os.getcwd(), sys.path, dict(os.environ),
+            self.task_per_node, self.out_logger, self.err_logger, self.logLevel, env.environ))
         return info
 
     @safe

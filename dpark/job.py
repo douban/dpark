@@ -42,7 +42,7 @@ class Job:
         return cls.nextJobId
 
 LOCALITY_WAIT = 0
-WAIT_FOR_RUNNING = 15
+WAIT_FOR_RUNNING = 10
 MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 15 << 10 # 15GB
 
@@ -278,6 +278,7 @@ class SimpleJob(Job):
                 logger.warning("task %d timeout %.1f (at %s), re-assign it", 
                         task.id, now - task.start, task.host)
                 self.launched[i] = False
+                self.blacklist[i].append(task.host)
                 self.tasksLaunched -= 1
 
         if self.tasksFinished > self.numTasks / 3:

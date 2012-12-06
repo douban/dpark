@@ -1,12 +1,15 @@
 import os
 import socket
 from cStringIO import StringIO
+import logging
 
 from consts import *
 from master import MasterConn
 from cs import read_chunk, read_chunk_from_local
 
 MFS_ROOT_INODE = 1
+
+logger = logging.getLogger(__name__)
 
 class MooseFS(object):
     def __init__(self, host='mfsmaster', port=9421):
@@ -166,12 +169,15 @@ class ReadableFile(File):
         
         local_ip = socket.gethostbyname(socket.gethostname())
         if any(ip == local_ip for ip,port in chunk.addrs):
-            for block in read_chunk_from_local(chunk.id,
-                    chunk.version, length-offset, offset):
-                yield block
-                offset += len(block)
-                if offset >= length:
-                    return
+            try:
+                for block in read_chunk_from_local(chunk.id,
+                        chunk.version, length-offset, offset):
+                    yield block
+                    offset += len(block)
+                    if offset >= length:
+                        return
+            except Exception, e:
+                logger.warning("read chunk %d from local: %s", chunk.id, e)
 
         for host, port in chunk.addrs:
             # give up after two continuous errors

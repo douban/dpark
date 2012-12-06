@@ -6,7 +6,7 @@ import itertools
 
 import msgpack
 
-from rdd import DerivedRDD
+from rdd import DerivedRDD, OutputTableFileRDD
 from dependency import Aggregator, OneToOneDependency
 
 Aggs = {
@@ -241,6 +241,11 @@ class TableRDD(DerivedRDD):
             return r.take(int(kw['limit']))
         return r
 
+    def save(self, path, overwrite=True, compress=True):
+        r = OutputTableFileRDD(self.prev, path,
+            overwrite=overwrite, compress=compress).collect()
+        open(os.path.join(path, '.field_names'), 'w').write('\t'.join(self.fields))
+        return r
 
 def test():
     from context import DparkContext

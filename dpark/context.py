@@ -138,6 +138,21 @@ class DparkContext(object):
     def binaryFile(self, path, fmt=None, length=None, *args, **kwargs):
         return self.textFile(path, cls=BinaryFileRDD, fmt=fmt, length=length, *args, **kwargs)
 
+    def tableFile(self, path, *args, **kwargs):
+        return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
+
+    def table(self, path, **kwargs):
+        p = None
+        for root, dirs, names in os.walk(path[0] 
+                if isinstance(path, (list, tuple)) else path):
+            if '.field_names' in names:
+                p = os.path.join(root, '.field_names')
+                break
+        if p is None:
+            raise Exception("no .field_names found in %s" % path)
+        fields = open(p).read().split('\t')
+        return self.tableFile(path, **kwargs).asTable(fields)
+
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
@@ -251,7 +266,7 @@ def parse_options():
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
 
-    logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s',
+    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
         level=options.logLevel)
     
     return options

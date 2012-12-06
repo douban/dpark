@@ -4,7 +4,7 @@ import time
 import threading
 import socket
 import csv
-import cStringIO
+from cStringIO import StringIO
 import itertools
 import operator
 import math
@@ -73,7 +73,7 @@ class RDD(object):
     def __getslice__(self, i,j):
         return SliceRDD(self, i, j)
 
-    def mergeSplit(self, splitSize=2, numSplits=None):
+    def mergeSplit(self, splitSize=None, numSplits=None):
         return MergedRDD(self, splitSize, numSplits)
 
     @property
@@ -145,6 +145,8 @@ class RDD(object):
         return UnionRDD(self.ctx, [self, rdd])
 
     def sort(self, key=lambda x:x, reverse=False, numSplits=None):
+        if not len(self):
+            return self
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
@@ -298,6 +300,9 @@ class RDD(object):
 
     def saveAsBinaryFile(self, path, fmt, overwrite=True):
         return OutputBinaryFileRDD(self, path, fmt, overwrite).collect()
+
+    def saveAsTableFile(self, path, overwrite=True):
+        return OutputTableFileRDD(self, path, overwrite).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -547,19 +552,22 @@ class MapPartitionsRDD(MappedRDD):
         return self.func(self.prev.iterator(split))
 
 class PipedRDD(DerivedRDD):
-    def __init__(self, prev, command, quiet=False):
+    def __init__(self, prev, command, quiet=False, shell=False):
         DerivedRDD.__init__(self, prev)
         self.command = command
         self.quiet = quiet
+        self.shell = shell
 
     def __repr__(self):
         return '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
 
     def compute(self, split):
         import subprocess
+        devnull = open(os.devnull, 'w')
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE, 
-                stderr=self.quiet and subprocess.PIPE or sys.stderr)
+                stderr=self.quiet and devnull or sys.stderr,
+                shell=self.shell)
         def read(stdin):
             try:
                 it = self.prev.iterator(split)
@@ -576,6 +584,7 @@ class PipedRDD(DerivedRDD):
                     stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
             finally:
                 stdin.close()
+                devnull.close()
         threading.Thread(target=read, args=[p.stdin]).start()
         return p.stdout
 
@@ -1033,9 +1042,9 @@ class TextFileRDD(RDD):
             f.seek(start)
             return f
 
-        return self.read(split, start, end)
+        return self.read(f, start, end)
 
-    def read(self, split, start, end):
+    def read(self, f, start, end):
         for line in f:
             start += len(line)
             yield line
@@ -1045,6 +1054,7 @@ class TextFileRDD(RDD):
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
     BLOCK_SIZE = 64 << 10
+    DEFAULT_SPLIT_SIZE = 32 << 20
 
     def __init__(self, ctx, path, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, None, splitSize)
@@ -1106,15 +1116,30 @@ class GZipFileRDD(TextFileRDD):
         if self.fileinfo:
             f.length = end
         dz = zlib.decompressobj(-zlib.MAX_WBITS)
+        skip_first = False
         while start < end:
             d = f.read(min(64<<10, end-start))
             start += len(d)
             if not d: break
 
-            io = cStringIO.StringIO(dz.decompress(d))
-            
+            try:
+                io = StringIO(dz.decompress(d))
+            except Exception, e:
+                if self.err < 1e-6:
+                    raise
+                old = start
+                start = self.find_block(f, start)
+                f.seek(start)
+                logger.error("drop corrupted block (%d bytes) in %s",
+                        start - old + len(d), self.path)
+                skip_first = True
+                continue
+
             last_line += io.readline()
-            yield last_line
+            if skip_first:
+                skip_first = False
+            else:
+                yield last_line
             last_line = ''
 
             ll = list(io)
@@ -1127,6 +1152,53 @@ class GZipFileRDD(TextFileRDD):
                 yield last_line
                 last_line = ''
 
+        f.close()
+
+
+class TableFileRDD(TextFileRDD):
+
+    DEFAULT_SPLIT_SIZE = 32 << 20
+
+    def __init__(self, ctx, path, splitSize=None):
+        TextFileRDD.__init__(self, ctx, path, None, splitSize)
+    
+    def find_magic(self, f, pos, magic):
+        f.seek(pos)
+        block = f.read(32*1024)
+        if len(block) < len(magic):
+            return -1
+        p = block.find(magic)
+        while p < 0:
+            pos += len(block) - len(magic) + 1 
+            block = block[1 - len(magic):] + f.read(32<<10)
+            if len(block) == len(magic) - 1:
+                return -1
+            p = block.find(magic)
+        return pos + p
+
+    def compute(self, split):
+        import msgpack
+        f = self.open_file()
+        magic = f.read(8)
+        start = split.index * self.splitSize
+        end = (split.index + 1) * self.splitSize
+        start = self.find_magic(f, start, magic)
+        if start < 0:
+            return
+        f.seek(start)
+        hdr_size = 12
+        while start < end:
+            m = f.read(len(magic))
+            if m != magic:
+                break
+            compressed, count, size = struct.unpack("III", f.read(hdr_size))
+            d = f.read(size)
+            assert len(d) == size, 'unexpected end'
+            if compressed:
+                d = zlib.decompress(d)
+            for r in msgpack.Unpacker(StringIO(d)):
+                yield r
+            start += len(magic) + hdr_size + size
         f.close()
 
 
@@ -1161,7 +1233,7 @@ class BZip2FileRDD(TextFileRDD):
         last_line = None if split.index > 0 else ''
         while d:
             try:
-                io = cStringIO.StringIO(bz2.decompress(d))
+                io = StringIO(bz2.decompress(d))
             except IOError, e:
                 #bad position, skip it
                 pass
@@ -1381,3 +1453,36 @@ class OutputBinaryFileRDD(OutputTextFileRDD):
                 f.write(struct.pack(self.fmt, row))
             empty = False
         return not empty 
+
+class OutputTableFileRDD(OutputTextFileRDD):
+    MAGIC = '\x00\xDE\x00\xAD\xFF\xBE\xFF\xEF'
+    BLOCK_SIZE = 256 << 10 # 256K
+
+    def __init__(self, rdd, path, overwrite=True, compress=True):
+        OutputTextFileRDD.__init__(self, rdd, path, ext='.tab', overwrite=overwrite, compress=False)
+        self.compress = compress
+
+    def writedata(self, f, rows):
+        import msgpack
+        def flush(buf):
+            d = buf.getvalue()
+            if self.compress:
+                d = zlib.compress(d, 1)
+            f.write(self.MAGIC)
+            f.write(struct.pack("III", self.compress, count, len(d)))
+            f.write(d)
+        
+        count, buf = 0, StringIO()
+        for row in rows:
+            msgpack.pack(row, buf)
+            count += 1
+            if buf.tell() > self.BLOCK_SIZE:
+                flush(buf)
+                count, buf = 0, StringIO()
+
+        if count > 0:
+            flush(buf)
+
+        return f.tell() > 0
+
+    write_compress_data = writedata

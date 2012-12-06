@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import logging
 import os, sys, time
+import signal
 import os.path
 import marshal
 import cPickle
@@ -86,6 +87,7 @@ def run_task(task, ntry):
 def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
+        
 
 basedir = None
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
@@ -170,7 +172,7 @@ def get_pool_memory(pool):
     try:
         import psutil
         p = psutil.Process(pool._pool[0].pid)
-        return p.get_memory_info()[0]
+        return p.get_memory_info()[0] >> 20
     except Exception:
         return 0
 
@@ -206,7 +208,7 @@ class MyExecutor(mesos.Executor):
         while True:
             self.lock.acquire()
             
-            for tid, (task, pool) in self.busy_workers.items():
+            for tid, (task, pool) in self.busy_workers.iteritems():
                 pid = pool._pool[0].pid
                 try:
                     p = psutil.Process(pid)
@@ -252,19 +254,20 @@ class MyExecutor(mesos.Executor):
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
-            Script, cwd, python_path, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
+            Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             self.init_args = [args]
             try:
                 os.chdir(cwd)
             except OSError:
                 driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
+            os.environ.update(osenv)
             prefix = '[%s] ' % socket.gethostname()
             if out_logger:
                 self.outt, sys.stdout = start_forword(out_logger, prefix)
             if err_logger:
                 self.errt, sys.stderr = start_forword(err_logger, prefix)
-            logging.basicConfig(format='%(asctime)-15s [%(name)-9s] %(message)s', level=logLevel)
+            logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
             root = os.path.dirname(self.workdir)
@@ -293,7 +296,7 @@ class MyExecutor(mesos.Executor):
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
-            driver.sendFrameworkMessage("init executor failed:\n " +  msg)
+            logger.error("init executor failed: %s", msg)
 
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
@@ -334,7 +337,7 @@ class MyExecutor(mesos.Executor):
                             and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
                         self.idle_workers.append((time.time(), pool))
                     else:
-                        try: pool.terminate() 
+                        try: pool.terminate()
                         except: pass
         
             pool.apply_async(run_task, [t, ntry], callback=callback)
@@ -349,26 +352,25 @@ class MyExecutor(mesos.Executor):
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            pool.terminate()
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
+            pool.terminate()
 
     @safe
     def shutdown(self, driver):
-        #sys.stdout = sys.stderr = open('/tmp/dpark_shutdown.log', 'a', 0)
-
-        #print time.time(), 'shutdown workdir', self.workdir
+        def terminate(p):
+            try:
+                for pi in p._pool:
+                    os.kill(pi.pid, signal.SIGKILL)
+            except Exception, e:
+                pass
         for _, p in self.idle_workers:
-            try: p.terminate()
-            except: pass
-        for p in self.busy_workers.values():
-            try: p.terminate()
-            except: pass
-        
+            terminate(p)
+        for _, p in self.busy_workers.itervalues():
+            terminate(p)
+
         # clean work files
-        #print time.time(), 'clean', self.workdir
         try: shutil.rmtree(self.workdir, True)
         except: pass
-        #print time.time(), 'clean', self.workdir, 'done'
 
         os._exit(0)
 

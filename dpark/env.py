@@ -2,6 +2,8 @@ import os, logging
 import time
 import socket
 import threading
+import shutil
+
 import zmq
 
 import util
@@ -79,19 +81,9 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
        
-        if self.isMaster and self.isLocal:
-            logger.debug("cleaning workdir ...")
-            try:
-                for root,dirs,names in os.walk(self.workdir, topdown=False):
-                    for name in names:
-                        path = os.path.join(root, name)
-                        os.remove(path)
-                    for d in dirs:
-                        os.rmdir(os.path.join(root,d))
-                os.rmdir(self.workdir)
-            except OSError:
-                pass
-            logger.debug("done.")
+        logger.debug("cleaning workdir ...")
+        shutil.rmtree(self.workdir, True)
+        logger.debug("done.")
 
         self.started = False
 
