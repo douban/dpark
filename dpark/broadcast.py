@@ -124,19 +124,16 @@ class Broadcast(object):
         except Exception:
             buf = cPickle.dumps(obj, -1)
 
-        buf = compress(buf)
         N = self.BlockSize
-        blockNum = len(buf) / N
-        if len(buf) % N != 0:
-            blockNum += 1
-        val = [BroadcastBlock(i/N, buf[i:i+N]) 
-                    for i in range(0, len(buf), N)]
+        blockNum = len(buf) / N + 1
+        val = [BroadcastBlock(i, compress(buf[i*N:i*N+N])) 
+                    for i in range(blockNum)]
         vi = VariableInfo(val, blockNum, len(buf))
         vi.has_blocks = blockNum
         return vi
 
     def unBlockifyObject(self, blocks):
-        s = decompress(''.join(b.data for b in blocks))
+        s = ''.join(decompress(b.data) for b in blocks)
         try:
             return marshal.loads(s)
         except Exception :
