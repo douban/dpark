@@ -122,7 +122,8 @@ class HashPartitioner(Partitioner):
         return self.partitions
 
     def getPartition(self, key):
-        return hash(key) % self.partitions
+        # hash of tuple() has bad distribution
+        return (hash(key) % 1000003) % self.partitions
 
     def __eq__(self, other):
         if isinstance(other, Partitioner):
