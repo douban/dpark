@@ -1,7 +1,6 @@
 import sys
 import os, os.path
 import time
-import threading
 import socket
 import csv
 from cStringIO import StringIO
@@ -21,7 +20,7 @@ import struct
 
 from serialize import load_func, dump_func
 from dependency import *
-from util import ilen
+from util import ilen, spawn
 import shuffle
 from env import env
 
@@ -223,10 +222,8 @@ class RDD(object):
                 raise Exception("too many error occured: %s" % (float(err)/total))
             
             return [s] if s is not None else []
-
-        s = sum(self.ctx.runJob(self, reducePartition), [])
-        if s:
-            return reduce(f, s)
+        
+        return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
 
     def uniq(self, numSplits=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
@@ -553,7 +550,7 @@ class PipedRDD(DerivedRDD):
             finally:
                 stdin.close()
                 devnull.close()
-        threading.Thread(target=read, args=[p.stdin]).start()
+        spawn(read, p.stdin)
         return p.stdout
 
 class MappedValuesRDD(MappedRDD):
@@ -1048,14 +1045,14 @@ class GZipFileRDD(TextFileRDD):
         while True:
             p = block.find(ENDING)
             while p < 0:
-                pos += len(block) - 3 
+                pos += max(len(block) - 3, 0)
                 block = block[-3:] + f.read(32<<10)
-                if len(block) == 3:
+                if len(block) < 4:
                     return pos + 3 # EOF
                 p = block.find(ENDING)
             pos += p + 4
             block = block[p+4:]
-            if not block:
+            if len(block) < 4096:
                 block += f.read(4096)
                 if not block:
                     return pos # EOF
@@ -1117,7 +1114,7 @@ class GZipFileRDD(TextFileRDD):
             last_line += io.readline()
             if skip_first:
                 skip_first = False
-            else:
+            elif last_line.endswith('\n'):
                 yield last_line
             last_line = ''
 

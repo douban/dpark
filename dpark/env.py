@@ -1,7 +1,6 @@
 import os, logging
 import time
 import socket
-import threading
 import shutil
 
 import zmq

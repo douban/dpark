@@ -3,13 +3,12 @@ import uuid
 import socket
 import marshal
 import cPickle
-import threading
 import logging
 import gc
 
 import zmq
 
-from util import compress, decompress, getproctitle, setproctitle
+from util import compress, decompress, getproctitle, setproctitle, spawn
 import cache
 from serialize import marshalable
 from env import env
@@ -125,19 +124,16 @@ class Broadcast(object):
         except Exception:
             buf = cPickle.dumps(obj, -1)
 
-        buf = compress(buf)
         N = self.BlockSize
-        blockNum = len(buf) / N
-        if len(buf) % N != 0:
-            blockNum += 1
-        val = [BroadcastBlock(i/N, buf[i:i+N]) 
-                    for i in range(0, len(buf), N)]
+        blockNum = len(buf) / N + 1
+        val = [BroadcastBlock(i, compress(buf[i*N:i*N+N])) 
+                    for i in range(blockNum)]
         vi = VariableInfo(val, blockNum, len(buf))
         vi.has_blocks = blockNum
         return vi
 
     def unBlockifyObject(self, blocks):
-        s = decompress(''.join(b.data for b in blocks))
+        s = ''.join(decompress(b.data) for b in blocks)
         try:
             return marshal.loads(s)
         except Exception :
@@ -298,9 +294,7 @@ class TreeBroadcast(FileBroadcast):
             self.listOfSources = []
             self.unregisterValue(self.uuid)
 
-        t = threading.Thread(target=run)
-        t.daemon = True
-        t.start()
+        spawn(run)
         # wait for guide to start
         while self.guide_addr is None:
             time.sleep(0.01)
@@ -360,9 +354,7 @@ class TreeBroadcast(FileBroadcast):
             self.blocks = []
             self.value = None
 
-        t = threading.Thread(target=run)
-        t.daemon = True
-        t.start()
+        spawn(run)
         while self.serverAddr is None:
             time.sleep(0.01)
         #logger.debug("server started...")
@@ -489,9 +481,7 @@ class TreeBroadcast(FileBroadcast):
             logger.debug("TreeBroadcast tracker stopped")
 
         if is_master:
-            t = threading.Thread(target=run)
-            t.daemon = True
-            t.start()
+            spawn(run)
             while cls.master_addr is None:
                 time.sleep(0.01)
             env.register('TreeBroadcastTrackerAddr', cls.master_addr)

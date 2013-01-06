@@ -253,6 +253,7 @@ def add_default_options():
             help="user self as exectuor")
     group.add_option("--profile", action="store_true",
             help="do profiling")
+    group.add_option("--keep-order", action="store_true")
 
     parser.add_option_group(group)
 
