@@ -8,14 +8,13 @@ import socket
 import time
 import cPickle
 import gzip
-import threading
 import Queue
 import heapq
 import platform
 
 import zmq
 
-from util import decompress
+from util import decompress, spawn
 from env import env
 from cache import CacheTrackerServer, CacheTrackerClient
 
@@ -104,9 +103,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self.requests = Queue.Queue()
         self.results = Queue.Queue(1)
         for i in range(nthreads):
-            t = threading.Thread(target=self._worker_thread)
-            t.daemon = True
-            t.start()
+            spawn(self._worker_thread)
 
     def _worker_thread(self):
         while True:
@@ -320,7 +317,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
         sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopMapOutputTracker())
-        self.t.join(0.1)
+        sock.close()
 
     def run(self):
         sock = env.ctx.socket(zmq.REP)

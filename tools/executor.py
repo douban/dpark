@@ -11,6 +11,10 @@ import logging
 
 import zmq
 
+# ignore INFO and DEBUG log
+os.environ['GLOG_logtostderr'] = '1'
+os.environ['GLOG_minloglevel'] = '1'
+
 import mesos
 import mesos_pb2
 

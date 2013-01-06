@@ -1,6 +1,5 @@
 import os
 import socket
-import threading
 import multiprocessing
 import logging
 import cPickle
@@ -10,6 +9,7 @@ import zmq
 
 import shareddict
 from env import env
+from util import spawn
 
 logger = logging.getLogger("cache")
 
@@ -100,9 +100,7 @@ class CacheTrackerServer(object):
         self.locs = locs
 
     def start(self):
-        self.t = threading.Thread(target=self.run)
-        self.t.daemon = True
-        self.t.start()
+        spawn(self.run)
         while self.addr is None:
             time.sleep(0.01)
 
@@ -111,7 +109,6 @@ class CacheTrackerServer(object):
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
         sock.close()
-        self.t.join(.1)
 
     def run(self):
         locs = self.locs
@@ -151,18 +148,20 @@ class CacheTrackerServer(object):
 
 class CacheTrackerClient:
     def __init__(self, addr):
-        if addr:
-            self.sock = env.ctx.socket(zmq.REQ)
-            self.sock.connect(addr)
-        else:
-            self.sock = None
+        self.addr = addr
+        self.sock = None
 
     def call(self, msg):
+        if self.sock is None:
+            self.sock = env.ctx.socket(zmq.REQ)
+            self.sock.connect(self.addr)
+
         self.sock.send_pyobj(msg)
         return self.sock.recv_pyobj()
 
     def stop(self):
-        self.sock.close()
+        if self.sock:
+            self.sock.close()
         #logger.debug("stop %s", self.__class__)
 
 class LocalCacheTracker(object):

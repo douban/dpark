@@ -24,7 +24,7 @@ import mesos
 import mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, getproctitle, setproctitle
+from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
@@ -37,8 +37,9 @@ logger = logging.getLogger("executor@%s" % socket.gethostname())
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
-MAX_IDLE_TIME = 120
+MAX_IDLE_TIME = 60
 MAX_IDLE_WORKERS = 8
+MAX_IDLE_CYCLE = 60 * 30
 
 Script = ''
 
@@ -84,10 +85,20 @@ def run_task(task, ntry):
         gc.collect()
         gc.enable()
 
-def init_env(args):
+def cleanup(workdir):
+    while os.getppid() > 1:
+        time.sleep(1)
+
+    while os.path.exists(workdir):
+        try: shutil.rmtree(workdir, True)
+        except: pass 
+    
+    os._exit(0)
+
+def init_env(args, workdir):
     setproctitle('dpark worker: idle')
     env.start(False, args)
-        
+    threading.Thread(target=cleanup, args=[workdir]).start()
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -107,7 +118,6 @@ def startWebServer(path):
             os.path.basename(path))
     try:
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
-        os.remove(testpath)
         if data == path:
             return default_uri
     except IOError, e:
@@ -116,7 +126,7 @@ def startWebServer(path):
     logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
-    threading.Thread(target=ss.serve_forever).start()
+    spawn(ss.serve_forever)
     uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1], 
             os.path.basename(path))
     return uri 
@@ -124,30 +134,34 @@ def startWebServer(path):
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
     ctx = zmq.Context()
-    out = ctx.socket(zmq.PUSH)
-    out.connect(addr)
+    out = [None]
     buf = []
+    def send(buf):
+        if not out[0]:
+            out[0] = ctx.socket(zmq.PUSH)
+            out[0].connect(addr)
+        out[0].send(prefix+''.join(buf))
+
     while True:
         try:
             line = f.readline()
             if not line: break
             buf.append(line)
             if line.endswith('\n'):
-                out.send(prefix+''.join(buf))
+                send(buf)
                 buf = []
         except IOError:
             break
     if buf:
-        out.send(''.join(buf))
-    out.close()
+        send(buf)
+    if out[0]:
+        out[0].close()
     f.close()
     ctx.shutdown()
 
 def start_forword(addr, prefix=''):
     rfd, wfd = os.pipe()
-    t = threading.Thread(target=forword, args=[rfd, addr, prefix])
-    t.daemon = True
-    t.start()    
+    t = spawn(forword, rfd, addr, prefix)
     return t, os.fdopen(wfd, 'w', 0) 
 
 def get_pool_memory(pool):
@@ -171,6 +185,11 @@ def safe(f):
             r = f(self, *a, **kw)
         return r
     return _
+            
+# cleaner process
+def clean_work_dir(path):
+    setproctitle('dpark cleaner %s' % path)
+    threading.Thread(target=cleanup, args=[path]).start()
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
@@ -187,10 +206,12 @@ class MyExecutor(mesos.Executor):
             return
 
         mem_limit = {}
+        idle_cycle = 0
+
         while True:
             self.lock.acquire()
             
-            for tid, (task, pool) in self.busy_workers.iteritems():
+            for tid, (task, pool) in self.busy_workers.items():
                 pid = pool._pool[0].pid
                 try:
                     p = psutil.Process(pid)
@@ -230,14 +251,22 @@ class MyExecutor(mesos.Executor):
             
             self.lock.release()
 
-            time.sleep(5) 
+            if self.idle_workers or self.busy_workers:
+                idle_cycle = 0
+            else:
+                idle_cycle += 1
+                if idle_cycle > MAX_IDLE_CYCLE:
+                    logger.warning("shutdown idle executor")
+                    self.shutdown()
+
+            time.sleep(1) 
 
     @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
             Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
-            self.init_args = [args]
+            self.init_args = args
             try:
                 os.chdir(cwd)
             except OSError:
@@ -260,10 +289,8 @@ class MyExecutor(mesos.Executor):
                 os.mkdir(self.workdir)
             args['SERVER_URI'] = startWebServer(args['WORKDIR'])
 
-            t = threading.Thread(target=self.check_memory, args=[driver])
-            t.daemon = True
-            t.start()
-           
+            spawn(self.check_memory, driver)
+
             # wait background threads to been initialized
             time.sleep(0.1)
             if out_logger:
@@ -272,13 +299,16 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 os.close(2)
                 assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
- 
+
+            multiprocessing.Pool(1, clean_work_dir, [self.workdir])
+
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
             logger.error("init executor failed: %s", msg)
+            raise
 
     def reregitered(self, driver, slaveInfo):
         logger.info("executor is reregistered at %s", slaveInfo.hostname)
@@ -290,7 +320,7 @@ class MyExecutor(mesos.Executor):
         try:
             return self.idle_workers.pop()[1]
         except IndexError:
-            p = multiprocessing.Pool(1, init_env, self.init_args)
+            p = multiprocessing.Pool(1, init_env, [self.init_args, self.workdir])
             p.done = 0
             return p 
 
@@ -338,7 +368,7 @@ class MyExecutor(mesos.Executor):
             pool.terminate()
 
     @safe
-    def shutdown(self, driver):
+    def shutdown(self, driver=None):
         def terminate(p):
             try:
                 for pi in p._pool:
