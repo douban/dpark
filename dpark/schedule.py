@@ -548,7 +548,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def submitTasks(self, tasks):
         logger.info("Got a job with %d tasks", len(tasks))
-        job = SimpleJob(self, tasks, self.cpus, self.mem)
+        job = SimpleJob(self, tasks, self.cpus, tasks[0].rdd.mem)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         logger.debug("Adding job with ID %d", job.id)
