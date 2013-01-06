@@ -53,6 +53,7 @@ class RDD(object):
         self.snapshot_path = None
         ctx.init()
         self.err = ctx.options.err
+        self.mem = ctx.options.mem
 
     nextId = 0
     @classmethod
@@ -313,47 +314,46 @@ class RDD(object):
             return m1
         return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
 
-    def combineByKey(self, aggregator, splits=None):
+    def combineByKey(self, aggregator, splits=None, taskMemory=None):
         if splits is None:
             splits = min(self.ctx.defaultMinSplits, len(self))
         if type(splits) is int:
             splits = HashPartitioner(splits)
-        return ShuffledRDD(self, aggregator, splits)
+        return ShuffledRDD(self, aggregator, splits, taskMemory)
 
-    def reduceByKey(self, func, numSplits=None):
+    def reduceByKey(self, func, numSplits=None, taskMemory=None):
         aggregator = Aggregator(lambda x:x, func, func)
-        return self.combineByKey(aggregator, numSplits)
+        return self.combineByKey(aggregator, numSplits, taskMemory)
 
-    def groupByKey(self, numSplits=None):
+    def groupByKey(self, numSplits=None, taskMemory=None):
         createCombiner = lambda x: [x]
         mergeValue = lambda x,y:x.append(y) or x
         mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
-        return self.combineByKey(aggregator, numSplits)
+        return self.combineByKey(aggregator, numSplits, taskMemory)
 
-    def partitionByKey(self, numSplits=None):
-        return self.groupByKey(numSplits).flatMapValue(lambda x: x)
-
-    def join(self, other, numSplits=None):
-        vs = self.map(lambda (k,v): (k,(1,v)))
-        ws = other.map(lambda (k,v): (k,(2,v)))
-        def dispatch((k,seq)):
-            vbuf, wbuf = [], []
-            for n,v in seq:
-                if n == 1:
-                    vbuf.append(v)
-                elif n == 2:
-                    wbuf.append(v)
-            for vv in vbuf:
-                for ww in wbuf:
-                    yield (k, (vv, ww))
-        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
+    def partitionByKey(self, numSplits=None, taskMemory=None):
+        return self.groupByKey(numSplits, taskMemory).flatMapValue(lambda x: x)
 
     def innerJoin(self, other):
         o_b = self.ctx.broadcast(other.collectAsMap())
-        return self.filter(lambda (k,v):k in o_b.value).map(lambda (k,v):(k,(v,o_b.value[k])))
+        r = self.filter(lambda (k,v):k in o_b.value).map(lambda (k,v):(k,(v,o_b.value[k])))
+        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        return r
 
-    def outerJoin(self, other, numSplits=None):
+    def join(self, other, numSplits=None, taskMemory=None):
+        return self._join(other, (), numSplits, taskMemory)
+
+    def leftOuterJoin(self, other, numSplits=None, taskMemory=None):
+        return self._join(other, (1,), numSplits, taskMemory)
+
+    def rightOuterJoin(self, other, numSplits=None, taskMemory=None):
+        return self._join(other, (2,), numSplits, taskMemory)
+    
+    def outerJoin(self, other, numSplits=None, taskMemory=None):
+        return self._join(other, (1,2), numSplits, taskMemory)
+
+    def _join(self, other, keeps, numSplits=None, taskMemory=None):
         vs = self.map(lambda (k,v): (k,(1,v)))
         ws = other.map(lambda (k,v): (k,(2,v)))
         def dispatch((k,seq)):
@@ -363,49 +363,15 @@ class RDD(object):
                     vbuf.append(v)
                 elif n == 2:
                     wbuf.append(v)
-            if not vbuf:
+            if not vbuf and 2 in keeps:
                 vbuf.append(None)
-            if not wbuf:
+            if not wbuf and 1 in keeps:
                 wbuf.append(None)
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
-        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
-
-    def leftOuterJoin(self, other, numSplits=None):
-        vs = self.map(lambda (k,v): (k,(1,v)))
-        ws = other.map(lambda (k,v): (k,(2,v)))
-        def dispatch((k,seq)):
-            vbuf, wbuf = [], []
-            for n,v in seq:
-                if n == 1:
-                    vbuf.append(v)
-                elif n == 2:
-                    wbuf.append(v)
-            if not wbuf:
-                wbuf.append(None)
-            for vv in vbuf:
-                for ww in wbuf:
-                    yield (k, (vv, ww))
-        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
-
-    def rightOuterJoin(self, other, numSplits=None):
-        vs = self.map(lambda (k,v): (k,(1,v)))
-        ws = other.map(lambda (k,v): (k,(2,v)))
-        def dispatch((k,seq)):
-            vbuf, wbuf = [], []
-            for n,v in seq:
-                if n == 1:
-                    vbuf.append(v)
-                elif n == 2:
-                    wbuf.append(v)
-            if not vbuf:
-                vbuf.append(None)
-            for vv in vbuf:
-                for ww in wbuf:
-                    yield (k, (vv, ww))
-        return vs.union(ws).groupByKey(numSplits).flatMap(dispatch)
-
+        return vs.union(ws).groupByKey(numSplits, taskMemory).flatMap(dispatch)
+    
     def collectAsMap(self):
         d = {}
         for v in self.ctx.runJob(self, lambda x:list(x)):
@@ -420,8 +386,9 @@ class RDD(object):
 
     def groupWith(self, *others, **kw):
         numSplits = kw.get('numSplits') or self.ctx.defaultParallelism
+        taskMemory = kw.get('taskMemory')
         part = self.partitioner or HashPartitioner(numSplits)
-        return CoGroupedRDD([self]+list(others), part)
+        return CoGroupedRDD([self]+list(others), part, taskMemory)
 
     def lookup(self, key):
         if self.partitioner:
@@ -443,6 +410,7 @@ class DerivedRDD(RDD):
     def __init__(self, rdd):
         RDD.__init__(self, rdd.ctx)
         self.prev = rdd
+        self.mem = max(self.mem, rdd.mem)
         self.dependencies = [OneToOneDependency(rdd)]
 
     def __len__(self):
@@ -516,10 +484,10 @@ class FlatMappedRDD(MappedRDD):
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s" % (float(err)/total))
+                    raise Exception("too many error occured: %s, %s" % ((float(err)/total), e))
 
         if err > total * self.err:
-            raise Exception("too many error occured: %s" % (float(err)/total))
+            raise Exception("too many error occured: %s, %s" % ((float(err)/total), e))
 
 
 class FilteredRDD(MappedRDD):
@@ -639,12 +607,14 @@ class ShuffledRDDSplit(Split):
         return self.index
 
 class ShuffledRDD(RDD):
-    def __init__(self, parent, aggregator, part):
+    def __init__(self, parent, aggregator, part, taskMemory=None):
         RDD.__init__(self, parent.ctx)
         self.parent = parent
         self.numParts = len(parent)
         self.aggregator = aggregator
         self._partitioner = part
+        if taskMemory:
+            self.mem = taskMemory
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
         self.shuffleId = self.ctx.newShuffleId()
         self.dependencies = [ShuffleDependency(self.shuffleId,
@@ -681,6 +651,7 @@ class CartesianRDD(RDD):
         RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
+        self.mem = max(rdd1.mem, rdd2.mem) * 1.5
         self.numSplitsInRdd2 = n = len(rdd2)
         self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
@@ -733,9 +704,11 @@ class CoGroupAggregator:
         return c + v
 
 class CoGroupedRDD(RDD):
-    def __init__(self, rdds, partitioner):
+    def __init__(self, rdds, partitioner, taskMemory=None):
         RDD.__init__(self, rdds[0].ctx)
         self.len = len(rdds)
+        if taskMemory:
+            self.mem = taskMemory
         self.aggregator = CoGroupAggregator()
         self._partitioner = partitioner
         self.dependencies = dep = [rdd.partitioner == partitioner
@@ -805,6 +778,7 @@ class UnionSplit:
 class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
+        self.mem = max(r.mem for r in rdds) if rdds else self.mem
         self._splits = [UnionSplit(0, rdd, split) 
                 for rdd in rdds for split in rdd.splits]
         for i,split in enumerate(self._splits):
@@ -829,6 +803,7 @@ class SliceRDD(RDD):
     def __init__(self, rdd, i, j):
         RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
+        self.mem = rdd.mem
         if j > len(rdd):
             j = len(rdd)
         self.i = i
@@ -861,6 +836,7 @@ class MergedRDD(RDD):
             splitSize = (len(rdd) + numSplits - 1) / numSplits
         numSplits = (len(rdd) + splitSize - 1) / splitSize
         self.rdd = rdd
+        self.mem = rdd.mem
         self.splitSize = splitSize
         self.numSplits = numSplits
 
@@ -887,6 +863,7 @@ class ZippedRDD(RDD):
         assert len(set([len(rdd) for rdd in rdds])) == 1, 'rdds must have the same length'
         RDD.__init__(self, ctx)
         self.rdds = rdds
+        self.mem = max(r.mem for r in rdds)
         self._splits = [MultiSplit(i, splits) 
                 for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
         self.dependencies = [OneToOneDependency(rdd) for rdd in rdds]
@@ -924,9 +901,11 @@ class ParallelCollectionSplit:
         self.values = values
 
 class ParallelCollection(RDD):
-    def __init__(self, ctx, data, numSlices):
+    def __init__(self, ctx, data, numSlices, taskMemory=None):
         RDD.__init__(self, ctx)
         self.size = len(data)
+        if taskMemory:
+            self.mem = taskMemory
         slices = self.slice(data, max(1, min(self.size, numSlices)))
         self._splits = [ParallelCollectionSplit(i, slices[i]) 
                 for i in range(len(slices))]
