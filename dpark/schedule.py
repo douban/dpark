@@ -537,7 +537,7 @@ class MesosScheduler(DAGScheduler):
             info.executor_id.value = sys.argv[0]
         else:
             dir = os.path.dirname(__file__)
-            info.command.value = os.path.abspath(os.path.join(dir, 'executor%d%d.py' % sys.version_info[:2]))
+            info.command.value = os.path.abspath(os.path.join(dir, 'bin/executor%d%d.py' % sys.version_info[:2]))
             info.executor_id.value = "default"
         
         mem = info.resources.add()
