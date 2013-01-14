@@ -51,11 +51,13 @@ def reply_status(driver, task, status, data=None):
         update.data = data
     driver.sendStatusUpdate(update)
 
-def run_task(task, ntry):
+def run_task(task_data):
     try:
-        setproctitle('dpark worker %s: run task %s' % (Script, task))
-        Accumulator.clear()
         gc.disable()
+        task, ntry = cPickle.loads(decompress(task_data))
+        setproctitle('dpark worker %s: run task %s' % (Script, task))
+        
+        Accumulator.clear()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
 
@@ -232,14 +234,14 @@ class MyExecutor(mesos.Executor):
                 if not offered:
                     continue
                 if rss > offered * 2:
-                    logger.error("task %s used too much memory: %dMB > %dMB * 2, kill it. "
-                            + "use -M argument to request more memory.", tid, rss, offered)
+                    logger.warning("task %s used too much memory: %dMB > %dMB * 2, kill it. "
+                            + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
                     pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
-                    logger.warning("task %s used too much memory: %dMB > %dMB, "
-                            + "use -M to request more memory", tid, rss, offered)
+                    logger.debug("task %s used too much memory: %dMB > %dMB, "
+                            + "use -M to request or taskMemory for more memory", tid, rss, offered)
                     mem_limit[tid] = rss / offered + 0.2
 
             now = time.time() 
@@ -327,11 +329,8 @@ class MyExecutor(mesos.Executor):
     @safe
     def launchTask(self, driver, task):
         try:
-            t, ntry = cPickle.loads(decompress(task.data))
-            
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-            
-            logging.debug("launch task %s", t.id)
+            logging.debug("launch task %s", task.task_id.value)
             
             pool = self.get_idle_worker()
             self.busy_workers[task.task_id.value] = (task, pool)
@@ -352,7 +351,7 @@ class MyExecutor(mesos.Executor):
                         try: pool.terminate()
                         except: pass
         
-            pool.apply_async(run_task, [t, ntry], callback=callback)
+            pool.apply_async(run_task, [task.data], callback=callback)
     
         except Exception, e:
             import traceback
