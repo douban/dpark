@@ -6,6 +6,7 @@ import socket
 
 import logging
 from dpark.executor import *
+from dpark.util import COMPRESS
 
 class TestTask:
     def __init__(self, id):
@@ -36,7 +37,7 @@ class TestExecute(unittest.TestCase):
         executorInfo = mesos_pb2.ExecutorInfo()
         executorInfo.executor_id.value = "test-id"
         executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, {}, 8, "", "", 1, 
-            {'DPARK_HAS_DFS':'False', 'WORKDIR':'/tmp/xxxxx'}))
+            {'DPARK_HAS_DFS':'False', 'WORKDIR':'/tmp/xxxxx', 'COMPRESS': COMPRESS}))
 
         frameworkInfo = mesos_pb2.FrameworkInfo()
         frameworkInfo.id.value = "test"
