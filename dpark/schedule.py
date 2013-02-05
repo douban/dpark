@@ -10,6 +10,7 @@ import getpass
 import urllib
 import warnings
 import weakref
+from multiprocessing import cpu_count
 
 import zmq
 try:
@@ -448,7 +449,7 @@ class MesosScheduler(DAGScheduler):
         self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
-        self.task_per_node = options.parallel or 8
+        self.task_per_node = options.parallel or cpu_count()
         self.group = options.group
         self.logLevel = options.logLevel
         self.options = options
