@@ -17,7 +17,7 @@ class Error(Exception):
 def pack(cmd, *args):
     msg = []
     for a in args:
-        if isinstance(a, int):
+        if isinstance(a, (int,long)):
             msg.append(struct.pack("!I", a))
         elif isinstance(a, str):
             msg.append(a)
