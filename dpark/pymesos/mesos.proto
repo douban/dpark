@@ -1,0 +1,354 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package mesos;
+
+option java_package = "org.apache.mesos";
+option java_outer_classname = "Protos";
+
+
+/**
+ * Status is used to indicate the state of the scheduler and executor
+ * driver after function calls.
+ */
+enum Status {
+  DRIVER_NOT_STARTED = 1;
+  DRIVER_RUNNING = 2;
+  DRIVER_ABORTED = 3;
+  DRIVER_STOPPED = 4;
+}
+
+
+/**
+ * A unique ID assigned to a framework. A framework can reuse this ID
+ * in order to do failover (see MesosSchedulerDriver).
+ */
+message FrameworkID {
+  required string value = 1;
+}
+
+
+/**
+ * A unique ID assigned to an offer.
+ */
+message OfferID {
+  required string value = 1;
+}
+
+
+/**
+ * A unique ID assigned to a slave. Currently, a slave gets a new ID
+ * whenever it (re)registers with Mesos. Framework writers shouldn't
+ * assume any binding between a slave ID and and a hostname.
+ */
+message SlaveID {
+  required string value = 1;
+}
+
+
+/**
+ * A framework generated ID to distinguish a task. The ID must remain
+ * unique while the task is active. However, a framework can reuse an
+ * ID _only_ if a previous task with the same ID has reached a
+ * terminal state (e.g., TASK_FINISHED, TASK_LOST, TASK_KILLED, etc.).
+ */
+message TaskID {
+  required string value = 1;
+}
+
+
+/**
+ * A framework generated ID to distinguish an executor. Only one
+ * executor with the same ID can be active on the same slave at a
+ * time.
+ */
+message ExecutorID {
+  required string value = 1;
+}
+
+
+/**
+ * Describes a framework. If the user field is set to an empty string
+ * Mesos will automagically set it to the current user. Note that the
+ * ID is only available after a framework has registered, however, it
+ * is included here in order to facilitate scheduler failover (i.e.,
+ * if it is set then the MesosSchedulerDriver expects the scheduler is
+ * performing failover). The amount of time that the master will wait
+ * for the scheduler to failover before removing the framework is
+ * specified by failover_timeout.
+ */
+message FrameworkInfo {
+  required string user = 1;
+  required string name = 2;
+  optional FrameworkID id = 3;
+  optional double failover_timeout = 4 [default = 0.0];
+}
+
+
+/**
+ * Describes a command, executed via: '/bin/sh -c value'. Any uri's
+ * specified are fetched before executing the command.
+ * If executable field for an uri is set, executable file permission 
+ * is set on the downloaded file. Also, if the downloaded file has ".tgz" 
+ * extension it is extracted into the executor's working directory.
+ * In addition, any environment variables are set before executing 
+ * the command (so they can be used to "parameterize" your command).
+ */
+message CommandInfo {
+  message URI {
+    required string value = 1;
+    optional bool executable = 2;
+  }
+
+  repeated URI uris = 1;
+  optional Environment environment = 2;
+  required string value = 3;
+}
+
+
+/**
+ * Describes information about an executor. The 'params' field can be
+ * used to set environment variables for the executor. The 'data'
+ * field can be used to pass arbitrary bytes to an executor.
+ */
+message ExecutorInfo {
+  required ExecutorID executor_id = 1;
+  required CommandInfo command = 7;
+  repeated Resource resources = 5;
+  optional bytes data = 4;
+}
+
+
+/**
+ * Describes a master. This will probably have more fields in the
+ * future which might be used, for example, to link a framework webui
+ * to a master webui.
+ */
+message MasterInfo {
+  required string id = 1;
+  required uint32 ip = 2;
+  required uint32 port = 3;
+}
+
+
+/**
+ * Describes a slave. The 'webui_hostname' and 'webui_port' are
+ * provided in the event a host has different private and public
+ * hostnames (e.g., Amazon EC2). Note that the 'id' field is only
+ * available after a slave is registered with the master, and is made
+ * available here to facilitate re-registration.
+ */
+message SlaveInfo {
+  required string hostname = 1;
+  // TODO(benh,andyk): Send bound ports, not just hostname.
+  required string webui_hostname = 2;
+  optional int32 webui_port = 4 [default = 8081];
+  repeated Resource resources = 3;
+  repeated Attribute attributes = 5;
+  optional SlaveID id = 6;
+}
+
+
+/**
+ * Describes an Attribute or Resource "value". A value is described
+ * using the standard protocol buffer "union" trick.
+ */
+message Value {
+  enum Type {
+    SCALAR = 0;
+    RANGES = 1;
+    SET = 2;
+    TEXT = 3;
+  }
+
+  message Scalar {
+    required double value = 1;
+  }
+
+  message Range {
+    required uint64 begin = 1;
+    required uint64 end = 2;
+  }
+
+  message Ranges {
+    repeated Range range = 1;
+  }
+
+  message Set {
+    repeated string item = 1;
+  }
+
+  message Text {
+    required string value = 1;
+  }
+
+  required Type type = 1;
+  optional Scalar scalar = 2;
+  optional Ranges ranges = 3;
+  optional Set set = 4;
+  optional Text text = 5;
+}
+
+
+/**
+ * Describes an attribute that can be set on a machine. For now,
+ * attributes and resources share the same "value" type, but this may
+ * change in the future and attributes may only be string based.
+ */
+message Attribute {
+  required string name = 1;
+  required Value.Type type = 2;
+  optional Value.Scalar scalar = 3;
+  optional Value.Ranges ranges = 4;
+  optional Value.Set set = 6;
+  optional Value.Text text = 5;
+}
+
+
+/**
+ * Describes a resource on a machine. A resource can take on one of
+ * three types: scalar (double), a list of finite and discrete ranges
+ * (e.g., [1-10, 20-30]), or a set of items. A resource is described
+ * using the standard protocol buffer "union" trick.
+ *
+ * TODO(benh): Add better support for "expected" resources (e.g.,
+ * cpus, memory, disk, network).
+ */
+message Resource {
+  required string name = 1;
+  required Value.Type type = 2;
+  optional Value.Scalar scalar = 3;
+  optional Value.Ranges ranges = 4;
+  optional Value.Set set = 5;
+}
+
+
+/**
+ * Describes a request for resources that can be used by a framework
+ * to proactively influence the allocator.  If 'slave_id' is provided
+ * then this request is assumed to only apply to resources on that
+ * slave.
+ */
+message Request {
+  optional SlaveID slave_id = 1;
+  repeated Resource resources = 2;
+}
+
+
+/**
+ * Describes some resources available on a slave. An offer only
+ * contains resources from a single slave.
+ */
+message Offer {
+  required OfferID id = 1;
+  required FrameworkID framework_id = 2;
+  required SlaveID slave_id = 3;
+  required string hostname = 4;
+  repeated Resource resources = 5;
+  repeated Attribute attributes = 7;
+  repeated ExecutorID executor_ids = 6;
+}
+
+
+/**
+ * Describes a task. Passed from the scheduler all the way to an
+ * executor (see SchedulerDriver::launchTasks and
+ * Executor::launchTask). Either ExecutorInfo or CommandInfo should be set.
+ * A different executor can be used to launch this task, and subsequent tasks
+ * meant for the same executor can reuse the same ExecutorInfo struct.
+ */
+message TaskInfo {
+  required string name = 1;
+  required TaskID task_id = 2;
+  required SlaveID slave_id = 3;
+  repeated Resource resources = 4;
+  optional ExecutorInfo executor = 5;
+  optional CommandInfo command = 7;
+  optional bytes data = 6;
+}
+
+
+/**
+ * Describes possible task states. IMPORTANT: Mesos assumes tasks that
+ * enter terminal states (see below) imply the task is no longer
+ * running and thus clean up any thing associated with the task
+ * (ultimately offering any resources being consumed by that task to
+ * another task).
+ */
+enum TaskState {
+  TASK_STAGING = 6; // Initial state. Framework status updates should not use.
+  TASK_STARTING = 0;
+  TASK_RUNNING = 1;
+  TASK_FINISHED = 2; // TERMINAL.
+  TASK_FAILED = 3; // TERMINAL.
+  TASK_KILLED = 4; // TERMINAL.
+  TASK_LOST = 5; // TERMINAL.
+}
+
+
+/**
+ * Describes the current status of a task.
+ */
+message TaskStatus {
+  required TaskID task_id = 1;
+  required TaskState state = 2;
+  optional string message = 4; // Possible message explaining state.
+  optional bytes data = 3;
+}
+
+
+/**
+ * Describes possible filters that can be applied to unused resources
+ * (see SchedulerDriver::launchTasks) to influence the allocator.
+ */
+message Filters {
+  // Time to consider unused resources refused.
+  optional double refuse_seconds = 1;
+}
+
+
+/**
+* Describes a collection of environment variables. This is used with
+* CommandInfo in order to set environment variables before running a
+* command.
+*/
+message Environment {
+  message Variable {
+    required string name = 1;
+    required string value = 2;
+  }
+
+  repeated Variable variables = 1;
+}
+
+
+/**
+ * A generic (key, value) pair used in various places for parameters.
+ */
+message Parameter {
+  required string key = 1;
+  required string value = 2;
+}
+ 
+ 
+/**
+ * Collection of Parameter.
+ */
+message Parameters {
+  repeated Parameter parameter = 1;
+}

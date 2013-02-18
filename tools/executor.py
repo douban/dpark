@@ -15,8 +15,12 @@ import zmq
 os.environ['GLOG_logtostderr'] = '1'
 os.environ['GLOG_minloglevel'] = '1'
 
-import mesos
-import mesos_pb2
+try:
+    import mesos
+    import mesos_pb2
+except ImportError:
+    import dpark.pymesos as mesos
+    from dpark.pymesos import mesos_pb2
 
 logger = logging.getLogger('executor')
 

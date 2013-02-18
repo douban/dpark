@@ -18,8 +18,11 @@ import getpass
 os.environ['GLOG_logtostderr'] = '1'
 os.environ['GLOG_minloglevel'] = '1'
 
-import mesos
-import mesos_pb2
+try:
+    import mesos, mesos_pb2
+except ImportError:
+    import dpark.pymesos as mesos
+    import dpark.pymesos.mesos_pb2 as mesos_pb2
 
 ctx = zmq.Context()
 
@@ -52,7 +55,7 @@ def safe(f):
     return _
 
 
-class SubmitScheduler(object, mesos.Scheduler):
+class SubmitScheduler(mesos.Scheduler):
     def __init__(self, options, command):
         self.framework_id = None
         self.framework = mesos_pb2.FrameworkInfo()

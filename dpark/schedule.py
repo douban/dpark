@@ -13,10 +13,10 @@ import weakref
 
 import zmq
 try:
-    import mesos_pb2
+    import mesos, mesos_pb2
 except ImportError:
-    warnings.warn("no mesos module available, can not run in mesos mode",
-        ImportWarning)
+    import pymesos as mesos
+    import pymesos.mesos_pb2 as mesos_pb2
 
 from util import compress, decompress, spawn
 from dependency import NarrowDependency, ShuffleDependency 
@@ -484,7 +484,6 @@ class MesosScheduler(DAGScheduler):
         # ignore INFO and DEBUG log
         os.environ['GLOG_logtostderr'] = '1'
         os.environ['GLOG_minloglevel'] = '1'
-        import mesos
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
         self.driver.start()
@@ -577,6 +576,7 @@ class MesosScheduler(DAGScheduler):
                 driver.launchTasks(o.id, [], rf)
             return
 
+        start = time.time()
         random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem') 
@@ -620,6 +620,10 @@ class MesosScheduler(DAGScheduler):
                 if not launchedTask:
                     break
         
+        used = time.time() - start
+        if used > 10:
+            logger.error("use too much time in slaveOffer: %.2fs", used)
+
         rf.refuse_seconds = 5
         for o in offers:
             driver.launchTasks(o.id, tasks.get(o.id.value, []), rf)
