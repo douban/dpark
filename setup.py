@@ -22,6 +22,8 @@ setup(name='DPark',
       install_requires=[
           'setuptools',
           'pyzmq',
+          'msgpack-python',
+          'protobuf',
       ],
       tests_require=[
           'nose',
