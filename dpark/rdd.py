@@ -225,8 +225,8 @@ class RDD(object):
         
         return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
 
-    def uniq(self, numSplits=None):
-        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits)
+    def uniq(self, numSplits=None, taskMemory=None):
+        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory)
         return g.map(lambda (x,y):x)
 
     def top(self, n=10, key=None, reverse=False):
@@ -238,8 +238,8 @@ class RDD(object):
                 return heapq.nlargest(n, it, key)
         return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
 
-    def hot(self, n=10, numSplits=None):
-        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits)
+    def hot(self, n=10, numSplits=None, taskMemory=None):
+        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits, taskMemory)
         return st.top(n, key=lambda x:x[1])
 
     def fold(self, zero, f):

@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+
+# hook for virtualenv
+# switch to the virtualenv where the executor belongs,
+# replace all the path for modules
+import sys, os.path
+P = 'site-packages'
+apath = os.path.abspath(__file__)
+if P in apath:
+    virltualenv = apath[:apath.index(P)]
+    sysp = [p[:-len(P)] for p in sys.path if p.endswith(P)][0]
+    if sysp != virltualenv:
+        sys.path = [p.replace(sysp, virltualenv) for p in sys.path]
+
 import logging
 import os, sys, time
 import signal
@@ -20,8 +33,12 @@ import zmq
 # ignore INFO and DEBUG log
 os.environ['GLOG_logtostderr'] = '1'
 os.environ['GLOG_minloglevel'] = '1'
-import mesos
-import mesos_pb2
+try:
+    import mesos
+    import mesos_pb2
+except ImportError:
+    import pymesos as mesos
+    import pymesos.mesos_pb2 as mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, getproctitle, setproctitle, spawn

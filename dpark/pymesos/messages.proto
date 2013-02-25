@@ -1,0 +1,300 @@
+/**
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+import "mesos.proto";
+
+package mesos.internal;
+
+// TODO(benh): Provide comments for each of these messages. Also,
+// consider splitting these messages into different "packages" which
+// represent which messages get handled by which components (e.g., the
+// "mesos.internal.executor" package includes messages that the
+// executor handles).
+
+
+// TODO(benh): It would be great if this could just be a
+// TaskInfo wherever it gets used! However, doing so would
+// require adding the framework_id field, the executor_id field, and
+// the state field into TaskInfo though (or send them another
+// way). Also, one performance reason why we don't do that now is
+// because storing whatever data is coupled with a TaskInfo
+// could be large and unnecessary.
+message Task {
+  required string name = 1;
+  required TaskID task_id = 2;
+  required FrameworkID framework_id = 3;
+  optional ExecutorID executor_id = 4;
+  required SlaveID slave_id = 5;
+  required TaskState state = 6;
+  repeated Resource resources = 7;
+}
+
+
+message StatusUpdate {
+  required FrameworkID framework_id = 1;
+  optional ExecutorID executor_id = 2;
+  optional SlaveID slave_id = 3;
+  required TaskStatus status = 4;
+  required double timestamp = 5;
+  required bytes uuid = 6;
+}
+
+
+message Slaves
+{
+  repeated SlaveInfo infos = 1;
+}
+
+
+message SubmitSchedulerRequest
+{
+  required string name = 1;
+}
+
+
+message SubmitSchedulerResponse
+{
+  required bool okay = 1;
+}
+
+
+message ExecutorToFrameworkMessage {
+  required SlaveID slave_id = 1;
+  required FrameworkID framework_id = 2;
+  required ExecutorID executor_id = 3;
+  required bytes data = 4;
+}
+
+
+message FrameworkToExecutorMessage {
+  required SlaveID slave_id = 1;
+  required FrameworkID framework_id = 2;
+  required ExecutorID executor_id = 3;
+  required bytes data = 4;
+}
+
+
+message RegisterFrameworkMessage {
+  required FrameworkInfo framework = 1;
+}
+
+
+message ReregisterFrameworkMessage {
+  required FrameworkInfo framework = 2;
+  required bool failover = 3;
+}
+
+
+message FrameworkRegisteredMessage {
+  required FrameworkID framework_id = 1;
+  required MasterInfo master_info = 2;
+}
+
+message FrameworkReregisteredMessage {
+  required FrameworkID framework_id = 1;
+  required MasterInfo master_info = 2;
+}
+
+message UnregisterFrameworkMessage {
+  required FrameworkID framework_id = 1;
+}
+
+
+message DeactivateFrameworkMessage {
+  required FrameworkID framework_id = 1;
+}
+
+
+message ResourceRequestMessage {
+  required FrameworkID framework_id = 1;
+  repeated Request requests = 2;
+}
+
+
+message ResourceOffersMessage {
+  repeated Offer offers = 1;
+  repeated string pids = 2;
+}
+
+
+message LaunchTasksMessage {
+  required FrameworkID framework_id = 1;
+  required OfferID offer_id = 2;
+  repeated TaskInfo tasks = 3;
+  required Filters filters = 5;
+}
+
+
+message RescindResourceOfferMessage {
+  required OfferID offer_id = 1;
+}
+
+
+message ReviveOffersMessage {
+  required FrameworkID framework_id = 1;
+}
+
+
+message RunTaskMessage {
+  required FrameworkID framework_id = 1;
+  required FrameworkInfo framework = 2;
+  required string pid = 3;
+  required TaskInfo task = 4;
+}
+
+
+message KillTaskMessage {
+  required FrameworkID framework_id = 1;
+  required TaskID task_id = 2;
+}
+
+
+message StatusUpdateMessage {
+  required StatusUpdate update = 1;
+  optional string pid = 2;
+}
+
+
+message StatusUpdateAcknowledgementMessage {
+  required SlaveID slave_id = 1;
+  required FrameworkID framework_id = 2;
+  required TaskID task_id = 3;
+  required bytes uuid = 4;
+}
+
+
+message LostSlaveMessage {
+  required SlaveID slave_id = 1;
+}
+
+
+message FrameworkErrorMessage {
+  required string message = 2;
+}
+
+
+message RegisterSlaveMessage {
+  required SlaveInfo slave = 1;
+}
+
+
+message ReregisterSlaveMessage {
+  required SlaveID slave_id = 1;
+  required SlaveInfo slave = 2;
+  repeated ExecutorInfo executor_infos = 4;
+  repeated Task tasks = 3;
+}
+
+
+message SlaveRegisteredMessage {
+  required SlaveID slave_id = 1;
+}
+
+
+message SlaveReregisteredMessage {
+  required SlaveID slave_id = 1;
+}
+
+
+message UnregisterSlaveMessage {
+  required SlaveID slave_id = 1;
+}
+
+
+message HeartbeatMessage {
+  required SlaveID slave_id = 1;
+}
+
+
+// Tells a slave to shut down all executors of the given framework.
+message ShutdownFrameworkMessage {
+  required FrameworkID framework_id = 1;
+}
+
+
+// Tells the executor to initiate a shut down by invoking
+// Executor::shutdown.
+message ShutdownExecutorMessage {}
+
+
+message UpdateFrameworkMessage {
+  required FrameworkID framework_id = 1;
+  required string pid = 2;
+}
+
+
+message RegisterExecutorMessage {
+  required FrameworkID framework_id = 1;
+  required ExecutorID executor_id = 2;
+}
+
+
+message ExecutorRegisteredMessage {
+  required ExecutorInfo executor_info = 2;
+  required FrameworkID framework_id = 3;
+  required FrameworkInfo framework_info = 4;
+  required SlaveID slave_id = 5;
+  required SlaveInfo slave_info = 6;
+}
+
+
+message ExitedExecutorMessage {
+  required SlaveID slave_id = 1;
+  required FrameworkID framework_id = 2;
+  required ExecutorID executor_id = 3;
+  required int32 status = 4;
+}
+
+
+message RegisterProjdMessage {
+  required string project = 1;
+}
+
+
+message ProjdReadyMessage {
+  required string project = 1;
+}
+
+
+message ProjdUpdateResourcesMessage {
+  optional Parameters parameters = 1;
+}
+
+
+message FrameworkExpiredMessage {
+  required FrameworkID framework_id = 1;
+}
+
+
+message ShutdownMessage {}
+
+
+// Master detector messages.
+
+
+message NoMasterDetectedMessage {}
+
+
+message NewMasterDetectedMessage {
+  required string pid = 2;
+}
+
+
+message GotMasterTokenMessage {
+  required string token = 1;
+}
