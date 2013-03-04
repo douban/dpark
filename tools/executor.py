@@ -1,4 +1,17 @@
 #!/usr/bin/env python
+
+# hook for virtualenv
+# switch to the virtualenv where the executor belongs,
+# replace all the path for modules
+import sys, os.path
+P = 'site-packages'
+apath = os.path.abspath(__file__)
+if P in apath:
+    virltualenv = apath[:apath.index(P)]
+    sysp = [p[:-len(P)] for p in sys.path if p.endswith(P)][0]
+    if sysp != virltualenv:
+        sys.path = [p.replace(sysp, virltualenv) for p in sys.path]
+
 import os
 import pickle
 import subprocess
