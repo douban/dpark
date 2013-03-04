@@ -60,6 +60,8 @@ class SubmitScheduler(mesos.Scheduler):
         self.framework_id = None
         self.framework = mesos_pb2.FrameworkInfo()
         self.framework.user = getpass.getuser()
+        if self.framework.user == 'root':
+            raise Exception("drun is not allowed to run as 'root'")
         self.framework.name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
         self.executor = self.getExecutorInfo()
         self.cpus = options.cpus
