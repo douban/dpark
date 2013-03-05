@@ -55,7 +55,7 @@ def safe(f):
     return _
 
 
-class SubmitScheduler(mesos.Scheduler):
+class SubmitScheduler(object):
     def __init__(self, options, command):
         self.framework_id = None
         self.framework = mesos_pb2.FrameworkInfo()
