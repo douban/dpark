@@ -22,6 +22,7 @@ from serialize import load_func, dump_func
 from dependency import *
 from util import ilen, spawn
 import shuffle
+import moosefs
 from env import env
 
 logger = logging.getLogger("rdd")
