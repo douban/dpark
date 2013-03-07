@@ -82,7 +82,8 @@ class Process(UPID):
                'Transfer-Encoding: chunked',
                '',
                '%x' % len(body), body,
-               '0', '', '',]
+               '0']
+        msg += ['', ''] # for last \r\n\r\n
         return '\r\n'.join(msg)
 
     def send(self, upid, msg):
@@ -152,7 +153,7 @@ class Process(UPID):
             _, process, mname = uri.split('/')
             assert process == self.name, 'unexpected messages'
             agent = headers[1].split(' ')[1]
-            logger.info("incoming request: %s from %s", uri, agent)
+            logger.debug("incoming request: %s from %s", uri, agent)
             
             sender_name, addr = agent.split('@')
             self.sender = UPID(sender_name.split('/')[1], addr)
