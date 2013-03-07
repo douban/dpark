@@ -176,8 +176,6 @@ class Process(UPID):
             except Exception, e:
                 logger.error("error while processing message %s: %s", sname, e)
 
-        logger.info("conn from %s is closed", remote_addr)
-
         conn.close()
 
     def start(self):
@@ -188,7 +186,7 @@ class Process(UPID):
         if not self.port:
             port = sock.getsockname()[1]
             self.addr = '%s:%d' % (ip, port)
-        self.accept_t = spawn(self.accept)
+        self.accept_t = spawn(self.accept, sock)
         self.delay_t = spawn(self.run_delayed_jobs)
 
     def accept(self, s): 
@@ -201,7 +199,7 @@ class Process(UPID):
             if self.aborted:
                 break
 
-            spawn(self.communicate, conn, addr)
+            spawn(self.communicate, conn)
 
         for c in conns:
             c.close()
