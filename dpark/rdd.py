@@ -1180,6 +1180,7 @@ class TableFileRDD(TextFileRDD):
 
 
 class BZip2FileRDD(TextFileRDD):
+    "the bzip2ed file must be seekable, compressed by pbzip2"
     
     DEFAULT_SPLIT_SIZE = 32*1024*1024
     BLOCK_SIZE = 9000
