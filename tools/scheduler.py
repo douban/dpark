@@ -301,7 +301,7 @@ class MPIScheduler(SubmitScheduler):
         task = self.create_task(offer, t, k)
         logging.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
-        driver.launchTasks(offer.id, [task])
+        driver.launchTasks(offer.id, [task], REFUSE_FILTER)
     
     @safe
     def resourceOffers(self, driver, offers):

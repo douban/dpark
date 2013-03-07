@@ -166,7 +166,7 @@ class MesosSchedulerDriver(Process):
         msg.framework_id.MergeFrom(self.framework_id)
         self.send(self.master, msg)
 
-    def launchTasks(self, offer_id, tasks, filters=None):
+    def launchTasks(self, offer_id, tasks, filters):
         if not self.connected or offer_id.value not in self.savedOffers:
             update = StatusUpdate()
             update.framework_id.MergeFrom(self.framework_id)
@@ -180,8 +180,7 @@ class MesosSchedulerDriver(Process):
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.offer_id.MergeFrom(offer_id)
-        if filters:
-             msg.filters.MergeFrom(filters)
+        msg.filters.MergeFrom(filters)
         for task in tasks:
             msg.tasks.add().MergeFrom(task)
             pid = self.savedOffers.get(offer_id.value, {}).get(task.slave_id.value)

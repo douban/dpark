@@ -175,6 +175,7 @@ class Process(UPID):
                 self.handle(msg)
             except Exception, e:
                 logger.error("error while processing message %s: %s", sname, e)
+                import traceback; traceback.print_exc()
 
         conn.close()
 
