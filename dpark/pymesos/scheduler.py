@@ -1,11 +1,17 @@
 import os, sys
 import time
 import getpass
+import logging
 
 from process import UPID, Process
 
-from mesos_pb2 import *
-from messages_pb2 import *
+from mesos_pb2 import TASK_LOST
+from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage, 
+        DeactivateFrameworkMessage, UnregisterFrameworkMessage, 
+        ResourceRequestMessage, ReviveOffersMessage, LaunchTasksMessage, KillTaskMessage, 
+        StatusUpdate, StatusUpdateAcknowledgementMessage, FrameworkToExecutorMessage)
+
+logger = logging.getLogger(__name__)
 
 class Scheduler(object):
     def registered(self, driver, framework_id, masterInfo): pass
@@ -42,10 +48,11 @@ class MesosSchedulerDriver(Process):
         self.framework = framework
         self.framework.failover_timeout = 100
         self.framework_id = framework.id
+
         self.master = None
+        self.detector = None
 
         self.connected = False
-        self.aborted = False
         self.savedOffers = {}
         self.savedSlavePids = {}
 
@@ -59,28 +66,38 @@ class MesosSchedulerDriver(Process):
         self.sched.disconnected()
 
     def register(self):
-        if not self.framework_id.value:
-            msg = RegisterFrameworkMessage()
-            msg.framework.MergeFrom(self.framework)
-        else:
-            msg = ReregisterFrameworkMessage()
-            msg.framework.MergeFrom(self.framework)
-            msg.failover = True
-        self.send(self.master, msg)
-        # redo after 1 second
+        if self.connected:
+            return
+
+        if self.master:
+            if not self.framework_id.value:
+                msg = RegisterFrameworkMessage()
+                msg.framework.MergeFrom(self.framework)
+            else:
+                msg = ReregisterFrameworkMessage()
+                msg.framework.MergeFrom(self.framework)
+                msg.failover = True
+            self.send(self.master, msg)
+            
+        self.delay(1, self.register)
 
     def onFrameworkRegisteredMessage(self, framework_id, master_info):
         self.framework_id = framework_id
         self.framework.id.MergeFrom(framework_id)
         self.connected = True
-        self.failover = False
+        self.link(self.master, self.onDisconnected)
         self.sched.registered(self, framework_id, master_info)
 
-    def onFrameworkReregisteredMessage(self, framework_id):
+    def onFrameworkReregisteredMessage(self, framework_id, master_info):
         assert self.framework_id == framework_id
         self.connected = True
-        self.failover = False
+        self.link(self.master, self.onDisconnected)
         self.sched.reregistered(self, master_info)
+
+    def onDisconnected(self):
+        self.connected = False
+        logger.warning("disconnected from master")
+        self.delay(5, self.register)
 
     def onResourceOffersMessage(self, offers, pids):
         for offer, pid in zip(offers, pids):
@@ -106,11 +123,9 @@ class MesosSchedulerDriver(Process):
         self.sched.slaveLost(self, slave_id)
 
     def onExecutorToFrameworkMessage(self, slave_id, executor_id, data):
-        self.sched.frameworkMessage(self, msg.slave_id, 
-                msg.executor_id, msg.data)
+        self.sched.frameworkMessage(self, data)
 
     def onFrameworkErrorMessage(self, message, code=0):
-        self.abort()
         self.sched.error(self, code, message)
 
     def start(self):
@@ -121,6 +136,8 @@ class MesosSchedulerDriver(Process):
             self.detector = MasterDetector(uri[uri.index('://') + 3:], self)
             self.detector.start()
         else:
+            if not ':' in uri:
+                uri += ':5050'
             self.onNewMasterDetectedMessage('master@%s' % uri)
         
     def abort(self):
@@ -135,7 +152,7 @@ class MesosSchedulerDriver(Process):
             msg = UnregisterFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
-        self.abort()
+        Process.stop(self)
 
     def requestResources(self, requests):
         msg = ResourceRequestMessage()
@@ -150,15 +167,15 @@ class MesosSchedulerDriver(Process):
         self.send(self.master, msg)
 
     def launchTasks(self, offer_id, tasks, filters=None):
-        if not self.connected:
+        if not self.connected or offer_id.value not in self.savedOffers:
             update = StatusUpdate()
             update.framework_id.MergeFrom(self.framework_id)
             update.status.task_id.MergeFrom(task.task_id)
             update.status.state = TASK_LOST
-            update.status.message = 'Master disconnected'
+            update.status.message = 'Master disconnected' if not self.connected else "invalid offer_id"
             update.timestamp = time.time()
             update.uuid = ''
-            return self.statusUpdate(update)
+            return self.onStatusUpdateMessage(update)
         
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
@@ -168,15 +185,24 @@ class MesosSchedulerDriver(Process):
         for task in tasks:
             msg.tasks.add().MergeFrom(task)
             pid = self.savedOffers.get(offer_id.value, {}).get(task.slave_id.value)
-            if pid:
+            if pid and task.slave_id.value not in self.savedSlavePids:
                 self.savedSlavePids[task.slave_id.value] = pid
         self.savedOffers.pop(offer_id.value)
         self.send(self.master, msg)
 
     def declineOffer(self, offer_id, filters=None):
-        pass
+        if not self.connected:
+            return
+        msg = LaunchTasksMessage()
+        msg.framework_id.MergeFrom(self.framework_id)
+        msg.offer_id.MergeFrom(offer_id)
+        if filters:
+             msg.filters.MergeFrom(filters)
+        self.send(self.master, msg)
 
     def killTask(self, task_id):
+        if not self.connected:
+            return
         msg = KillTaskMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.task_id.MergeFrom(task_id)

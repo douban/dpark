@@ -3,8 +3,8 @@ import time
 
 from process import UPID, Process
 
-from mesos_pb2 import *
-from messages_pb2 import *
+from mesos_pb2 import FrameworkID, ExecutorID
+from messages_pb2 import RegisterExecutorMessage, ExecutorToFrameworkMessage, StatusUpdateMessage
 
 class Executor(object):
     #def disconnected(self, driver): pass
@@ -32,13 +32,14 @@ class MesosExecutorDriver(Process, ExecutorDriver):
 
         env = os.environ
         self.local = bool(env.get('MESOS_LOCAL'))
-        self.slave = UPID(env.get('MESOS_SLAVE_PID'))
+        slave_pid = env.get('MESOS_SLAVE_PID')
+        assert slave_pid, 'expecting MESOS_SLAVE_PID in environment'
+        self.slave = UPID(slave_pid)
         self.framework_id = FrameworkID()
         self.framework_id.value = env.get('MESOS_FRAMEWORK_ID')
         self.executor_id = ExecutorID()
         self.executor_id.value = env.get('MESOS_EXECUTOR_ID')
         self.workDirectory = env.get('MESOS_DIRECTORY')
-        print 'created', self.slave
 
     def onExecutorRegisteredMessage(self, executor_info, framework_id,
             framework_info, slave_id, slave_info):
@@ -60,7 +61,7 @@ class MesosExecutorDriver(Process, ExecutorDriver):
     def onShutdownExecutorMessage(self):
         self.executor.shutdown(self)
         if not self.local:
-            exit(0)
+            sys.exit(0)
         else:
             self.stop()
 
@@ -69,7 +70,6 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         msg = RegisterExecutorMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.executor_id.MergeFrom(self.executor_id)
-        print 'RegisterExecutorMessage', msg
         return self.send(self.slave, msg)
 
     def sendFrameworkMessage(self, data):
