@@ -402,6 +402,14 @@ class RDD(object):
         from table import TableRDD
         return TableRDD(self, fields)
 
+    def batch(self, size):
+        def _batch(iterable):
+            sourceiter = iter(iterable)
+            while True:
+                batchiter = itertools.islice(sourceiter, size)
+                yield list(itertools.chain([batchiter.next()], batchiter))
+
+        return self.glom().flatMap(_batch)
 
 class DerivedRDD(RDD):
     def __init__(self, rdd):

@@ -170,6 +170,14 @@ class TestRDD(unittest.TestCase):
         rd = self.sc.table('/tmp/tout')
         self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(xrange(N)))
 
+    def test_batch(self):
+        from math import ceil
+        d = range(1234)
+        rdd = self.sc.makeRDD(d, 10).batch(100)
+        self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
+        self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
+
+
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")
