@@ -406,8 +406,11 @@ class RDD(object):
         def _batch(iterable):
             sourceiter = iter(iterable)
             while True:
-                batchiter = itertools.islice(sourceiter, size)
-                yield list(itertools.chain([batchiter.next()], batchiter))
+                s = list(itertools.islice(sourceiter, size))
+                if s:
+                    yield s
+                else:
+                    return
 
         return self.glom().flatMap(_batch)
 
