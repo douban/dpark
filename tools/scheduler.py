@@ -202,7 +202,7 @@ class SubmitScheduler(object):
                     self.total_tasks.remove(t)
                     break
             else:
-                logging.error("Task %d not in task_launched", tid)
+                logging.debug("Task %d is finished, ignore it", tid)
                 return
         
         t = self.task_launched[tid]
@@ -288,6 +288,7 @@ class MPIScheduler(SubmitScheduler):
         self.used_hosts = {}
         self.used_tasks = {}
         self.id = 0
+        self.p = None
         self.publisher = ctx.socket(zmq.PUB)
         port = self.publisher.bind_to_random_port('tcp://0.0.0.0')
         host = socket.gethostname()
@@ -435,10 +436,12 @@ class MPIScheduler(SubmitScheduler):
         return t
 
     def try_to_start_mpi(self, command, tasks, items):
+        if self.p:
+            self.p.kill()
         hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
         logging.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
-        self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         slaves = []
         prefix = 'HYDRA_LAUNCH: '
         while True:
@@ -459,17 +462,14 @@ class MPIScheduler(SubmitScheduler):
         self.tout = t = Thread(target=output, args=[p.stdout])
         t.deamon = True
         t.start()
-        self.terr = t = Thread(target=output, args=[p.stderr])
-        t.deamon = True
-        t.start()
         return slaves
 
     @safe
     def stop(self, status):
         if self.started:
+            self.p.kill()
             self.p.wait()
             self.tout.join()
-            self.terr.join()
         super(MPIScheduler, self).stop(status)
 
 
