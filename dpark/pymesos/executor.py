@@ -87,5 +87,5 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         msg.update.slave_id.MergeFrom(self.slave_id)
         msg.update.status.MergeFrom(status)
         msg.update.timestamp = time.time()
-        msg.update.uuid = os.urandom(6)
+        msg.update.uuid = os.urandom(16)
         return self.send(self.slave, msg)
