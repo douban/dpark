@@ -437,7 +437,8 @@ class MPIScheduler(SubmitScheduler):
 
     def try_to_start_mpi(self, command, tasks, items):
         if self.p:
-            self.p.kill()
+            try: self.p.kill()
+            except: pass
         hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
         logging.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
@@ -467,8 +468,10 @@ class MPIScheduler(SubmitScheduler):
     @safe
     def stop(self, status):
         if self.started:
-            self.p.kill()
-            self.p.wait()
+            try:
+                self.p.kill()
+                self.p.wait()
+            except: pass
             self.tout.join()
         super(MPIScheduler, self).stop(status)
 
