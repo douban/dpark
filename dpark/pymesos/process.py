@@ -161,10 +161,14 @@ class Process(UPID):
             if mname == 'PING':
                 self.onPing()
                 continue
-            
-            size = int(rf.readline(), 16)
-            body = rf.read(size+2)[:-2]
-            rf.read(5)  # ending
+
+            size = rf.readline() 
+            if size:
+                size = int(size, 16)
+                body = rf.read(size+2)[:-2]
+                rf.read(5)  # ending
+            else:
+                body = ''
 
             sname = mname.split('.')[2]
             if sname not in globals():
@@ -183,11 +187,10 @@ class Process(UPID):
     def start(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        ip = socket.gethostbyname(socket.gethostname())
-        sock.bind((ip, self.port))
+        sock.bind(('0.0.0.0', self.port))
         if not self.port:
             port = sock.getsockname()[1]
-            self.addr = '%s:%d' % (ip, port)
+            self.addr = '%s:%d' % (socket.gethostname(), port)
         self.accept_t = spawn(self.accept, sock)
         self.delay_t = spawn(self.run_delayed_jobs)
 
