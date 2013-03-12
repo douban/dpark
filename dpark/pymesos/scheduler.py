@@ -60,7 +60,7 @@ class MesosSchedulerDriver(Process):
         self.master = UPID(pid)
         self.register()
 
-    def onNoMasterDetectedMessage(self, pid):
+    def onNoMasterDetectedMessage(self):
         self.connected = False
         self.master = None
         self.sched.disconnected()
