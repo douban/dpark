@@ -63,7 +63,6 @@ class MesosSchedulerDriver(Process):
     def onNoMasterDetectedMessage(self):
         self.connected = False
         self.master = None
-        self.sched.disconnected()
 
     def register(self):
         if self.connected:
