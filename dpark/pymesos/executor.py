@@ -1,7 +1,7 @@
 import os, sys
 import time
 
-from process import UPID, Process
+from process import UPID, Process, async
 
 from mesos_pb2 import FrameworkID, ExecutorID
 from messages_pb2 import RegisterExecutorMessage, ExecutorToFrameworkMessage, StatusUpdateMessage
@@ -72,6 +72,7 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         msg.executor_id.MergeFrom(self.executor_id)
         return self.send(self.slave, msg)
 
+    @async
     def sendFrameworkMessage(self, data):
         msg = ExecutorToFrameworkMessage()
         msg.slave_id.MergeFrom(self.slave_id)
@@ -80,6 +81,7 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         msg.data = data
         return self.send(self.slave, msg)
 
+    @async
     def sendStatusUpdate(self, status):
         msg = StatusUpdateMessage()
         msg.update.framework_id.MergeFrom(self.framework_id)
@@ -87,5 +89,5 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         msg.update.slave_id.MergeFrom(self.slave_id)
         msg.update.status.MergeFrom(status)
         msg.update.timestamp = time.time()
-        msg.update.uuid = os.urandom(6)
+        msg.update.uuid = os.urandom(16)
         return self.send(self.slave, msg)

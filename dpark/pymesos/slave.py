@@ -48,7 +48,7 @@ class Executor(object):
         
         self.id = info.executor_id
         self.resources = Resources.new(info.resources)
-        self.uuid = os.urandom(4)
+        self.uuid = os.urandom(16)
         
         self.pid = None
         self.shutdown = False
@@ -330,7 +330,7 @@ class Slave(Process):
             update.status.task_id.MergeFrom(task_id)
             update.status.state = TASK_LOST
             update.timestamp = time.time()
-            update.uuid = os.urandom(4)
+            update.uuid = os.urandom(16)
             return self.send(self.master, msg)
         
         executor = framework.getExecutor(task_id)
@@ -343,7 +343,7 @@ class Slave(Process):
             update.status.task_id.MergeFrom(task_id)
             update.status.state = TASK_KILLED
             update.timestamp = time.time()
-            update.uuid = os.urandom(4)
+            update.uuid = os.urandom(16)
             return self.send(self.master, msg)
 
         msg = KillTaskMessage()
@@ -516,7 +516,7 @@ class Slave(Process):
         update.executor_id.MergeFrom(executor_id)
         update.status.MergeFrom(status)
         update.timestamp = time.time()
-        update.uuid = os.urandom(4)
+        update.uuid = os.urandom(16)
 
         return update
 
