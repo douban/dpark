@@ -29,6 +29,7 @@ class DparkContext(object):
         self.master = master
         self.initialized = False
         self.started = False
+        self.defaultParallelism = 2
 
     def init(self):
         if self.initialized:
@@ -131,6 +132,9 @@ class DparkContext(object):
         else:
             return create_rdd(cls, path, *ka, **kws)
 
+    def partialTextFile(self, path, begin, end, splitSize=None, numSplits=None):
+        return PartialTextFileRDD(self, path, begin, end, splitSize, numSplits)
+
     def bzip2File(self, *args, **kwargs):
         "deprecated"
         logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
@@ -185,12 +189,13 @@ class DparkContext(object):
         def handler(signm, frame):
             logger.error("got signal %d, exit now", signm)
             self.scheduler.shutdown()
+        try:
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGHUP, handler)
+            signal.signal(signal.SIGABRT, handler)
+            signal.signal(signal.SIGQUIT, handler)
+        except: pass
 
-        signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
-        signal.signal(signal.SIGABRT, handler)
-        signal.signal(signal.SIGQUIT, handler)
-        
         try:
             from rfoo.utils import rconsole
             rconsole.spawn_server(locals(), 0)

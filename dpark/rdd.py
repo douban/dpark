@@ -381,11 +381,13 @@ class RDD(object):
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, *others, **kw):
-        numSplits = kw.get('numSplits') or self.ctx.defaultParallelism
-        taskMemory = kw.get('taskMemory')
-        part = self.partitioner or HashPartitioner(numSplits)
-        return CoGroupedRDD([self]+list(others), part, taskMemory)
+    def groupWith(self, others, numSplits=None, taskMemory=None):
+        if isinstance(others, RDD):
+            others = [others]
+        part = self.partitioner or HashPartitioner(numSplits or self.ctx.defaultParallelism)
+        return CoGroupedRDD([self]+others, part, taskMemory)
+
+    cogroup = groupWith
 
     def lookup(self, key):
         if self.partitioner:
@@ -957,6 +959,12 @@ def open_mfs_file(path):
     if rpath.startswith('/home2/'):
         return moosefs.mfsopen(rpath[6:], 'mfsmaster2')
 
+class PartialSplit(Split):
+    def __init__(self, index, begin, end):
+        self.index = index
+        self.begin = begin
+        self.end = end
+
 class TextFileRDD(RDD):
 
     DEFAULT_SPLIT_SIZE = 64*1024*1024
@@ -977,7 +985,8 @@ class TextFileRDD(RDD):
             n += 1
         self.splitSize = splitSize
         self.len = n
-        self._splits = [Split(i) for i in range(self.len)]
+        self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize)) 
+                    for i in range(self.len)]
 
     def __len__(self):
         return self.len
@@ -990,11 +999,11 @@ class TextFileRDD(RDD):
             return []
 
         if self.splitSize != moosefs.CHUNKSIZE:
-            start = self.splitSize * split.index / moosefs.CHUNKSIZE
-            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
+            start = split.begin / moosefs.CHUNKSIZE
+            end = (split.end + moosefs.CHUNKSIZE - 1)/ moosefs.CHUNKSIZE
             return sum((self.fileinfo.locs(i) for i in range(start, end)), [])
         else:
-            return self.fileinfo.locs(split.index)
+            return self.fileinfo.locs(split.begin / self.splitSize)
 
     def open_file(self):
         if self.fileinfo:
@@ -1004,17 +1013,20 @@ class TextFileRDD(RDD):
 
     def compute(self, split):
         f = self.open_file() 
-        if len(self) == 1 and split.index == 0:
-            return f
+        #if len(self) == 1 and split.index == 0 and split.begin == 0:
+        #    return f
         
-        start = split.index * self.splitSize
-        end = start + self.splitSize
+        start = split.begin
+        end = split.end
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
             while byte != '\n':
                 byte = f.read(1)
                 start += 1
+
+        if start >= end:
+            return []
 
         if self.fileinfo:
             # cut by end
@@ -1034,6 +1046,38 @@ class TextFileRDD(RDD):
             yield line
             if start >= end: break
         f.close()
+
+
+class PartialTextFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.fileinfo = open_mfs_file(path)
+        self.firstPos = firstPos
+        self.lastPos = lastPos
+        self.size = size = lastPos - firstPos
+        
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = self.DEFAULT_SPLIT_SIZE
+            else:
+                splitSize = size / numSplits
+        self.splitSize = splitSize
+        if size <= splitSize:
+            self._splits = [PartialSplit(0, firstPos, lastPos)]
+        else:
+            first_edge = firstPos / splitSize * splitSize + splitSize
+            last_edge = (lastPos-1) / splitSize * splitSize
+            ns = (last_edge - first_edge) / splitSize
+            self._splits = [PartialSplit(0, firstPos, first_edge)] + [
+                PartialSplit(i+1, first_edge + i*splitSize, first_edge + (i+1) * splitSize)
+                    for i in  range(ns)
+                 ] + [PartialSplit(ns+1, last_edge, lastPos)]
+        self.len = len(self._splits)
+
+    def __repr__(self):
+        return '<%s %s (%d-%d)>' % (self.__class__, self.path, self.firstPos, self.lastPos)
+
 
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
