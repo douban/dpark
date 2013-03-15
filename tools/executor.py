@@ -135,7 +135,6 @@ def launch_task(self, driver, task):
 
 class MyExecutor(mesos.Executor):
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
-        logger.debug("registered as %s", slaveInfo)
         self.ps = {}
 
     def launchTask(self, driver, task):
