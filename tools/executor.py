@@ -15,9 +15,7 @@ if P in apath:
 import os
 import pickle
 import subprocess
-import sys
 import threading
-import time
 from threading import Thread
 import socket
 import logging
@@ -34,8 +32,6 @@ try:
 except ImportError:
     import dpark.pymesos as mesos
     from dpark.pymesos import mesos_pb2
-
-logger = logging.getLogger('executor')
 
 ctx = zmq.Context()
 
@@ -87,20 +83,16 @@ def launch_task(self, driver, task):
         subscriber.setsockopt(zmq.SUBSCRIBE, '')
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
-        #print >> werr, 'start polling at %s' % host
         socks = dict(poller.poll(60 * 1000))
-        #print >> werr, 'stop polling at %s' % host
         if socks and socks.get(subscriber) == zmq.POLLIN:
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
             if line:
                 command = line.split(' ')
             else:
-                #print >> werr, 'publisher canceled task'
                 reply_status(driver, task, mesos_pb2.TASK_FAILED)
                 return
         else:
-            #print >> werr, 'waiting publisher timeout'
             reply_status(driver, task, mesos_pb2.TASK_FAILED)
             return
 
@@ -142,11 +134,9 @@ def launch_task(self, driver, task):
 
 
 class MyExecutor(mesos.Executor):
-    def __init__(self):
-        self.ps = {}
-
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         logger.debug("registered as %s", slaveInfo)
+        self.ps = {}
 
     def launchTask(self, driver, task):
         t = Thread(target=launch_task, args=(self, driver, task)) 
@@ -162,9 +152,7 @@ class MyExecutor(mesos.Executor):
             try: p.kill()
             except: pass
 
-    def frameworkMessage(self, driver, message):
-        pass
-
 if __name__ == "__main__":
-  executor = MyExecutor()
-  mesos.MesosExecutorDriver(executor).run()
+    logging.basicConfig(format='[drun] %(asctime)-15s %(message)s', level=logging.WARNING)
+    executor = MyExecutor()
+    mesos.MesosExecutorDriver(executor).run()
