@@ -3,7 +3,7 @@ import time
 import getpass
 import logging
 
-from process import UPID, Process
+from process import UPID, Process, async
 
 from mesos_pb2 import TASK_LOST
 from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage, 
@@ -56,10 +56,12 @@ class MesosSchedulerDriver(Process):
         self.savedOffers = {}
         self.savedSlavePids = {}
 
+    @async # called by detector
     def onNewMasterDetectedMessage(self, pid):
         self.master = UPID(pid)
         self.register()
 
+    @async # called by detector
     def onNoMasterDetectedMessage(self):
         self.connected = False
         self.master = None
@@ -78,7 +80,7 @@ class MesosSchedulerDriver(Process):
                 msg.failover = True
             self.send(self.master, msg)
             
-        self.delay(1, self.register)
+        self.delay(2, self.register)
 
     def onFrameworkRegisteredMessage(self, framework_id, master_info):
         self.framework_id = framework_id
@@ -141,18 +143,19 @@ class MesosSchedulerDriver(Process):
         
     def abort(self):
         if self.connected:
-            msg = DeactivateFrameworkMessage()
+            msg = UnregisterFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
         Process.abort(self)
 
     def stop(self, failover=False):
         if self.connected and not failover:
-            msg = UnregisterFrameworkMessage()
+            msg = DeactivateFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
         Process.stop(self)
 
+    @async
     def requestResources(self, requests):
         msg = ResourceRequestMessage()
         msg.framework_id.MergeFrom(self.framework_id)
@@ -160,6 +163,7 @@ class MesosSchedulerDriver(Process):
             msg.requests.add().MergeFrom(req)
         self.send(self.master, msg)
 
+    @async
     def reviveOffers(self):
         msg = ReviveOffersMessage()
         msg.framework_id.MergeFrom(self.framework_id)
@@ -198,6 +202,7 @@ class MesosSchedulerDriver(Process):
              msg.filters.MergeFrom(filters)
         self.send(self.master, msg)
 
+    @async
     def killTask(self, task_id):
         if not self.connected:
             return
@@ -206,6 +211,7 @@ class MesosSchedulerDriver(Process):
         msg.task_id.MergeFrom(task_id)
         self.send(self.master, msg)
 
+    @async
     def sendFrameworkMessage(self, executor_id, slave_id, data):
         if not self.connected:
             return
