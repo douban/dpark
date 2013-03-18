@@ -67,9 +67,9 @@ class MesosSchedulerDriver(Process):
         self.master = None
 
     def register(self):
-        if self.connected:
+        if self.connected or self.aborted:
             return
-
+        
         if self.master:
             if not self.framework_id.value:
                 msg = RegisterFrameworkMessage()

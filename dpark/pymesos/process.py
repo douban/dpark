@@ -47,15 +47,20 @@ class Process(UPID):
         self.jobs.put((time.time() + delay, 0, func, args, kw))
 
     def run_jobs(self):
-        while not self.aborted:
+        while True:
             try:
                 job = self.jobs.get(timeout=1)
             except Queue.Empty:
+                if self.aborted:
+                    break
                 continue
-            self.jobs.task_done()
+
+            #self.jobs.task_done()
             t, tried, func, args, kw = job
             now = time.time()
             if t > now:
+                if self.aborted:
+                    break
                 self.jobs.put(job)
                 time.sleep(min(t-now, 0.1))
                 continue
@@ -135,11 +140,12 @@ class Process(UPID):
         f(*args)
 
     def abort(self):
-        self._get_conn(self.addr) # awake listen thread
         self.aborted = True
+        self._get_conn(self.addr) # awake listen thread
 
     def stop(self):
         self.abort()
+        return self.join()
 
     def join(self):
         self.delay_t.join()
