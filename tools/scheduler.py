@@ -326,9 +326,10 @@ class MPIScheduler(SubmitScheduler):
 
             attrs = self.getAttributes(offer)
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
+                driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
 
-            slots = min(cpus/self.cpus, mem/self.mem)
+            slots = int(min(cpus/self.cpus, mem/self.mem) + 1e-5)
             if self.options.task_per_node:
                 slots = min(slots, self.options.task_per_node)
             slots = min(slots, self.options.tasks - launched)
@@ -336,6 +337,8 @@ class MPIScheduler(SubmitScheduler):
                 self.used_hosts[offer.hostname] = slots
                 launched += slots
                 self.start_task(driver, offer, slots)
+            else:
+                driver.launchTasks(offer.id, [], REFUSE_FILTER)
 
         if launched < self.options.tasks:
             logging.warning('not enough offers: need %d offer %d, waiting more resources',
@@ -406,15 +409,16 @@ class MPIScheduler(SubmitScheduler):
         env = dict(os.environ)
         task.data = pickle.dumps([os.getcwd(), None, env, self.options.shell, self.std_port, self.err_port, self.publisher_port])
 
+        cpus, mem = self.getResource(offer) 
         cpu = task.resources.add()
         cpu.name = "cpus"
         cpu.type = 0 #mesos_pb2.Value.SCALAR
-        cpu.scalar.value = self.cpus * k
+        cpu.scalar.value = min(self.cpus * k, cpus)
 
         mem = task.resources.add()
         mem.name = "mem"
         mem.type = 0 #mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.mem * k
+        mem.scalar.value = min(self.mem * k, mem)
 
         return task
 
@@ -435,6 +439,7 @@ class MPIScheduler(SubmitScheduler):
             for i in xrange(10):
                 self.publisher.send(pickle.dumps(command))
                 time.sleep(1)
+                if self.stopped: break
 
         t = threading.Thread(target=repeat_pub)
         t.deamon = True
@@ -479,6 +484,7 @@ class MPIScheduler(SubmitScheduler):
                 self.p.wait()
             except: pass
             self.tout.join()
+        self.publisher.close()
         super(MPIScheduler, self).stop(status)
 
 
@@ -502,7 +508,7 @@ if __name__ == "__main__":
     parser.add_option("-t", "--timeout", type="int", default=3600*24,
                         help="timeout of job in seconds (default: 86400)")
 
-    parser.add_option("-c","--cpus", type="float", default=1,
+    parser.add_option("-c","--cpus", type="float", default=1.0,
             help="number of CPUs per task (default: 1)")
     parser.add_option("-m","--mem", type="string", default='100m',
             help="MB of memory per task (default: 100m)")
