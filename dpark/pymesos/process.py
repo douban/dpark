@@ -141,11 +141,14 @@ class Process(UPID):
 
     def abort(self):
         self.aborted = True
-        self._get_conn(self.addr) # awake listen thread
+        self.listen_sock.close()
 
     def stop(self):
         self.abort()
-        return self.join()
+        self.join()
+        for addr in self.conn_pool:
+            self.conn_pool[addr].close()
+        self.conn_pool.clear()
 
     def join(self):
         self.delay_t.join()
@@ -156,7 +159,7 @@ class Process(UPID):
         return self.join()
 
     def start(self):
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listen_sock = sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind(('0.0.0.0', self.port))
         if not self.port:
@@ -181,7 +184,7 @@ class Process(UPID):
         method, uri, _ = headers[0].split(' ')
         _, process, mname = uri.split('/')
         assert process == self.name, 'unexpected messages'
-        agent = headers[1].split(' ')[1]
+        agent = headers[1].split(' ')[1].strip()
         logger.debug("incoming request: %s from %s", uri, agent)
         
         sender_name, addr = agent.split('@')

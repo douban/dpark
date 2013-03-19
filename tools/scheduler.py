@@ -6,25 +6,26 @@ import time
 import socket
 import random
 from optparse import OptionParser
-from threading import Thread, RLock
+import threading
 import subprocess
 from operator import itemgetter
 import logging
 import signal
-import zmq
 import getpass
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
+import zmq
+ctx = zmq.Context()
 
 try:
+    raise ImportError
+    # ignore INFO and DEBUG log
+    os.environ['GLOG_logtostderr'] = '1'
+    os.environ['GLOG_minloglevel'] = '1'
     import mesos, mesos_pb2
 except ImportError:
     import dpark.pymesos as mesos
     import dpark.pymesos.mesos_pb2 as mesos_pb2
 
-ctx = zmq.Context()
 
 class Task:
     def __init__(self, id):
@@ -34,7 +35,7 @@ class Task:
         self.state_time = 0
 
 REFUSE_FILTER = mesos_pb2.Filters()
-REFUSE_FILTER.refuse_seconds = 2*60 # 2 mins
+REFUSE_FILTER.refuse_seconds = 10*60 # 10 mins
 
 def parse_mem(m):
     try:
@@ -76,7 +77,7 @@ class SubmitScheduler(object):
         self.stopped = False
         self.status = 0
         self.next_try = 0
-        self.lock = RLock()
+        self.lock = threading.RLock()
         self.last_offer_time = time.time()
 
     def getExecutorInfo(self):
@@ -95,21 +96,28 @@ class SubmitScheduler(object):
         port = sock.bind_to_random_port("tcp://0.0.0.0")
 
         def redirect():
+            poller = zmq.Poller()
+            poller.register(sock, zmq.POLLIN)
             while True:
+                socks = poller.poll(100)
+                if not socks:
+                    if self.stopped:
+                        break
+                    continue
                 line = sock.recv()
                 output.write(line)
 
-        t = Thread(target=redirect)
+        t = threading.Thread(target=redirect)
         t.daemon = True
         t.start()
-        return "tcp://%s:%d" % (host, port)
+        return t, "tcp://%s:%d" % (host, port)
 
     @safe
     def registered(self, driver, fid, masterInfo):
         logging.debug("Registered with Mesos, FID = %s" % fid.value)
         self.framework_id = fid.value
-        self.std_port = self.create_port(sys.stdout)
-        self.err_port = self.create_port(sys.stderr)
+        self.std_t, self.std_port = self.create_port(sys.stdout)
+        self.err_t, self.err_port = self.create_port(sys.stderr)
 
     def getResource(self, offer):
         cpus, mem = 0, 0
@@ -174,7 +182,8 @@ class SubmitScheduler(object):
         if self.options.expand:
             for i, x in enumerate(command):
                 command[i] = x % {'RANK': t.id, 'SIZE': self.options.tasks}
-        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell, self.std_port, self.err_port, None])
+        task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell,
+            self.std_port, self.err_port, None])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -270,8 +279,12 @@ class SubmitScheduler(object):
 
     @safe
     def stop(self, status):
+        if self.stopped:
+            return
         self.stopped = True
         self.status = status
+        self.std_t.join()
+        self.err_t.join()
         logging.debug("scheduler stopped")
 
 
@@ -423,7 +436,7 @@ class MPIScheduler(SubmitScheduler):
                 self.publisher.send(pickle.dumps(command))
                 time.sleep(1)
 
-        t = Thread(target=repeat_pub)
+        t = threading.Thread(target=repeat_pub)
         t.deamon = True
         t.start()
         return t
@@ -453,7 +466,7 @@ class MPIScheduler(SubmitScheduler):
                 line = f.readline()
                 if not line: break
                 sys.stdout.write(line)
-        self.tout = t = Thread(target=output, args=[p.stdout])
+        self.tout = t = threading.Thread(target=output, args=[p.stdout])
         t.deamon = True
         t.start()
         return slaves
@@ -530,13 +543,13 @@ if __name__ == "__main__":
 #            options.master, fid)
 #        driver.start()
 #        driver.stop(False)
-#        os._exit(0)
+#        sys.exit(0)
 
     if not command:
         parser.print_help()
-        exit(2)
+        sys.exit(2)
 
-    logging.basicConfig(format='[drun] %(asctime)-15s %(message)s',
+    logging.basicConfig(format='[drun] %(threadName)s %(asctime)-15s %(message)s',
                     level=options.quiet and logging.ERROR
                         or options.verbose and logging.DEBUG
                         or logging.WARNING)
@@ -594,4 +607,5 @@ if __name__ == "__main__":
         sched.stop(4)
     
     driver.stop(False)
+    ctx.term()
     sys.exit(sched.status)

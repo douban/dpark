@@ -153,6 +153,8 @@ class MesosSchedulerDriver(Process):
             msg = DeactivateFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
+        if self.detector:
+            self.detector.stop()
         Process.stop(self)
 
     @async
