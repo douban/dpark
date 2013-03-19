@@ -104,20 +104,9 @@ def run_task(task_data):
         gc.collect()
         gc.enable()
 
-def cleanup(workdir):
-    while os.getppid() > 1:
-        time.sleep(1)
-
-    while os.path.exists(workdir):
-        try: shutil.rmtree(workdir, True)
-        except: pass 
-    
-    os._exit(0)
-
 def init_env(args, workdir):
     setproctitle('dpark worker: idle')
     env.start(False, args)
-    threading.Thread(target=cleanup, args=[workdir]).start()
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -206,9 +195,23 @@ def safe(f):
     return _
             
 # cleaner process
-def clean_work_dir(path):
-    setproctitle('dpark cleaner %s' % path)
-    threading.Thread(target=cleanup, args=[path]).start()
+def clean_work_dir(ppid, workdir):
+    setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
+    import psutil
+    psutil.Process(ppid).wait()
+    setproctitle('dpark cleaning %s ' % workdir)
+    while os.path.exists(workdir):
+        try: shutil.rmtree(workdir, True)
+        except: pass 
+
+def setup_cleaner_process(workdir):
+    ppid = os.getpid()
+    pid = os.fork()
+    if pid == 0:
+        pid = os.fork()
+        if pid == 0:
+            clean_work_dir(ppid, workdir)
+        sys.exit(0)
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
@@ -307,6 +310,7 @@ class MyExecutor(mesos.Executor):
             if not os.path.exists(self.workdir):
                 os.mkdir(self.workdir)
             args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+            setup_cleaner_process(self.workdir)
 
             spawn(self.check_memory, driver)
 
@@ -318,9 +322,7 @@ class MyExecutor(mesos.Executor):
             if err_logger:
                 os.close(2)
                 assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
-
-            multiprocessing.Pool(1, clean_work_dir, [self.workdir])
-
+            
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
