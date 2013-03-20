@@ -85,13 +85,11 @@ def run_task(task_data):
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
-            workdir = env.get('WORKDIR')
-            name = 'task_%s_%s.result' % (task.id, ntry)
-            path = os.path.join(workdir, name) 
+            path = LocalFileShuffle.getOutputFile(0, ntry, task.id, len(data))
             f = open(path, 'w')
             f.write(data)
             f.close()
-            data = LocalFileShuffle.getServerUri() + '/' + name
+            data = '/'.join([LocalFileShuffle.getServerUri()] + path.split('/')[-3:])
             flag += 2
 
         return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
@@ -104,7 +102,7 @@ def run_task(task_data):
         gc.collect()
         gc.enable()
 
-def init_env(args, workdir):
+def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
 
@@ -119,6 +117,8 @@ class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def startWebServer(path):
     # check the default web server
+    if not os.path.exists(path):
+        os.makedirs(path)
     testpath = os.path.join(path, 'test')
     with open(testpath, 'w') as f:
         f.write(path)
@@ -194,16 +194,6 @@ def safe(f):
         return r
     return _
             
-# cleaner process
-def clean_work_dir(ppid, workdir):
-    setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
-    import psutil
-    psutil.Process(ppid).wait()
-    setproctitle('dpark cleaning %s ' % workdir)
-    while os.path.exists(workdir):
-        try: shutil.rmtree(workdir, True)
-        except: pass 
-
 def setup_cleaner_process(workdir):
     ppid = os.getpid()
     pid = os.fork()
@@ -211,8 +201,19 @@ def setup_cleaner_process(workdir):
         os.setsid()
         pid = os.fork()
         if pid == 0:
-            try: clean_work_dir(ppid, workdir)
-            except: pass # make sure to exit
+            try: 
+                setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
+                import psutil
+                psutil.Process(ppid).wait()
+                os.killpg(ppid, signal.SIGKILL) # kill workers
+
+                setproctitle('dpark cleaning %s ' % workdir)
+                for d in workdir:
+                    while os.path.exists(d):
+                        try: shutil.rmtree(d, True)
+                        except: pass 
+            except Exception, e:
+                pass # make sure to exit
         sys.exit(0)
     os.wait()
 
@@ -306,14 +307,13 @@ class MyExecutor(mesos.Executor):
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
-            root = os.path.dirname(self.workdir)
+            root = os.path.dirname(self.workdir[0])
             if not os.path.exists(root):
                 os.mkdir(root)
                 os.chmod(root, 0777) # because umask
-            if not os.path.exists(self.workdir):
-                os.mkdir(self.workdir)
-            args['SERVER_URI'] = startWebServer(args['WORKDIR'])
-            setup_cleaner_process(self.workdir)
+            args['SERVER_URI'] = startWebServer(self.workdir[0])
+            if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
+                setup_cleaner_process(self.workdir)
 
             spawn(self.check_memory, driver)
 
@@ -338,7 +338,7 @@ class MyExecutor(mesos.Executor):
         try:
             return self.idle_workers.pop()[1]
         except IndexError:
-            p = multiprocessing.Pool(1, init_env, [self.init_args, self.workdir])
+            p = multiprocessing.Pool(1, init_env, [self.init_args])
             p.done = 0
             return p 
 
@@ -396,8 +396,9 @@ class MyExecutor(mesos.Executor):
             terminate(p)
 
         # clean work files
-        try: shutil.rmtree(self.workdir, True)
-        except: pass
+        for d in self.workdir:
+            try: shutil.rmtree(d, True)
+            except: pass
 
 
 def run():

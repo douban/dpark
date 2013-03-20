@@ -27,19 +27,37 @@ class LocalFileShuffle:
     shuffleDir = None
     @classmethod
     def initialize(cls, isMaster):
-        cls.shuffleDir = env.get('WORKDIR')
+        cls.shuffleDir = [p for p in env.get('WORKDIR') 
+                if os.path.exists(os.path.dirname(p))]
         if not cls.shuffleDir:
             return
-        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir)
+        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir[0])
         logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
-    def getOutputFile(cls, shuffleId, inputId, outputId):
-        path = os.path.join(cls.shuffleDir, str(shuffleId), str(inputId))
+    def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
+        path = os.path.join(cls.shuffleDir[0], str(shuffleId), str(inputId))
         if not os.path.exists(path):
             try: os.makedirs(path)
             except OSError: pass
-        return os.path.join(path, str(outputId))
+        p = os.path.join(path, str(outputId))
+
+        if datasize > 0 and len(cls.shuffleDir) > 1:
+            st = os.statvfs(path)
+            free = st.f_bfree * st.f_bsize
+            ratio = st.f_bfree * 1.0 / st.f_blocks
+            if free < max(datasize, 100<<20) or ratio > 0.95 :
+                d2 = os.path.join(random.choice(cls.shuffleDir[1:]), str(shuffleId), str(inputId))
+                if not os.path.exists(d2):
+                    try: os.makedirs(d2)
+                    except IOError: pass
+                assert os.path.exists(d2), 'create %s failed' % d2
+                p2 = os.path.join(d2, str(outputId))
+                os.symlink(p2, p)
+                if os.path.islink(p2):
+                    os.unlink(p2) # p == p2
+                return p2
+        return p
 
     @classmethod
     def getServerUri(cls):
@@ -102,8 +120,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self.nthreads = nthreads
         self.requests = Queue.Queue()
         self.results = Queue.Queue(1)
-        for i in range(nthreads):
-            spawn(self._worker_thread)
+        self.threads = [spawn(self._worker_thread) for i in range(nthreads)]
 
     def _worker_thread(self):
         while True:
@@ -141,6 +158,8 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             self.requests.put(None)
         for i in range(self.nthreads):
             self.results.get()
+        for t in self.threads:
+            t.join()
 
 
 class Merger(object):

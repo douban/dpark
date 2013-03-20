@@ -199,7 +199,7 @@ class FileBroadcast(Broadcast):
 
     @classmethod
     def initialize(cls, is_master):
-        cls.workdir = env.get('WORKDIR')
+        cls.workdir = env.get('WORKDIR')[0]
         logger.debug("FileBroadcast initialized")
 
 class FileBroadcastFactory(BroadcastFactory):

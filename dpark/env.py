@@ -29,18 +29,20 @@ class DparkEnv:
         self.isMaster = isMaster
         self.isLocal = isLocal
         if isMaster:
-            if os.environ.has_key('DPARK_WORK_DIR'):
-                root = os.environ['DPARK_WORK_DIR']
-            else:
-                root = '/tmp/dpark'
+            roots = os.environ.get('DPARK_WORK_DIR', '/tmp/dpark,/data4/dpark').split(',')
+            if isLocal:
+                root = roots[0] # for local mode 
+                if not os.path.exists(root):
+                    os.mkdir(root, 0777)
+                    os.chmod(root, 0777) # because of umask
 
-            if not os.path.exists(root):
-                os.mkdir(root, 0777)
-                os.chmod(root, 0777) # because of umask
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
                 socket.gethostname(), os.getpid())
-            self.workdir = os.path.join(root, name)
-            os.makedirs(self.workdir)
+            self.workdir = [os.path.join(root, name) for root in roots]
+            for d in self.workdir:
+                if not os.path.exists(d):
+                    try: os.makedirs(d)
+                    except OSError: pass
             self.environ['WORKDIR'] = self.workdir
             self.environ['COMPRESS'] = util.COMPRESS
         else:
@@ -81,7 +83,8 @@ class DparkEnv:
         self.shuffleFetcher.stop()
        
         logger.debug("cleaning workdir ...")
-        shutil.rmtree(self.workdir, True)
+        for d in self.workdir:
+            shutil.rmtree(d, True)
         logger.debug("done.")
 
         self.started = False

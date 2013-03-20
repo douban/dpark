@@ -102,21 +102,26 @@ class ShuffleMapTask(DAGTask):
                 bucket[k] = createCombiner(v)
 
         for i in range(numOutputSplits):
-            path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
-            if os.path.exists(path):
-                continue
-            tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
             if marshalable(buckets[i]):
                 flag, d = 'm', marshal.dumps(buckets[i])
             else:
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
             cd = compress(d)
-            f = open(tpath, 'wb', 1024*4096)
-            f.write(flag + struct.pack("I", 5 + len(cd)))
-            f.write(cd)
-            f.close()
-            if not os.path.exists(path):
-                os.rename(tpath, path)
+            for tried in range(1, 4):
+                try:
+                    path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i, len(cd) * tried)
+                    tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
+                    f = open(tpath, 'wb', 1024*4096)
+                    f.write(flag + struct.pack("I", 5 + len(cd)))
+                    f.write(cd)
+                    f.close()
+                    os.rename(tpath, path)
+                    break
+                except IOError, e:
+                    logging.warning("write %s failed: %s, try again (%d)", path, e, tried)
+                    try: os.remove(tpath)
+                    except OSError: pass
             else:
-                os.unlink(tpath)
+                raise
+
         return LocalFileShuffle.getServerUri()
