@@ -208,10 +208,13 @@ def setup_cleaner_process(workdir):
     ppid = os.getpid()
     pid = os.fork()
     if pid == 0:
+        os.setsid()
         pid = os.fork()
         if pid == 0:
-            clean_work_dir(ppid, workdir)
+            try: clean_work_dir(ppid, workdir)
+            except: pass # make sure to exit
         sys.exit(0)
+    os.wait()
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
@@ -331,12 +334,6 @@ class MyExecutor(mesos.Executor):
             logger.error("init executor failed: %s", msg)
             raise
 
-    def reregitered(self, driver, slaveInfo):
-        logger.info("executor is reregistered at %s", slaveInfo.hostname)
-
-    def disconnected(self, driver, slaveInfo):
-        logger.info("executor is disconnected at %s", slaveInfo.hostname)
-
     def get_idle_worker(self):
         try:
             return self.idle_workers.pop()[1]
@@ -402,13 +399,6 @@ class MyExecutor(mesos.Executor):
         try: shutil.rmtree(self.workdir, True)
         except: pass
 
-        os._exit(0)
-
-    def error(self, driver, code, message):
-        logger.error("error: %s, %s", code, message)
-
-    def frameworkMessage(self, driver, data):
-        pass
 
 def run():
     executor = MyExecutor()
