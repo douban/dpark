@@ -124,7 +124,7 @@ class MesosSchedulerDriver(Process):
         self.sched.slaveLost(self, slave_id)
 
     def onExecutorToFrameworkMessage(self, slave_id, framework_id, executor_id, data):
-        self.sched.frameworkMessage(self, data)
+        self.sched.frameworkMessage(self, self, data)
 
     def onFrameworkErrorMessage(self, message, code=0):
         self.sched.error(self, code, message)
