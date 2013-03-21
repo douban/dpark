@@ -17,7 +17,7 @@ class Scheduler(object):
     def registered(self, driver, framework_id, masterInfo): pass
     def reregistered(self, driver, masterInfo): pass
     def disconnected(self, driver): pass
-    def frameworkMessage(self, driver, message): pass
+    def frameworkMessage(self, driver, slave_id, executor_id, message): pass
     def resourceOffers(self, driver, offers): pass
     def offerRescinded(self, driver, offer_id): pass
     def statusUpdate(self, driver, status): pass
@@ -124,7 +124,7 @@ class MesosSchedulerDriver(Process):
         self.sched.slaveLost(self, slave_id)
 
     def onExecutorToFrameworkMessage(self, slave_id, framework_id, executor_id, data):
-        self.sched.frameworkMessage(self, self, data)
+        self.sched.frameworkMessage(self, slave_id, executor_id, data)
 
     def onFrameworkErrorMessage(self, message, code=0):
         self.sched.error(self, code, message)
