@@ -91,10 +91,11 @@ class DStreamGraph(object):
 
 
 class StreamingContext(object):
-    def __init__(self, sc, batchDuration):
-        if isinstance(sc, str):
+    def __init__(self, batchDuration, sc=None):
+        if isinstance(sc, str) or not sc: # None
             sc = DparkContext(sc)
         self.sc = sc
+        batchDuration = int(batchDuration)
         self.batchDuration = batchDuration
         self.graph = DStreamGraph(batchDuration)
         self.checkpointDir = None
@@ -124,8 +125,8 @@ class StreamingContext(object):
         self.checkpointDir = directory
         self.checkpointDuration = interval
 
-    def getInitialCheckpoint(self):
-        return self.cp
+    #def getInitialCheckpoint(self):
+    #    return self.cp
 
     def registerInputStream(self, ds):
         return self.graph.addInputStream(ds)
@@ -139,7 +140,7 @@ class StreamingContext(object):
         return ds
 
     def fileStream(self, directory, filter=None, newFilesOnly=True):
-        ds = FileInputDStream(self, directory)
+        ds = FileInputDStream(self, directory, filter, newFilesOnly)
         self.registerInputStream(ds)
         return ds
 
@@ -360,15 +361,13 @@ class DStream(object):
         raise NotImplementedError
 
     def getOrCompute(self, time):
-        old = self.generatedRDDs.get(time)
-        if old: return old
+        if time in self.generatedRDDs:
+            return self.generatedRDDs[time]
         if self.isTimeValid(time):
             rdd = self.compute(time)
-            if rdd:
-                # do checkpoint TODO
-                #print 'compute', self, time, rdd.collect()
-                self.generatedRDDs[time] = rdd
-                return rdd
+            self.generatedRDDs[time] = rdd
+            # do checkpoint TODO
+            return rdd
         #else:
             #print 'invalid time', time, (time - self.zeroTime) / self.slideDuration * self.slideDuration
 
@@ -769,40 +768,62 @@ class ConstantInputDStream(InputDStream):
         return self.rdd
 
 def defaultFilter(path):
-    return not path.startswith('.')
+    if path.startswith('.'):
+        return False
+    if os.path.islink(path):
+        return False
+    return True
 
-# TODO file range
-class ModTimeFilter(object):
+class ModTimeAndRangeFilter(object):
     def __init__(self, lastModTime, filter):
         self.lastModTime = lastModTime
         self.filter = filter
         self.latestModTime = 0
-        self.latestModFiles = set()
+        self.accessedFiles = {}
 
     def __call__(self, path):
         if not self.filter(path):
-            return False
-        return True
+            return
+
+        mtime = os.path.getmtime(path)
+        if mtime < self.lastModTime:
+            return
+        if mtime > self.latestModTime:
+            self.latestModTime = mtime
+
+        nsize = os.path.getsize(path)
+        osize = self.accessedFiles.get(path, 0)
+        if nsize <= osize:
+            return
+        self.accessedFiles[path] = nsize
+        logger.debug("got new file %s [%d,%d]", path, osize, nsize)
+        return path, osize, nsize
+
+    def rotate(self):
+        self.lastModTime = self.latestModTime
 
 class FileInputDStream(InputDStream):
-    def __init__(self, ssc, directory, filter=defaultFilter, newFilesOnly=True):
+    def __init__(self, ssc, directory, filter=None, newFilesOnly=True):
         InputDStream.__init__(self, ssc)
+        assert os.path.exists(directory), 'directory %s must exists' % directory
+        assert os.path.isdir(directory), '%s is not directory' % directory
         self.directory = directory
-        self.filter = filter
-        self.newFilesOnly = newFilesOnly
-        self.lastModTime = time.time() if self.newFilesOnly else 0
-        self.lastTimeFiles = set()
+        lastModTime = time.time() if newFilesOnly else 0
+        self.filter = ModTimeAndRangeFilter(lastModTime, filter or defaultFilter)
 
     def compute(self, validTime):
-        path_filter = ModTimeFilter(self.lastModTime, self.filter)
-        files = [os.path.join(self.directory, n) for n in os.listdir(self.directory)
-                    if path_filter(n)]
+        files = []
+        for root, dirs, names in os.walk(self.directory):
+            for name in names:
+                r = self.filter(os.path.join(root, name))
+                if r:
+                    files.append(r)
+        print self, validTime, files
         if files:
-            if path_filter.latestModTime > self.lastModTime:
-                self.lastModTime = path_filter.latestModTime
-                self.lastTimeFiles.clear()
-            self.lastTimeFiles |= path_filter.latestModFiles
-        return self.ssc.sc.union(files)
+            self.filter.rotate()
+            return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
+                    for path, begin, end in files])
+
 
 class QueueInputDStream(InputDStream):
     def __init__(self, ssc, queue, oneAtAtime=True, defaultRDD=None):

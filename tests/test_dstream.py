@@ -30,7 +30,7 @@ class TestOutputStream(ForEachDStream):
 
 class TestDStream(unittest.TestCase):
     def _setupStreams(self, intput1, input2, operation):
-        ssc = StreamingContext("local", 2)
+        ssc = StreamingContext(2, "local")
         is1 = TestInputStream(ssc, intput1)
         ssc.registerInputStream(is1)
         if input2:
