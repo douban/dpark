@@ -39,22 +39,18 @@ class Interval(object):
 
 
 class DStreamGraph(object):
-    def __init__(self):
+    def __init__(self, batchDuration):
         self.inputStreams = []
         self.outputStreams = []
         self.zeroTime = None
-        self.batchDuration = None
+        self.batchDuration = batchDuration
         self.rememberDuration = None
-        self.checkpointInProgress = False
 
     def start(self, time):
-        assert self.zeroTime is None
-        time = int(time / self.batchDuration) * self.batchDuration
-        self.zeroTime = time
+        self.zeroTime = int(time / self.batchDuration) * self.batchDuration
         for out in self.outputStreams:
-            out.initialize(time)
+            #out.initialize(time)
             out.remember(self.rememberDuration)
-            out.validate()
         for ins in self.inputStreams:
             ins.start()
 
@@ -62,13 +58,9 @@ class DStreamGraph(object):
         for ins in self.inputStreams:
             ins.stop()
 
-    def setContext(self, ssc):
-        for out in self.outputStreams:
-            out.setContext(ssc)
-
-    def setBatchDuration(self, duration):
-        assert self.batchDuration is None
-        self.batchDuration = duration
+    #def setContext(self, ssc):
+    #    for out in self.outputStreams:
+    #        out.setContext(ssc)
 
     def remember(self, duration):
         self.rememberDuration = duration
@@ -97,15 +89,6 @@ class DStreamGraph(object):
         for out in self.outputStreams:
             out.restoreCheckpointData(time)
 
-    def validate(self):
-        assert self.batchDuration is not None
-        assert self.outputStreams, "No output streams registered"
-
-    def __setstate__(self, v):
-        self.__dict__.update(v)
-
-    def __getstate__(self):
-        return dict(self.__dict__)
 
 class StreamingContext(object):
     def __init__(self, sc, batchDuration):
@@ -113,25 +96,24 @@ class StreamingContext(object):
             sc = DparkContext(sc)
         self.sc = sc
         self.batchDuration = batchDuration
-        self.graph = DStreamGraph()
-        self.graph.setBatchDuration(batchDuration)
+        self.graph = DStreamGraph(batchDuration)
         self.checkpointDir = None
         self.checkpointDuration = None
         self.networkInputTracker = None
         self.scheduler = None
         self.receiverJobThread = None
 
-    def load(self, cp):
-        if isinstance(cp, str):
-            cp = Checkpoint.read(cp)
-        self.cp = cp
-        self.sc = DparkContext(cp.master)
-        self.graph = cp.graph
-        self.graph.setContext(self)
-        self.graph.restoreCheckpointData()
-        #self.sc.setCheckpointDir(cp.checkpointDir, True)
-        self.checkpointDir = cp.checkpointDir
-        self.checkpointDuration = cp.checkpointDuration
+   # def load(self, cp):
+   #     if isinstance(cp, str):
+   #         cp = Checkpoint.read(cp)
+   #     self.cp = cp
+   #     self.sc = DparkContext(cp.master)
+   #     self.graph = cp.graph
+   #     self.graph.setContext(self)
+   #     self.graph.restoreCheckpointData()
+   #     #self.sc.setCheckpointDir(cp.checkpointDir, True)
+   #     self.checkpointDir = cp.checkpointDir
+   #     self.checkpointDuration = cp.checkpointDuration
 
     def remember(self, duration):
         self.graph.remember(duration)
@@ -175,14 +157,9 @@ class StreamingContext(object):
     def union(self, streams):
         return UnionDStream(streams)
 
-    def validate(self):
-        self.graph.validate()
-        assert self.checkpointDir is not None or self.checkpointDuration is not None
-
     def start(self, t=None):
-        if not self.checkpointDuration and self.graph:
-            self.checkpointDuration = self.graph.batchDuration
-        self.validate()
+        if not self.checkpointDuration:
+            self.checkpointDuration = self.batchDuration
         
         # TODO
         #nis = [ds for ds in self.graph.inputStreams 
@@ -207,9 +184,6 @@ class StreamingContext(object):
     def getSparkCheckpointDir(self, dir):
         return os.path.join(dir, str(random.randint(0, 1000)))
 
-    @classmethod
-    def createContext(cls, master, name=''):
-        return DparkContext(master, name)
 
 class Checkpoint(object):
     def __init__(self, ssc, time):
@@ -221,15 +195,13 @@ class Checkpoint(object):
         self.checkpointDir = ssc.checkpointDir
         self.checkpointDuration = ssc.checkpointDuration
 
-    def validate(self):
-        assert self.ssc.sc.master
-
     def write(self, dir):
         pass
 
     @classmethod
     def read(cls, dir):
         pass
+
 
 class Job(object):
     def __init__(self, time, func):
@@ -256,25 +228,20 @@ class JobManager(object):
 
 class RecurringTimer(object):
     def __init__(self, period, callback):
-        self.period = int(period)
+        self.period = period
         self.callback = callback
         self.thread = None
         self.stopped = False
         
-    def start(self, start=None):
-        if start is None:
-            start = time.time()
-        self.nextTime = int(math.ceil(start / self.period) * self.period)
+    def start(self, start):
+        self.nextTime = (int(start / self.period) + 1) * self.period
         self.stopped = False
         self.thread = spawn(self.run)
 
     def stop(self):
         self.stopped = True
-        self.thread.join()
-
-    def restart(self, start):
-        self.stop()
-        self.start(start)
+        if self.thread:
+            self.thread.join()
 
     def run(self):
         while not self.stopped:
@@ -289,35 +256,33 @@ class Scheduler(object):
     def __init__(self, ssc):
         self.ssc = ssc
         self.graph = ssc.graph
-        self.concurrentJobs = 1
         self.jobManager = JobManager(1)
         #self.checkpointWriter = CheckpointWriter(ssc.checkpointDir) if ssc.checkpointDir else None
-        self.timer = RecurringTimer(ssc.graph.batchDuration, self.generateRDDs)
+        self.timer = RecurringTimer(ssc.batchDuration, self.generateRDDs)
 
-    def start(self, t=None):
-        #if not self.ssc.isCheckpointPresent:
-        firstTime = int(t or time.time())
-        self.graph.start(firstTime - self.ssc.graph.batchDuration)
+    def start(self, t):
+        self.graph.start(t)
         self.timer.start(t)
         logger.info("Scheduler started")
 
     def stop(self):
+        self.timer.stop()
         self.graph.stop()
 
     def generateRDDs(self, time):
         for job in self.graph.generateRDDs(time):
             self.jobManager.runJob(job)
         self.graph.forgetOldRDDs(time)
-        self.doCheckpoint(time)
+    #    self.doCheckpoint(time)
 
-    def doCheckpoint(self, time):
-        return
-        if self.ssc.checkpointDuration and (time-self.graph.zeroTime):
-            startTime = time.time()
-            self.ssc.graph.updateCheckpointData()
-            Checkpoint(self.ssc, time).write(self.ssc.checkpointDir)
-            stopTime = time.time()
-            logger.info("Checkpointing the graph took %.0f ms", (stopTime - startTime)*1000)
+    #def doCheckpoint(self, time):
+    #    return
+    #    if self.ssc.checkpointDuration and (time-self.graph.zeroTime):
+    #        startTime = time.time()
+    #        self.ssc.graph.updateCheckpointData()
+    #        Checkpoint(self.ssc, time).write(self.ssc.checkpointDir)
+    #        stopTime = time.time()
+    #        logger.info("Checkpointing the graph took %.0f ms", (stopTime - startTime)*1000)
 
 
 class DStream(object):
@@ -347,13 +312,15 @@ class DStream(object):
         self.dependencies = []
 
         self.generatedRDDs = {}
-        self.zeroTime = None
         self.rememberDuration = None
         self.mustCheckpoint = False
         self.checkpointDuration = None
         self.checkpointData = []
         self.graph = None
-#        self.isInitialized = False
+
+    @property
+    def zeroTime(self):
+        return self.graph.zeroTime
 
     @property
     def parentRememberDuration(self):
@@ -362,27 +329,16 @@ class DStream(object):
     def checkpoint(self, interval):
         self.checkpointDuration = interval
 
-    def initialize(self, time):
-#        if self.isInitialized:
-#            return
-#        self.isInitialized = True
-#
-        self.zeroTime = time
-        if self.mustCheckpoint and not self.checkpointDuration:
-            self.checkpointDuration = max(10, self.slideDuration)
+#    def initialize(self):
+#        if self.mustCheckpoint and not self.checkpointDuration:
+#            self.checkpointDuration = max(10, self.slideDuration)
+#        for dep in self.dependencies:
+#            dep.initialize()
 
-        for dep in self.dependencies:
-            dep.initialize(time)
-
-    def validate(self):
-        #assert 
-        for dep in self.dependencies:
-            dep.validate()
-
-    def setContext(self, ssc):
-        self.ssc = ssc
-        for dep in self.dependencies:
-            dep.setContext(ssc)
+    #def setContext(self, ssc):
+    #    self.ssc = ssc
+    #    for dep in self.dependencies:
+    #        dep.setContext(ssc)
 
     def setGraph(self, g):
         self.graph = g
@@ -398,11 +354,7 @@ class DStream(object):
     def isTimeValid(self, t):
         d = (t - self.zeroTime)
         dd = d / self.slideDuration * self.slideDuration
-        return d == dd
-        if dd != d:
-            print 'invalid time', d, dd
-            return False
-        return True
+        return abs(d-dd) < 1e-3
 
     def compute(self, time):
         raise NotImplementedError
@@ -801,7 +753,7 @@ class InputDStream(DStream):
     def __init__(self, ssc):
         DStream.__init__(self, ssc)
         self.dependencies = []
-        self.slideDuration = ssc.graph.batchDuration
+        self.slideDuration = ssc.batchDuration
 
     def start(self):
         pass
