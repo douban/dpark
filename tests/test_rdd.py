@@ -1,4 +1,5 @@
-import sys
+import sys, os.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cPickle
 import unittest
 import pprint
@@ -80,7 +81,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
                 [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
         nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2).flatMapValue(lambda x:x)
-        self.assertEqual(sorted(nums.groupWith(nums2, nums3).collect()),
+        self.assertEqual(sorted(nums.groupWith([nums2, nums3]).collect()),
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
                 (4,([],[3],[1])), (5,([],[],[2]))])
     
@@ -177,6 +178,22 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
         self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
 
+    def test_partial_file(self):
+        p = os.path.abspath(__file__)
+        l = 300
+        d = open(p).read(l+50)
+        start = 100
+        while d[start-1] != '\n':
+            start += 1
+        while d[l-1] != '\n':
+            l += 1
+        d = d[start:l] 
+        rdd = self.sc.partialTextFile(p, start, l, l)
+        self.assertEqual(len(''.join(rdd.collect())), l-start)
+        self.assertEqual(''.join(rdd.collect()), d)
+        rdd = self.sc.partialTextFile(p, start, l, (l-start)/5)
+        self.assertEqual(len(''.join(rdd.collect())), l-start)
+        self.assertEqual(''.join(rdd.collect()), d)
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

@@ -78,9 +78,9 @@ class DparkEnv:
         if not getattr(self, 'started', False):
             return
         logger.debug("stop env in %s", os.getpid())
+        self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
-        self.shuffleFetcher.stop()
        
         logger.debug("cleaning workdir ...")
         for d in self.workdir:

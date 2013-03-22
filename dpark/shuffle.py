@@ -126,7 +126,6 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         while True:
             r = self.requests.get()
             if r is None:
-                self.results.put(r)
                 break
 
             uri, shuffleId, part, reduceId = r
@@ -139,6 +138,9 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
+        if not serverUris:
+            return
+
         parts = zip(range(len(serverUris)), serverUris)
         random.shuffle(parts)
         for part, uri in parts:
@@ -148,7 +150,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             r = self.results.get()
             if isinstance(r, Exception):
                 raise r
-
+            
             sid, rid, part, d = r
             func(d.iteritems())
 
@@ -156,8 +158,6 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         logger.debug("stop parallel shuffle fetcher ...")
         for i in range(self.nthreads):
             self.requests.put(None)
-        for i in range(self.nthreads):
-            self.results.get()
         for t in self.threads:
             t.join()
 
