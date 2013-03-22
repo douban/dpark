@@ -169,7 +169,7 @@ class StreamingContext(object):
         #    self.networkInputTracker.start()
 
         self.scheduler = Scheduler(self)
-        self.scheduler.start(t)
+        self.scheduler.start(t or time.time())
 
     def stop(self):
         if self.scheduler:

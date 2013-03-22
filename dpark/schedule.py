@@ -287,6 +287,8 @@ class DAGScheduler(Scheduler):
                
             task = evt.task
             stage = self.idToStage[task.stageId]
+            if stage not in pendingTasks: # stage from other job
+                continue
             logger.debug("remove from pedding %s from %s", task, stage)
             pendingTasks[stage].remove(task.id)
             if isinstance(evt.reason, Success):
