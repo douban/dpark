@@ -1,6 +1,7 @@
 import os
 import socket
 import logging
+import commands
 
 from consts import CHUNKSIZE, CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
 from utils import uint64, pack, unpack
@@ -9,7 +10,12 @@ logger = logging.getLogger(__name__)
 
 mfsdirs = []
 def _scan():
-    for conf in ('/etc/mfs/mfshdd.cfg', '/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg'):
+    cmd = "ps -eo cmd| grep mfschunkserver | head -1 | cut -d ' ' -f1 | xargs dirname | sed 's#sbin##g'"
+    mfs_prefix = commands.getoutput(cmd)
+    mfs_cfg = '%s/mfshdd.cfg' % mfs_prefix
+    mfs_cfg_list = (mfs_cfg, '/etc/mfs/mfshdd.cfg',
+    '/etc/mfshdd.cfg', '/usr/local/etc/mfshdd.cfg')
+    for conf in mfs_cfg_list:
         if not os.path.exists(conf):
             continue
         f = open(conf)
