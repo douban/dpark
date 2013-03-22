@@ -29,12 +29,6 @@ class TestOutputStream(ForEachDStream):
 
 
 class TestDStream(unittest.TestCase):
-#    def setUp(self):
-#        self.ssc = StreamingContext("local", 1)
-#
-#    def tearDown(self):
-#        self.ssc.stop()
-#
     def _setupStreams(self, intput1, input2, operation):
         ssc = StreamingContext("local", 2)
         is1 = TestInputStream(ssc, intput1)
@@ -57,7 +51,7 @@ class TestDStream(unittest.TestCase):
             #print 'start', first, numBatches
             ssc.start(first)
             while len(output) < numExpectedOuput:
-                time.sleep(.1)
+                time.sleep(.01)
         finally:
             ssc.stop()
         return output
@@ -83,78 +77,77 @@ class TestDStream(unittest.TestCase):
         self._verifyOutput(output, expectedOutput, useSet)
 
 class TestBasic(TestDStream):
-    pass
-#    def test_map(self):
-#        d = [range(i*4, i*4+4) for i in range(4)]
-#        r = [[str(i) for i in row] for row in d]
-#        self._testOperation(d, None, lambda x: x.map(str), r, 4, False)
-#        r = [sum([range(x,x*2) for x in row], []) for row in d]
-#        self._testOperation(d, None, lambda x: x.flatMap(lambda x:range(x, x*2)), r)
-#
-#    def test_filter(self):
-#        d = [range(i*4, i*4+4) for i in range(4)]
-#        self._testOperation(d, None, lambda x: x.filter(lambda y: y%2==0), 
-#            [[i for i in row if i%2 ==0] for row in d])
-#
-#    def test_glom(self):
-#        d = [range(i*4, i*4+4) for i in range(4)]
-#        r = [[row[:2], row[2:]] for row in d] 
-#        self._testOperation(d, None, lambda s: s.glom().map(lambda x:list(x)), r)
-#
-#    def test_mapPartitions(self):
-#        d = [range(i*4, i*4+4) for i in range(4)]
-#        r = [[sum(row[:2]), sum(row[2:])] for row in d] 
-#        self._testOperation(d, None, lambda s: s.mapPartitions(lambda l: [reduce(lambda x,y:x+y, l)]), r)
-#
-#    def test_groupByKey(self):
-#        d = [["a", "a", "b"], ["", ""], []]
-#        r = [[("a", [1, 1]), ("b", [1])], [("", [1,1])], []]
-#        self._testOperation(d, None, lambda s: s.map(lambda x:(x,1)).groupByKey(), r, useSet=False)
-#
-#    def test_reduceByKey(self):
-#        d = [["a", "a", "b"], ["", ""], []]
-#        r = [[("a", 2), ("b", 1)], [("", 2)], []]
-#        self._testOperation(d, None, lambda s: s.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y), r, useSet=True)
-#
-#    def test_reduce(self):
-#        d = [range(i*4, i*4+4) for i in range(4)]
-#        r = [[sum(row)] for row in d]
-#        self._testOperation(d, None, lambda s: s.reduce(lambda x,y:x+y), r)
-#
-#    def test_cogroup(self):
-#        d1 = [["a", "a", "b"], ["a", ""], [""]]
-#        d2 = [["a", "a", "b"], ["b", ""], []]
-#        r = [[("a", ([1,1], ["x", "x"])), ("b", ([1,], ["x"]))],
-#             [("a", ([1], [])), ("b", ([], ["x"])), ("", ([1],["x"]))],
-#             [("", ([1],[]))],
-#        ]
-#        def op(s1, s2):
-#            return s1.map(lambda x:(x,1)).cogroup(s2.map(lambda x:(x,"x")))
-#        self._testOperation(d1, d2, op, r)
+    def test_map(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        r = [[str(i) for i in row] for row in d]
+        self._testOperation(d, None, lambda x: x.map(str), r, 4, False)
+        r = [sum([range(x,x*2) for x in row], []) for row in d]
+        self._testOperation(d, None, lambda x: x.flatMap(lambda x:range(x, x*2)), r)
 
-#    def test_updateStateByKey(self):
-#        d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
-#        r = [[("a", 1)], 
-#             [("a", 2), ("b", 1)],
-#             [("a", 3), ("b", 2), ("c", 1)],
-#             [("a", 4), ("b", 3), ("c", 1)],
-#             [("a", 5), ("b", 3), ("c", 1)],
-#             [("a", 5), ("b", 3), ("c", 1)],
-#        ]
-#
-#        def op(s):
-#            def updatef(vs, state):
-#                return sum(vs) + (state or 0)
-#            return s.map(lambda x: (x,1)).updateStateByKey(updatef)
-#        self._testOperation(d, None, op, r, useSet=True)
-#
-#    #def test_window(self):
-#    #    d = [range(i, i+1) for i in range(10)]
-#    #    def op(s):
-#    #        return s.map(lambda x:(x % 10, 1)).window(2, 1).window(4, 2)
-#    #    ssc = self._setupStreams(d, op)
-#    #    ssc.remember(3)
-#    #    self._runStreams(ssc, 10, 10/2)
+    def test_filter(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        self._testOperation(d, None, lambda x: x.filter(lambda y: y%2==0), 
+            [[i for i in row if i%2 ==0] for row in d])
+
+    def test_glom(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        r = [[row[:2], row[2:]] for row in d] 
+        self._testOperation(d, None, lambda s: s.glom().map(lambda x:list(x)), r)
+
+    def test_mapPartitions(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        r = [[sum(row[:2]), sum(row[2:])] for row in d] 
+        self._testOperation(d, None, lambda s: s.mapPartitions(lambda l: [reduce(lambda x,y:x+y, l)]), r)
+
+    def test_groupByKey(self):
+        d = [["a", "a", "b"], ["", ""], []]
+        r = [[("a", [1, 1]), ("b", [1])], [("", [1,1])], []]
+        self._testOperation(d, None, lambda s: s.map(lambda x:(x,1)).groupByKey(), r, useSet=False)
+
+    def test_reduceByKey(self):
+        d = [["a", "a", "b"], ["", ""], []]
+        r = [[("a", 2), ("b", 1)], [("", 2)], []]
+        self._testOperation(d, None, lambda s: s.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y), r, useSet=True)
+
+    def test_reduce(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        r = [[sum(row)] for row in d]
+        self._testOperation(d, None, lambda s: s.reduce(lambda x,y:x+y), r)
+
+    def test_cogroup(self):
+        d1 = [["a", "a", "b"], ["a", ""], [""]]
+        d2 = [["a", "a", "b"], ["b", ""], []]
+        r = [[("a", ([1,1], ["x", "x"])), ("b", ([1,], ["x"]))],
+             [("a", ([1], [])), ("b", ([], ["x"])), ("", ([1],["x"]))],
+             [("", ([1],[]))],
+        ]
+        def op(s1, s2):
+            return s1.map(lambda x:(x,1)).cogroup(s2.map(lambda x:(x,"x")))
+        self._testOperation(d1, d2, op, r)
+
+    def test_updateStateByKey(self):
+        d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
+        r = [[("a", 1)], 
+             [("a", 2), ("b", 1)],
+             [("a", 3), ("b", 2), ("c", 1)],
+             [("a", 4), ("b", 3), ("c", 1)],
+             [("a", 5), ("b", 3), ("c", 1)],
+             [("a", 5), ("b", 3), ("c", 1)],
+        ]
+
+        def op(s):
+            def updatef(vs, state):
+                return sum(vs) + (state or 0)
+            return s.map(lambda x: (x,1)).updateStateByKey(updatef)
+        self._testOperation(d, None, op, r, useSet=True)
+
+    #def test_window(self):
+    #    d = [range(i, i+1) for i in range(10)]
+    #    def op(s):
+    #        return s.map(lambda x:(x % 10, 1)).window(2, 1).window(4, 2)
+    #    ssc = self._setupStreams(d, None, op)
+    #    ssc.remember(3)
+    #    self._runStreams(ssc, 10, 10/2)
 
 
 class TestWindow(TestDStream):
@@ -243,42 +236,41 @@ class TestWindow(TestDStream):
             lambda s: s.reduceByKeyAndWindow(lambda x,y: x+y, lambda x,y: x-y, window, slide),
             expectedOutput, len(expectedOutput) * slide / 2, useSet=True)
 
-#    def test_window(self):
-#        # basic window
-#        self._testWindow([[i] for i in range(6)], 
-#            [range(max(i-1, 0), i+1) for i in range(6)])
-#        # tumbling window
-#        self._testWindow([[i] for i in range(6)], 
-#            [range(i*2, i*2+2) for i in range(3)], 4, 4)
-#        # large window
-#        self._testWindow([[i] for i in range(6)], 
-#            [[0, 1], range(4), range(2, 6), range(4, 6)], 8, 4)
-#        # non-overlapping window
-#        self._testWindow([[i] for i in range(6)], 
-#            [range(1, 3), range(4, 6)], 4, 6)
-#
+    def test_window(self):
+        # basic window
+        self._testWindow([[i] for i in range(6)], 
+            [range(max(i-1, 0), i+1) for i in range(6)])
+        # tumbling window
+        self._testWindow([[i] for i in range(6)], 
+            [range(i*2, i*2+2) for i in range(3)], 4, 4)
+        # large window
+        self._testWindow([[i] for i in range(6)], 
+            [[0, 1], range(4), range(2, 6), range(4, 6)], 8, 4)
+        # non-overlapping window
+        self._testWindow([[i] for i in range(6)], 
+            [range(1, 3), range(4, 6)], 4, 6)
+
     def test_reduceByKeyAndWindow(self):
-        return
         # basic reduction
-        #self._testReduceByKeyAndWindow(
-        #    [[("a", 1), ("a", 3)]],
-        #    [[("a", 4)]]
-        #)
-        ## key already in window and new value added into window
-        #self._testReduceByKeyAndWindow(
-        #    [[("a", 1)], [("a", 1)]],
-        #    [[("a", 1)], [("a", 2)]],
-        #) 
-        ## new key added to window
-        #self._testReduceByKeyAndWindow(
-        #    [[("a", 1)], [("a", 1), ("b", 1)]],
-        #    [[("a", 1)], [("a", 2), ("b", 1)]],
-        #) 
-        ## new removed from window
-        #self._testReduceByKeyAndWindow(
-        #    [[("a", 1)], [("a", 1)], [], []],
-        #    [[("a", 1)], [("a", 2)], [("a", 1)], []],
-        #) 
+        self._testReduceByKeyAndWindow(
+            [[("a", 1), ("a", 3)]],
+            [[("a", 4)]]
+        )
+        # key already in window and new value added into window
+        self._testReduceByKeyAndWindow(
+            [[("a", 1)], [("a", 1)]],
+            [[("a", 1)], [("a", 2)]],
+        ) 
+        # new key added to window
+        self._testReduceByKeyAndWindow(
+            [[("a", 1)], [("a", 1), ("b", 1)]],
+            [[("a", 1)], [("a", 2), ("b", 1)]],
+        ) 
+        # new removed from window
+        self._testReduceByKeyAndWindow(
+            [[("a", 1)], [("a", 1)], [], []],
+            [[("a", 1)], [("a", 2)], [("a", 1)], []],
+        ) 
         # larger slide time
         self._testReduceByKeyAndWindow(
             self.largerSlideInput, self.largerSlideReduceOutput, 8, 4)
@@ -286,7 +278,6 @@ class TestWindow(TestDStream):
         self._testReduceByKeyAndWindow(self.bigInput, self.bigReduceOutput)
 
     def test_reduce_and_window_inv(self):
-        return
         # basic reduction
         self._testReduceByKeyAndWindowInv(
             [[("a", 1), ("a", 3)]],
