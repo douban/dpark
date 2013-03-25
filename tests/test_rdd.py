@@ -1,6 +1,8 @@
 import sys, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import cPickle
 import unittest
+import pprint
 import random
 import operator
 from dpark.context import *
@@ -177,7 +179,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
 
     def test_partial_file(self):
-        p = os.path.abspath('tests/test_rdd.py')
+        p = os.path.abspath(__file__)
         l = 300
         d = open(p).read(l+50)
         start = 100
@@ -192,28 +194,6 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.partialTextFile(p, start, l, (l-start)/5)
         self.assertEqual(len(''.join(rdd.collect())), l-start)
         self.assertEqual(''.join(rdd.collect()), d)
-
-    def test_beansdb(self):
-        N = 100
-        l = range(N)
-        d = zip(map(str, l), l)
-        rdd = self.sc.makeRDD(d, 10)
-        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'), 
-                ['/tmp/beansdb/%03d.data' % i for i in range(10)])
-        rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
-        self.assertEqual(len(rdd), 10)
-        self.assertEqual(rdd.count(), N)
-        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
-        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
-        self.assertEqual(s, sum(l))
-
-        rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
-        self.assertEqual(len(rdd), 10)
-        self.assertEqual(rdd.count(), N)
-        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
-        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
-        self.assertEqual(s, sum(l))
-
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

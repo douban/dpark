@@ -7,7 +7,7 @@ from cStringIO import StringIO
 import itertools
 import operator
 import math
-import cPickle as pickle
+import cPickle
 import random
 import bz2
 import gzip
@@ -118,11 +118,11 @@ class RDD(object):
         if self.snapshot_path:
             p = os.path.join(self.snapshot_path, str(split.index))
             if os.path.exists(p):
-                v = pickle.loads(open(p).read())
+                v = cPickle.loads(open(p).read())
             else:
                 v = list(self.compute(split))
                 with open(p, 'w') as f:
-                    f.write(pickle.dumps(v))
+                    f.write(cPickle.dumps(v))
             return v
 
         if self.shouldCache:
@@ -302,10 +302,6 @@ class RDD(object):
 
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
-
-    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=False):
-        assert depth == 0, "depth > 0 is not supported yet"
-        return OutputBeansdbRDD(self, path, overwrite, compress).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1034,7 +1030,7 @@ class TextFileRDD(RDD):
 
         if self.fileinfo:
             # cut by end
-            if end < self.fileinfo.length:
+            if end < self.size:
                 f.seek(end-1)
                 while f.read(1) not in ('', '\n'):
                     end += 1
@@ -1046,8 +1042,8 @@ class TextFileRDD(RDD):
 
     def read(self, f, start, end):
         for line in f:
-            yield line
             start += len(line)
+            yield line
             if start >= end: break
         f.close()
 
@@ -1553,37 +1549,44 @@ FLAG_COMPRESS = 0x00010000
 
 PADDING = 256
 
-class BeansdbRDD(RDD):
+class BeansdbFileRDD(TextFileRDD):
     def __init__(self, ctx, path, filter=None, fullscan=False):
-        RDD.__init__(self, ctx)
-        self.path = path
+        TextFileRDD.__init__(self, ctx, path)
+        self.func = filter
         self.fullscan = fullscan
-        self.datafiles = sorted([name for name in os.listdir(path)
-                if name.endswith('.data')])
-        self._splits = [Split(i) for i in xrange(len(self.datafiles))]
     
-    def __repr__(self):
-        return "BeansdbRDD(%s)" % self.path
+    @cached
+    def __getstate__(self):
+        d = RDD.__getstate__(self)
+        del d['func']
+        return d, dump_func(self.func)
 
+    def __setstate__(self, state):
+        self.__dict__, code = state
+        try:
+            self.func = load_func(code)
+        except Exception:
+            print 'load failed', self.__class__, code
+            raise
+    
     def compute(self, split):
-        data = os.path.join(self.path, self.datafiles[split.index])
-        if self.fullscan or self.filter is None:
-            return self.full_scan(data)
+        if self.fullscan or self.func is None:
+            return self.full_scan(split)
 
-        hint = data[-5:] + '.hint.qlz'
-        if os.path.exists(hint):
-            return self.scan_hint(data, hint)
-        hint = data[-5:] + '.hint'
-        if os.path.exists(hint):
-            return self.scan_hint(data, hint)
-        return self.full_scan(data)
+        #hint = data[-5:] + '.hint.qlz'
+        #if os.path.exists(hint) and os.path.getsize():
+        #    return self.scan_hint(hint, split)
+        #hint = data[-5:] + '.hint'
+        #if os.path.exists(hint):
+        #    return self.scan_hint(hint, split)
+        return self.full_scan(split)
 
-    def scan_hint(self, data_path, hint_path):
+    def scan_hint(self, data_path, hint_path, start, end):
         hint = open(hint_path).read()
         if hint_path.endswith('.qlz'):
             hint = quicklz.decompress(hint)
 
-        filter = self.filter or (lambda x:True)
+        func = self.func or (lambda x:True)
         dataf = open(data_path)
         p = 0
         while p < len(hint):
@@ -1591,7 +1594,7 @@ class BeansdbRDD(RDD):
             p += 10
             ksz = pos & 0xff
             key = hint[p: p+ksz]
-            if filter(key):
+            if func(key):
                 dataf.seek(pos & 0xffffff00)
                 r = self.read_record(dataf)
                 if r: yield r
@@ -1607,8 +1610,27 @@ class BeansdbRDD(RDD):
         elif flag == FLAG_MARSHAL:
             val = marshal.loads(val)
         elif flag == FLAG_PICKLE:
-            val = pickle.loads(val)
+            val = cPickle.loads(val)
         return val
+
+    def try_read_record(self, f):
+        block = f.read(PADDING)
+        if not block: 
+            return
+
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
+            return
+        rsize = 24 + ksz + vsz
+        if rsize & 0xff:
+            rsize = ((rsize >> 8) + 1) << 8
+        if rsize > PADDING:
+            block += f.read(rsize-PADDING)
+        crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
+        if crc != crc32:
+            print 'crc broken', crc, crc32
+            return
+        return True
 
     def read_record(self, f):
         block = f.read(PADDING)
@@ -1616,6 +1638,10 @@ class BeansdbRDD(RDD):
             return
 
         crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
+            print 'bad key', ksz, vsz
+            return
+
         rsize = 24 + ksz + vsz
         if rsize & 0xff:
             rsize = ((rsize >> 8) + 1) << 8
@@ -1623,21 +1649,35 @@ class BeansdbRDD(RDD):
             block += f.read(rsize-PADDING)
         key = block[24:24+ksz]
         value = block[24+ksz:24+ksz+vsz]
-        if self.filter and self.filter(key):        
+        if self.func and self.func(key):
             value = self.restore(flag, value)
-        return key, (value, ver, tstamp)
+        return rsize, key, (value, ver, tstamp)
 
-    def full_scan(self, data_path):
-        f = open(data_path)
-        filter = self.filter or (lambda x:True)
+    def full_scan(self, split):
+        f = self.open_file()
+        
+        # try to find first record
+        begin, end = split.begin, split.end
         while True:
+            f.seek(begin)
+            r = self.try_read_record(f)
+            if r: break
+            begin += PADDING
+        if begin >= split.end:
+            return
+        
+        f.seek(begin)
+        func = self.func or (lambda x:True)
+        while begin < end:
             r = self.read_record(f)
             if not r:
-                break
-            key, value = r
-            if filter(key):
+                begin += PADDING
+                print 'read fail', self.path, begin
+                continue
+            size, key, value = r
+            if func(key):
                 yield key, value
-
+            begin += size
 
 class OutputBeansdbRDD(DerivedRDD):
     def __init__(self, rdd, path, overwrite, compress=False):
@@ -1675,7 +1715,7 @@ class OutputBeansdbRDD(DerivedRDD):
                 val = marshal.dumps(val, 2)
                 flag = FLAG_MARSHAL
             except ValueError:
-                    val = pickle.dumps(val, -1)
+                    val = cPickle.dumps(val, -1)
                     flag = FLAG_PICKLE
 
         if self.compress and len(val) > 1024:
