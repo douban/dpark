@@ -112,7 +112,7 @@ class MesosSchedulerDriver(Process):
     def onStatusUpdateMessage(self, update, pid=''):
         assert self.framework_id == update.framework_id
         self.sched.statusUpdate(self, update.status)
-        if not self.aborted and pid:
+        if not self.aborted and pid and not pid.endswith('0.0.0.0'):
             reply = StatusUpdateAcknowledgementMessage()
             reply.framework_id.MergeFrom(self.framework_id)
             reply.slave_id.MergeFrom(update.slave_id)
