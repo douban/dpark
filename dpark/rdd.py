@@ -7,7 +7,7 @@ from cStringIO import StringIO
 import itertools
 import operator
 import math
-import cPickle
+import cPickle as pickle
 import random
 import bz2
 import gzip
@@ -118,11 +118,11 @@ class RDD(object):
         if self.snapshot_path:
             p = os.path.join(self.snapshot_path, str(split.index))
             if os.path.exists(p):
-                v = cPickle.loads(open(p).read())
+                v = pickle.loads(open(p).read())
             else:
                 v = list(self.compute(split))
                 with open(p, 'w') as f:
-                    f.write(cPickle.dumps(v))
+                    f.write(pickle.dumps(v))
             return v
 
         if self.shouldCache:
@@ -302,6 +302,10 @@ class RDD(object):
 
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
+
+    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=False):
+        assert depth == 0, "depth > 0 is not supported yet"
+        return OutputBeansdbRDD(self, path, overwrite, compress).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1030,7 +1034,7 @@ class TextFileRDD(RDD):
 
         if self.fileinfo:
             # cut by end
-            if end < self.size:
+            if end < self.fileinfo.length:
                 f.seek(end-1)
                 while f.read(1) not in ('', '\n'):
                     end += 1
@@ -1042,8 +1046,8 @@ class TextFileRDD(RDD):
 
     def read(self, f, start, end):
         for line in f:
-            start += len(line)
             yield line
+            start += len(line)
             if start >= end: break
         f.close()
 
@@ -1514,3 +1518,224 @@ class OutputTableFileRDD(OutputTextFileRDD):
         return f.tell() > 0
 
     write_compress_data = writedata
+
+#
+# Beansdb
+#
+import marshal
+import binascii
+try:
+    import quicklz
+except ImportError:
+    pass
+try:
+    from fnv1a import get_hash
+    def fnv1a(d):
+        return get_hash(d) & 0xffffffff
+except ImportError:
+    FNV_32_PRIME = 0x01000193
+    FNV_32_INIT = 0x811c9dc5
+    def fnv1a(d):
+        h = FNV_32_INIT
+        for c in d:
+            h ^= ord(c)
+            h *= FNV_32_PRIME
+            h &= 0xffffffff
+        return h
+
+
+FLAG_PICKLE   = 0x00000001
+FLAG_INTEGER  = 0x00000002
+FLAG_LONG     = 0x00000004
+FLAG_BOOL     = 0x00000008
+FLAG_MARSHAL  = 0x00000020
+FLAG_COMPRESS = 0x00010000
+
+PADDING = 256
+
+class BeansdbRDD(RDD):
+    def __init__(self, ctx, path, filter=None, fullscan=False):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.fullscan = fullscan
+        self.datafiles = sorted([name for name in os.listdir(path)
+                if name.endswith('.data')])
+        self._splits = [Split(i) for i in xrange(len(self.datafiles))]
+    
+    def __repr__(self):
+        return "BeansdbRDD(%s)" % self.path
+
+    def compute(self, split):
+        data = os.path.join(self.path, self.datafiles[split.index])
+        if self.fullscan or self.filter is None:
+            return self.full_scan(data)
+
+        hint = data[-5:] + '.hint.qlz'
+        if os.path.exists(hint):
+            return self.scan_hint(data, hint)
+        hint = data[-5:] + '.hint'
+        if os.path.exists(hint):
+            return self.scan_hint(data, hint)
+        return self.full_scan(data)
+
+    def scan_hint(self, data_path, hint_path):
+        hint = open(hint_path).read()
+        if hint_path.endswith('.qlz'):
+            hint = quicklz.decompress(hint)
+
+        filter = self.filter or (lambda x:True)
+        dataf = open(data_path)
+        p = 0
+        while p < len(hint):
+            pos, ver, hash = struct.unpack("IIH", hint[p:p+10])
+            p += 10
+            ksz = pos & 0xff
+            key = hint[p: p+ksz]
+            if filter(key):
+                dataf.seek(pos & 0xffffff00)
+                r = self.read_record(dataf)
+                if r: yield r
+            p += ksz + 1 # \x00
+
+    def restore(self, flag, val):
+        if flag & FLAG_COMPRESS:
+            val = quicklz.decompress(val)
+        if flag == FLAG_BOOL:
+            val = bool(int(val))
+        elif flag == FLAG_INTEGER:
+            val = int(val)
+        elif flag == FLAG_MARSHAL:
+            val = marshal.loads(val)
+        elif flag == FLAG_PICKLE:
+            val = pickle.loads(val)
+        return val
+
+    def read_record(self, f):
+        block = f.read(PADDING)
+        if not block: 
+            return
+
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        rsize = 24 + ksz + vsz
+        if rsize & 0xff:
+            rsize = ((rsize >> 8) + 1) << 8
+        if rsize > PADDING:
+            block += f.read(rsize-PADDING)
+        key = block[24:24+ksz]
+        value = block[24+ksz:24+ksz+vsz]
+        if self.filter and self.filter(key):        
+            value = self.restore(flag, value)
+        return key, (value, ver, tstamp)
+
+    def full_scan(self, data_path):
+        f = open(data_path)
+        filter = self.filter or (lambda x:True)
+        while True:
+            r = self.read_record(f)
+            if not r:
+                break
+            key, value = r
+            if filter(key):
+                yield key, value
+
+
+class OutputBeansdbRDD(DerivedRDD):
+    def __init__(self, rdd, path, overwrite, compress=False):
+        DerivedRDD.__init__(self, rdd)
+        self.path = path
+        self.overwrite = overwrite
+        self.compress = compress
+
+        if os.path.exists(path):
+            if overwrite:
+                for n in os.listdir(path):
+                    if n[:3].isdigit():
+                        os.remove(os.path.join(path, n))
+        else:
+            os.makedirs(path)
+
+    def __repr__(self):
+        return '%s(%s)' % (self.__class__, self.path)
+
+    def prepare(self, val):
+        flag = 0
+        if isinstance(val, str):
+            pass
+        elif isinstance(val, (bool)):
+            flag = FLAG_BOOL
+            val = str(int(val))
+        elif isinstance(val, (int, long)):
+            flag = FLAG_INTEGER
+            val = str(val)
+        elif type(val) is unicode:
+            flag = FLAG_MARSHAL
+            val = marshal.dumps(val, 2)
+        else:
+            try:
+                val = marshal.dumps(val, 2)
+                flag = FLAG_MARSHAL
+            except ValueError:
+                    val = pickle.dumps(val, -1)
+                    flag = FLAG_PICKLE
+
+        if self.compress and len(val) > 1024:
+            flag |= FLAG_COMPRESS
+            val = quicklz.compress(val)
+
+        return flag, val
+
+    def gen_hash(self, d):
+        # used in beansdb
+        h = len(d) * 97
+        if len(d) <= 1024:
+            h += fnv1a(d)
+        else:
+            h += fnv1a(d[:512])
+            h *= 97
+            h += fnv1a(d[-512:])
+        return h & 0xffff
+
+    def write_record(self, f, key, flag, value, now=None):
+        header = struct.pack('IIIII', now, flag, 1, len(key), len(value))
+        crc32 = binascii.crc32(header)
+        crc32 = binascii.crc32(key, crc32)
+        crc32 = binascii.crc32(value, crc32) & 0xffffffff
+        f.write(struct.pack("I", crc32))
+        f.write(header)
+        f.write(key)
+        f.write(value)
+        rsize = 24 + len(key) + len(value)
+        if rsize & 0xff:
+            f.write('\x00' * (PADDING - (rsize & 0xff)))
+            rsize = ((rsize >> 8) + 1) << 8
+        return rsize
+
+    def compute(self, split):
+        p = os.path.join(self.path, '%03d.data' % split.index)
+        tp = p + '.%s.tmp' % (socket.gethostname())
+        
+        pos = 0
+        now = int(time.time())
+        f = open(tp, 'w')
+        hint = []
+        for key, value in self.prev.iterator(split):
+            flag, value = self.prepare(value)
+            h = self.gen_hash(value)
+            hint.append(struct.pack("IIH", pos + len(key), 1, h) + key + '\x00')
+            pos += self.write_record(f, key, flag, value, now)
+            if pos > (4000<<20):
+                raise Exception("split is large than 4000M")
+        f.close()
+
+        if not os.path.exists(p):
+            os.rename(tp, p)
+            hint = ''.join(hint)
+            hint_path = os.path.join(self.path, '%03d.hint' % split.index)
+            if self.compress:
+                hint = quicklz.compress(hint)
+                hint_path += '.qlz'
+            open(hint_path, 'w').write(hint)
+        else:
+            os.remove(tp)
+
+        return [p]

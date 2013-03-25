@@ -162,6 +162,17 @@ class DparkContext(object):
         fields = open(p).read().split('\t')
         return self.tableFile(path, **kwargs).asTable(fields)
 
+    def beansdb(self, path, depth=1, filter=None, fullscan=False):
+        "(Key,Value) data in beansdb"
+        assert os.path.exists(path), "%s no exists" % path
+        assert os.path.isdir(path), "%s should be directory" % path
+        if depth > 0:
+            subs = [os.path.join(path, '%x'%i) for i in range(16)]
+            return self.union([self.beansdb(p, depth-1, filter, fullscan) 
+                               for p in subs
+                               if os.path.exists(p)])
+        return BeansdbRDD(self, path, filter, fullscan)
+
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
