@@ -68,7 +68,7 @@ def reply_status(driver, task, status, data=None):
         update.data = data
     driver.sendStatusUpdate(update)
 
-def run_task(tid, task_data):
+def run_task(task_data):
     try:
         gc.disable()
         task, ntry = cPickle.loads(decompress(task_data))
@@ -96,7 +96,7 @@ def run_task(tid, task_data):
     except Exception, e:
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((tid, OtherFailure(msg), None, None), -1)
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
     finally:
         setproctitle('dpark worker: idle')
         gc.collect()
@@ -366,9 +366,8 @@ class MyExecutor(mesos.Executor):
                     else:
                         try: pool.terminate()
                         except: pass
-       
-            tid = int(task.task_id.value.split(':')[1])
-            pool.apply_async(run_task, [tid, task.data], callback=callback)
+        
+            pool.apply_async(run_task, [task.data], callback=callback)
     
         except Exception, e:
             import traceback
