@@ -1628,18 +1628,17 @@ class BeansdbFileRDD(TextFileRDD):
             block += f.read(rsize-PADDING)
         crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
         if crc != crc32:
-            print 'crc broken', crc, crc32
             return
         return True
 
     def read_record(self, f):
         block = f.read(PADDING)
-        if not block: 
+        if len(block) < 24: 
             return
 
         crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
         if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
-            print 'bad key', ksz, vsz
+            print 'bad key length', ksz, vsz
             return
 
         rsize = 24 + ksz + vsz
@@ -1647,9 +1646,13 @@ class BeansdbFileRDD(TextFileRDD):
             rsize = ((rsize >> 8) + 1) << 8
         if rsize > PADDING:
             block += f.read(rsize-PADDING)
+        #crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
+        #if crc != crc32:
+        #    print 'crc broken', crc, crc32
+        #    return
         key = block[24:24+ksz]
         value = block[24+ksz:24+ksz+vsz]
-        if self.func and self.func(key):
+        if not self.func or self.func(key):
             value = self.restore(flag, value)
         return rsize, key, (value, ver, tstamp)
 
@@ -1672,7 +1675,12 @@ class BeansdbFileRDD(TextFileRDD):
             r = self.read_record(f)
             if not r:
                 begin += PADDING
-                print 'read fail', self.path, begin
+                logger.error('read fail at %s pos: %d', self.path, begin)
+                while begin < end:
+                    f.seek(begin)
+                    if self.try_read_record(f):
+                        break
+                    begin += PADDING
                 continue
             size, key, value = r
             if func(key):
