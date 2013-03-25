@@ -18,14 +18,14 @@ class MooseFS(object):
         self.inode_cache = {}
 
     def _lookup(self, parent, name):
-        cache = self.inode_cache.setdefault(parent, {})
-        info = cache.get(name)
-        if info is not None:
-            return info
+        #cache = self.inode_cache.setdefault(parent, {})
+        #info = cache.get(name)
+        #if info is not None:
+        #    return info
         
         info, err = self.mc.lookup(parent, name)
-        if info is not None:
-            cache[name] = info
+        #if info is not None:
+        #    cache[name] = info
         return info
 
     def lookup(self, path, followSymlink=True):
