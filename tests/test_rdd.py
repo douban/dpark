@@ -179,7 +179,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
 
     def test_partial_file(self):
-        p = os.path.abspath(__file__)
+        p = 'tests/test_rdd.py' 
         l = 300
         d = open(p).read(l+50)
         start = 100

@@ -1030,7 +1030,7 @@ class TextFileRDD(RDD):
 
         if self.fileinfo:
             # cut by end
-            if end < self.size:
+            if end < self.fileinfo.length:
                 f.seek(end-1)
                 while f.read(1) not in ('', '\n'):
                     end += 1
