@@ -169,6 +169,7 @@ class StreamingContext(object):
         #    self.networkInputTracker = NetworkInputTracker(self, nis)
         #    self.networkInputTracker.start()
 
+        self.sc.start()
         self.scheduler = Scheduler(self)
         self.scheduler.start(t or time.time())
 
@@ -223,6 +224,7 @@ class JobManager(object):
         pass
 
     def runJob(self, job):
+        logger.debug("start to run job %s", job)
         used = job.run()
         delayed = time.time() - job.time
         logger.info("job used %s, delayed %s", used, delayed)
@@ -238,6 +240,7 @@ class RecurringTimer(object):
         self.nextTime = (int(start / self.period) + 1) * self.period
         self.stopped = False
         self.thread = spawn(self.run)
+        logger.debug("RecurringTimer started, nextTime is %d", self.nextTime)
 
     def stop(self):
         self.stopped = True
@@ -248,10 +251,12 @@ class RecurringTimer(object):
         while not self.stopped:
             now = time.time()
             if now >= self.nextTime:
+                logger.debug("start call %s with %d (delayed %f)", self.callback, 
+                        self.nextTime, now - self.nextTime)
                 self.callback(self.nextTime)
                 self.nextTime += self.period
             else:
-                time.sleep(max(min(self.nextTime - now, 1), 0.1))
+                time.sleep(max(min(self.nextTime - now, 1), 0.01))
 
 class Scheduler(object):
     def __init__(self, ssc):
@@ -272,6 +277,7 @@ class Scheduler(object):
 
     def generateRDDs(self, time):
         for job in self.graph.generateRDDs(time):
+            logger.debug("start to run job %s", job)
             self.jobManager.runJob(job)
         self.graph.forgetOldRDDs(time)
     #    self.doCheckpoint(time)
@@ -768,9 +774,7 @@ class ConstantInputDStream(InputDStream):
         return self.rdd
 
 def defaultFilter(path):
-    if path.startswith('.'):
-        return False
-    if os.path.islink(path):
+    if '/.' in path:
         return False
     return True
 
@@ -780,23 +784,31 @@ class ModTimeAndRangeFilter(object):
         self.filter = filter
         self.latestModTime = 0
         self.accessedFiles = {}
+        self.oldFiles = set()
 
     def __call__(self, path):
         if not self.filter(path):
             return
-
+        
+        if path in self.oldFiles:
+            return
         mtime = os.path.getmtime(path)
         if mtime < self.lastModTime:
+            self.oldFiles.add(path)
             return
         if mtime > self.latestModTime:
             self.latestModTime = mtime
+
+        if os.path.islink(path):
+            self.oldFiles.add(path)
+            return
 
         nsize = os.path.getsize(path)
         osize = self.accessedFiles.get(path, 0)
         if nsize <= osize:
             return
         self.accessedFiles[path] = nsize
-        logger.debug("got new file %s [%d,%d]", path, osize, nsize)
+        logger.info("got new file %s [%d,%d]", path, osize, nsize)
         return path, osize, nsize
 
     def rotate(self):
@@ -818,7 +830,6 @@ class FileInputDStream(InputDStream):
                 r = self.filter(os.path.join(root, name))
                 if r:
                     files.append(r)
-        print self, validTime, files
         if files:
             self.filter.rotate()
             return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
