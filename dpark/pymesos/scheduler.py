@@ -111,14 +111,17 @@ class MesosSchedulerDriver(Process):
 
     def onStatusUpdateMessage(self, update, pid=''):
         assert self.framework_id == update.framework_id
-        self.sched.statusUpdate(self, update.status)
-        if not self.aborted and pid and not pid.endswith('0.0.0.0'):
+        
+        if pid and not pid.endswith('0.0.0.0'):
             reply = StatusUpdateAcknowledgementMessage()
             reply.framework_id.MergeFrom(self.framework_id)
             reply.slave_id.MergeFrom(update.slave_id)
             reply.task_id.MergeFrom(update.status.task_id)
             reply.uuid = update.uuid
-            self.send(UPID(pid), reply)
+            try: self.send(UPID(pid), reply)
+            except IOError: pass
+
+        self.sched.statusUpdate(self, update.status)
 
     def onLostSlaveMessage(self, slave_id):
         self.sched.slaveLost(self, slave_id)
