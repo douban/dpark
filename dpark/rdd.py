@@ -473,7 +473,7 @@ class MappedRDD(DerivedRDD):
         try:
             self.func = load_func(code)
         except Exception:
-            print 'load failed', self.__class__, code
+            print 'load failed', self.__class__, code[:1024]
             raise
 
 class FlatMappedRDD(MappedRDD):
@@ -1572,7 +1572,7 @@ class BeansdbFileRDD(TextFileRDD):
         try:
             self.func = load_func(code)
         except Exception:
-            print 'load failed', self.__class__, code
+            print 'load failed', self.__class__, code[:1024]
             raise
     
     def compute(self, split):
@@ -1592,7 +1592,7 @@ class BeansdbFileRDD(TextFileRDD):
             try:
                 hint = quicklz.decompress(hint)
             except ValueError, e:
-                msg = e.message
+                msg = str(e.message)
                 if msg.startswith('compressed length not match'):
                     hint = hint[:int(msg.split('!=')[1])]
                     hint = quicklz.decompress(hint)
