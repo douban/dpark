@@ -176,14 +176,16 @@ class MesosSchedulerDriver(Process):
 
     def launchTasks(self, offer_id, tasks, filters):
         if not self.connected or offer_id.value not in self.savedOffers:
-            update = StatusUpdate()
-            update.framework_id.MergeFrom(self.framework_id)
-            update.status.task_id.MergeFrom(task.task_id)
-            update.status.state = TASK_LOST
-            update.status.message = 'Master disconnected' if not self.connected else "invalid offer_id"
-            update.timestamp = time.time()
-            update.uuid = ''
-            return self.onStatusUpdateMessage(update)
+            for task in tasks:
+                update = StatusUpdate()
+                update.framework_id.MergeFrom(self.framework_id)
+                update.status.task_id.MergeFrom(task.task_id)
+                update.status.state = TASK_LOST
+                update.status.message = 'Master disconnected' if not self.connected else "invalid offer_id"
+                update.timestamp = time.time()
+                update.uuid = ''
+                self.onStatusUpdateMessage(update)
+            return
         
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
