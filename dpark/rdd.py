@@ -1551,7 +1551,13 @@ PADDING = 256
 
 class BeansdbFileRDD(TextFileRDD):
     def __init__(self, ctx, path, filter=None, fullscan=False):
-        TextFileRDD.__init__(self, ctx, path)
+        if not fullscan:
+            hint = path[:-5] + '.hint'
+            if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
+                fullscan = True
+            if not filter:
+                fullscan = True
+        TextFileRDD.__init__(self, ctx, path, numSplits=None if fullscan else 1)
         self.func = filter
         self.fullscan = fullscan
     
@@ -1570,24 +1576,29 @@ class BeansdbFileRDD(TextFileRDD):
             raise
     
     def compute(self, split):
-        if self.fullscan or self.func is None:
+        if self.fullscan:
             return self.full_scan(split)
-
-        #hint = data[-5:] + '.hint.qlz'
-        #if os.path.exists(hint) and os.path.getsize():
-        #    return self.scan_hint(hint, split)
-        #hint = data[-5:] + '.hint'
-        #if os.path.exists(hint):
-        #    return self.scan_hint(hint, split)
+        hint = self.path[:-5] + '.hint.qlz'
+        if os.path.exists(hint):
+            return self.scan_hint(hint)
+        hint = self.path[:-5] + '.hint'
+        if os.path.exists(hint):
+            return self.scan_hint(hint)
         return self.full_scan(split)
 
-    def scan_hint(self, data_path, hint_path, start, end):
+    def scan_hint(self, hint_path):
         hint = open(hint_path).read()
         if hint_path.endswith('.qlz'):
-            hint = quicklz.decompress(hint)
+            try:
+                hint = quicklz.decompress(hint)
+            except ValueError, e:
+                msg = e.message
+                if msg.startswith('compressed length not match'):
+                    hint = hint[:int(msg.split('!=')[1])]
+                    hint = quicklz.decompress(hint)
 
         func = self.func or (lambda x:True)
-        dataf = open(data_path)
+        dataf = open(self.path)
         p = 0
         while p < len(hint):
             pos, ver, hash = struct.unpack("IIH", hint[p:p+10])
@@ -1597,7 +1608,10 @@ class BeansdbFileRDD(TextFileRDD):
             if func(key):
                 dataf.seek(pos & 0xffffff00)
                 r = self.read_record(dataf)
-                if r: yield r
+                if r: 
+                    yield r
+                else:
+                    logger.error("read failed from %s at %d", self.path, pos & 0xffffff00)
             p += ksz + 1 # \x00
 
     def restore(self, flag, val):
@@ -1638,7 +1652,7 @@ class BeansdbFileRDD(TextFileRDD):
 
         crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
         if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
-            print 'bad key length', ksz, vsz
+            logger.warning('bad key length %d %d', ksz, vsz)
             return
 
         rsize = 24 + ksz + vsz

@@ -168,14 +168,13 @@ class DparkContext(object):
         if not os.path.isdir(path):
             return BeansdbFileRDD(self, path, filter, fullscan)
 
-        if depth:
-            subs = [os.path.join(path, '%x'%i) for i in range(16)]
-        else:
+        subs = []
+        if not depth:
             subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
-            if not subs:
-                subs = [os.path.join(path, '%x'%i) for i in range(16)]
+        if not subs:
+            subs = [os.path.join(path, '%x'%i) for i in range(16)]
         return self.union([self.beansdb(p, depth and depth-1, filter, fullscan)
-                    for p in subs])
+                    for p in subs if os.path.exists(p)])
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
