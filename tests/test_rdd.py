@@ -195,6 +195,28 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(len(''.join(rdd.collect())), l-start)
         self.assertEqual(''.join(rdd.collect()), d)
 
+    def test_beansdb(self):
+        N = 100
+        l = range(N)
+        d = zip(map(str, l), l)
+        rdd = self.sc.makeRDD(d, 10)
+        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'), 
+                       ['/tmp/beansdb/%03d.data' % i for i in range(10)])
+        rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
+        self.assertEqual(len(rdd), 10)
+        self.assertEqual(rdd.count(), N)
+        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+        self.assertEqual(s, sum(l))
+    
+        rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
+        self.assertEqual(len(rdd), 10)
+        self.assertEqual(rdd.count(), N)
+        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+        self.assertEqual(s, sum(l))
+    
+    
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")

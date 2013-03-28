@@ -303,6 +303,12 @@ class RDD(object):
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
 
+    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True):
+        assert depth==0, 'only support depth==0 now' # TODO
+        if len(self) >= 256:
+            self = self.mergeSplit(len(self) / 256 + 1)
+        return OutputBeansdbRDD(self, path, overwrite, compress).collect()
+
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):
