@@ -10,7 +10,8 @@ logger = logging.getLogger(__name__)
 
 mfsdirs = []
 def _scan():
-    cmd = "ps -eo cmd| grep mfschunkserver | head -1 | cut -d ' ' -f1 | xargs dirname | sed 's#sbin##g'"
+    cmd = """ps -eo cmd| grep mfschunkserver | grep -v grep |
+    head -1 | cut -d ' ' -f1 | xargs dirname | sed 's#sbin##g'"""
     mfs_prefix = commands.getoutput(cmd)
     mfs_cfg = '%s/etc/mfshdd.cfg' % mfs_prefix
     mfs_cfg_list = (mfs_cfg, '/etc/mfs/mfshdd.cfg',
