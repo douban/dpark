@@ -1646,7 +1646,8 @@ class BeansdbFileRDD(TextFileRDD):
                 dataf.seek(pos & 0xffffff00)
                 r = self.read_record(dataf)
                 if r: 
-                    yield r
+                    rsize, key, value = r
+                    yield key, value
                 else:
                     logger.error("read failed from %s at %d", self.path, pos & 0xffffff00)
             p += ksz + 1 # \x00
