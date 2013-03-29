@@ -1655,13 +1655,13 @@ class BeansdbFileRDD(TextFileRDD):
     def restore(self, flag, val):
         if flag & FLAG_COMPRESS:
             val = quicklz.decompress(val)
-        if flag == FLAG_BOOL:
+        if flag & FLAG_BOOL:
             val = bool(int(val))
-        elif flag == FLAG_INTEGER:
+        elif flag & FLAG_INTEGER:
             val = int(val)
-        elif flag == FLAG_MARSHAL:
+        elif flag & FLAG_MARSHAL:
             val = marshal.loads(val)
-        elif flag == FLAG_PICKLE:
+        elif flag & FLAG_PICKLE:
             val = cPickle.loads(val)
         return val
 

@@ -164,6 +164,10 @@ class DparkContext(object):
 
     def beansdb(self, path, depth=None, filter=None, fullscan=False):
         "(Key,Value) data in beansdb"
+        if isinstance(path, (tuple, list)):
+            return self.union([self.beansdb(p, depth, filter, fullscan)
+                    for p in path])
+
         assert os.path.exists(path), "%s no exists" % path
         if not os.path.isdir(path):
             return BeansdbFileRDD(self, path, filter, fullscan)
