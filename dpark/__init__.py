@@ -9,9 +9,17 @@ makeRDD = _ctx.makeRDD
 
 textFile = _ctx.textFile
 
+partialTextFile = _ctx.partialTextFile
+
 csvFile = _ctx.csvFile
 
 binaryFile = _ctx.binaryFile
+
+tableFile = _ctx.tableFile
+
+table = _ctx.table
+
+beansdb = _ctx.beansdb
 
 union = _ctx.union
 

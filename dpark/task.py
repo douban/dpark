@@ -102,9 +102,12 @@ class ShuffleMapTask(DAGTask):
                 bucket[k] = createCombiner(v)
 
         for i in range(numOutputSplits):
-            if marshalable(buckets[i]):
-                flag, d = 'm', marshal.dumps(buckets[i])
-            else:
+            try:
+                if marshalable(buckets[i]):
+                    flag, d = 'm', marshal.dumps(buckets[i])
+                else:
+                    flag, d = 'p', cPickle.dumps(buckets[i], -1)
+            except ValueError:
                 flag, d = 'p', cPickle.dumps(buckets[i], -1)
             cd = compress(d)
             for tried in range(1, 4):
