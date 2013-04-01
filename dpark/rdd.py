@@ -344,6 +344,12 @@ class RDD(object):
         r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
         return r
 
+    def update(self, other):
+        o_b = self.ctx.broadcast(other.collectAsMap())
+        r = self.map(lambda (k,v): (k, o_b.value.get(k, v)))
+        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        return r
+
     def join(self, other, numSplits=None, taskMemory=None):
         return self._join(other, (), numSplits, taskMemory)
 
@@ -1827,7 +1833,7 @@ class OutputBeansdbRDD(DerivedRDD):
                 raise Exception("split is large than 4000M")
         f.close()
 
-        if not os.path.exists(p):
+        if hint and not os.path.exists(p):
             os.rename(tp, p)
             hint = ''.join(hint)
             hint_path = os.path.join(self.path, '%03d.hint' % split.index)
@@ -1838,4 +1844,4 @@ class OutputBeansdbRDD(DerivedRDD):
         else:
             os.remove(tp)
 
-        return [p]
+        return [p] if hint else []
