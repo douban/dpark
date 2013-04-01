@@ -747,7 +747,7 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def error(self, driver, code, message):
-        logger.error("Mesos error: %s (code: %s)", message, code)
+        logger.warning("Mesos error message: %s (code: %s)", message, code)
         #if self.activeJobs:
         #    self.requestMoreResources()
 
