@@ -2,6 +2,12 @@ from kazoo.client import KazooClient, KazooState
 from kazoo.recipe.watchers import ChildrenWatch, DataWatch
 from kazoo.exceptions import ZookeeperError 
 
+def adjust_kazoo_logging_level():
+    import logging
+    import kazoo
+    kazoo.client.log.setLevel(logging.WARNING)
+    kazoo.protocol.connection.log.setLevel(logging.WARNING)
+
 class MasterDetector(object):
     def __init__(self, uri, agent):
         self.uri = uri
@@ -25,6 +31,7 @@ class MasterDetector(object):
         return False
 
     def start(self):
+        adjust_kazoo_logging_level()
         self.zk.start()
         try:
             ChildrenWatch(self.zk, '', self.choose)
