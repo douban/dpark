@@ -369,6 +369,7 @@ class TreeBroadcast(Broadcast):
 
     def receive(self, uuid):
         guide_addr = self.get_guide_addr(uuid)
+        assert guide_addr, 'guide addr is not available'
         guide_sock = env.ctx.socket(zmq.REQ)
         guide_sock.connect(guide_addr)
         logger.debug("connect to guide %s", guide_addr)
@@ -448,8 +449,6 @@ class TreeBroadcast(Broadcast):
                 sock.send_pyobj(obj and obj.guide_addr)
                 if not uuid:
                     break
-                if not guide:
-                    logger.warning("broadcast %s is not registered", uuid)
             sock.close()
             logger.debug("TreeBroadcast tracker stopped")
 
