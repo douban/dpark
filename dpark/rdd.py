@@ -1587,8 +1587,9 @@ FLAG_PICKLE   = 0x00000001
 FLAG_INTEGER  = 0x00000002
 FLAG_LONG     = 0x00000004
 FLAG_BOOL     = 0x00000008
+FLAG_COMPRESS1= 0x00000010 # by cmemcached
 FLAG_MARSHAL  = 0x00000020
-FLAG_COMPRESS = 0x00010000
+FLAG_COMPRESS = 0x00010000 # by beansdb
 
 PADDING = 256
 
@@ -1661,6 +1662,9 @@ class BeansdbFileRDD(TextFileRDD):
     def restore(self, flag, val):
         if flag & FLAG_COMPRESS:
             val = quicklz.decompress(val)
+        if flag & FLAG_COMPRESS1:
+            val = zlib.decompress(val)
+
         if flag & FLAG_BOOL:
             val = bool(int(val))
         elif flag & FLAG_INTEGER:
