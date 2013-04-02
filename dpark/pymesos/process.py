@@ -217,22 +217,22 @@ class Process(UPID):
 
     def ioloop(self, sock): 
         sock.listen(1)
-        conns = {sock.fileno(): sock}
+        sfd = sock.fileno()
+        conns = {sfd: sock}
         while not self.aborted:
             rlist = select.select(conns.keys(), [], [], 1)[0]
             for fd in rlist:
                 #logging.debug("start process event %d", fd)
-                if fd == sock.fileno():
+                if fd == sfd:
                     conn, addr = sock.accept()
                     logger.debug("accepted conn from %s", addr)
-                    conns[conn.fileno()] = conn.makefile('r', 10)
+                    conns[conn.fileno()] = conn.makefile('r', 40960)
                 elif fd in conns:
                     try:
-                        cont = self.process_message(conns[fd])
+                        if not self.process_message(conns[fd]):
+                            conns.pop(fd).close()
                     except Exception, e:
                         import traceback; traceback.print_exc()
-                        cont = False
-                    if not cont:
                         conns.pop(fd).close()
                 #logging.debug("stop process event %d", fd)
         sock.close()
