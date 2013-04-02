@@ -98,9 +98,10 @@ class CacheTrackerServer(object):
     def __init__(self, locs):
         self.addr = None
         self.locs = locs
+        self.thread = None
 
     def start(self):
-        spawn(self.run)
+        self.thread = spawn(self.run)
         while self.addr is None:
             time.sleep(0.01)
 
@@ -109,6 +110,7 @@ class CacheTrackerServer(object):
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
         sock.close()
+        self.thread.join()
 
     def run(self):
         locs = self.locs

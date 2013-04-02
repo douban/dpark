@@ -9,7 +9,6 @@ from rdd import *
 from accumulator import Accumulator
 from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from env import env
-from broadcast import Broadcast
 
 logger = logging.getLogger("context")
 
@@ -191,7 +190,8 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        return Broadcast.newBroadcast(v, self.isLocal)
+        from broadcast import TheBroadcast
+        return TheBroadcast(v, self.isLocal)
 
     def start(self):
         if self.started:

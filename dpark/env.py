@@ -68,8 +68,8 @@ class DparkEnv:
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
-        from broadcast import Broadcast
-        Broadcast.initialize(isMaster)
+        from broadcast import TheBroadcast
+        TheBroadcast.initialize(isMaster)
 
         self.started = True
         logger.debug("env started") 
@@ -81,6 +81,8 @@ class DparkEnv:
         self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
+        from broadcast import TheBroadcast
+        TheBroadcast.shutdown()
        
         logger.debug("cleaning workdir ...")
         for d in self.workdir:

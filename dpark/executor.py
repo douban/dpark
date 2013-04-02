@@ -47,7 +47,6 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
-from dpark.broadcast import Broadcast
 
 logger = logging.getLogger("executor@%s" % socket.gethostname())
 
