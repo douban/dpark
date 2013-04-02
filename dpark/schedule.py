@@ -10,6 +10,7 @@ import getpass
 import urllib
 import warnings
 import weakref
+import multiprocessing
 
 import zmq
 try:
@@ -24,7 +25,6 @@ from accumulator import Accumulator
 from task import ResultTask, ShuffleMapTask
 from job import SimpleJob
 from env import env
-from broadcast import Broadcast
 
 logger = logging.getLogger("scheduler")
 
@@ -363,8 +363,6 @@ class LocalScheduler(DAGScheduler):
 #            task = cPickle.loads(cPickle.dumps(task, -1))
             _, reason, result, update = run_task(task, self.nextAttempId())
             self.taskEnded(task, reason, result, update)
-    def stop(self):
-        pass
 
 def run_task_in_process(task, tid, environ):
     from env import env
@@ -381,11 +379,7 @@ class MultiProcessScheduler(LocalScheduler):
         LocalScheduler.__init__(self)
         self.threads = threads
         self.tasks = {}
-        from multiprocessing import Pool
-        self.pool = Pool(self.threads or 2)
-
-    def start(self):
-        pass
+        self.pool = multiprocessing.Pool(self.threads or 2)
 
     def submitTasks(self, tasks):
         logger.info("Got a job with %d tasks", len(tasks))
