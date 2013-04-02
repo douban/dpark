@@ -303,11 +303,11 @@ class RDD(object):
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
 
-    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True):
+    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True, raw=False):
         assert depth==0, 'only support depth==0 now' # TODO
         if len(self) >= 256:
             self = self.mergeSplit(len(self) / 256 + 1)
-        return OutputBeansdbRDD(self, path, overwrite, compress).collect()
+        return OutputBeansdbRDD(self, path, overwrite, compress, raw).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1594,7 +1594,7 @@ FLAG_COMPRESS = 0x00010000 # by beansdb
 PADDING = 256
 
 class BeansdbFileRDD(TextFileRDD):
-    def __init__(self, ctx, path, filter=None, fullscan=False):
+    def __init__(self, ctx, path, filter=None, fullscan=False, raw=False):
         if not fullscan:
             hint = path[:-5] + '.hint'
             if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
@@ -1604,6 +1604,7 @@ class BeansdbFileRDD(TextFileRDD):
         TextFileRDD.__init__(self, ctx, path, numSplits=None if fullscan else 1)
         self.func = filter
         self.fullscan = fullscan
+        self.raw = raw
     
     @cached
     def __getstate__(self):
@@ -1660,6 +1661,9 @@ class BeansdbFileRDD(TextFileRDD):
             p += ksz + 1 # \x00
 
     def restore(self, flag, val):
+        if self.raw:
+            return (flag, val)
+
         if flag & FLAG_COMPRESS:
             val = quicklz.decompress(val)
         if flag & FLAG_COMPRESS1:
@@ -1749,12 +1753,14 @@ class BeansdbFileRDD(TextFileRDD):
                 yield key, value
             begin += size
 
+
 class OutputBeansdbRDD(DerivedRDD):
-    def __init__(self, rdd, path, overwrite, compress=False):
+    def __init__(self, rdd, path, overwrite, compress=False, raw=False):
         DerivedRDD.__init__(self, rdd)
         self.path = path
         self.overwrite = overwrite
         self.compress = compress
+        self.raw = raw
 
         if os.path.exists(path):
             if overwrite:
@@ -1768,6 +1774,8 @@ class OutputBeansdbRDD(DerivedRDD):
         return '%s(%s)' % (self.__class__, self.path)
 
     def prepare(self, val):
+        if self.raw:
+            return val
         flag = 0
         if isinstance(val, str):
             pass

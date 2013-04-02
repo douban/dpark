@@ -161,23 +161,28 @@ class DparkContext(object):
         fields = open(p).read().split('\t')
         return self.tableFile(path, **kwargs).asTable(fields)
 
-    def beansdb(self, path, depth=None, filter=None, fullscan=False):
-        "(Key,Value) data in beansdb"
+    def beansdb(self, path, depth=None, filter=None, fullscan=False, raw=False, only_latest=False):
+        "(Key, (Value, Version, Timestamp)) data in beansdb"
         if isinstance(path, (tuple, list)):
-            return self.union([self.beansdb(p, depth, filter, fullscan)
+            return self.union([self.beansdb(p, depth, filter, fullscan, raw, only_latest)
                     for p in path])
 
         assert os.path.exists(path), "%s no exists" % path
         if not os.path.isdir(path):
-            return BeansdbFileRDD(self, path, filter, fullscan)
+            return BeansdbFileRDD(self, path, filter, fullscan, raw)
 
         subs = []
         if not depth:
             subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
         if not subs:
             subs = [os.path.join(path, '%x'%i) for i in range(16)]
-        return self.union([self.beansdb(p, depth and depth-1, filter, fullscan)
+        rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, raw, only_latest)
                     for p in subs if os.path.exists(p)])
+
+        # choose only latest version
+        if only_latest and subs[0].endswith('.data'):
+            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, len(rdd) / 4)
+        return rdd
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
