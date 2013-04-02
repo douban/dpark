@@ -176,12 +176,14 @@ class DparkContext(object):
             subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
         if not subs:
             subs = [os.path.join(path, '%x'%i) for i in range(16)]
-        rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, raw, only_latest)
+        rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
                     for p in subs if os.path.exists(p)])
 
         # choose only latest version
         if only_latest and subs[0].endswith('.data'):
             rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, len(rdd) / 4)
+        if not raw:
+            rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
         return rdd
 
     def union(self, rdds):

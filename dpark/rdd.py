@@ -1593,6 +1593,50 @@ FLAG_COMPRESS = 0x00010000 # by beansdb
 
 PADDING = 256
 
+def restore_value(flag, val):
+    if flag & FLAG_COMPRESS:
+        val = quicklz.decompress(val)
+    if flag & FLAG_COMPRESS1:
+        val = zlib.decompress(val)
+
+    if flag & FLAG_BOOL:
+        val = bool(int(val))
+    elif flag & FLAG_INTEGER:
+        val = int(val)
+    elif flag & FLAG_MARSHAL:
+        val = marshal.loads(val)
+    elif flag & FLAG_PICKLE:
+        val = cPickle.loads(val)
+    return val
+
+def prepare_value(val):
+    flag = 0
+    if isinstance(val, str):
+        pass
+    elif isinstance(val, (bool)):
+        flag = FLAG_BOOL
+        val = str(int(val))
+    elif isinstance(val, (int, long)):
+        flag = FLAG_INTEGER
+        val = str(val)
+    elif type(val) is unicode:
+        flag = FLAG_MARSHAL
+        val = marshal.dumps(val, 2)
+    else:
+        try:
+            val = marshal.dumps(val, 2)
+            flag = FLAG_MARSHAL
+        except ValueError:
+                val = cPickle.dumps(val, -1)
+                flag = FLAG_PICKLE
+
+    if self.compress and len(val) > 1024:
+        flag |= FLAG_COMPRESS
+        val = quicklz.compress(val)
+
+    return flag, val
+
+
 class BeansdbFileRDD(TextFileRDD):
     def __init__(self, ctx, path, filter=None, fullscan=False, raw=False):
         if not fullscan:
@@ -1663,21 +1707,7 @@ class BeansdbFileRDD(TextFileRDD):
     def restore(self, flag, val):
         if self.raw:
             return (flag, val)
-
-        if flag & FLAG_COMPRESS:
-            val = quicklz.decompress(val)
-        if flag & FLAG_COMPRESS1:
-            val = zlib.decompress(val)
-
-        if flag & FLAG_BOOL:
-            val = bool(int(val))
-        elif flag & FLAG_INTEGER:
-            val = int(val)
-        elif flag & FLAG_MARSHAL:
-            val = marshal.loads(val)
-        elif flag & FLAG_PICKLE:
-            val = cPickle.loads(val)
-        return val
+        return restore_value(flag, val)
 
     def try_read_record(self, f):
         block = f.read(PADDING)
@@ -1776,31 +1806,8 @@ class OutputBeansdbRDD(DerivedRDD):
     def prepare(self, val):
         if self.raw:
             return val
-        flag = 0
-        if isinstance(val, str):
-            pass
-        elif isinstance(val, (bool)):
-            flag = FLAG_BOOL
-            val = str(int(val))
-        elif isinstance(val, (int, long)):
-            flag = FLAG_INTEGER
-            val = str(val)
-        elif type(val) is unicode:
-            flag = FLAG_MARSHAL
-            val = marshal.dumps(val, 2)
-        else:
-            try:
-                val = marshal.dumps(val, 2)
-                flag = FLAG_MARSHAL
-            except ValueError:
-                    val = cPickle.dumps(val, -1)
-                    flag = FLAG_PICKLE
 
-        if self.compress and len(val) > 1024:
-            flag |= FLAG_COMPRESS
-            val = quicklz.compress(val)
-
-        return flag, val
+        return prepare_value(val)
 
     def gen_hash(self, d):
         # used in beansdb
