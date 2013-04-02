@@ -281,16 +281,16 @@ class SimpleJob(Job):
                 self.blacklist[i].append(task.host)
                 self.tasksLaunched -= 1
 
-        if self.tasksFinished > self.numTasks / 3:
+        if self.tasksFinished > self.numTasks * 2.0 / 3:
             scale = 1.0 * self.numTasks / self.tasksFinished
-            avg = self.taskEverageTime
+            avg = max(self.taskEverageTime, 10)
             tasks = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 used = now - task.start
                 #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
-                if used > avg * (task.tried + 1) * scale and used > 30:
+                if used > avg * (task.tried + 1) * scale:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
                         logger.warning("re-submit task %s for timeout %.1f, try %d",
@@ -309,6 +309,9 @@ class SimpleJob(Job):
 
     def abort(self, message):
         logger.error("abort the job: %s", message)
+        tasks = ' '.join(str(i) for i in xrange(len(self.finished))
+                if not self.finished[i])
+        logger.error("not finished tasks: %s", tasks)
         self.failed = True
         self.causeOfFailure = message
         self.sched.jobFinished(self)
