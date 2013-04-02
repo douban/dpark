@@ -444,8 +444,8 @@ class TreeBroadcast(Broadcast):
                     cls.tracker_addr)
             while True:
                 uuid = sock.recv_pyobj()
-                guide = cls.guides.get(uuid, '')
-                sock.send_pyobj(guide)
+                obj = cls.guides.get(uuid, '')
+                sock.send_pyobj(obj and obj.guide_addr)
                 if not uuid:
                     break
                 if not guide:
