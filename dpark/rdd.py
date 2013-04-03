@@ -1566,7 +1566,8 @@ import binascii
 try:
     import quicklz
 except ImportError:
-    pass
+    quicklz = None
+
 try:
     from fnv1a import get_hash
     def fnv1a(d):
@@ -1609,7 +1610,7 @@ def restore_value(flag, val):
         val = cPickle.loads(val)
     return val
 
-def prepare_value(val):
+def prepare_value(val, compress):
     flag = 0
     if isinstance(val, str):
         pass
@@ -1630,7 +1631,7 @@ def prepare_value(val):
                 val = cPickle.dumps(val, -1)
                 flag = FLAG_PICKLE
 
-    if self.compress and len(val) > 1024:
+    if compress and len(val) > 1024:
         flag |= FLAG_COMPRESS
         val = quicklz.compress(val)
 
@@ -1789,6 +1790,8 @@ class OutputBeansdbRDD(DerivedRDD):
         DerivedRDD.__init__(self, rdd)
         self.path = path
         self.overwrite = overwrite
+        if not quicklz:
+            compress = False
         self.compress = compress
         self.raw = raw
 
@@ -1807,7 +1810,7 @@ class OutputBeansdbRDD(DerivedRDD):
         if self.raw:
             return val
 
-        return prepare_value(val)
+        return prepare_value(val, self.compress)
 
     def gen_hash(self, d):
         # used in beansdb
