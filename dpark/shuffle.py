@@ -73,20 +73,25 @@ class ShuffleFetcher:
 class SimpleShuffleFetcher(ShuffleFetcher):
     def fetch_one(self, uri, shuffleId, part, reduceId):
         if uri == LocalFileShuffle.getServerUri():
-            urlopen, url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+            # urllib can open local file
+            url = LocalFileShuffle.getOutputFile(shuffleId, part, reduceId)
         else:
-            urlopen, url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+            url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
         
         tries = 4
         while True:
             try:
-                f = urlopen(url)
+                f = urllib.urlopen(url)
+                if f.code == 404:
+                    f.close()
+                    raise IOError("%s not found", url)
+                
                 d = f.read()
                 flag = d[:1]
                 length, = struct.unpack("I", d[1:5])
                 if length != len(d):
-                    raise IOError("length not match: expected %d, but got %d" % (length, len(d)))
+                    raise ValueError("length not match: expected %d, but got %d" % (length, len(d)))
                 d = decompress(d[5:])
                 f.close()
                 if flag == 'm':
