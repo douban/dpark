@@ -1,4 +1,5 @@
 # util 
+import types
 from zlib import compress as _compress, decompress
 import threading
 
@@ -35,3 +36,14 @@ def spawn(target, *args, **kw):
     t.daemon = True
     t.start()
     return t
+
+# http://effbot.org/zone/python-hash.htm
+def portable_hash(value):
+    if value is None:
+        return 0
+    if type(value) is types.TupleType:
+        h = 0x345678
+        for i in value:
+            h = ((1000003 * h) & 0xffffffff) ^ portable_hash(i)
+        return h
+    return hash(value)
