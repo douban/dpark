@@ -776,6 +776,7 @@ class MesosScheduler(DAGScheduler):
             return
         logger.debug("stop scheduler")
         self.started = False
+        self.isRegistered = False
         self.driver.stop(False)
         self.driver = None
 
