@@ -55,7 +55,6 @@ DEFAULT_WEB_PORT = 5055
 MAX_TASKS_PER_WORKER = 50
 MAX_IDLE_TIME = 60
 MAX_IDLE_WORKERS = 8
-MAX_IDLE_CYCLE = 60 * 30
 
 Script = ''
 
@@ -231,7 +230,6 @@ class MyExecutor(mesos.Executor):
             return
 
         mem_limit = {}
-        idle_cycle = 0
 
         while True:
             self.lock.acquire()
@@ -275,14 +273,6 @@ class MyExecutor(mesos.Executor):
                 self.idle_workers = self.idle_workers[n:]
             
             self.lock.release()
-
-            if self.idle_workers or self.busy_workers:
-                idle_cycle = 0
-            else:
-                idle_cycle += 1
-                if idle_cycle > MAX_IDLE_CYCLE:
-                    logger.warning("shutdown idle executor")
-                    self.shutdown()
 
             time.sleep(1) 
 

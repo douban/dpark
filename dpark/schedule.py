@@ -29,9 +29,10 @@ from env import env
 logger = logging.getLogger("scheduler")
 
 MAX_FAILED = 3
-EXECUTOR_MEMORY = 256 # cache
+EXECUTOR_MEMORY = 64 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
+MAX_IDLE_TIME = 60 * 30
 
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
@@ -448,9 +449,13 @@ class MesosScheduler(DAGScheduler):
         self.group = options.group
         self.logLevel = options.logLevel
         self.options = options
+        self.started = False
+        self.last_finish_time = 0
         self.isRegistered = False
         self.executor = None
         self.driver = None
+        self.out_logger = None
+        self.err_logger = None
         self.lock = threading.RLock()
         self.init_job()
 
@@ -468,8 +473,10 @@ class MesosScheduler(DAGScheduler):
         self.init_job()
 
     def start(self):
-        self.out_logger = self.start_logger(sys.stdout) 
-        self.err_logger = self.start_logger(sys.stderr)
+        if not self.out_logger:
+            self.out_logger = self.start_logger(sys.stdout) 
+        if not self.err_logger:
+            self.err_logger = self.start_logger(sys.stderr)
 
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
@@ -486,6 +493,20 @@ class MesosScheduler(DAGScheduler):
                                                  self.master)
         self.driver.start()
         logger.debug("Mesos Scheudler driver started")
+
+        self.started = True
+        self.last_finish_time = time.time()
+        def check():
+            while self.started:
+                now = time.time()
+                if not self.activeJobs and now - self.last_finish_time > MAX_IDLE_TIME:
+                    logger.info("stop mesos scheduler after %d seconds idle", 
+                            now - self.last_finish_time)
+                    self.stop()
+                    break
+                time.sleep(1)
+        
+        spawn(check)
 
     def start_logger(self, output):
         sock = env.ctx.socket(zmq.PULL)
@@ -553,7 +574,9 @@ class MesosScheduler(DAGScheduler):
         self.activeJobsQueue.append(job)
         logger.debug("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
-        
+       
+        if not self.started:
+            self.start()
         while not self.isRegistered:
             self.lock.release()
             time.sleep(0.01)
@@ -729,6 +752,8 @@ class MesosScheduler(DAGScheduler):
                 del self.taskIdToJobId[id]
                 del self.taskIdToSlaveId[id]
             del self.jobTasks[job.id]
+            self.last_finish_time = time.time()
+
             if not self.activeJobs:
                 self.slaveTasks.clear()
                 self.slaveFailed.clear()
@@ -747,14 +772,12 @@ class MesosScheduler(DAGScheduler):
 
     #@safe
     def stop(self):
+        if not self.started:
+            return
         logger.debug("stop scheduler")
-        if self.driver:
-            self.driver.stop(False)
-    #        self.lock.release()
-            logger.debug("wait for join mesos driver thread")
-    #        self.driver.join()
-    #        self.lock.acquire()
-    #         self.driver = None
+        self.started = False
+        self.driver.stop(False)
+        self.driver = None
 
     def defaultParallelism(self):
         return 16
