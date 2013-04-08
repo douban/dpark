@@ -20,7 +20,7 @@ import struct
 
 from serialize import load_func, dump_func
 from dependency import *
-from util import ilen, spawn
+from util import ilen, spawn, chain
 import shuffle
 from env import env
 import moosefs
@@ -224,7 +224,7 @@ class RDD(object):
             
             return [s] if s is not None else []
         
-        return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
+        return reduce(f, chain(self.ctx.runJob(self, reducePartition)))
 
     def uniq(self, numSplits=None, taskMemory=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory)
@@ -487,7 +487,7 @@ class MappedRDD(DerivedRDD):
     
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.imap(self.func, self.prev.iterator(split))
+            return (self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -522,8 +522,7 @@ class MappedRDD(DerivedRDD):
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.chain.from_iterable(itertools.imap(self.func,
-                self.prev.iterator(split)))
+            return chain(self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
     
     def _compute_with_error(self, split):
@@ -546,7 +545,7 @@ class FlatMappedRDD(MappedRDD):
 class FilteredRDD(MappedRDD):
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.ifilter(self.func, self.prev.iterator(split))
+            return (v for v in self.prev.iterator(split) if self.func(v))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -592,7 +591,7 @@ class PipedRDD(DerivedRDD):
                 shell=self.shell)
         def read(stdin):
             try:
-                it = self.prev.iterator(split)
+                it = iter(self.prev.iterator(split))
                 # fetch the first item
                 for first in it:
                     break
@@ -603,7 +602,7 @@ class PipedRDD(DerivedRDD):
                     stdin.writelines(it)
                 else:
                     stdin.write("%s\n"%first)
-                    stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
+                    stdin.writelines("%s\n"%x for x in it)
             finally:
                 stdin.close()
                 devnull.close()
@@ -618,8 +617,7 @@ class MappedValuesRDD(MappedRDD):
     def compute(self, split):
         func = self.func
         if self.err < 1e-8:
-            return itertools.imap(lambda (k,v):(k,func(v)),
-                self.prev.iterator(split))
+            return ((k,func(v)) for k,v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -908,7 +906,7 @@ class MergedRDD(RDD):
         return sum([self.rdd.preferredLocations(sp) for sp in split.splits], [])
 
     def compute(self, split):
-        return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
+        return chain(self.rdd.iterator(sp) for sp in split.splits)
 
 
 class ZippedRDD(RDD):
@@ -1417,13 +1415,19 @@ class OutputTextFileRDD(DerivedRDD):
             os.remove(tpath)
 
     def writedata(self, f, lines):
-        empty = True
-        for line in lines:
-            f.write(line)
-            if not line.endswith('\n'):
-                f.write('\n')
-            empty = False
-        return not empty
+        it = iter(lines)
+        try:
+            line = it.next()
+        except StopIteration:
+            return False
+        f.write(line)
+        if line.endswith('\n'):
+            f.write(''.join(it))
+        else:
+            f.write('\n')
+            f.write('\n'.join(it))
+            f.write('\n')
+        return True
 
     def write_compress_data(self, f, lines):
         empty = True

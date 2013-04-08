@@ -47,3 +47,18 @@ def portable_hash(value):
             h = ((1000003 * h) & 0xffffffff) ^ portable_hash(i)
         return h
     return hash(value)
+
+# similar to itertools.chain.from_iterable, but faster in PyPy
+def chain(it):
+    for v in it:
+        for vv in v:
+            yield vv
+
+def izip(*its):
+    its = [iter(it) for it in its]
+    try:
+        while True:
+            yield tuple([it.next() for it in its])
+    except StopIteration:
+        pass
+
