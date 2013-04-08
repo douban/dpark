@@ -204,14 +204,12 @@ def setup_cleaner_process(workdir):
                 import psutil
                 psutil.Process(ppid).wait()
                 os.killpg(ppid, signal.SIGKILL) # kill workers
-
+            finally:
                 setproctitle('dpark cleaning %s ' % workdir)
                 for d in workdir:
                     while os.path.exists(d):
                         try: shutil.rmtree(d, True)
                         except: pass 
-            except Exception, e:
-                pass # make sure to exit
         sys.exit(0)
     os.wait()
 
