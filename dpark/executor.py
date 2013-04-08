@@ -199,17 +199,22 @@ def setup_cleaner_process(workdir):
         os.setsid()
         pid = os.fork()
         if pid == 0:
+            try:
+                import psutil
+            except ImportError:
+                sys.exit(1)
             try: 
                 setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
-                import psutil
                 psutil.Process(ppid).wait()
                 os.killpg(ppid, signal.SIGKILL) # kill workers
+            except Exception, e:
+                pass # make sure to exit
             finally:
                 setproctitle('dpark cleaning %s ' % workdir)
                 for d in workdir:
                     while os.path.exists(d):
                         try: shutil.rmtree(d, True)
-                        except: pass 
+                        except: pass
         sys.exit(0)
     os.wait()
 
