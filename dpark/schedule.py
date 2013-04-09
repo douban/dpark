@@ -650,7 +650,7 @@ class MesosScheduler(DAGScheduler):
             driver.launchTasks(o.id, tasks.get(o.id.value, []), rf)
 
         logger.debug("reply with %d tasks, %s cpus %s mem left", 
-            len(tasks), sum(cpus), sum(mems))
+            sum(len(ts) for ts in tasks.values()), sum(cpus), sum(mems))
    
     @safe
     def offerRescinded(self, driver, offer_id):
