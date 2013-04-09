@@ -244,18 +244,20 @@ class sorted_items(object):
             'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
         f = gzip.open(path, 'wb+')
 
+        items = sorted(items)
         try:
-            for i in sorted(items):
+            for i in items:
                 s = marshal.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
             self.loads = marshal.loads
         except Exception, e:
-            for i in sorted(items):
-                s = pickle.dumps(i)
+            f.rewind()
+            for i in items:
+                s = cPickle.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
-            self.loads = pickle.loads
+            self.loads = cPickle.loads
         f.close()
 
         self.f = gzip.open(path)
