@@ -37,6 +37,7 @@ def spawn(target, *args, **kw):
     t.start()
     return t
 
+# hash(None) is id(None), different from machines
 # http://effbot.org/zone/python-hash.htm
 def portable_hash(value):
     if value is None:
@@ -47,6 +48,10 @@ def portable_hash(value):
             h = ((1000003 * h) & 0xffffffff) ^ portable_hash(i)
         return h
     return hash(value)
+
+# with hash_of_none.patch
+if hash(None) == 0:
+    portable_hash = hash
 
 # similar to itertools.chain.from_iterable, but faster in PyPy
 def chain(it):
@@ -61,4 +66,3 @@ def izip(*its):
             yield tuple([it.next() for it in its])
     except StopIteration:
         pass
-

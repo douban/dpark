@@ -124,7 +124,6 @@ class HashPartitioner(Partitioner):
         return self.partitions
 
     def getPartition(self, key):
-        # hash(None) is id(None), different from machines
         return portable_hash(key) % self.partitions
 
     def __eq__(self, other):
