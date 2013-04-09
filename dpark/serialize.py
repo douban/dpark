@@ -88,7 +88,7 @@ def load_func((flag, bytes)):
     f = new.function(code, glob, name, defaults, closure)
     # Replace the recursive function placeholders with this simulated function pointer
     for key, value in glob.items():
-        if value == RECURSIVE_FUNCTION_PLACEHOLDER:
+        if RECURSIVE_FUNCTION_PLACEHOLDER == value:
             f.func_globals[key] = f
     return f
 
@@ -109,6 +109,7 @@ if __name__ == "__main__":
     assert marshalable(None)
     assert marshalable("")
     assert marshalable(u"")
+    assert not marshalable(buffer(""))
     assert marshalable(0)
     assert marshalable(0L)
     assert marshalable(0.0)
