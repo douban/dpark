@@ -165,10 +165,18 @@ def forword(fd, addr, prefix=''):
     f.close()
     ctx.shutdown()
 
-def start_forword(addr, prefix=''):
+def start_forword(addr, prefix, oldfile):
     rfd, wfd = os.pipe()
     t = spawn(forword, rfd, addr, prefix)
-    return t, os.fdopen(wfd, 'w', 0) 
+    newfile = os.fdopen(wfd, 'w', 0)
+
+    oldfd = oldfile.fileno()
+    os.close(oldfd)
+    newfd = os.dup(wfd)
+    if newfd != oldfd:
+        print >>newfile, 'redirct io failed', newfd, str(os.fdopen(oldfd))
+        os.close(newfd)
+    return t, newfile
 
 def get_pool_memory(pool):
     try:
@@ -202,7 +210,7 @@ def setup_cleaner_process(workdir):
             try:
                 import psutil
             except ImportError:
-                sys.exit(1)
+                os._exit(1)
             try: 
                 setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
                 psutil.Process(ppid).wait()
@@ -215,12 +223,12 @@ def setup_cleaner_process(workdir):
                     while os.path.exists(d):
                         try: shutil.rmtree(d, True)
                         except: pass
-        sys.exit(0)
+        os._exit(0)
     os.wait()
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
-        self.workdir = None
+        self.workdir = []
         self.idle_workers = []
         self.busy_workers = {}
         self.lock = threading.RLock()
@@ -292,10 +300,8 @@ class MyExecutor(mesos.Executor):
             sys.path = python_path
             os.environ.update(osenv)
             prefix = '[%s] ' % socket.gethostname()
-            if out_logger:
-                self.outt, sys.stdout = start_forword(out_logger, prefix)
-            if err_logger:
-                self.errt, sys.stderr = start_forword(err_logger, prefix)
+            self.outt, sys.stdout = start_forword(out_logger, prefix, sys.stdout)
+            self.errt, sys.stderr = start_forword(err_logger, prefix, sys.stderr)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
@@ -309,15 +315,6 @@ class MyExecutor(mesos.Executor):
 
             spawn(self.check_memory, driver)
 
-            # wait background threads to been initialized
-            time.sleep(0.1)
-            if out_logger:
-                os.close(1)
-                assert os.dup(sys.stdout.fileno()) == 1, 'redirect stdout failed'
-            if err_logger:
-                os.close(2)
-                assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
-            
             logger.debug("executor started at %s", slaveInfo.hostname)
 
         except Exception, e:
@@ -391,8 +388,14 @@ class MyExecutor(mesos.Executor):
         for d in self.workdir:
             try: shutil.rmtree(d, True)
             except: pass
-
-
+        
+        sys.stdout.close()
+        sys.stderr.close()
+        os.close(1)
+        os.close(2)
+        self.outt.join()
+        self.errt.join()
+        
 def run():
     executor = MyExecutor()
     driver = mesos.MesosExecutorDriver(executor)
