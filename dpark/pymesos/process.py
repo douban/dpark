@@ -220,17 +220,24 @@ class Process(UPID):
         sfd = sock.fileno()
         conns = {sfd: sock}
         while not self.aborted:
+            #logging.debug("select %s", conns.keys())
             rlist = select.select(conns.keys(), [], [], 1)[0]
             for fd in rlist:
                 #logging.debug("start process event %d", fd)
                 if fd == sfd:
                     conn, addr = sock.accept()
                     logger.debug("accepted conn from %s", addr)
-                    conns[conn.fileno()] = conn.makefile('r', 40960)
+                    conns[conn.fileno()] = conn.makefile('r')
                 elif fd in conns:
                     try:
-                        if not self.process_message(conns[fd]):
-                            conns.pop(fd).close()
+                        f = conns[fd]
+                        while True:
+                            if not self.process_message(f):
+                                conns.pop(fd).close()
+                                break
+                            # is there any data in read buffer ?
+                            if not f._rbuf.tell(): 
+                                break
                     except Exception, e:
                         import traceback; traceback.print_exc()
                         conns.pop(fd).close()
