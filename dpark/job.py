@@ -127,7 +127,7 @@ class SimpleJob(Job):
             if host in self.blacklist[i]:
                 continue
             t = self.tasks[i]
-            if t.cpus <= cpus and t.mem <= mem:
+            if t.cpus <= cpus+1e-4 and t.mem <= mem:
                 return i
 
     def findTask(self, host, localOnly, cpus, mem):

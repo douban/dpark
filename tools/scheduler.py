@@ -150,13 +150,12 @@ class SubmitScheduler(object):
                 offer.id.value, cpus, mem, offer.hostname)
             sid = offer.slave_id.value
             tasks = []
-            while (self.total_tasks and cpus >= self.cpus and mem >= self.mem
-                and (tpn ==0 or
-                     tpn > 0 and len(self.slaveTasks.get(sid,set())) < tpn)):
+            while (self.total_tasks and cpus+1e-4 >= self.cpus and mem >= self.mem
+                    and (tpn ==0 or tpn > 0 and len(self.slaveTasks.get(sid,set())) < tpn)):
                 logging.debug("Accepting slot on slave %s (%s)",
                     offer.slave_id.value, offer.hostname)
                 t = self.total_tasks.pop()
-                task = self.create_task(offer, t)
+                task = self.create_task(offer, t, cpus)
                 tasks.append(task)
                 t.state = mesos_pb2.TASK_STARTING
                 t.state_time = time.time()
@@ -166,10 +165,11 @@ class SubmitScheduler(object):
                 mem -= self.mem
                 if not self.total_tasks:
                     break
-            
+
+            logging.debug("dispatch %d tasks to slave %s", len(tasks), offer.hostname)
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
-    def create_task(self, offer, t):
+    def create_task(self, offer, t, cpus):
         task = mesos_pb2.TaskInfo()
         task.task_id.value = "%d-%d" % (t.id, t.tried)
         task.slave_id.value = offer.slave_id.value
@@ -188,12 +188,12 @@ class SubmitScheduler(object):
         cpu = task.resources.add()
         cpu.name = "cpus"
         cpu.type = 0 # mesos_pb2.Value.SCALAR
-        cpu.scalar.value = self.cpus
+        cpu.scalar.value = min(self.cpus, cpus)
 
         mem = task.resources.add()
         mem.name = "mem"
         mem.type = 0 # mesos_pb2.Value.SCALAR
-        mem.scalar.value = self.mem
+        mem.scalar.value = min(self.mem, mem)
         return task
 
     @safe
