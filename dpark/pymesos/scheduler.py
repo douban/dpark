@@ -162,6 +162,8 @@ class MesosSchedulerDriver(Process):
 
     @async
     def requestResources(self, requests):
+        if not self.connected:
+            return
         msg = ResourceRequestMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         for req in requests:
@@ -170,6 +172,8 @@ class MesosSchedulerDriver(Process):
 
     @async
     def reviveOffers(self):
+        if not self.connected:
+            return
         msg = ReviveOffersMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         self.send(self.master, msg)

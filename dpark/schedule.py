@@ -478,6 +478,7 @@ class MesosScheduler(DAGScheduler):
         if not self.err_logger:
             self.err_logger = self.start_logger(sys.stderr)
 
+    def start_driver(self):
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
         framework = mesos_pb2.FrameworkInfo()
@@ -568,21 +569,25 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def submitTasks(self, tasks):
-        logger.info("Got a job with %d tasks", len(tasks))
-        job = SimpleJob(self, tasks, self.cpus, tasks and tasks[0].rdd.mem or self.mem)
+        if not tasks:
+            return
+
+        job = SimpleJob(self, tasks, self.cpus, tasks[0].rdd.mem or self.mem)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
-        logger.debug("Adding job with ID %d", job.id)
         self.jobTasks[job.id] = set()
-       
+        logger.info("Got job %d with %d tasks", job.id, len(tasks))
+      
+        need_revive = self.started
         if not self.started:
-            self.start()
+            self.start_driver()
         while not self.isRegistered:
             self.lock.release()
             time.sleep(0.01)
             self.lock.acquire()
-
-        self.requestMoreResources()
+        
+        if need_revive:
+            self.requestMoreResources()
 
     def requestMoreResources(self): 
         logger.debug("reviveOffers")
