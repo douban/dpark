@@ -17,16 +17,21 @@ except ImportError:
     #def hash_func(v):
     #    return long(sha1(value).hexdigest(), 16)
 
+SPARSE = 0
+NORMAL = 1
 
 class HyperLogLog(object):
-    def __init__(self, err=0.03):
-        assert 0.005 <= err < 0.14, 'must 0.0005 < err < 0.14'
-        b = int(math.ceil(math.log((1.04 / err) ** 2, 2)))
+    def __init__(self, items=[], b=None, err=0.01):
+        assert 0.005 <= err < 0.14, 'must 0.005 < err < 0.14'
+        if b is None:
+            b = int(math.ceil(math.log((1.04 / err) ** 2, 2)))
         self.alpha = self._get_alpha(b)
         self.b = b
         self.m = 1 << b
+        self.M = None #array.array('B', [0] * self.m)
+        self.threshold = self.m / 20
+        self.items = set(items)
         self.mask = (1<<b) -1
-        self.M = array.array('B', [0] * self.m)
         self.big = 1L << (HASH_LEN - b - 1)
         self.big2 = 1L << (HASH_LEN - b - 2)
         self.bitcount_arr = [1L << i for i in range(HASH_LEN - b + 1)]
@@ -47,7 +52,19 @@ class HyperLogLog(object):
             return 2
         return len(self.bitcount_arr) - bisect_right(self.bitcount_arr, w)
 
+    def convert(self):
+        self.M = array.array('B', [0] * self.m)
+        for i in self.items:
+            self.add(i)
+        self.items = None
+
     def add(self, value):
+        if self.M is None:
+            self.items.add(value)
+            if len(self.items) > self.threshold:
+                self.convert()
+            return
+
         x = hash_func(value)
         j = x & self.mask
         w = x >> self.b
@@ -56,11 +73,24 @@ class HyperLogLog(object):
             self.M[j] = h
         
     def update(self, other):
+        if other.M is None:
+            if self.M is None:
+                self.items.update(other.items)
+            else:
+                for i in other.items:
+                    self.add(i)
+            return
+
+        if self.M is None:
+            self.convert()
         self.M = array.array('B', map(max, zip(self.M, other.M)))
 
     def __len__(self):
+        if self.M is None:
+            return len(self.items)
+
         S = sum(math.pow(2.0, -x) for x in self.M)
-        E = self.alpha * float(self.m ** 2) / S
+        E = self.alpha * self.m * self.m / S
         if E <= 2.5 * self.m: # small range correction
             V = self.M.count(0)
             return self.m * math.log(self.m / float(V)) if V > 0 else E

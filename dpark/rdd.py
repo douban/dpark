@@ -428,36 +428,25 @@ class RDD(object):
 
         return self.glom().flatMap(_batch)
 
-    def approximateDistinctCount(self, err=0.05, splits=None, taskMemory=None):
+    def approximateDistinctCount(self):
         "approximate distinct counting"
-        r = self.map(lambda x:(1, x)).approximateDistinctCountByKey(err, splits, taskMemory).collectAsMap()
+        r = self.map(lambda x:(1, x)).approximateDistinctCountByKey(1).collectAsMap()
         return r and r[1] or 0
 
-    def approximateDistinctCountByKey(self, err=0.05, splits=None, taskMemory=None):
-        from hyperloglog import HyperLogLog
+    def approximateDistinctCountByKey(self, splits=None, taskMemory=None):
+        try:
+            from pyhll import HyperLogLog
+        except ImportError:
+            from hyperloglog import HyperLogLog 
         def create(v):
-            return set([v])
-        def set_to_hll(s):
-            ns = HyperLogLog(err)
-            for v in s:
-                ns.add(v)
-            return ns
+            return HyperLogLog([v], 16)
         def combine(s, v):
-            s.add(v)
-            if isinstance(s, set) and len(s) > 500:
-                s = set_to_hll(s)
-            return s
+            return s.add(v) or s
         def merge(s1, s2):
-            if isinstance(s2, set):
-                for v in s2:
-                    s1.add(v)
-            else:
-                if isinstance(s1, set):
-                    s1 = set_to_hll(s1)
-                s1.update(s2)
-            return s1
+            return s1.update(s2) or s1
         agg = Aggregator(create, combine, merge)
         return self.combineByKey(agg, splits, taskMemory).mapValue(len)
+
 
 class DerivedRDD(RDD):
     def __init__(self, rdd):
