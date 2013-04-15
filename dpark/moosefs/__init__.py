@@ -18,14 +18,14 @@ class MooseFS(object):
         self.inode_cache = {}
 
     def _lookup(self, parent, name):
-        #cache = self.inode_cache.setdefault(parent, {})
-        #info = cache.get(name)
-        #if info is not None:
-        #    return info
+        cache = self.inode_cache.setdefault(parent, {})
+        info = cache.get(name)
+        if info is not None:
+            return info
         
         info, err = self.mc.lookup(parent, name)
-        #if info is not None:
-        #    cache[name] = info
+        if info is not None:
+            cache[name] = info
         return info
 
     def lookup(self, path, followSymlink=True):
@@ -59,9 +59,36 @@ class MooseFS(object):
         if not info:
             raise Exception("not found")
         files = self.mc.getdirplus(info.inode)
-        for i in files.values():
+        for i in files.itervalues():
             self.inode_cache.setdefault(info.inode, {})[i.name] = i
         return files
+    
+    def walk(self, path, followlinks=False):
+        ds = [path]
+        while ds:
+            root = ds.pop()
+            cs = self.listdir(root)
+            dirs, files = [], []
+            for name, info in cs.iteritems():
+                if name in '..': continue
+                if info.type == TYPE_DIRECTORY:
+                    dirs.append(name)
+                elif info.type == TYPE_FILE:
+                    files.append(name)
+                elif followlinks and info.type == TYPE_SYMLINK:
+                    target = os.path.join(root, self.mc.readlink(info.inode))
+                    info = self.lookup(target)
+                    if info:
+                        if info.type == TYPE_DIRECTORY:
+                            dirs.append(name)
+                        elif info.type == TYPE_FILE:
+                            files.append(name)
+                        else:
+                            pass # TODO: symlink to symlink
+            yield root, dirs, files
+            for d in sorted(dirs, reverse=True):
+                ds.append(os.path.join(root, d))
+
 
     def close(self):
         self.mc.close()
@@ -100,7 +127,7 @@ class ReadableFile(File):
 
     def seek(self, offset, whence=0):
         if whence == 1:
-            offset = self.roff + offest
+            offset = self.roff + offset
         elif whence == 2:
             offset = self.length + offset
         assert offset >= 0, 'offset should greater than 0'
@@ -245,18 +272,8 @@ def mfsopen(path, master='mfsmaster'):
 def listdir(path, master='mfsmaster'):
     return get_mfs(master).listdir(path)
 
-def walk(path, master='mfsmaster'):
-    ds = [path]
-    while ds:
-        root = ds.pop()
-        cs = listdir(root, master)
-        dirs = [name for name, info in cs.iteritems() 
-                if info.type == TYPE_DIRECTORY
-                    and name not in '..']
-        files = [i.name for i in cs.values() if i.type == TYPE_FILE]
-        yield root, dirs, files
-        for d in dirs:
-            ds.append(os.path.join(root, d))
+def walk(path, master='mfsmaster', followlinks=False):
+    return get_mfs(master).walk(path, followlinks)
 
 def _test():
     f = open('/mfs2/test.csv')

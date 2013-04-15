@@ -27,7 +27,7 @@ import moosefs
 
 logger = logging.getLogger("rdd")
 
-class Split:
+class Split(object):
     def __init__(self, idx):
         self.index = idx
 
@@ -434,7 +434,7 @@ class RDD(object):
         return r and r[1] or 0
 
     def approximateDistinctCountByKey(self, err=0.05, splits=None, taskMemory=None):
-        from hyperloglog import HyperLogLog 
+        from hyperloglog import HyperLogLog
         def create(v):
             return set([v])
         def set_to_hll(s):
@@ -820,7 +820,7 @@ class SampleRDD(DerivedRDD):
                     yield i
 
 
-class UnionSplit:
+class UnionSplit(Split):
     def __init__(self, idx, rdd, split):
         self.index = idx
         self.rdd = rdd
@@ -829,14 +829,10 @@ class UnionSplit:
 class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
-        self.mem = max(r.mem for r in rdds) if rdds else self.mem
-        self._splits = [UnionSplit(0, rdd, split) 
-                for rdd in rdds for split in rdd.splits]
-        for i,split in enumerate(self._splits):
-            split.index = i
-        self.dependencies = []
+        self.mem = rdds[0].mem if rdds else self.mem
         pos = 0
         for rdd in rdds:
+            self._splits.extend([UnionSplit(pos + i, rdd, sp) for i, sp in enumerate(rdd.splits)])
             self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
         self.name = '<union %d %s>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:2]))
@@ -993,12 +989,28 @@ class ParallelCollection(RDD):
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
+MFS_PREFIX = {
+    '/mfs': 'mfsmaster',
+    '/home2': 'mfsmaster2',
+    }
+
+def add_prefix(gen, prefix):
+    for root, dirs, names in gen:
+        yield prefix + root, dirs, names
+
+def walk(path, followlinks=False):
+    for prefix, master in MFS_PREFIX.iteritems():
+        if path.startswith(prefix):
+            rs = moosefs.walk(path[len(prefix):], master, followlinks)
+            return add_prefix(rs, prefix)
+    else:
+        return os.walk(path, followlinks=followlinks)
+
 def open_mfs_file(path):
-    rpath = os.path.realpath(path)
-    if rpath.startswith('/mfs/'):
-        return moosefs.mfsopen(rpath[4:], 'mfsmaster')
-    if rpath.startswith('/home2/'):
-        return moosefs.mfsopen(rpath[6:], 'mfsmaster2')
+    for prefix, master in MFS_PREFIX.iteritems():
+        if path.startswith(prefix):
+            return moosefs.mfsopen(path[len(prefix):], master)
+
 
 class PartialSplit(Split):
     def __init__(self, index, begin, end):

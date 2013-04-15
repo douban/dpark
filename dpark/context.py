@@ -100,6 +100,7 @@ class DparkContext(object):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
                 for p in path])
 
+        path = os.path.realpath(path)
         def create_rdd(cls, path, *ka, **kw):
             if cls is TextFileRDD:
                 if path.endswith('.bz2'):
@@ -110,7 +111,7 @@ class DparkContext(object):
 
         if os.path.isdir(path):
             paths = []
-            for root,dirs,names in os.walk(path, followlinks=followLink):
+            for root,dirs,names in walk(path, followlinks=followLink):
                 if maxdepth > 0:
                     depth = len(filter(None, root[len(path):].split('/'))) + 1
                     if depth > maxdepth:
@@ -150,15 +151,13 @@ class DparkContext(object):
         return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
 
     def table(self, path, **kwargs):
-        p = None
-        for root, dirs, names in os.walk(path[0] 
-                if isinstance(path, (list, tuple)) else path):
+        dpath = path[0] if isinstance(path, (list, tuple)) else path
+        for root, dirs, names in walk(dpath): 
             if '.field_names' in names:
-                p = os.path.join(root, '.field_names')
+                fields = open(p).read().split('\t')
                 break
-        if p is None:
+        else:
             raise Exception("no .field_names found in %s" % path)
-        fields = open(p).read().split('\t')
         return self.tableFile(path, **kwargs).asTable(fields)
 
     def beansdb(self, path, depth=None, filter=None, fullscan=False, raw=False, only_latest=False):
