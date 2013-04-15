@@ -196,10 +196,11 @@ class SimpleJob(Job):
         task = self.tasks[i]
         task.used += time.time() - task.start
         self.total_used += task.used
-        title = "Job %d: task %s finished in %.1fs (%d/%d)     " % (self.id, tid,
+        if sys.stderr.isatty():
+            title = "Job %d: task %s finished in %.1fs (%d/%d)     " % (self.id, tid,
                 task.used, self.tasksFinished, self.numTasks)
-        logger.info("Task %s finished in %.1fs (%d/%d)      \x1b]2;%s\x07\x1b[1A",
-                tid, task.used, self.tasksFinished, self.numTasks, title)
+            logger.info("Task %s finished in %.1fs (%d/%d)      \x1b]2;%s\x07\x1b[1A",
+                    tid, task.used, self.tasksFinished, self.numTasks, title)
 
         from schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
@@ -251,7 +252,8 @@ class SimpleJob(Job):
             _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
-            logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
+            logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id, 
+                    tid, tried, reason, task.host)
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:

@@ -170,12 +170,12 @@ def start_forword(addr, prefix, oldfile):
     t = spawn(forword, rfd, addr, prefix)
     newfile = os.fdopen(wfd, 'w', 0)
 
-    time.sleep(0.01) # wait for background thread
+    time.sleep(0.05) # wait for background thread
     oldfd = oldfile.fileno()
     os.close(oldfd)
     newfd = os.dup(wfd)
     if newfd != oldfd:
-        print >>newfile, 'redirct io failed', newfd
+        #print >>newfile, 'redirct io failed', oldfd, newfd, os.readlink('/proc/self/fd/%d' % oldfd)
         os.close(newfd)
     return t, newfile
 
