@@ -428,12 +428,12 @@ class RDD(object):
 
         return self.glom().flatMap(_batch)
 
-    def approximateDistinctCount(self):
+    def adcount(self):
         "approximate distinct counting"
         r = self.map(lambda x:(1, x)).approximateDistinctCountByKey(1).collectAsMap()
         return r and r[1] or 0
 
-    def approximateDistinctCountByKey(self, splits=None, taskMemory=None):
+    def adcountByKey(self, splits=None, taskMemory=None):
         try:
             from pyhll import HyperLogLog
         except ImportError:
