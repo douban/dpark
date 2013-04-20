@@ -93,17 +93,17 @@ def load_func((flag, bytes)):
     return f
 
 def reconstruct_closure(values):
-    ns = range(len(values))
-    src = ["def f(arg):"]
-    src += [" _%d = arg[%d]" % (n, n) for n in ns]
-    src += [" return lambda:(%s)" % ','.join("_%d"%n for n in ns), '']
-    src = '\n'.join(src)
+    args = ','.join("_%d" % i for i in range(len(values)))
+    src = "f = lambda %s: lambda : (%s)" % (args, args)
     try:
         exec src
     except Exception:
         raise SyntaxError(src)
-    values.reverse()
-    return f(values).func_closure
+    closure = f(*reversed(values)).func_closure
+    # the cell order of closure in prebuilded Python-2.7 of Mac is different
+    if closure[0].cell_contents is not values[0]:
+        return f(*values).func_closure
+    return closure
 
 if __name__ == "__main__":
     assert marshalable(None)
