@@ -40,7 +40,8 @@ class MasterDetector(object):
             self.stop()
 
     def stop(self):
-        self.zk.stop()
+        try: self.zk.stop()
+        except: pass
 
 
 def test():
