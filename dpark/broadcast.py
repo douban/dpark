@@ -350,7 +350,7 @@ class TreeBroadcast(Broadcast):
         req.send_pyobj(SourceInfo.Stop)
         poller = zmq.Poller()
         poller.register(req, zmq.POLLIN)
-        avail = dict(poller.poll(1 * 1000))
+        avail = dict(poller.poll(1 * 100))
         if avail and avail.get(req) == zmq.POLLIN:
             req.recv_pyobj()
         poller.unregister(req)

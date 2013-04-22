@@ -250,8 +250,8 @@ class DparkContext(object):
         if not self.started:
             return
 
-        self.scheduler.stop()
         env.stop()
+        self.scheduler.stop()
         self.started = False
 
     def __getstate__(self):
