@@ -169,14 +169,6 @@ def start_forword(addr, prefix, oldfile):
     rfd, wfd = os.pipe()
     t = spawn(forword, rfd, addr, prefix)
     newfile = os.fdopen(wfd, 'w', 0)
-
-    time.sleep(0.05) # wait for background thread
-    oldfd = oldfile.fileno()
-    os.close(oldfd)
-    newfd = os.dup(wfd)
-    if newfd != oldfd:
-        #print >>newfile, 'redirct io failed', oldfd, newfd, os.readlink('/proc/self/fd/%d' % oldfd)
-        os.close(newfd)
     return t, newfile
 
 def get_pool_memory(pool):
@@ -273,9 +265,9 @@ class MyExecutor(mesos.Executor):
                     self.busy_workers.pop(tid)
                     pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
-                    logger.debug("task %s used too much memory: %dMB > %dMB, "
+                    logger.error("task %s used too much memory: %dMB > %dMB, "
                             + "use -M to request or taskMemory for more memory", tid, rss, offered)
-                    mem_limit[tid] = rss / offered + 0.2
+                    mem_limit[tid] = rss / offered + 0.02
 
             now = time.time() 
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
@@ -286,7 +278,7 @@ class MyExecutor(mesos.Executor):
             
             self.lock.release()
 
-            time.sleep(1) 
+            time.sleep(.1) 
 
     @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
