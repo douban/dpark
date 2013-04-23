@@ -437,7 +437,7 @@ class RDD(object):
         try:
             from pyhll import HyperLogLog
         except ImportError:
-            from hyperloglog import HyperLogLog 
+            from hyperloglog import HyperLogLog
         def create(v):
             return HyperLogLog([v], 16)
         def combine(s, v):
@@ -1426,8 +1426,10 @@ class OutputTextFileRDD(DerivedRDD):
             f.write(''.join(it))
         else:
             f.write('\n')
-            f.write('\n'.join(it))
-            f.write('\n')
+            s = '\n'.join(it)
+            if s:
+                f.write(s)
+                f.write('\n')
         return True
 
     def write_compress_data(self, f, lines):
