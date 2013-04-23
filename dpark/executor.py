@@ -258,16 +258,16 @@ class MyExecutor(mesos.Executor):
                 offered = get_task_memory(task)
                 if not offered:
                     continue
-                if rss > offered * 2:
-                    logger.warning("task %s used too much memory: %dMB > %dMB * 2, kill it. "
+                if rss > offered * 1.5:
+                    logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
                             + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
                     pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
-                    logger.error("task %s used too much memory: %dMB > %dMB, "
+                    logger.debug("task %s used too much memory: %dMB > %dMB, "
                             + "use -M to request or taskMemory for more memory", tid, rss, offered)
-                    mem_limit[tid] = rss / offered + 0.02
+                    mem_limit[tid] = rss / offered + 0.1
 
             now = time.time() 
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
@@ -278,7 +278,7 @@ class MyExecutor(mesos.Executor):
             
             self.lock.release()
 
-            time.sleep(.1) 
+            time.sleep(1) 
 
     @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
