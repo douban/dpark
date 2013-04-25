@@ -430,7 +430,7 @@ class RDD(object):
 
     def adcount(self):
         "approximate distinct counting"
-        r = self.map(lambda x:(1, x)).approximateDistinctCountByKey(1).collectAsMap()
+        r = self.map(lambda x:(1, x)).adcountByKey(1).collectAsMap()
         return r and r[1] or 0
 
     def adcountByKey(self, splits=None, taskMemory=None):
@@ -978,28 +978,6 @@ class ParallelCollection(RDD):
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
-MFS_PREFIX = {
-    '/mfs': 'mfsmaster',
-    '/home2': 'mfsmaster2',
-    }
-
-def add_prefix(gen, prefix):
-    for root, dirs, names in gen:
-        yield prefix + root, dirs, names
-
-def walk(path, followlinks=False):
-    for prefix, master in MFS_PREFIX.iteritems():
-        if path.startswith(prefix):
-            rs = moosefs.walk(path[len(prefix):], master, followlinks)
-            return add_prefix(rs, prefix)
-    else:
-        return os.walk(path, followlinks=followlinks)
-
-def open_mfs_file(path):
-    for prefix, master in MFS_PREFIX.iteritems():
-        if path.startswith(prefix):
-            return moosefs.mfsopen(path[len(prefix):], master)
-
 
 class PartialSplit(Split):
     def __init__(self, index, begin, end):
@@ -1014,7 +992,7 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = open_mfs_file(path)
+        self.fileinfo = moosefs.open_file(path)
         self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
         
         if splitSize is None:
@@ -1094,7 +1072,7 @@ class PartialTextFileRDD(TextFileRDD):
     def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = open_mfs_file(path)
+        self.fileinfo = moosefs.open_file(path)
         self.firstPos = firstPos
         self.lastPos = lastPos
         self.size = size = lastPos - firstPos

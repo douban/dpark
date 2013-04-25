@@ -9,6 +9,7 @@ from rdd import *
 from accumulator import Accumulator
 from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from env import env
+from moosefs import walk
 
 logger = logging.getLogger("context")
 
@@ -154,6 +155,7 @@ class DparkContext(object):
         dpath = path[0] if isinstance(path, (list, tuple)) else path
         for root, dirs, names in walk(dpath): 
             if '.field_names' in names:
+                p = os.path.join(root, '.field_names')
                 fields = open(p).read().split('\t')
                 break
         else:

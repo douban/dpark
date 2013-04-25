@@ -67,6 +67,7 @@ class Broadcast(object):
         self.uuid = str(uuid.uuid4())
         self.value = value
         self.is_local = is_local
+        self.bytes = 0
         if is_local:
             if not self.cache.put(self.uuid, value):
                 raise Exception('object %s is too big to cache', repr(value))

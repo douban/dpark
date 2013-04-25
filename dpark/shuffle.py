@@ -46,7 +46,7 @@ class LocalFileShuffle:
             st = os.statvfs(path)
             free = st.f_bfree * st.f_bsize
             ratio = st.f_bfree * 1.0 / st.f_blocks
-            if free < max(datasize, 100<<20) or ratio < 0.05:
+            if free < max(datasize, 1<<30) or ratio < 0.66:
                 d2 = os.path.join(random.choice(cls.shuffleDir[1:]), str(shuffleId), str(inputId))
                 if not os.path.exists(d2):
                     try: os.makedirs(d2)

@@ -730,12 +730,13 @@ class MesosScheduler(DAGScheduler):
                         result = marshal.loads(data)
                     else:
                         result = cPickle.loads(data)
-                return job.statusUpdate(task_id, tried, state, 
-                    reason, result, accUpdate)
             except Exception, e:
                 logger.warning("error when cPickle.loads(): %s, data:%s", e, len(status.data))
                 state = mesos_pb2.TASK_FAILED
                 return job.statusUpdate(task_id, tried, mesos_pb2.TASK_FAILED, 'load failed: %s' % e)
+            else:
+                return job.statusUpdate(task_id, tried, state, 
+                    reason, result, accUpdate)
 
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, status.data)

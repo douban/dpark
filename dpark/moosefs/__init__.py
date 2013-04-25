@@ -12,8 +12,9 @@ MFS_ROOT_INODE = 1
 logger = logging.getLogger(__name__)
 
 class MooseFS(object):
-    def __init__(self, host='mfsmaster', port=9421):
+    def __init__(self, host='mfsmaster', port=9421, mountpoint='/mfs'):
         self.host = host
+        self.mountpoint = mountpoint
         self.mc = MasterConn(host, port)
         self.inode_cache = {}
 
@@ -76,7 +77,14 @@ class MooseFS(object):
                 elif info.type == TYPE_FILE:
                     files.append(name)
                 elif followlinks and info.type == TYPE_SYMLINK:
-                    target = os.path.join(root, self.mc.readlink(info.inode))
+                    target = self.mc.readlink(info.inode)
+                    if target.startswith('/'):
+                        if target.startswith(self.mountpoint):
+                            target = target[len(self.mountpoint):]
+                        else:
+                            continue # TODO link to external disks
+                    else:
+                        target = os.path.join(root, self.mc.readlink(info.inode))
                     info = self.lookup(target)
                     if info:
                         if info.type == TYPE_DIRECTORY:
@@ -85,6 +93,7 @@ class MooseFS(object):
                             files.append(name)
                         else:
                             pass # TODO: symlink to symlink
+
             yield root, dirs, files
             for d in sorted(dirs, reverse=True):
                 ds.append(os.path.join(root, d))
@@ -260,10 +269,15 @@ class ReadableFile(File):
 
 _mfs = {}
 
-def get_mfs(master):
+MFS_PREFIX = {
+    '/mfs': 'mfsmaster',
+    '/home2': 'mfsmaster2',
+    }
+
+def get_mfs(master, mountpoint=''):
     if master in _mfs:
         return _mfs[master]
-    _mfs[master] = MooseFS(master)
+    _mfs[master] = MooseFS(master, mountpoint=mountpoint)
     return _mfs[master]
 
 def mfsopen(path, master='mfsmaster'):
@@ -272,8 +286,27 @@ def mfsopen(path, master='mfsmaster'):
 def listdir(path, master='mfsmaster'):
     return get_mfs(master).listdir(path)
 
-def walk(path, master='mfsmaster', followlinks=False):
-    return get_mfs(master).walk(path, followlinks)
+def get_mfs_by_path(path):
+    for prefix, master in MFS_PREFIX.iteritems():
+        if path.startswith(prefix):
+            return get_mfs(master, prefix)
+
+def add_prefix(gen, prefix):
+    for root, dirs, names in gen:
+        yield prefix + root, dirs, names
+
+def walk(path, followlinks=False):
+    mfs = get_mfs_by_path(path)
+    if mfs:
+        rs = mfs.walk(path[len(mfs.mountpoint):], followlinks)
+        return add_prefix(rs, mfs.mountpoint)
+    else:
+        return os.walk(path, followlinks=followlinks)
+
+def open_file(path):
+    mfs = get_mfs_by_path(path)
+    if mfs:
+        return mfs.open(path[len(mfs.mountpoint):])
 
 def _test():
     f = open('/mfs2/test.csv')
