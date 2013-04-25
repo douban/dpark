@@ -9,9 +9,55 @@ import msgpack
 from rdd import DerivedRDD, OutputTableFileRDD
 from dependency import Aggregator, OneToOneDependency
 
-Aggs = {
+try:
+    from pyhll import HyperLogLog
+except ImportError:    
+    from hyperloglog import HyperLogLog
+
+from hotcounter import HotCounter
+
+SimpleAggs = {
     'sum': lambda x,y: x+y,
+    'last': lambda x,y: y,
+    'min': lambda x,y: x if x < y else y,
+    'max': lambda x,y: x if x > y else y,
 }
+
+FullAggs = {
+        'avg': (
+            lambda v:(v, 1), 
+            lambda (s,c), v: (s+v, c+1), 
+            lambda (s1,c1), (s2,c2):(s1+s2, c1+c2),
+            lambda (s,c): float(s)/c,
+         ),
+        'count': (
+            lambda v: 1 if v is not None else 0,
+            lambda s,v: s + (1 if v is not None else 0),
+            lambda s1,s2: s1+s2,
+            lambda s: s
+         ),
+        'adcount': (
+            lambda v: HyperLogLog([v]),
+            lambda s,v: s.add(v) or s,
+            lambda s1,s2: s1.update(s2) or s1,
+            lambda s: len(s)
+        ),
+        'group_concat': (
+            lambda v: [v],
+            lambda s,v: s.append(v) or s,
+            lambda s1,s2: s1.extend(s2) or s1,
+            lambda s: ','.join(s),
+        ),
+        'top': (
+            lambda v: HotCounter([v], 20),
+            lambda s,v: s.add(v) or s,
+            lambda s1,s2: s1.update(s2) or s1,
+            lambda s: s.top(20)
+        ),
+}
+
+Aggs = dict(SimpleAggs)
+Aggs.update(FullAggs)
 
 def table_join(f):
     def _join(self, other, left_keys=None, right_keys=None):
@@ -48,13 +94,18 @@ class TableRDD(DerivedRDD):
     def compute(self, split):
         return self.prev.iterator(split)
 
+    def _replace_attr(self, e):
+        es = re.split(r'([()\-+ */,]+)', e)
+        for i in range(len(es)):
+            if es[i] in self.fields:
+                es[i] = '_v[%d]' % self.fields.index(es[i])
+        return ''.join(es) 
+
     def _create_expression(self, e):
         if callable(e): 
             return e
         e = re.compile(r' as (\w+)', re.I).split(e)[0]
-        for i,n in enumerate(self.fields):
-            e = re.sub(r'%s'%n, '_v[%d]' % i, e)
-        return e
+        return self._replace_attr(e)
 
     def _create_field_name(self, e):
         asp = re.compile(r' as (\w+)', re.I)
@@ -80,19 +131,24 @@ class TableRDD(DerivedRDD):
             e = '(%s)' % e
 
         func_name, args = e.split('(', 1)
-        if func_name == 'count':
-            return '1', '_x[%d] + 1' % index, '_x[%d] + _y[%d]' % (index, index)
-
-        args = args.rsplit(')', 1)[0]
-        for i,n in enumerate(self.fields):
-            args = re.sub(n, '_v[%d]' % i, args)
-        
-        if func_name:
-            return (args, '%s(_x[%d],%s)' % (func_name, index, args),
-                '%s(_x[%d],_y[%d])' % (func_name, index, index))
+        func_name = func_name.strip()
+        args = self._replace_attr(args.rsplit(')', 1)[0])
+        if args == '*':
+            args = '1'
+        ag = '_x[%d]' % index
+        if func_name in SimpleAggs:
+            return (args, '%s(%s,%s)' % (func_name, ag, args),
+                '%s(_x[%d],_y[%d])' % (func_name, index, index), ag)
+        elif func_name in FullAggs:
+            return ('%s[0](%s)' % (func_name, args),
+                    '%s[1](%s, %s)' % (func_name, ag, args),
+                    '%s[2](_x[%d], _y[%d])' % (func_name, index, index),
+                    '%s[3](_x[%d])' % (func_name, index),)
+        elif func_name:    
+            raise Exception("invalid aggregator function: %s" % func_name)
         else: # group by
             return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index), 
-                    '_x[%d] + _y[%d]' % (index, index))
+                    '_x[%d] + _y[%d]' % (index, index), ag)
 
     def selectOne(self, *fields, **named_fields):
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
@@ -102,12 +158,13 @@ class TableRDD(DerivedRDD):
         codes = ([self._create_reducer(i, e) for i,e in enumerate(fields)]
               + [self._create_reducer(i + len(fields), named_fields[n]) 
                     for i,n in enumerate(new_fields[len(fields):])])
-        
+
         d = dict(globals())
         d.update(Aggs)
         creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
         merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
         combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
+        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes), d)
 
         def reducePartition(it):
             r = None
@@ -119,7 +176,10 @@ class TableRDD(DerivedRDD):
                     r = merger(r, i)
             return r
         rs = self.ctx.runJob(self.prev, reducePartition)
-        return reduce(combiner, (x for x in rs if x is not None)) 
+        return mapper(reduce(combiner, (x for x in rs if x is not None)))
+
+    def atop(self, field):
+        return self.selectOne('top(%s)' % field)[0]
 
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
@@ -143,10 +203,11 @@ class TableRDD(DerivedRDD):
         creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
         merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
         combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
+        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes), d)
 
         agg = Aggregator(creater, merger, combiner) 
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
-        return g.map(lambda (k,v): list(k)+list(v)).asTable(key_names + values)
+        return g.map(lambda (k,v): k + mapper(v)).asTable(key_names + values)
 
     def indexBy(self, keys=None):
         if keys is None:
@@ -195,19 +256,16 @@ class TableRDD(DerivedRDD):
         keys = [self.fields.index(i) for i in fields]
         def key(v):
             return tuple(v[i] for i in keys)
-        cls = namedtuple(self.name, self.fields)
-        return [cls(*i) for i in self.prev.top(n, key=key, reverse=reverse)]
+        return self.prev.top(n, key=key, reverse=reverse)
 
     def collect(self):
-        cls = namedtuple(self.name, self.fields)
-        return [cls(*i) for i in self.prev.collect()]
+        return self.prev.collect()
 
     def take(self, n):
-        cls = namedtuple(self.name, self.fields)
-        return [cls(*i) for i in self.prev.take(n)]
+        return self.prev.take(n)
 
     def execute(self, sql):
-        parts = [i.strip() for i in re.compile(r'(select|from|where|group by|order by|limit) ', re.I).split(sql)[1:]]
+        parts = [i.strip() for i in re.compile(r'(select|from|(?:inner|left outer)? join|where|group by|having|order by|limit) ', re.I).split(sql)[1:]]
         kw = dict(zip([i.lower() for i in parts[::2]], parts[1::2]))
         
         # select needed cols 
@@ -216,7 +274,18 @@ class TableRDD(DerivedRDD):
         if 'where' in kw:
             r = r.where(kw['where'])
 
-        if 'group by' in kw:
+        if 'top(' in kw['select']:
+            field = re.match(r'top\((.*?)\)', kw['select']).group(1)
+            r = r.atop(field)
+            values = [n.strip() for n in kw['select'].split(',')]
+            if len(values) == 1:
+                return [k for k,c in r]
+            elif values[0].startswith('top'):
+                return r
+            else:
+                return [(c,k) for k,c in r]
+            
+        elif 'group by' in kw:
             keys = [n.strip() for n in kw['group by'].split(',')]
             values = [n.strip() for n in kw['select'].split(',')]
             values = dict([(self._create_field_name(n), n) for n in values if n not in keys])
@@ -224,6 +293,9 @@ class TableRDD(DerivedRDD):
 
         elif 'select' in kw:
             cols = kw['select'].split(',')
+            for name in Aggs:
+                if (name + '(') in kw['select']:
+                    return r.selectOne(*cols)
             r = r.select(*cols)
 
         if 'order by' in kw:
@@ -259,6 +331,7 @@ def test():
     table2 = rdd.asTable(['f1', 'f3'])
     print table.innerJoin(table2).take(10)
     print table.join(table2).sort('f1').take(10)
+    print table.selectOne('adcount(f1)', 'adcount(f2*10)')
 
 if __name__ == '__main__':
     test()
