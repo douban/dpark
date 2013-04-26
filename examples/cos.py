@@ -6,7 +6,7 @@ import dpark
 name = 'rating.txt'
 
 def parse(line):
-    sid, uid, r, f = line.split('\t')
+    sid, uid, r, f = line.strip().split('\t')
     defaults = {'F':4.5, 'P':3.7, 'N':4.0}
     if r == 'None':
         r = defaults[f]
@@ -50,7 +50,7 @@ def cos((l1, l2)):
 #            if sid2!=sid1], reverse=True)[:5]
         yield sid1, sim
 
-final = rating.glom().cartesion(rating.glom())
+final = rating.glom().cartesian(rating.glom())
 print final.count()
 final = final.flatMap(cos)
 #print 'sim', final.first()
