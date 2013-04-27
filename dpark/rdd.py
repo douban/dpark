@@ -412,9 +412,9 @@ class RDD(object):
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
 
-    def asTable(self, fields):
+    def asTable(self, fields, name=''):
         from table import TableRDD
-        return TableRDD(self, fields)
+        return TableRDD(self, fields, name)
 
     def batch(self, size):
         def _batch(iterable):

@@ -70,16 +70,17 @@ def table_join(f):
         joined = f(self, other, left_keys, right_keys)
 
         ln = [n for n in self.fields if n not in left_keys]
-        rn = [n for n in other.fields if n not in left_keys]
-        return joined.map(lambda (k,(v1,v2)): list(k)+v1+v2
-            ).asTable(left_keys + ln + rn)
+        rn = [n for n in other.fields if n not in right_keys]
+        def conv((k, (v1, v2))):
+            return list(k) + (v1 or [None]*len(ln)) + (v2 or [None]*len(rn))
+        return joined.map(conv).asTable(left_keys + ln + rn)
 
     return _join
 
 class TableRDD(DerivedRDD):
-    def __init__(self, rdd, fields):
+    def __init__(self, rdd, fields, name=''):
         DerivedRDD.__init__(self, rdd)
-        self.name = 'Row%d' % self.id
+        self.name = name
         if isinstance(fields, str):
             fields = [n.strip() for n in fields.split(',')]
         self.fields = fields
@@ -94,8 +95,21 @@ class TableRDD(DerivedRDD):
     def compute(self, split):
         return self.prev.iterator(split)
 
+    def _split_expr(self, expr):
+        rs = []
+        last, n = [], 0
+        for part in expr.split(','):
+            last.append(part)
+            n += part.count('(') - part.count(')')
+            if n == 0:
+                rs.append(','.join(last))
+                last = []
+                n = 0
+        assert not last, '() not match in expr'
+        return rs
+
     def _replace_attr(self, e):
-        es = re.split(r'([()\-+ */,]+)', e)
+        es = re.split(r'([()\-+ */,><]+)', e)
         for i in range(len(es)):
             if es[i] in self.fields:
                 es[i] = '_v[%d]' % self.fields.index(es[i])
@@ -236,8 +250,11 @@ class TableRDD(DerivedRDD):
         return self.indexBy(left_keys).outerJoin(other.indexBy(right_keys))
 
     @table_join
-    def leftOutJoin(self, other, left_keys=None, right_keys=None):
-        return self.indexBy(left_keys).leftOuterJoin(other.indexBy(right_keys))
+    def leftOuterJoin(self, other, left_keys=None, right_keys=None):
+        o_b = self.ctx.broadcast(other.indexBy(right_keys).collectAsMap())
+        r = self.indexBy(left_keys).map(lambda (k,v):(k,(v,o_b.value.get(k))))
+        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        return r
 
     @table_join
     def rightOuterJoin(self, other, left_keys=None, right_keys=None):
@@ -265,11 +282,43 @@ class TableRDD(DerivedRDD):
         return self.prev.take(n)
 
     def execute(self, sql):
-        parts = [i.strip() for i in re.compile(r'(select|from|(?:inner|left outer)? join|where|group by|having|order by|limit) ', re.I).split(sql)[1:]]
+        sql_p = re.compile(r'(select|from|(?:inner|left outer)? join(?: each)?|where|group by|having|order by|limit) ', re.I)
+        parts = [i.strip() for i in sql_p.split(sql)[1:]]
         kw = dict(zip([i.lower() for i in parts[::2]], parts[1::2]))
-        
+
+        for type in kw:
+            if 'join' not in type:
+                continue
+            
+            table, cond = re.split(r' on ', kw[type], re.I)
+            if '(' in table:
+                last_index = table.rindex(')')
+                name = table[last_index + 1:].split(' ')[-1]
+                expr = table[:last_index + 1]
+            else:
+                name = table.strip()
+                expr = ''
+            other = create_table(self.ctx, name, expr)
+
+            left_keys, right_keys = [], []
+            for expr in re.split(r' and ', cond, re.I):
+                lf, rf = re.split(r'=+', expr)
+                if lf.startswith(other.name + '.'):
+                    lf, rf = rf, lf
+                left_keys.append(lf[lf.rindex('.') + 1:].strip())
+                right_keys.append(rf[rf.rindex('.') + 1:].strip())
+            
+            if 'left outer' in type:
+                r = self.leftOuterJoin(other, left_keys, right_keys)
+            else:
+                r = self.innerJoin(other, left_keys, right_keys)
+            break
+        else:
+            r = self
+
         # select needed cols 
-        r = self.select(*[n for n in self.fields if n in sql])
+        #r = self.select(*[n for n in self.fields if n in sql])
+        cols = [n.strip() for n in self._split_expr(kw['select'])]
 
         if 'where' in kw:
             r = r.where(kw['where'])
@@ -277,24 +326,25 @@ class TableRDD(DerivedRDD):
         if 'top(' in kw['select']:
             field = re.match(r'top\((.*?)\)', kw['select']).group(1)
             r = r.atop(field)
-            values = [n.strip() for n in kw['select'].split(',')]
-            if len(values) == 1:
+            if len(cols) == 1:
                 return [k for k,c in r]
-            elif values[0].startswith('top'):
+            elif cols[0].startswith('top'):
                 return r
             else:
                 return [(c,k) for k,c in r]
             
         elif 'group by' in kw:
             keys = [n.strip() for n in kw['group by'].split(',')]
-            values = [n.strip() for n in kw['select'].split(',')]
-            values = dict([(self._create_field_name(n), n) for n in values if n not in keys])
+            values = dict([(r._create_field_name(n), n) for n in cols if n not in keys])
             r = r.groupBy(*keys, **values)
 
+            if 'having' in kw:
+                r = r.where(kw['having'])
+
         elif 'select' in kw:
-            cols = kw['select'].split(',')
             for name in Aggs:
                 if (name + '(') in kw['select']:
+                    print cols, r.fields
                     return r.selectOne(*cols)
             r = r.select(*cols)
 
@@ -311,7 +361,7 @@ class TableRDD(DerivedRDD):
 
         if 'limit' in kw:
             return r.take(int(kw['limit']))
-        return r
+        return r.collect()
 
     def save(self, path, overwrite=True, compress=True):
         r = OutputTableFileRDD(self.prev, path,
@@ -319,12 +369,46 @@ class TableRDD(DerivedRDD):
         open(os.path.join(path, '.field_names'), 'w').write('\t'.join(self.fields))
         return r
 
+
+__tables = {
+}
+
+def create_table(ctx, name, expr):
+    if name in __tables:
+        return __tables[name]
+
+    assert expr, 'table %s is not defined' % name
+    t = eval('ctx.' + expr)
+    if isinstance(t, TableRDD):
+        t.name = name
+        __tables[name] = t
+        return t
+    
+    # TODO: try to find .fields
+    
+    # guess format
+    row = t.first()
+    if isinstance(row, str):
+        if '\t' in row:
+            t = t.fromCsv(dialet='excel-tab')
+        elif ',' in row:
+            t = t.fromCsv(dialet='excel')
+        else:
+            t = t.map(lambda line:line.strip().split(' '))
+
+    # fake fields names
+    row = t.first()
+    fields = ['f%d' % i for i in range(len(row))]
+    t = t.asTable(fields, name)
+    __tables[name] = t
+    return t
+
 def test():
     from context import DparkContext
     ctx = DparkContext()
     rdd = ctx.makeRDD(zip(range(1000), range(1000)))
     table = rdd.asTable(['f1', 'f2']) 
-    print table.select('f1', 'f2').where('f1>10', 'f2<80', 'f1+f2>30 or f1*f2>200').groupBy('f1').select("-f1", f2="sum(f2)").sort('f1', reverse=True).take(5)
+    print table.select('f1', 'f2').where('f1>10', 'f2<80', 'f1+f2>30 or f1*f2>200').take(5)#.groupBy('f1').select("-f1", f2="sum(f2)").sort('f1', reverse=True).take(5)
     print table.selectOne('count(*)', 'max(f1)', 'min(f2+f1)', 'sum(f1*f2+f1)')
     print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)
     print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
@@ -332,6 +416,9 @@ def test():
     print table.innerJoin(table2).take(10)
     print table.join(table2).sort('f1').take(10)
     print table.selectOne('adcount(f1)', 'adcount(f2*10)')
+
+    #t2 = create_table(ctx, 't2', "makeRDD(zip(range(5), range(5))).asTable(['g1', 'g2'])")
+    print table.execute("select f1, g1 from me left outer join makeRDD(zip(range(5), range(5))).asTable(['g1', 'g2']) t2 on me.f1 == t2.g2 where f1 < 100 and f2 > 2 limit 10")
 
 if __name__ == '__main__':
     test()
