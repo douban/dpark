@@ -555,7 +555,7 @@ class FilteredRDD(MappedRDD):
            
 class GlommedRDD(DerivedRDD):
     def compute(self, split):
-        yield self.prev.iterator(split)
+        yield list(self.prev.iterator(split))
 
 class MapPartitionsRDD(MappedRDD):
     def compute(self, split):
