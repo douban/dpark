@@ -251,9 +251,9 @@ class TableRDD(DerivedRDD):
 
     @table_join
     def leftOuterJoin(self, other, left_keys=None, right_keys=None):
-        o_b = self.ctx.broadcast(other.indexBy(right_keys).collectAsMap())
-        r = self.indexBy(left_keys).map(lambda (k,v):(k,(v,o_b.value.get(k))))
-        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        o = other.indexBy(right_keys).collectAsMap()
+        r = self.indexBy(left_keys).map(lambda (k,v):(k,(v,o.get(k))))
+        r.mem += (sys.getsizeof(o) * 10) >> 20 # memory used by broadcast obj
         return r
 
     @table_join
@@ -344,7 +344,6 @@ class TableRDD(DerivedRDD):
         elif 'select' in kw:
             for name in Aggs:
                 if (name + '(') in kw['select']:
-                    print cols, r.fields
                     return r.selectOne(*cols)
             r = r.select(*cols)
 
@@ -413,8 +412,8 @@ def test():
     print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)
     print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
     table2 = rdd.asTable(['f1', 'f3'])
-    print table.innerJoin(table2).take(10)
     print table.join(table2).sort('f1').take(10)
+    print table.innerJoin(table2).take(10)
     print table.selectOne('adcount(f1)', 'adcount(f2*10)')
 
     #t2 = create_table(ctx, 't2', "makeRDD(zip(range(5), range(5))).asTable(['g1', 'g2'])")

@@ -52,7 +52,7 @@ class VariableInfo:
         self.total_bytes = total_bytes
         self.has_blocks = 0
 
-class Broadcast(object):
+class Broadcast:
     initialized = False
     is_master = False
     cache = cache.Cache() 
@@ -88,7 +88,7 @@ class Broadcast(object):
     
     def __getattr__(self, name):
         if name != 'value':
-            raise AttributeError(name)
+            return getattr(self.value, name)
 
         # in the executor process, Broadcast is not initialized
         if not self.initialized:

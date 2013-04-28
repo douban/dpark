@@ -3,6 +3,9 @@ from cStringIO import StringIO
 import marshal, new, cPickle
 import itertools
 from pickle import Pickler, whichmodule
+import logging
+
+logger = logging.getLogger(__name__)
 
 class MyPickler(Pickler):
     dispatch = Pickler.dispatch.copy()
@@ -60,6 +63,22 @@ def marshalable(o):
         return True
     return False
 
+OBJECT_SIZE_LIMIT = 100 << 10
+
+_cache = {}
+
+def create_broadcast(name, obj, func_name):
+    key = (name, id(object), func_name)
+    if key in _cache:
+        return _cache[key]
+
+    import dpark
+    logger.info("use broadcast for object %s %s (used in function %s)", 
+        name, type(obj), func_name)
+    b = dpark._ctx.broadcast(obj)
+    _cache[key] = b
+    return b
+
 def dump_closure(f):
     code = f.func_code
     glob = {}
@@ -70,7 +89,12 @@ def dump_closure(f):
                 # Prevent infinite recursion when dumping a recursive function
                 glob[n] = dumps(RECURSIVE_FUNCTION_PLACEHOLDER)
             else:
-                glob[n] = dumps(r)
+                if sys.getsizeof(r) > OBJECT_SIZE_LIMIT:
+                    r = create_broadcast(n, r, f.__name__)
+                b = dumps(r)
+                if len(b) > OBJECT_SIZE_LIMIT:
+                    b = dumps(create_broadcast(n, r, f.__name__))
+                glob[n] = b
 
     closure = f.func_closure and tuple(dumps(c.cell_contents) for c in f.func_closure) or None
     return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
