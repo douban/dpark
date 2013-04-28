@@ -30,15 +30,8 @@ import gc
 
 import zmq
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
-try:
-    import mesos
-    import mesos_pb2
-except ImportError:
-    import pymesos as mesos
-    import pymesos.mesos_pb2 as mesos_pb2
+import pymesos as mesos
+import pymesos.mesos_pb2 as mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
