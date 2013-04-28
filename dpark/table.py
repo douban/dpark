@@ -201,16 +201,17 @@ class TableRDD(DerivedRDD):
         _filter = eval('lambda _v: %s' % conditions, globals())
         return (need_attr and self or self.prev).filter(_filter).asTable(self.fields)
 
-    def groupBy(self, *keys, **kw):
+    def groupBy(self, keys, *fields, **kw):
         numSplits = kw.pop('numSplits', None)
-        
+       
+        if not isinstance(keys, (list, tuple)):
+            keys = [keys]
         key_names = [self._create_field_name(e) for e in keys] 
         expr = ','.join(self._create_expression(e) for e in keys)
         gen_key = eval('lambda _v:(%s,)' % expr, globals())
 
-        if not kw:
-            kw.update((k,k) for k in self.fields if k not in keys)
-        values = kw.keys()
+        values = [self._create_field_name(e) for e in fields] + kw.keys()
+        kw.update((values[i], fields[i]) for i in range(len(fields)))
         codes = [self._create_reducer(i, kw[n]) for i,n in enumerate(values)]
         d = dict(globals())
         d.update(Aggs)
@@ -267,6 +268,11 @@ class TableRDD(DerivedRDD):
             keys = [self.fields.index(n) for n in fields]
         def key(v):
             return tuple(v[i] for i in keys)
+
+        if len(self) <= 16: # maybe grouped 
+            data = sorted(self.prev.collect(), key=key, reverse=reverse)
+            return self.ctx.makeRDD(data).asTable(self.fields)
+
         return self.prev.sort(key, reverse, numSplits).asTable(self.fields)
 
     def top(self, n, fields, reverse=False):
@@ -336,7 +342,7 @@ class TableRDD(DerivedRDD):
         elif 'group by' in kw:
             keys = [n.strip() for n in kw['group by'].split(',')]
             values = dict([(r._create_field_name(n), n) for n in cols if n not in keys])
-            r = r.groupBy(*keys, **values)
+            r = r.groupBy(keys, *cols)
 
             if 'having' in kw:
                 r = r.where(kw['having'])
