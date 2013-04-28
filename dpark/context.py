@@ -5,11 +5,11 @@ import signal
 import logging
 import gc
 
-from rdd import *
-from accumulator import Accumulator
-from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
-from env import env
-from moosefs import walk
+from dpark.rdd import *
+from dpark.accumulator import Accumulator
+from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
+from dpark.env import env
+from dpark.moosefs import walk
 
 logger = logging.getLogger("context")
 
@@ -198,7 +198,7 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        from broadcast import TheBroadcast
+        from dpark.broadcast import TheBroadcast
         return TheBroadcast(v, self.isLocal)
 
     def start(self):

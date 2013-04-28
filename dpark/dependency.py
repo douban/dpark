@@ -1,7 +1,7 @@
 import bisect
 
-from util import portable_hash
-from serialize import load_func, dump_func
+from dpark.util import portable_hash
+from dpark.serialize import load_func, dump_func
 
 class Dependency:
     def __init__(self, rdd):

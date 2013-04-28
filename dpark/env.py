@@ -5,7 +5,7 @@ import shutil
 
 import zmq
 
-import util
+from dpark import util
 
 logger = logging.getLogger("env")
 
@@ -55,23 +55,23 @@ class DparkEnv:
 
         self.ctx = zmq.Context()
 
-        from cache import CacheTracker, LocalCacheTracker
+        from dpark.cache import CacheTracker, LocalCacheTracker
         if isLocal:
             self.cacheTracker = LocalCacheTracker(isMaster)
         else:
             self.cacheTracker = CacheTracker(isMaster)
 
-        from shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
+        from dpark.shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
         LocalFileShuffle.initialize(isMaster)
         if isLocal:
             self.mapOutputTracker = LocalMapOutputTracker(isMaster)
         else:
             self.mapOutputTracker = MapOutputTracker(isMaster)
-        from shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
+        from dpark.shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
-        from broadcast import TheBroadcast
+        from dpark.broadcast import TheBroadcast
         TheBroadcast.initialize(isMaster)
 
         self.started = True
@@ -84,7 +84,7 @@ class DparkEnv:
         self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
-        from broadcast import TheBroadcast
+        from dpark.broadcast import TheBroadcast
         TheBroadcast.shutdown()
        
         logger.debug("cleaning workdir ...")

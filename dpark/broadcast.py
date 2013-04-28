@@ -8,10 +8,10 @@ import gc
 
 import zmq
 
-from util import compress, decompress, getproctitle, setproctitle, spawn
-import cache
-from serialize import marshalable
-from env import env
+from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
+from dpark.cache import Cache
+from dpark.serialize import marshalable
+from dpark.env import env
 
 logger = logging.getLogger("broadcast")
 
@@ -55,7 +55,7 @@ class VariableInfo:
 class Broadcast:
     initialized = False
     is_master = False
-    cache = cache.Cache() 
+    cache = Cache() 
     broadcastFactory = None
     BlockSize = 1024 * 1024
     MaxRetryCount = 2
@@ -507,7 +507,7 @@ if __name__ == '__main__':
         level=logging.DEBUG)
     TheBroadcast.initialize(True)
     import multiprocessing
-    from env import env
+    from dpark.env import env
     pool = multiprocessing.Pool(4, _test_init)
 
     v = range(1000*1000)

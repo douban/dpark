@@ -5,9 +5,9 @@ import cPickle
 import logging
 import struct
 
-from util import compress, decompress
-from serialize import marshalable, load_func, dump_func
-from shuffle import LocalFileShuffle
+from dpark.util import compress, decompress
+from dpark.serialize import marshalable, load_func, dump_func
+from dpark.shuffle import LocalFileShuffle
 
 logger = logging.getLogger("dpark")
 

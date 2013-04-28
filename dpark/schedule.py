@@ -19,12 +19,12 @@ except ImportError:
     import pymesos as mesos
     import pymesos.mesos_pb2 as mesos_pb2
 
-from util import compress, decompress, spawn
-from dependency import NarrowDependency, ShuffleDependency 
-from accumulator import Accumulator
-from task import ResultTask, ShuffleMapTask
-from job import SimpleJob
-from env import env
+from dpark.util import compress, decompress, spawn
+from dpark.dependency import NarrowDependency, ShuffleDependency 
+from dpark.accumulator import Accumulator
+from dpark.task import ResultTask, ShuffleMapTask
+from dpark.job import SimpleJob
+from dpark.env import env
 
 logger = logging.getLogger("scheduler")
 
@@ -362,7 +362,7 @@ class LocalScheduler(DAGScheduler):
             self.taskEnded(task, reason, result, update)
 
 def run_task_in_process(task, tid, environ):
-    from env import env
+    from dpark.env import env
     env.start(False, environ)
     
     logger.debug("run task in process %s %s", task, tid)

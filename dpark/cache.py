@@ -7,13 +7,13 @@ import time
 
 import zmq
 
-import shareddict
-from env import env
-from util import spawn
+from dpark.shareddict import SharedDicts
+from dpark.env import env
+from dpark.util import spawn
 
 logger = logging.getLogger("cache")
 
-mmapCache = shareddict.SharedDicts(1024)
+mmapCache = SharedDicts(10)
 
 class Cache:
     map = {}
@@ -265,7 +265,7 @@ def test():
     pool.join()
     assert cache.get('a') == 'b'
     
-    from context import DparkContext
+    from dpark.context import DparkContext
     dc = DparkContext("local")
     nums = dc.parallelize(range(100), 10)
     cache = mmapCache

@@ -18,12 +18,12 @@ import shutil
 import heapq
 import struct
 
-from serialize import load_func, dump_func
-from dependency import *
-from util import ilen, spawn, chain
-import shuffle
-from env import env
-import moosefs
+from dpark.serialize import load_func, dump_func
+from dpark.dependency import *
+from dpark.util import ilen, spawn, chain
+from dpark.shuffle import Merger
+from dpark.env import env
+from dpark import moosefs
 
 logger = logging.getLogger("rdd")
 
@@ -413,7 +413,7 @@ class RDD(object):
             raise Exception("lookup() called on an RDD without a partitioner")
 
     def asTable(self, fields, name=''):
-        from table import TableRDD
+        from dpark.table import TableRDD
         return TableRDD(self, fields, name)
 
     def batch(self, size):
@@ -674,7 +674,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
+        merger = Merger(self.numParts, self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger

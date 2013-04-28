@@ -14,9 +14,9 @@ import platform
 
 import zmq
 
-from util import decompress, spawn
-from env import env
-from cache import CacheTrackerServer, CacheTrackerClient
+from dpark.util import decompress, spawn
+from dpark.env import env
+from dpark.cache import CacheTrackerServer, CacheTrackerClient
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
@@ -458,7 +458,7 @@ def test():
     
     import logging
     logging.basicConfig(level=logging.INFO)
-    from env import env
+    from dpark.env import env
     import cPickle
     env.start(True)
     

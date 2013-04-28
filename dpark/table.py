@@ -6,13 +6,13 @@ import itertools
 
 import msgpack
 
-from rdd import DerivedRDD, OutputTableFileRDD
-from dependency import Aggregator, OneToOneDependency
+from dpark.rdd import DerivedRDD, OutputTableFileRDD
+from dpark.dependency import Aggregator, OneToOneDependency
 
 try:
     from pyhll import HyperLogLog
 except ImportError:    
-    from hyperloglog import HyperLogLog
+    from dpark.hyperloglog import HyperLogLog
 
 from hotcounter import HotCounter
 
@@ -402,22 +402,3 @@ def create_table(ctx, name, expr):
     __tables[name] = t
     return t
 
-def test():
-    from context import DparkContext
-    ctx = DparkContext()
-    rdd = ctx.makeRDD(zip(range(1000), range(1000)))
-    table = rdd.asTable(['f1', 'f2']) 
-    print table.select('f1', 'f2').where('f1>10', 'f2<80', 'f1+f2>30 or f1*f2>200').take(5)#.groupBy('f1').select("-f1", f2="sum(f2)").sort('f1', reverse=True).take(5)
-    print table.selectOne('count(*)', 'max(f1)', 'min(f2+f1)', 'sum(f1*f2+f1)')
-    print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)
-    print table.execute('select f1, sum(f2), count(*) as cnt from me where f1>10 and f2<80 and (f1+f2>30 or f1*f2>200) group by f1 order by cnt limit 5')
-    table2 = rdd.asTable(['f1', 'f3'])
-    print table.join(table2).sort('f1').take(10)
-    print table.innerJoin(table2).take(10)
-    print table.selectOne('adcount(f1)', 'adcount(f2*10)')
-
-    #t2 = create_table(ctx, 't2', "makeRDD(zip(range(5), range(5))).asTable(['g1', 'g2'])")
-    print table.execute("select f1, g1 from me left outer join makeRDD(zip(range(5), range(5))).asTable(['g1', 'g2']) t2 on me.f1 == t2.g2 where f1 < 100 and f2 > 2 limit 10")
-
-if __name__ == '__main__':
-    test()
