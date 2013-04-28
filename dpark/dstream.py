@@ -5,10 +5,10 @@ import itertools
 import logging
 import random
 
-from dpark.util import spawn
-from dpark.dependency import Partitioner, HashPartitioner, Aggregator
-from dpark.context import DparkContext
-from dpark.rdd import CoGroupedRDD
+from util import spawn
+from dependency import Partitioner, HashPartitioner, Aggregator
+from context import DparkContext
+from rdd import CoGroupedRDD
 
 logger = logging.getLogger(__name__)
 

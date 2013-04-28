@@ -89,7 +89,7 @@ class TableRDD(DerivedRDD):
         return '<Table(%s) from %s>' % (','.join(self.fields), self.prev)
 
     def iterator(self, split):
-        cls = namedtuple(self.name, self.fields)
+        cls = namedtuple(self.name or ('Row%d' % self.id), self.fields)
         return itertools.imap(lambda x:cls(*x), super(TableRDD, self).iterator(split))
 
     def compute(self, split):
@@ -134,7 +134,7 @@ class TableRDD(DerivedRDD):
         
         selector = [self._create_expression(e) for e in fields] + \
             [self._create_expression(named_fields[n]) for n in new_fields[len(fields):]]
-        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector)), globals())    
+        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector))) 
 
         need_attr = any(callable(f) for f in named_fields.values())
         return (need_attr and self or self.prev).map(_select).asTable(new_fields)
