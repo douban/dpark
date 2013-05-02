@@ -128,6 +128,8 @@ class TableRDD(DerivedRDD):
         return re.sub(r'[(, )+*/\-]', '_', e).strip('_') 
 
     def select(self, *fields, **named_fields):
+        if len(fields) == 1 and not named_fields and fields[0] == '*':
+            fields = self.fields
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
@@ -190,7 +192,7 @@ class TableRDD(DerivedRDD):
                     r = merger(r, i)
             return r
         rs = self.ctx.runJob(self.prev, reducePartition)
-        return mapper(reduce(combiner, (x for x in rs if x is not None)))
+        return [mapper(reduce(combiner, (x for x in rs if x is not None)))]
 
     def atop(self, field):
         return self.selectOne('top(%s)' % field)[0]
@@ -281,7 +283,7 @@ class TableRDD(DerivedRDD):
     def take(self, n):
         return self.prev.take(n)
 
-    def execute(self, sql):
+    def execute(self, sql, asTable=False):
         sql_p = re.compile(r'(select|from|(?:inner|left outer)? join(?: each)?|where|group by|having|order by|limit) ', re.I)
         parts = [i.strip() for i in sql_p.split(sql)[1:]]
         kw = dict(zip([i.lower() for i in parts[::2]], parts[1::2]))
@@ -325,13 +327,10 @@ class TableRDD(DerivedRDD):
 
         if 'top(' in kw['select']:
             field = re.match(r'top\((.*?)\)', kw['select']).group(1)
-            r = r.atop(field)
-            if len(cols) == 1:
-                return [k for k,c in r]
-            elif cols[0].startswith('top'):
-                return r
-            else:
-                return [(c,k) for k,c in r]
+            rs = r.atop(field)
+            if asTable:
+                rs = dpark.makeRDD(rs).asTable([field, 'count'])
+            return rs
             
         elif 'group by' in kw:
             keys = [n.strip() for n in kw['group by'].split(',')]
@@ -360,7 +359,10 @@ class TableRDD(DerivedRDD):
 
         if 'limit' in kw:
             return r.take(int(kw['limit']))
-        return r.collect()
+        if asTable:
+            return r
+        else:
+            return r.collect()
 
     def save(self, path, overwrite=True, compress=True):
         r = OutputTableFileRDD(self.prev, path,
