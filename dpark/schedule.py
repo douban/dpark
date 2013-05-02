@@ -13,18 +13,16 @@ import weakref
 import multiprocessing
 
 import zmq
-try:
-    import mesos, mesos_pb2
-except ImportError:
-    import pymesos as mesos
-    import pymesos.mesos_pb2 as mesos_pb2
 
-from util import compress, decompress, spawn
-from dependency import NarrowDependency, ShuffleDependency 
-from accumulator import Accumulator
-from task import ResultTask, ShuffleMapTask
-from job import SimpleJob
-from env import env
+import pymesos as mesos
+import pymesos.mesos_pb2 as mesos_pb2
+
+from dpark.util import compress, decompress, spawn
+from dpark.dependency import NarrowDependency, ShuffleDependency 
+from dpark.accumulator import Accumulator
+from dpark.task import ResultTask, ShuffleMapTask
+from dpark.job import SimpleJob
+from dpark.env import env
 
 logger = logging.getLogger("scheduler")
 
@@ -362,7 +360,7 @@ class LocalScheduler(DAGScheduler):
             self.taskEnded(task, reason, result, update)
 
 def run_task_in_process(task, tid, environ):
-    from env import env
+    from dpark.env import env
     env.start(False, environ)
     
     logger.debug("run task in process %s %s", task, tid)
@@ -379,7 +377,10 @@ class MultiProcessScheduler(LocalScheduler):
         self.pool = multiprocessing.Pool(self.threads or 2)
 
     def submitTasks(self, tasks):
-        logger.info("Got a job with %d tasks", len(tasks))
+        if not tasks:
+            return 
+
+        logger.info("Got a job with %d tasks: %s", len(tasks), tasks[0].rdd)
         
         total, self.finished, start = len(tasks), 0, time.time()
         def callback(args):
@@ -571,7 +572,7 @@ class MesosScheduler(DAGScheduler):
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
-        logger.info("Got job %d with %d tasks", job.id, len(tasks))
+        logger.info("Got job %d with %d tasks: %s", job.id, len(tasks), tasks[0].rdd)
       
         need_revive = self.started
         if not self.started:

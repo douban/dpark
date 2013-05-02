@@ -30,15 +30,8 @@ import gc
 
 import zmq
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
-try:
-    import mesos
-    import mesos_pb2
-except ImportError:
-    import pymesos as mesos
-    import pymesos.mesos_pb2 as mesos_pb2
+import pymesos as mesos
+import pymesos.mesos_pb2 as mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
@@ -342,8 +335,8 @@ class MyExecutor(mesos.Executor):
                     reply_status(driver, task, state, data)
                     if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
                             and len(self.idle_workers) < MAX_IDLE_WORKERS
-                            and pool.done < MAX_TASKS_PER_WORKER 
-                            and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
+                            and pool.done < MAX_TASKS_PER_WORKER
+                            and get_pool_memory(pool) < get_task_memory(task) * 1.5): # maybe memory leak in executor
                         self.idle_workers.append((time.time(), pool))
                     else:
                         try: pool.terminate()

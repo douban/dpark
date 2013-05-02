@@ -18,12 +18,12 @@ import shutil
 import heapq
 import struct
 
-from serialize import load_func, dump_func
-from dependency import *
-from util import ilen, spawn, chain
-import shuffle
-from env import env
-import moosefs
+from dpark.serialize import load_func, dump_func
+from dpark.dependency import *
+from dpark.util import ilen, spawn, chain
+from dpark.shuffle import Merger
+from dpark.env import env
+from dpark import moosefs
 
 logger = logging.getLogger("rdd")
 
@@ -148,15 +148,17 @@ class RDD(object):
     def sort(self, key=lambda x:x, reverse=False, numSplits=None):
         if not len(self):
             return self
+        if len(self) == 1:
+            return self.mapPartitions(lambda it: sorted(it, key=key, reverse=reverse))
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
-        samples = self.glom().flatMap(lambda x:itertools.islice(x, n)).map(key).collect()
+        samples = self.mapPartitions(lambda x:itertools.islice(x, n)).map(key).collect()
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
         parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
-        return parted.glom().flatMap(lambda x:sorted(x, key=key, reverse=reverse))
+        return parted.mapPartitions(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
         return GlommedRDD(self)
@@ -413,7 +415,7 @@ class RDD(object):
             raise Exception("lookup() called on an RDD without a partitioner")
 
     def asTable(self, fields, name=''):
-        from table import TableRDD
+        from dpark.table import TableRDD
         return TableRDD(self, fields, name)
 
     def batch(self, size):
@@ -674,7 +676,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
+        merger = Merger(self.numParts, self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
