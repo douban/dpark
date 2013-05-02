@@ -36,7 +36,7 @@ MAX_IDLE_TIME = 60 * 30
 
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
-class FetchFailed:
+class FetchFailed(Exception):
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
         self.serverUri = serverUri
         self.shuffleId = shuffleId
@@ -46,7 +46,7 @@ class FetchFailed:
         return '<FetchFailed(%s, %d, %d, %d)>' % (self.serverUri, 
                 self.shuffleId, self.mapId, self.reduceId)
 
-class OtherFailure:
+class OtherFailure(Exception):
     def __init__(self, message):
         self.message = message
     def __str__(self):
