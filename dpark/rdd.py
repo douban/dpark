@@ -826,7 +826,7 @@ class UnionRDD(RDD):
             self._splits.extend([UnionSplit(pos + i, rdd, sp) for i, sp in enumerate(rdd.splits)])
             self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
-        self.name = '<union %d %s>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:2]))
+        self.name = '<UnionRDD %d %s ...>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:1]))
 
     def __repr__(self):
         return self.name
@@ -1014,7 +1014,7 @@ class TextFileRDD(RDD):
         return self.len
 
     def __repr__(self):
-        return '<%s %s>' % (self.__class__, self.path)
+        return '<%s %s>' % (self.__class__.__name__, self.path)
 
     def _preferredLocations(self, split):
         if not self.fileinfo:
@@ -1098,7 +1098,7 @@ class PartialTextFileRDD(TextFileRDD):
         self.len = len(self._splits)
 
     def __repr__(self):
-        return '<%s %s (%d-%d)>' % (self.__class__, self.path, self.firstPos, self.lastPos)
+        return '<%s %s (%d-%d)>' % (self.__class__.__name__, self.path, self.firstPos, self.lastPos)
 
 
 class GZipFileRDD(TextFileRDD):
@@ -1369,7 +1369,7 @@ class OutputTextFileRDD(DerivedRDD):
         self.compress = compress
 
     def __repr__(self):
-        return '<%s %s>' % (self.__class__, self.path)
+        return '<%s %s>' % (self.__class__.__name__, self.path)
 
     def compute(self, split):
         path = os.path.join(self.path, 
@@ -1791,7 +1791,7 @@ class OutputBeansdbRDD(DerivedRDD):
             os.makedirs(path)
 
     def __repr__(self):
-        return '%s(%s)' % (self.__class__, self.path)
+        return '%s(%s)' % (self.__class__.__name__, self.path)
 
     def prepare(self, val):
         if self.raw:
