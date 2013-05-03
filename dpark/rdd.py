@@ -21,7 +21,7 @@ import struct
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
 from dpark.util import ilen, spawn, chain
-from dpark.shuffle import Merger
+from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
 
@@ -777,7 +777,7 @@ class CoGroupedRDD(RDD):
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
-        m = shuffle.CoGroupMerger(self.len)
+        m = CoGroupMerger(self.len)
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))
