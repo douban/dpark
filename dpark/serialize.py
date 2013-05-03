@@ -32,7 +32,11 @@ dump_func = dumps
 load_func = loads
 
 def reduce_module(mod):
-    return mod.__name__
+    return load_module, (mod.__name__, )
+
+def load_module(name):
+    __import__(name)
+    return sys.modules[name]
 
 MyPickler.register(types.ModuleType, reduce_module)
 
