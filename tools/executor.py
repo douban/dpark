@@ -21,16 +21,8 @@ import socket
 
 import zmq
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
-
-try:
-    raise ImportError
-    import mesos, mesos_pb2
-except ImportError:
-    import dpark.pymesos as mesos
-    from dpark.pymesos import mesos_pb2
+import dpark.pymesos as mesos
+from dpark.pymesos import mesos_pb2
 
 ctx = zmq.Context()
 

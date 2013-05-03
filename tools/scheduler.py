@@ -16,15 +16,8 @@ import getpass
 import zmq
 ctx = zmq.Context()
 
-try:
-    raise ImportError
-    # ignore INFO and DEBUG log
-    os.environ['GLOG_logtostderr'] = '1'
-    os.environ['GLOG_minloglevel'] = '1'
-    import mesos, mesos_pb2
-except ImportError:
-    import dpark.pymesos as mesos
-    import dpark.pymesos.mesos_pb2 as mesos_pb2
+import dpark.pymesos as mesos
+import dpark.pymesos.mesos_pb2 as mesos_pb2
 
 
 class Task:
