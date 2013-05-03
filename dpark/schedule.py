@@ -34,7 +34,7 @@ MAX_IDLE_TIME = 60 * 30
 
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
-class FetchFailed(Exception):
+class FetchFailed(TaskEndReason):
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
         self.serverUri = serverUri
         self.shuffleId = shuffleId
@@ -44,7 +44,7 @@ class FetchFailed(Exception):
         return '<FetchFailed(%s, %d, %d, %d)>' % (self.serverUri, 
                 self.shuffleId, self.mapId, self.reduceId)
 
-class OtherFailure(Exception):
+class OtherFailure(TaskEndReason):
     def __init__(self, message):
         self.message = message
     def __str__(self):
@@ -320,10 +320,10 @@ class DAGScheduler(Scheduler):
             else:
                 logger.error("task %s failed", task)
                 if isinstance(evt.reason, FetchFailed):
-                    pass
+                    pass #TODO 
                 else:
                     logger.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
-                    raise evt.reason
+                    raise Exception(evt.reason.message)
 
         assert not any(results)
         return
