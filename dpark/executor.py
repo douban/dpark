@@ -83,11 +83,11 @@ def run_task(task_data):
             data = '/'.join([LocalFileShuffle.getServerUri()] + path.split('/')[-3:])
             flag += 2
 
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
-    except Exception, e:
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((Success(), (flag, data), accUpdate), -1)
+    except :
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((OtherFailure(msg), None, None), -1)
     finally:
         setproctitle('dpark worker: idle')
         gc.collect()

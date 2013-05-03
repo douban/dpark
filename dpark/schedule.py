@@ -716,7 +716,7 @@ class MesosScheduler(DAGScheduler):
    
         if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
             try:
-                task_id,reason,result,accUpdate = cPickle.loads(status.data)
+                reason,result,accUpdate = cPickle.loads(status.data)
                 if result:
                     flag, data = result
                     if flag >= 2:
