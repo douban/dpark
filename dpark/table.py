@@ -335,7 +335,7 @@ class TableRDD(DerivedRDD):
             field = re.match(r'top\((.*?)\)', kw['select']).group(1)
             rs = r.atop(field)
             if asTable:
-                rs = dpark.makeRDD(rs).asTable([field, 'count'])
+                rs = self.ctx.makeRDD(rs).asTable([field, 'count'])
             return rs
             
         elif 'group by' in kw:

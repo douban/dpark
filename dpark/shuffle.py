@@ -264,7 +264,7 @@ class sorted_items(object):
         self.c = 0
 
     def __iter__(self):
-        self.f = gzip.open(path)
+        self.f = gzip.open(self.path)
         self.c = 0
         return self
 
@@ -281,7 +281,7 @@ class sorted_items(object):
         return self.loads(f.read(sz))
 
     def __dealloc__(self):
-        f.close()
+        self.f.close()
         if os.path.exists(self.path):
             os.remove(self.path)
 
@@ -289,6 +289,7 @@ class sorted_items(object):
 class DiskMerger(Merger):
     def __init__(self, total, combiner):
         Merger.__init__(self, total, combiner)
+        self.total = total
         self.archives = []
         self.base_memory = self.get_used_memory()
         self.max_merge = None

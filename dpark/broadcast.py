@@ -279,10 +279,10 @@ class TreeBroadcast(Broadcast):
             for source_info in self.listOfSources:
                 self.stopServer(source_info.addr)
             self.listOfSources = []
-            self.unregisterValue(self.uuid)
+            self.guides.pop(self.uuid, None)
 
         self.guide_thread = spawn(run)
-        self.registerValue(self.uuid, self)
+        self.guides[self.uuid] = self
         logger.debug("guide started...")
 
     def selectSuitableSource(self, skip):
@@ -480,16 +480,6 @@ class TreeBroadcast(Broadcast):
             cls.tracker_thread.join()
         Broadcast.shutdown()
 
-    @classmethod
-    def registerValue(cls, uuid, obj):
-        cls.guides[uuid] = obj
-        logger.debug("New value registered with the Tracker %s, %s", uuid, obj.guide_addr) 
-
-    @classmethod
-    def unregisterValue(cls, uuid):
-        obj = cls.guides.pop(uuid, None)
-        if obj:
-            logger.debug("value unregistered from Tracker %s, %s", uuid, obj.guide_addr) 
 
 TheBroadcast = TreeBroadcast
 

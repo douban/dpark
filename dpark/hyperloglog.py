@@ -1,5 +1,4 @@
 import math
-from hashlib import sha1
 from bisect import bisect_right
 import array
 
@@ -12,10 +11,6 @@ except ImportError:
     HASH_LEN = 30
     def hash_func(v):
         return hash(v) & 0x3fffffff
-    #from hashlib import sha1
-    #HASH_LEN = 160
-    #def hash_func(v):
-    #    return long(sha1(value).hexdigest(), 16)
 
 SPARSE = 0
 NORMAL = 1

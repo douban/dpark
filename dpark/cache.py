@@ -200,12 +200,12 @@ class LocalCacheTracker(object):
             logger.debug("Found partition in cache! %s", key)
             return cachedVal
         
+        host = socket.gethostname()
         logger.debug("partition not in cache, %s", key)
         self.removeHost(rdd.id, split.index, host)
         r = list(rdd.compute(split))
         self.cache.put(key, r)
         
-        host = socket.gethostname()
         self.addHost(rdd.id, split.index, host)
         return r
 
@@ -232,10 +232,10 @@ class CacheTracker(LocalCacheTracker):
         self.client = CacheTrackerClient(addr)
 
     def addHost(self, rdd_id, index, host):
-        return self.client.call(AddedToCache(rdd.id, split.index, host))
+        return self.client.call(AddedToCache(rdd_id, index, host))
 
     def removeHost(self, rdd_id, index, host):
-        return self.client.call(DroppedFromCache(rdd.id, split.index, host)) 
+        return self.client.call(DroppedFromCache(rdd_id, index, host)) 
 
     def stop(self):
         self.client.stop()

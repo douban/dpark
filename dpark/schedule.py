@@ -531,7 +531,8 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def reregistered(self, driver, masterInfo):
-        logger.debug("framework is reregistered")
+        logger.warning("re-connect to mesos master %s:%s(%s)", 
+            int2ip(masterInfo.ip), masterInfo.port, masterInfo.id)
 
     @safe
     def disconnected(self, driver):
@@ -786,13 +787,6 @@ class MesosScheduler(DAGScheduler):
 
     def frameworkMessage(self, driver, slave, executor, data):
         logger.warning("[slave %s] %s", slave.value, data)
-
-    def disconnected(self, driver):
-        logger.warning("mesos master disconnected")
-
-    def reregistered(self, driver, masterInfo):
-        logger.warning("re-connect to mesos master %s:%s(%s)", 
-            int2ip(masterInfo.ip), masterInfo.port, masterInfo.id)
 
     def executorLost(self, driver, executorId, slaveId, status):
         logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
