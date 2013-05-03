@@ -195,7 +195,7 @@ class TableRDD(DerivedRDD):
         return [mapper(reduce(combiner, (x for x in rs if x is not None)))]
 
     def atop(self, field):
-        return self.selectOne('top(%s)' % field)[0]
+        return self.selectOne('top(%s)' % field)[0][0]
 
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
