@@ -184,9 +184,21 @@ def shell():
         sql = ''
 
 def main():
+    from dpark import DparkContext, optParser
+    #optParser.set_default('master', 'mesos')
+    optParser.add_option('-e', '--query', type='string', default='',
+            help='execute the SQL qeury then exit')
+    
+    options, args = optParser.parse_args()
+
+    load_history()
+    
+    if options.query:
+        execute(options.query)
+        sys.exit(0)
+
     shell()
 
 if __name__ == '__main__':
     #test()
-    load_history()
     main()
