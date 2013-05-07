@@ -83,24 +83,31 @@ def create_broadcast(name, obj, func_name):
     _cache[key] = b
     return b
 
+def dump_obj(f, name, obj):
+    if obj is f:
+        # Prevent infinite recursion when dumping a recursive function
+        return dumps(RECURSIVE_FUNCTION_PLACEHOLDER)
+
+    if sys.getsizeof(obj) > OBJECT_SIZE_LIMIT:
+        obj = create_broadcast(name, obj, f.__name__)
+    b = dumps(obj)
+    if len(b) > OBJECT_SIZE_LIMIT:
+        b = dumps(create_broadcast(name, obj, f.__name__))
+    return b
+
+
 def dump_closure(f):
     code = f.func_code
     glob = {}
     for n in code.co_names:
         r = f.func_globals.get(n)
         if r is not None:
-            if r is f:
-                # Prevent infinite recursion when dumping a recursive function
-                glob[n] = dumps(RECURSIVE_FUNCTION_PLACEHOLDER)
-            else:
-                if sys.getsizeof(r) > OBJECT_SIZE_LIMIT:
-                    r = create_broadcast(n, r, f.__name__)
-                b = dumps(r)
-                if len(b) > OBJECT_SIZE_LIMIT:
-                    b = dumps(create_broadcast(n, r, f.__name__))
-                glob[n] = b
+            glob[n] = dump_obj(f, n, r)
 
-    closure = f.func_closure and tuple(dumps(c.cell_contents) for c in f.func_closure) or None
+    closure = None
+    if f.func_closure:
+        closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents) 
+                for i, c in enumerate(f.func_closure))
     return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
 def load_closure(bytes):
