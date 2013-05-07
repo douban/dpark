@@ -187,6 +187,17 @@ class DparkContext(object):
             rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
         return rdd
 
+    def mysql(self, sql, args=None, config='shire-offline'):
+        from douban import sqlstore
+        store = sqlstore.store_from_config(config)
+        cmd, tables = store.parse_execute_sql(sql)
+        if cmd != 'select':
+            raise Exception("Only 'select' is supported")
+        cursor = store.get_cursor(tables=tables)
+        rs = cursor.execute(sql, args)
+        fields = [c[0] for c in cursor.description]
+        return self.makeRDD(cursor.fetchall()).asTable(fields, name=tables[0])
+
     def union(self, rdds):
         return UnionRDD(self, rdds)
 
