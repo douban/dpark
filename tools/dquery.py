@@ -181,7 +181,10 @@ def shell():
     import readline
     while True:
         try:
-            sql += raw_input('>> ')
+            if sql:
+                sql += raw_input('... ')
+            else:
+                sql  = raw_input('>>> ')
         except EOFError:
             break
         try:
@@ -192,10 +195,12 @@ def shell():
                 execute(sql)
                 if sql.split(' ')[0].lower() in ('create', 'drop'):
                     remember(sql)
-            else:
+            elif ('\n' not in sql and not sql.endswith(':')) or ('\n' in sql and sql.endswith('\n')):
                 exec sql in globals(), _locals # python 
+            else:
+                sql += '\n'
+                continue
         except Exception, e:
-            print 'ERROR:', e
             import traceback; traceback.print_exc()
         sql = ''
 
