@@ -59,6 +59,15 @@ FullAggs = {
 Aggs = dict(SimpleAggs)
 Aggs.update(FullAggs)
 
+Globals = {}
+Globals.update(Aggs)
+import math
+Globals.update(math.__dict__)
+
+__eval = eval
+def eval(code, g={}, l={}):
+    return __eval(code, g or Globals, l)
+
 def table_join(f):
     def _join(self, other, left_keys=None, right_keys=None):
         if not left_keys:
@@ -73,7 +82,7 @@ def table_join(f):
         rn = [n for n in other.fields if n not in right_keys]
         def conv((k, (v1, v2))):
             return list(k) + (v1 or [None]*len(ln)) + (v2 or [None]*len(rn))
-        return joined.map(conv).asTable(left_keys + ln + rn)
+        return joined.map(conv).asTable(left_keys + ln + rn, self.name)
 
     return _join
 
@@ -110,9 +119,12 @@ class TableRDD(DerivedRDD):
 
     def _replace_attr(self, e):
         es = re.split(r'([()\-+ */,><]+)', e)
+        named_fields = ['%s.%s' % (self.name, f) for f in self.fields]
         for i in range(len(es)):
             if es[i] in self.fields:
                 es[i] = '_v[%d]' % self.fields.index(es[i])
+            elif es[i] in named_fields:
+                es[i] = '_v[%d]' % named_fields.index(es[i])
         return ''.join(es) 
 
     def _create_expression(self, e):
@@ -139,7 +151,7 @@ class TableRDD(DerivedRDD):
         _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector))) 
 
         need_attr = any(callable(f) for f in named_fields.values())
-        return (need_attr and self or self.prev).map(_select).asTable(new_fields)
+        return (need_attr and self or self.prev).map(_select).asTable(new_fields, self.name)
 
     def _create_reducer(self, index, e):
         """ -> creater, merger, combiner"""
@@ -175,12 +187,10 @@ class TableRDD(DerivedRDD):
               + [self._create_reducer(i + len(fields), named_fields[n]) 
                     for i,n in enumerate(new_fields[len(fields):])])
 
-        d = dict(globals())
-        d.update(Aggs)
-        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
-        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
-        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
-        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes), d)
+        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)))
+        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)))
+        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)))
+        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes))
 
         def reducePartition(it):
             r = None
@@ -200,8 +210,8 @@ class TableRDD(DerivedRDD):
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
         conditions = ' and '.join(['(%s)' % self._create_expression(c) for c in conditions])
-        _filter = eval('lambda _v: %s' % conditions, globals())
-        return (need_attr and self or self.prev).filter(_filter).asTable(self.fields)
+        _filter = eval('lambda _v: %s' % conditions)
+        return (need_attr and self or self.prev).filter(_filter).asTable(self.fields, self.name)
 
     def groupBy(self, keys, *fields, **kw):
         numSplits = kw.pop('numSplits', None)
@@ -210,21 +220,19 @@ class TableRDD(DerivedRDD):
             keys = [keys]
         key_names = [self._create_field_name(e) for e in keys] 
         expr = ','.join(self._create_expression(e) for e in keys)
-        gen_key = eval('lambda _v:(%s,)' % expr, globals())
+        gen_key = eval('lambda _v:(%s,)' % expr)
 
         values = [self._create_field_name(e) for e in fields] + kw.keys()
         kw.update((values[i], fields[i]) for i in range(len(fields)))
         codes = [self._create_reducer(i, kw[n]) for i,n in enumerate(values)]
-        d = dict(globals())
-        d.update(Aggs)
-        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
-        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
-        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
-        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes), d)
+        creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)))
+        merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)))
+        combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)))
+        mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes))
 
         agg = Aggregator(creater, merger, combiner) 
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
-        return g.map(lambda (k,v): k + mapper(v)).asTable(key_names + values)
+        return g.map(lambda (k,v): k + mapper(v)).asTable(key_names + values, self.name)
 
     def indexBy(self, keys=None):
         if keys is None:
@@ -273,9 +281,9 @@ class TableRDD(DerivedRDD):
 
         if len(self) <= 16: # maybe grouped 
             data = sorted(self.prev.collect(), key=key, reverse=reverse)
-            return self.ctx.makeRDD(data).asTable(self.fields)
+            return self.ctx.makeRDD(data).asTable(self.fields, self.name)
 
-        return self.prev.sort(key, reverse, numSplits).asTable(self.fields)
+        return self.prev.sort(key, reverse, numSplits).asTable(self.fields, self.name)
 
     def top(self, n, fields, reverse=False):
         keys = [self.fields.index(i) for i in fields]
@@ -311,15 +319,21 @@ class TableRDD(DerivedRDD):
             left_keys, right_keys = [], []
             for expr in re.split(r' and ', cond, re.I):
                 lf, rf = re.split(r'=+', expr)
-                if lf.startswith(other.name + '.'):
+                if lf.startswith(name + '.'):
                     lf, rf = rf, lf
                 left_keys.append(lf[lf.rindex('.') + 1:].strip())
                 right_keys.append(rf[rf.rindex('.') + 1:].strip())
-            
             if 'left outer' in type:
                 r = self.leftOuterJoin(other, left_keys, right_keys)
             else:
                 r = self.innerJoin(other, left_keys, right_keys)
+            # remove table prefix in colnames
+            for n in (self.name, name):
+                if not n: continue
+                p = re.compile(r'(%s\.)(?=[\w])' % n)
+                for k in ('select', 'where', 'group by', 'having', 'order by'):
+                    if k in kw:
+                        kw[k] = p.sub('', kw[k])
             break
         else:
             r = self
@@ -335,7 +349,7 @@ class TableRDD(DerivedRDD):
             field = re.match(r'top\((.*?)\)', kw['select']).group(1)
             rs = r.atop(field)
             if asTable:
-                rs = self.ctx.makeRDD(rs).asTable([field, 'count'])
+                rs = self.ctx.makeRDD(rs).asTable([field, 'count'], self.name)
             return rs
             
         elif 'group by' in kw:
@@ -377,18 +391,18 @@ class TableRDD(DerivedRDD):
         return r
 
 
-__tables = {
+CachedTables = {
 }
 
 def create_table(ctx, name, expr):
-    if name in __tables:
-        return __tables[name]
+    if name in CachedTables:
+        return CachedTables[name]
 
     assert expr, 'table %s is not defined' % name
-    t = eval('ctx.' + expr)
+    t = eval('ctx.' + expr, Globals, locals())
     if isinstance(t, TableRDD):
         t.name = name
-        __tables[name] = t
+        CachedTables[name] = t
         return t
     
     # TODO: try to find .fields
@@ -407,6 +421,6 @@ def create_table(ctx, name, expr):
     row = t.first()
     fields = ['f%d' % i for i in range(len(row))]
     t = t.asTable(fields, name)
-    __tables[name] = t
+    CachedTables[name] = t
     return t
 

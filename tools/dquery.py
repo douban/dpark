@@ -2,11 +2,19 @@
 
 import os, sys
 import re
-import dpark
-from dpark.table import TableRDD, __tables as DEFAULT_TABLE
+from dpark import DparkContext
+from dpark.table import TableRDD, Globals, CachedTables
 
-def gen_table(exp, fields=None):
-    rdd = eval('dpark.' + exp[:exp.rindex(')') + 1])
+ctx = DparkContext()
+
+_locals = {}
+
+def gen_table(expr, fields=None):
+    if '(' in expr and getattr(ctx, expr.split('(')[0], None):
+        rdd = eval('ctx.' + expr[:expr.rindex(')') + 1], globals(), _locals)
+    else:
+        rdd = eval(expr, globals(), _locals)
+
     head = rdd.first()
     if isinstance(head, str):
         if '\t' in head:
@@ -20,7 +28,7 @@ def gen_table(exp, fields=None):
         row = head
     if not isinstance(rdd, TableRDD):
         if not fields:
-            fields = ['f%d' % i for i in range(len(row))]
+            fields = ['f%d' % (i+1) for i in range(len(row))]
         table = rdd.asTable(fields)
     else:
         table = rdd
@@ -32,12 +40,12 @@ _type_mappings = {
 }
 
 def get_table(name_or_expr):
-    if name_or_expr in DEFAULT_TABLE:
-        return DEFAULT_TABLE[name_or_expr]
+    if name_or_expr in CachedTables:
+        return CachedTables[name_or_expr]
     return gen_table(name_or_expr)
 
 def create_table(check, tbl_name, cols, expr):
-    if tbl_name in DEFAULT_TABLE and not check:
+    if tbl_name in CachedTables and not check:
         print 'table %s is already exists' % tbl_name
         return
    
@@ -55,25 +63,27 @@ def create_table(check, tbl_name, cols, expr):
                 return '%s(_v[%d])' % (_type_mappings.get(c[1], c[1]), i)
             return '_v[%d]' % i
         exprs = [gen_expr(i,c) for i,c in enumerate(cols)]
-        convs = eval('lambda _v: (%s,)' % (','.join(exprs)))
+        convs = eval('lambda _v: (%s,)' % (','.join(exprs)), globals(), _locals)
         table = table.prev.map(convs).asTable(fields, tbl_name)
+    table.name = tbl_name
     print 'created table', tbl_name, table
-    DEFAULT_TABLE[tbl_name] = table
+    CachedTables[tbl_name] = table
 
 def show_table(pattern):
-    for name in DEFAULT_TABLE:
+    for name in CachedTables:
         if not pattern or re.match(pattern, name):
-            print name, DEFAULT_TABLE[name]
+            print name, CachedTables[name]
 
 def drop_table(check, *names):
     for name in names:
-        if name in DEFAULT_TABLE:
-            del DEFAULT_TABLE[name]
-        elif not check:
+        if name in CachedTables:
+            del CachedTables[name]
+        elif name and not check:
             print 'table %s not exists' % name
 
 def select(sql, table_expr):
     table = get_table(table_expr)
+    Globals.update(_locals)
     rs = table.execute(sql)
     if not rs: return
 
@@ -92,17 +102,18 @@ def select(sql, table_expr):
 
 def help(topic):
     print 'supported SQL:'
-    print 'CREATE TABLE [IF NOT EXISTS] tbl_name [(create_definition, ...)] rdd_expr | select_statement'
+    print 'CREATE [TEMPORARY] TABLE [IF NOT EXISTS] tbl_name [(create_definition, ...)] rdd_expr | select_statement'
     print 'DROP TABLE [IF EXISTS] tbl_name, ...'
     print "SHOW TABLES [LIKE 'pattern']"
     print ("SELECT expr FROM tbl_name [[INNER | LEFT OUTER] JOIN tbl_name ON ] [WHERE condition] [GROUP BY cols] " +
            "[HAVING condition] [ORDER BY cols [ASC | DESC]] [LIMIT n]")
 
 def quit():
+    print 
     sys.exit(0)
 
 CMDS = {
-    'create': (create_table, re.compile(r"CREATE +TABLE +(IF +NOT +EXISTS *)? *(\w+) +(\([\w\d_, ]+\))? *(.+);?", re.I)),
+    'create': (create_table, re.compile(r"CREATE +(?:TEMPORARY)? *TABLE +(IF +NOT +EXISTS *)? *(\w+) +(\([\w\d_, ]+\))? *(.+);?", re.I)),
     'show':   (show_table,   re.compile(r"SHOW +TABLES(?: +LIKE +'(.+?)')?;?", re.I)),
     'drop':   (drop_table,   re.compile(r"DROP TABLE +(IF +EXISTS *)?(\w+)(?:, +(\w+))*;?", re.I)),
     'select': (select,       re.compile(r"(SELECT .*? FROM +(.+?)(?: (?:(?:INNER|LEFT OUTER )?JOIN|WHERE|GROUP BY|ORDER BY|LIMIT) .+)?);?$", re.I)),
@@ -120,11 +131,11 @@ def execute(sql):
         func, pattern = CMDS[cmd]
         m = pattern.match(sql)
         if not m:
-            print 'syntax error:', sql
+            raise Exception('syntax error: %s' % sql)
         else:
             func(*m.groups())
     else:
-        print 'invalid cmd: %s' % cmd
+        raise Exception('invalid cmd: %s' % cmd)
 
 cases = [
     "help",
@@ -143,7 +154,7 @@ def test():
 
 CONF='.dquery'
 def load_history():
-    sysconf = os.path.join('/etc', CONF)
+    sysconf = '/etc/dquery'
     if os.path.exists(sysconf):
         for line in open(sysconf):
             execute(line.strip())
@@ -151,20 +162,21 @@ def load_history():
     home = os.environ.get('HOME')
     if os.path.exists(os.path.join(home, CONF)):
         for line in open(os.path.join(home, CONF)):
-            execute(line.strip())
+            try:
+                execute(line.strip())
+            except Exception, e:
+                print "Error:", e, line
     
-    if os.path.exists(CONF):
-        for line in open(CONF):
-            execute(line.strip())
-
 def remember(sql):
+    if 'TEMPORARY' in sql.upper():
+        return
     home = os.environ.get('HOME')
     with open(os.path.join(home, CONF), 'a') as f:
         f.write(sql + '\n')
     
 
 def shell():
-    print "Welcome to DQuery 0.1, enjoy SQL and DPark! type 'help' for help."
+    print "Welcome to DQuery 0.2, enjoy SQL and DPark! type 'help' for help."
     sql = ''
     import readline
     while True:
@@ -172,12 +184,16 @@ def shell():
             sql += raw_input('>> ')
         except EOFError:
             break
-        if sql not in CMDS and not sql.endswith(';'):
-            continue
         try:
-            execute(sql)
-            if sql.split(' ')[0].lower() in ('create', 'drop'):
-                remember(sql)
+            cmd = sql.split(' ')[0]
+            if cmd in CMDS:
+                if sql not in CMDS and not sql.endswith(';'):
+                    continue
+                execute(sql)
+                if sql.split(' ')[0].lower() in ('create', 'drop'):
+                    remember(sql)
+            else:
+                exec sql in globals(), _locals # python 
         except Exception, e:
             print 'ERROR:', e
             import traceback; traceback.print_exc()
