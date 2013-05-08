@@ -69,19 +69,11 @@ def marshalable(o):
 
 OBJECT_SIZE_LIMIT = 100 << 10
 
-_cache = {}
-
 def create_broadcast(name, obj, func_name):
-    key = (name, id(object), func_name)
-    if key in _cache:
-        return _cache[key]
-
     import dpark
     logger.info("use broadcast for object %s %s (used in function %s)", 
         name, type(obj), func_name)
-    b = dpark._ctx.broadcast(obj)
-    _cache[key] = b
-    return b
+    return dpark._ctx.broadcast(obj)
 
 def dump_obj(f, name, obj):
     if obj is f:
@@ -93,6 +85,8 @@ def dump_obj(f, name, obj):
     b = dumps(obj)
     if len(b) > OBJECT_SIZE_LIMIT:
         b = dumps(create_broadcast(name, obj, f.__name__))
+    if len(b) > OBJECT_SIZE_LIMIT:
+        logger.warning("broadcast of %s obj too large", type(obj))
     return b
 
 

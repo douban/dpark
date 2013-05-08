@@ -79,7 +79,7 @@ class Broadcast:
         self.value = None
 
     def __getstate__(self):
-        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/2 else None)
+        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/20 else None)
 
     def __setstate__(self, v):
         self.uuid, self.bytes, value = v
