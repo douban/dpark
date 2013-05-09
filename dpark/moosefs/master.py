@@ -197,7 +197,7 @@ class MasterConn:
         length, = unpack("I", ans)
         if length+4 != len(ans):
             raise Exception("invalid length")
-        return ans[4:]
+        return ans[4:-1]
 
     def getdir(self, inode):
         "return: {name: (inode,type)}"
