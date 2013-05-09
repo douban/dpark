@@ -168,17 +168,21 @@ class DparkContext(object):
             return self.union([self.beansdb(p, depth, filter, fullscan, raw, only_latest)
                     for p in path])
 
+        path = os.path.realpath(path)
         assert os.path.exists(path), "%s no exists" % path
-        if not os.path.isdir(path):
-            return BeansdbFileRDD(self, path, filter, fullscan, raw)
-
-        subs = []
-        if not depth:
-            subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
-        if not subs:
-            subs = [os.path.join(path, '%x'%i) for i in range(16)]
-        rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
-                    for p in subs if os.path.exists(p)])
+        if os.path.isdir(path):
+            subs = []
+            if not depth:
+                subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
+            if subs:
+                rdd = self.union([BeansdbFileRDD(self, p, filter, fullscan, True)
+                        for p in subs])
+            else:
+                subs = [os.path.join(path, '%x'%i) for i in range(16)]
+                rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
+                        for p in subs if os.path.exists(p)])
+        else:
+            rdd = BeansdbFileRDD(self, path, filter, fullscan, True)
 
         # choose only latest version
         if only_latest and subs[0].endswith('.data'):
