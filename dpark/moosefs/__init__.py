@@ -61,7 +61,7 @@ class MooseFS(object):
                 elif target.startswith(self.mountpoint):
                     info = self.lookup(target[len(self.mountpoint):], followSymlink)
                 else:
-                    raise CrossSystemSymlink(n, target)
+                    raise CrossSystemSymlink(path, os.path.join(target, *ps[i+1:]))
             parent = info.inode
         if info is None and parent == MFS_ROOT_INODE:
             info = self.mc.getattr(parent)
