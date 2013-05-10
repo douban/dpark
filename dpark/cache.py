@@ -23,17 +23,17 @@ class Cache:
     def newKeySpaceId(cls):
         cls.nextKeySpaceId += 1
         return cls.nextKeySpaceId
-   
+
     def newKeySpace(self):
         return KeySpace(self, self.newKeySpaceId())
 
-    def get(self, key): 
+    def get(self, key):
         return self.map.get(key)
-    
+
     def put(self, key, value):
         self.map[key] = value
         return True
-    
+
     def clear(self):
         self.map.clear()
 
@@ -177,7 +177,7 @@ class LocalCacheTracker(object):
         if rddId not in self.locs:
             logger.debug("Registering RDD ID %d with cache", rddId)
             self.locs[rddId] = [[] for i in range(numPartitions)]
-    
+
     def getLocationsSnapshot(self):
         return self.locs
 
@@ -197,12 +197,12 @@ class LocalCacheTracker(object):
         if cachedVal is not None:
             logger.debug("Found partition in cache! %s", key)
             return cachedVal
-        
+
         logger.debug("partition not in cache, %s", key)
         self.removeHost(rdd.id, split.index, host)
         r = list(rdd.compute(split))
         self.cache.put(key, r)
-        
+
         host = socket.gethostname()
         self.addHost(rdd.id, split.index, host)
         return r
@@ -233,7 +233,7 @@ class CacheTracker(LocalCacheTracker):
         return self.client.call(AddedToCache(rdd.id, split.index, host))
 
     def removeHost(self, rdd_id, index, host):
-        return self.client.call(DroppedFromCache(rdd.id, split.index, host)) 
+        return self.client.call(DroppedFromCache(rdd.id, split.index, host))
 
     def stop(self):
         self.client.stop()
@@ -262,7 +262,7 @@ def test():
     pool.close()
     pool.join()
     assert cache.get('a') == 'b'
-    
+
     from context import DparkContext
     dc = DparkContext("local")
     nums = dc.parallelize(range(100), 10)

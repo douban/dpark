@@ -35,7 +35,7 @@ if __name__ == '__main__':
             ).map(
                 lambda (id, (sum, count)): (id, sum/count)
             ).collectAsMap()
-        
+
         updated = False
         for i in ncenters:
             if centers[i].dist(ncenters[i]) > MIN_DIST:
@@ -44,5 +44,5 @@ if __name__ == '__main__':
         if not updated:
             break
         print centers
-    
+
     print 'final', centers

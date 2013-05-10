@@ -23,11 +23,11 @@ class Task:
 
     def run(self, id):
         raise NotImplementedError
-    
+
     def preferredLocations(self):
         raise NotImplementedError
 
-    
+
 class DAGTask(Task):
     def __init__(self, stageId):
         Task.__init__(self)
@@ -56,7 +56,7 @@ class ResultTask(DAGTask):
 
     def __repr__(self):
         return "<ResultTask(%d) of %s" % (self.partition, self.rdd)
-    
+
     def __getstate__(self):
         d = dict(self.__dict__)
         del d['func']
@@ -65,7 +65,7 @@ class ResultTask(DAGTask):
     def __setstate__(self, state):
         self.__dict__, code = state
         self.func = load_func(code)
-        
+
 
 class ShuffleMapTask(DAGTask):
     def __init__(self, stageId, rdd, dep, partition, locs):

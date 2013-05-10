@@ -20,7 +20,7 @@ def table_join(f):
         assert left_keys, 'need field names to join'
         if right_keys is None:
             right_keys = left_keys
-        
+
         joined = f(self, other, left_keys, right_keys)
 
         ln = [n for n in self.fields if n not in left_keys]
@@ -49,7 +49,7 @@ class TableRDD(DerivedRDD):
         return self.prev.iterator(split)
 
     def _create_expression(self, e):
-        if callable(e): 
+        if callable(e):
             return e
         e = re.compile(r' as (\w+)', re.I).split(e)[0]
         for i,n in enumerate(self.fields):
@@ -60,16 +60,16 @@ class TableRDD(DerivedRDD):
         asp = re.compile(r' as (\w+)', re.I)
         m = asp.search(e)
         if m: return m.group(1)
-        return re.sub(r'[(, )+*/\-]', '_', e).strip('_') 
+        return re.sub(r'[(, )+*/\-]', '_', e).strip('_')
 
     def select(self, *fields, **named_fields):
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
-        
+
         selector = [self._create_expression(e) for e in fields] + \
             [self._create_expression(named_fields[n]) for n in new_fields[len(fields):]]
-        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector)), globals())    
+        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector)), globals())
 
         need_attr = any(callable(f) for f in named_fields.values())
         return (need_attr and self or self.prev).map(_select).asTable(new_fields)
@@ -86,23 +86,23 @@ class TableRDD(DerivedRDD):
         args = args.rsplit(')', 1)[0]
         for i,n in enumerate(self.fields):
             args = re.sub(n, '_v[%d]' % i, args)
-        
+
         if func_name:
             return (args, '%s(_x[%d],%s)' % (func_name, index, args),
                 '%s(_x[%d],_y[%d])' % (func_name, index, index))
         else: # group by
-            return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index), 
+            return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index),
                     '_x[%d] + _y[%d]' % (index, index))
 
     def selectOne(self, *fields, **named_fields):
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
-        
+
         codes = ([self._create_reducer(i, e) for i,e in enumerate(fields)]
-              + [self._create_reducer(i + len(fields), named_fields[n]) 
+              + [self._create_reducer(i + len(fields), named_fields[n])
                     for i,n in enumerate(new_fields[len(fields):])])
-        
+
         d = dict(globals())
         d.update(Aggs)
         creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)), d)
@@ -119,7 +119,7 @@ class TableRDD(DerivedRDD):
                     r = merger(r, i)
             return r
         rs = self.ctx.runJob(self.prev, reducePartition)
-        return reduce(combiner, (x for x in rs if x is not None)) 
+        return reduce(combiner, (x for x in rs if x is not None))
 
     def where(self, *conditions):
         need_attr = any(callable(f) for f in conditions)
@@ -129,8 +129,8 @@ class TableRDD(DerivedRDD):
 
     def groupBy(self, *keys, **kw):
         numSplits = kw.pop('numSplits', None)
-        
-        key_names = [self._create_field_name(e) for e in keys] 
+
+        key_names = [self._create_field_name(e) for e in keys]
         expr = ','.join(self._create_expression(e) for e in keys)
         gen_key = eval('lambda _v:(%s,)' % expr, globals())
 
@@ -144,7 +144,7 @@ class TableRDD(DerivedRDD):
         merger = eval('lambda _x, _v:(%s,)' % (','.join(c[1] for c in codes)), d)
         combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)), d)
 
-        agg = Aggregator(creater, merger, combiner) 
+        agg = Aggregator(creater, merger, combiner)
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
         return g.map(lambda (k,v): list(k)+list(v)).asTable(key_names + values)
 
@@ -153,7 +153,7 @@ class TableRDD(DerivedRDD):
             keys = self.fields[:1]
         if not isinstance(keys, (list, tuple)):
             keys = (keys,)
-        
+
         def pick(keys, fields):
             ki = [fields.index(n) for n in keys]
             vi = [i for i in range(len(fields)) if fields[i] not in keys]
@@ -209,8 +209,8 @@ class TableRDD(DerivedRDD):
     def execute(self, sql):
         parts = [i.strip() for i in re.compile(r'(select|from|where|group by|order by|limit) ', re.I).split(sql)[1:]]
         kw = dict(zip([i.lower() for i in parts[::2]], parts[1::2]))
-        
-        # select needed cols 
+
+        # select needed cols
         r = self.select(*[n for n in self.fields if n in sql])
 
         if 'where' in kw:
@@ -251,7 +251,7 @@ def test():
     from context import DparkContext
     ctx = DparkContext()
     rdd = ctx.makeRDD(zip(range(1000), range(1000)))
-    table = rdd.asTable(['f1', 'f2']) 
+    table = rdd.asTable(['f1', 'f2'])
     print table.select('f1', 'f2').where('f1>10', 'f2<80', 'f1+f2>30 or f1*f2>200').groupBy('f1').select("-f1", f2="sum(f2)").sort('f1', reverse=True).take(5)
     print table.selectOne('count(*)', 'max(f1)', 'min(f2+f1)', 'sum(f1*f2+f1)')
     print table.groupBy('f1/20', f2s='sum(f2)', fcnt='count(*)').take(5)

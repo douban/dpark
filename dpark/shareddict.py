@@ -58,7 +58,7 @@ class SharedDict:
 
     def _free(self):
         return self.size - self.length
-            
+
     def _pop(self):
         klen,flag,vlen = struct.unpack("HHI", self._map[self.start:self.start+8])
         self.start += 16 + klen + vlen
@@ -80,9 +80,9 @@ class SharedDict:
             self._map[p:p+len(value)] = value
             p += len(value)
             self._map[p:p+8+len(key)] = key + struct.pack("HHI", len(key), flag, len(value))
-            
+
             self.length += vsize
-            self._save() 
+            self._save()
             return True
 
     def get(self, key):
@@ -104,7 +104,7 @@ class SharedDict:
     def clear(self):
         with self._lock:
             self._meta[:8] = struct.pack("II", 0, 0)
-        
+
 class SharedDicts:
     def __init__(self, size, slots=16):
         size <<= 20
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     r = range(5)
     c = circle(range(5))
     assert c[1:3] == r[1:3]
-    assert c[-3:-1] == c[-3:-1] 
+    assert c[-3:-1] == c[-3:-1]
     assert c[-1:1] == [4,0]
     assert c[3:6] == [3,4,0]
     c[1:3] = [1,2]

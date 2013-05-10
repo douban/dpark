@@ -75,9 +75,9 @@ class Bagel(object):
             aggregated = cls.agg(verts, aggregator) if aggregator else None
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs, numSplits=numSplits)
-            verts, msgs, numMsgs, numActiveVerts = cls.comp(ctx, grouped, 
+            verts, msgs, numMsgs, numActiveVerts = cls.comp(ctx, grouped,
                 lambda v, ms: compute(v, ms, aggregated, superstep), snapshot_dir)
-            logger.info("superstep %d took %.1f s %d messages, %d active nodes", 
+            logger.info("superstep %d took %.1f s %d messages, %d active nodes",
                     superstep, time.time()-start, numMsgs, numActiveVerts)
 
             superstep += 1

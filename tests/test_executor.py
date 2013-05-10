@@ -33,10 +33,10 @@ class TestExecute(unittest.TestCase):
     def test_executor(self):
         executor = MyExecutor()
         driver = MockExecutorDriver(executor)
-      
+
         executorInfo = mesos_pb2.ExecutorInfo()
         executorInfo.executor_id.value = "test-id"
-        executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, {}, 8, "", "", 1, 
+        executorInfo.data = marshal.dumps(("./", os.getcwd(), sys.path, {}, 8, "", "", 1,
             {'DPARK_HAS_DFS':'False', 'WORKDIR':'/tmp/xxxxx', 'COMPRESS': COMPRESS}))
 
         frameworkInfo = mesos_pb2.FrameworkInfo()
@@ -59,10 +59,10 @@ class TestExecute(unittest.TestCase):
         task.task_id.value = '2'
         task.data = pickle.dumps((TestTask(2), 1), -1)
         executor.launchTask(driver, task)
-        
+
         executor.frameworkMessage(driver, 'data')
         executor.killTask(driver, task.task_id)
-        
+
 
 if __name__ == '__main__':
     unittest.main()

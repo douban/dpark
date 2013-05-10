@@ -58,7 +58,7 @@ class FileInfo:
              (self.name, self.inode, self.type, self.length))
 
     def is_symlink(self):
-        return self.type == TYPE_SYMLINK 
+        return self.type == TYPE_SYMLINK
 
 def attrToFileInfo(inode, attrs, name=''):
     if len(attrs) != 35:

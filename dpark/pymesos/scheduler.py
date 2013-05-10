@@ -34,7 +34,7 @@ class SchedulerDriver(object):
 
 
 class MesosSchedulerDriver(Process):
-    def __init__(self, sched, framework, master_uri): 
+    def __init__(self, sched, framework, master_uri):
         Process.__init__(self, 'scheduler')
         self.sched = sched
         #self.executor_info = executor_info
@@ -106,7 +106,7 @@ class MesosSchedulerDriver(Process):
         self.sched.slaveLost(self, slave_id)
 
     def onExecutorToFrameworkMessage(self, slave_id, executor_id, data):
-        self.sched.frameworkMessage(self, msg.slave_id, 
+        self.sched.frameworkMessage(self, msg.slave_id,
                 msg.executor_id, msg.data)
 
     def onFrameworkErrorMessage(self, message, code=0):
@@ -122,7 +122,7 @@ class MesosSchedulerDriver(Process):
             self.detector.start()
         else:
             self.onNewMasterDetectedMessage('master@%s' % uri)
-        
+
     def abort(self):
         if self.connected:
             msg = DeactivateFrameworkMessage()
@@ -159,7 +159,7 @@ class MesosSchedulerDriver(Process):
             update.timestamp = time.time()
             update.uuid = ''
             return self.statusUpdate(update)
-        
+
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.offer_id.MergeFrom(offer_id)
@@ -185,12 +185,12 @@ class MesosSchedulerDriver(Process):
     def sendFrameworkMessage(self, executor_id, slave_id, data):
         if not self.connected:
             return
-        
+
         msg = FrameworkToExecutorMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.executor_id.MergeFrom(executor_id)
         msg.slave_id.MergeFrom(slave_id)
         msg.data = data
-        
+
         slave = self.savedSlavePids.get(slave_id.value, self.master) # can not send to slave directly
         self.send(slave, msg)

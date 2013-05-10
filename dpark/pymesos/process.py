@@ -12,7 +12,7 @@ class UPID(object):
             name, addr = name.split('@')
         self.name = name
         self.addr = addr
-    
+
     def __str__(self):
         return "%s@%s" % (self.name, self.addr)
 
@@ -35,7 +35,7 @@ class Process(UPID):
         conn = self._get_conn(upid.addr)
         conn.send(self._encode(upid, msg))
 
-    def _encode(self, upid, msg):        
+    def _encode(self, upid, msg):
         body = msg.SerializeToString()
         uri = '/%s/mesos.internal.%s' % (upid.name, msg.__class__.__name__)
         agent = 'libprocess/%s@%s' % (self.name, self.addr)
@@ -47,7 +47,7 @@ class Process(UPID):
                '%x' % len(body), body,
                '0', '', '',]
         return '\r\n'.join(msg)
-        
+
     def handle(self, msg):
         if self.aborted:
             return
@@ -112,7 +112,7 @@ class Process(UPID):
         t.start()
         self.accept_t = t
 
-    def accept(self, s): 
+    def accept(self, s):
         s.listen(1)
         conns = []
         while True:

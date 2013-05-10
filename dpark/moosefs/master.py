@@ -24,8 +24,8 @@ class Chunk:
         self.addrs = self._parse(csdata)
 
     def _parse(self, csdata):
-        return [(socket.inet_ntoa(csdata[i:i+4]), 
-                    unpack("H", csdata[i+4:i+6])[0]) 
+        return [(socket.inet_ntoa(csdata[i:i+4]),
+                    unpack("H", csdata[i+4:i+6])[0])
                 for i in range(len(csdata))[::6]]
 
     def __repr__(self):
@@ -74,7 +74,7 @@ class MasterConn:
     def connect(self):
         if self.conn is not None:
             return
-        
+
         for _ in range(10):
             try:
                 self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -104,7 +104,7 @@ class MasterConn:
         if i == 1:
             code, = unpack("B", data)
             if code != 0:
-                raise Exception("mfsmaster register error: " 
+                raise Exception("mfsmaster register error: "
                         + mfs_strerror(code))
         if self.sessionid == 0:
             self.sessionid, = unpack("I", data)
@@ -122,7 +122,7 @@ class MasterConn:
             if not sent:
                 self.close()
                 raise IOError("write to master failed")
-            n += sent 
+            n += sent
 
     @lock
     def nop(self):
@@ -162,7 +162,7 @@ class MasterConn:
         rcmd, size, id = unpack("III", r)
         if rcmd != cmd+1 or id != packetid or size <= 4:
             self.close()
-            raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4", 
+            raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4",
                 rcmd, cmd+1, id, packetid, size)
         d = self.recv(size-4)
         if len(d) == 1 and ord(d[0]) != 0:
@@ -174,11 +174,11 @@ class MasterConn:
         return StatInfo(*unpack("QQQQI", ans))
 
 #    def access(self, inode, modemask):
-#        return self.sendAndReceive(CUTOMA_FUSE_ACCESS, inode, 
+#        return self.sendAndReceive(CUTOMA_FUSE_ACCESS, inode,
 #            self.uid, self.gid, uint8(modemask))
 #
     def lookup(self, parent, name):
-        ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent,
                 uint8(len(name)), name, 0, 0)
         if len(ans) == 1:
             return None, ""
@@ -188,10 +188,10 @@ class MasterConn:
         return attrToFileInfo(inode, ans[4:]), None
 
     def getattr(self, inode):
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETATTR, inode, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_GETATTR, inode,
                 self.uid, self.gid)
         return attrToFileInfo(inode, ans)
-    
+
     def readlink(self, inode):
         ans = self.sendAndReceive(CUTOMA_FUSE_READLINK, inode)
         length, = unpack("I", ans)
@@ -201,7 +201,7 @@ class MasterConn:
 
     def getdir(self, inode):
         "return: {name: (inode,type)}"
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
                 self.uid, self.gid)
         p = 0
         names = {}
@@ -219,7 +219,7 @@ class MasterConn:
 
     def getdirplus(self, inode):
         "return {name: FileInfo()}"
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
                 self.uid, self.gid, uint8(GETDIR_FLAG_WITHATTR))
         p = 0
         infos = {}
@@ -235,7 +235,7 @@ class MasterConn:
         return infos
 
     def opencheck(self, inode, flag=1):
-        ans = self.sendAndReceive(CUTOMA_FUSE_OPEN, inode, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_OPEN, inode,
                 self.uid, self.gid, uint8(flag))
         return ans
 
@@ -262,7 +262,7 @@ def test():
     #print m.opencheck(info.inode)
     chunks = m.readchunk(info.inode, 0)
     print chunks, chunks.addrs
-    
+
     for i in range(1000):
         info, err = m.lookup(1, "test.csv")
         chunks = m.readchunk(info.inode, 0)

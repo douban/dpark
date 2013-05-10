@@ -70,8 +70,8 @@ class DparkEnv:
         Broadcast.initialize(isMaster)
 
         self.started = True
-        logger.debug("env started") 
-    
+        logger.debug("env started")
+
     def stop(self):
         if not getattr(self, 'started', False):
             return
@@ -79,7 +79,7 @@ class DparkEnv:
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
         self.shuffleFetcher.stop()
-       
+
         logger.debug("cleaning workdir ...")
         shutil.rmtree(self.workdir, True)
         logger.debug("done.")

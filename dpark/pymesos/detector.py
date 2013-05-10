@@ -3,7 +3,7 @@ import time
 
 from kazoo.client import KazooClient, KazooState
 from kazoo.recipe.watchers import ChildrenWatch, DataWatch
-from kazoo.exceptions import ZookeeperError 
+from kazoo.exceptions import ZookeeperError
 from process import UPID, Process
 from messages_pb2 import *
 

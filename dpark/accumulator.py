@@ -39,7 +39,7 @@ class Accumulator:
         return v
 
     def __getstate__(self):
-        return self.id, self.param 
+        return self.id, self.param
 
     def __setstate__(self, s):
         self.id, self.param = s
