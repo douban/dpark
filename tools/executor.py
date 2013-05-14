@@ -45,11 +45,11 @@ def reply_status(driver, task, status):
     update.task_id.value = task.task_id.value
     update.state = status
     driver.sendStatusUpdate(update)
-    
+
 
 def launch_task(self, driver, task):
     reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-    
+
     host = socket.gethostname()
     cwd, command, _env, shell, addr1, addr2, addr3 = pickle.loads(task.data)
     stderr = ctx.socket(zmq.PUSH)
@@ -106,7 +106,7 @@ def launch_task(self, driver, task):
         if code == 0 or code is None:
             status = mesos_pb2.TASK_FINISHED
         else:
-            stderr.send(prefix+' '.join(command) 
+            stderr.send(prefix+' '.join(command)
                 + (' exit with %s\n' % code))
             status = mesos_pb2.TASK_FAILED
     except Exception, e:
@@ -116,7 +116,7 @@ def launch_task(self, driver, task):
                 ' '.join(command) + '\n')
         for line in traceback.format_exc():
             stderr.send(line)
-    
+
     wout.close()
     werr.close()
     t1.join()
@@ -136,14 +136,14 @@ class MyExecutor(mesos.Executor):
         logger.debug("registered as %s", slaveInfo)
 
     def launchTask(self, driver, task):
-        t = Thread(target=launch_task, args=(self, driver, task)) 
+        t = Thread(target=launch_task, args=(self, driver, task))
         t.daemon = True
         t.start()
-  
+
     def killTask(self, driver, task_id):
         if task_id.value in self.ps:
             self.ps[task_id.value].kill()
-    
+
     def shutdown(self, driver):
         for p in self.ps.values():
             try: p.kill()

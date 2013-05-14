@@ -135,9 +135,9 @@ class SubmitScheduler(mesos.Scheduler):
             if self.options.group and attrs.get('group', 'None') not in self.options.group:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
-            
+
             cpus, mem = self.getResource(offer)
-            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s", 
+            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s",
                 offer.id.value, cpus, mem, offer.hostname)
             sid = offer.slave_id.value
             tasks = []
@@ -157,7 +157,7 @@ class SubmitScheduler(mesos.Scheduler):
                 mem -= self.mem
                 if not self.total_tasks:
                     break
-            
+
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
             if not tasks:
                 self.refused.add(sid)
@@ -202,7 +202,7 @@ class SubmitScheduler(mesos.Scheduler):
             else:
                 logging.error("Task %d not in task_launched", tid)
                 return
-        
+
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
@@ -263,7 +263,7 @@ class SubmitScheduler(mesos.Scheduler):
     @safe
     def offerRescinded(self, driver, offer):
         logging.debug("resource rescinded: %s", offer)
-        # task will retry by checking 
+        # task will retry by checking
 
     @safe
     def slaveLost(self, driver, slave):
@@ -300,7 +300,7 @@ class MPIScheduler(SubmitScheduler):
         logging.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task])
-    
+
     @safe
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
@@ -309,7 +309,7 @@ class MPIScheduler(SubmitScheduler):
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
-            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s", 
+            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s",
                 offer.id.value, cpus, mem, offer.hostname)
             if launched >= self.options.tasks or offer.hostname in self.used_hosts:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
@@ -339,7 +339,7 @@ class MPIScheduler(SubmitScheduler):
         if tid not in self.task_launched:
             logging.error("Task %d not in task_launched", tid)
             return
-        
+
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
@@ -349,7 +349,7 @@ class MPIScheduler(SubmitScheduler):
             launched = sum(self.used_hosts.values())
             ready = all(t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
             if launched == self.options.tasks and ready:
-                logging.debug("all tasks are ready, start to run")    
+                logging.debug("all tasks are ready, start to run")
                 self.start_mpi()
 
         elif update.state in (mesos_pb2.TASK_LOST, mesos_pb2.TASK_FAILED):
@@ -420,7 +420,7 @@ class MPIScheduler(SubmitScheduler):
         commands = dict(zip(self.used_hosts.keys(), slaves))
         self.broadcast_command(commands)
         self.started = True
-    
+
     def broadcast_command(self, command):
         def repeat_pub():
             for i in xrange(10):
@@ -528,7 +528,7 @@ if __name__ == "__main__":
 #        sched = MPIScheduler(options, command)
 #        fid = mesos_pb2.FrameworkID()
 #        fid.value =  options.kill
-#        driver = mesos.MesosSchedulerDriver(sched, sched.framework, 
+#        driver = mesos.MesosSchedulerDriver(sched, sched.framework,
 #            options.master, fid)
 #        driver.start()
 #        driver.stop(False)
@@ -594,6 +594,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logging.warning('stopped by KeyboardInterrupt')
         sched.stop(4)
-    
+
     driver.stop(False)
     sys.exit(sched.status)

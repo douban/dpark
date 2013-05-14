@@ -26,7 +26,7 @@ def gen_compute(num, epsilon):
 if __name__ == '__main__':
     inputFile = 'wikipedia.txt'
     threshold = 0.01
-    
+
     dpark = DparkContext()
     path = os.path.join(os.path.dirname(os.path.abspath(__file__)), inputFile)
     input = dpark.textFile(path)

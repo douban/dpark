@@ -70,7 +70,7 @@ class RDD(object):
 
     def __len__(self):
         return len(self.splits)
-   
+
     def __getslice__(self, i,j):
         return SliceRDD(self, i, j)
 
@@ -163,7 +163,7 @@ class RDD(object):
 
     def cartesian(self, other):
         return CartesianRDD(self, other)
-    
+
     def zipWith(self, other):
         return ZippedRDD(self.ctx, [self, other])
 
@@ -203,7 +203,7 @@ class RDD(object):
                     return [reduce(f, it)]
                 except TypeError:
                     return []
-            
+
             s = None
             total, err = 0, 0
             for v in it:
@@ -221,9 +221,9 @@ class RDD(object):
 
             if err > total * self.err:
                 raise Exception("too many error occured: %s" % (float(err)/total))
-            
+
             return [s] if s is not None else []
-        
+
         return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
 
     def uniq(self, numSplits=None, taskMemory=None):
@@ -231,7 +231,7 @@ class RDD(object):
         return g.map(lambda (x,y):x)
 
     def top(self, n=10, key=None, reverse=False):
-        if reverse: 
+        if reverse:
             def topk(it):
                 return heapq.nsmallest(n, it, key)
         else:
@@ -346,7 +346,7 @@ class RDD(object):
 
     def rightOuterJoin(self, other, numSplits=None, taskMemory=None):
         return self._join(other, (2,), numSplits, taskMemory)
-    
+
     def outerJoin(self, other, numSplits=None, taskMemory=None):
         return self._join(other, (1,2), numSplits, taskMemory)
 
@@ -368,7 +368,7 @@ class RDD(object):
                 for ww in wbuf:
                     yield (k, (vv, ww))
         return vs.union(ws).groupByKey(numSplits, taskMemory).flatMap(dispatch)
-    
+
     def collectAsMap(self):
         d = {}
         for v in self.ctx.runJob(self, lambda x:list(x)):
@@ -415,7 +415,7 @@ class DerivedRDD(RDD):
 
     def __repr__(self):
         return '<%s %s>' % (self.__class__.__name__, self.prev)
-    
+
     @property
     def splits(self):
         return self.prev.splits
@@ -428,7 +428,7 @@ class MappedRDD(DerivedRDD):
     def __init__(self, prev, func=lambda x:x):
         DerivedRDD.__init__(self, prev)
         self.func = func
-    
+
     def compute(self, split):
         if self.err < 1e-8:
             return itertools.imap(self.func, self.prev.iterator(split))
@@ -469,7 +469,7 @@ class FlatMappedRDD(MappedRDD):
             return itertools.chain.from_iterable(itertools.imap(self.func,
                 self.prev.iterator(split)))
         return self._compute_with_error(split)
-    
+
     def _compute_with_error(self, split):
         total, err = 0, 0
         for v in self.prev.iterator(split):
@@ -508,7 +508,7 @@ class FilteredRDD(MappedRDD):
 
         if err > total * self.err:
             raise Exception("too many error occured: %s" % (float(err)/total))
-           
+
 class GlommedRDD(DerivedRDD):
     def compute(self, split):
         yield list(self.prev.iterator(split))
@@ -531,7 +531,7 @@ class PipedRDD(DerivedRDD):
         import subprocess
         devnull = open(os.devnull, 'w')
         p = subprocess.Popen(self.command, stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE, 
+                stdout=subprocess.PIPE,
                 stderr=self.quiet and devnull or sys.stderr,
                 shell=self.shell)
         def read(stdin):
@@ -631,7 +631,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
+        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners)
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
@@ -710,13 +710,13 @@ class CoGroupedRDD(RDD):
         self._partitioner = partitioner
         self.dependencies = dep = [rdd.partitioner == partitioner
                 and OneToOneDependency(rdd)
-                or ShuffleDependency(self.ctx.newShuffleId(), 
+                or ShuffleDependency(self.ctx.newShuffleId(),
                     rdd, self.aggregator, partitioner)
                 for i,rdd in enumerate(rdds)]
-        self._splits = [CoGroupSplit(j, 
+        self._splits = [CoGroupSplit(j,
                           [isinstance(dep[i],ShuffleDependency)
                             and ShuffleCoGroupSplitDep(dep[i].shuffleId)
-                            or NarrowCoGroupSplitDep(r, r.splits[j]) 
+                            or NarrowCoGroupSplitDep(r, r.splits[j])
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
         self.name = ('<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds)))[:80]
@@ -727,12 +727,12 @@ class CoGroupedRDD(RDD):
     def __repr__(self):
         return self.name
 
-    def _preferredLocations(self, split): 
-        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
+    def _preferredLocations(self, split):
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
-    def preferredLocations(self, split): 
-        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps 
+    def preferredLocations(self, split):
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
@@ -745,7 +745,7 @@ class CoGroupedRDD(RDD):
                     m.extend(i, items)
                 env.shuffleFetcher.fetch(dep.shuffleId, split.index, merge)
         return m
-        
+
 
 class SampleRDD(DerivedRDD):
     def __init__(self, prev, frac, withReplacement, seed):
@@ -780,7 +780,7 @@ class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
         self.mem = max(r.mem for r in rdds) if rdds else self.mem
-        self._splits = [UnionSplit(0, rdd, split) 
+        self._splits = [UnionSplit(0, rdd, split)
                 for rdd in rdds for split in rdd.splits]
         for i,split in enumerate(self._splits):
             split.index = i
@@ -820,7 +820,7 @@ class SliceRDD(RDD):
 
     def _preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
-    
+
     def compute(self, split):
         return self.rdd.iterator(split)
 
@@ -847,7 +847,7 @@ class MergedRDD(RDD):
         self.dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
 
     def __len__(self):
-        return self.numSplits 
+        return self.numSplits
 
     def __repr__(self):
         return '<MergedRDD %s:1 of %s>' % (self.splitSize, self.rdd)
@@ -865,7 +865,7 @@ class ZippedRDD(RDD):
         RDD.__init__(self, ctx)
         self.rdds = rdds
         self.mem = max(r.mem for r in rdds)
-        self._splits = [MultiSplit(i, splits) 
+        self._splits = [MultiSplit(i, splits)
                 for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
         self.dependencies = [OneToOneDependency(rdd) for rdd in rdds]
 
@@ -876,11 +876,11 @@ class ZippedRDD(RDD):
         return '<Zipped %s>' % (','.join(str(rdd) for rdd in self.rdds))
 
     def _preferredLocations(self, split):
-        return sum([rdd.preferredLocations(sp) 
+        return sum([rdd.preferredLocations(sp)
             for rdd,sp in zip(self.rdds, split.splits)], [])
 
     def compute(self, split):
-        return itertools.izip(*[rdd.iterator(sp) 
+        return itertools.izip(*[rdd.iterator(sp)
             for rdd, sp in zip(self.rdds, split.splits)])
 
 
@@ -888,7 +888,7 @@ class CSVReaderRDD(DerivedRDD):
     def __init__(self, prev, dialect='excel'):
         DerivedRDD.__init__(self, prev)
         self.dialect = dialect
-    
+
     def __repr__(self):
         return '<CSVReaderRDD %s of %s>' % (self.dialect, self.prev)
 
@@ -908,7 +908,7 @@ class ParallelCollection(RDD):
         if taskMemory:
             self.mem = taskMemory
         slices = self.slice(data, max(1, min(self.size, numSlices)))
-        self._splits = [ParallelCollectionSplit(i, slices[i]) 
+        self._splits = [ParallelCollectionSplit(i, slices[i])
                 for i in range(len(slices))]
         self.dependencies = []
 
@@ -935,7 +935,7 @@ class ParallelCollection(RDD):
             nstep = step * n
             slices = [xrange(first+i*nstep, first+(i+1)*nstep, step)
                 for i in range(numSlices-1)]
-            slices.append(xrange(first+(numSlices-1)*nstep, 
+            slices.append(xrange(first+(numSlices-1)*nstep,
                 min(last+step, first+numSlices*nstep), step))
             return slices
         if not isinstance(data, list):
@@ -959,7 +959,7 @@ class TextFileRDD(RDD):
         self.path = path
         self.fileinfo = open_mfs_file(path)
         self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
-        
+
         if splitSize is None:
             if numSplits is None:
                 splitSize = self.DEFAULT_SPLIT_SIZE
@@ -996,10 +996,10 @@ class TextFileRDD(RDD):
             return open(self.path, 'r', 4096 * 1024)
 
     def compute(self, split):
-        f = self.open_file() 
+        f = self.open_file()
         if len(self) == 1 and split.index == 0:
             return f
-        
+
         start = split.index * self.splitSize
         end = start + self.splitSize
         if start > 0:
@@ -1015,7 +1015,7 @@ class TextFileRDD(RDD):
                 f.seek(end-1)
                 while f.read(1) not in ('', '\n'):
                     end += 1
-                f.length = end 
+                f.length = end
             f.seek(start)
             return f
 
@@ -1029,7 +1029,7 @@ class TextFileRDD(RDD):
         f.close()
 
 class GZipFileRDD(TextFileRDD):
-    "the gziped file must be seekable, compressed by pigz -i"    
+    "the gziped file must be seekable, compressed by pigz -i"
     BLOCK_SIZE = 64 << 10
     DEFAULT_SPLIT_SIZE = 32 << 20
 
@@ -1059,7 +1059,7 @@ class GZipFileRDD(TextFileRDD):
                     return pos # EOF
             try:
                 if zlib.decompressobj(-zlib.MAX_WBITS).decompress(block):
-                    return pos # FOUND 
+                    return pos # FOUND
             except Exception, e:
                 pass
 
@@ -1138,7 +1138,7 @@ class TableFileRDD(TextFileRDD):
 
     def __init__(self, ctx, path, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, None, splitSize)
-    
+
     def find_magic(self, f, pos, magic):
         f.seek(pos)
         block = f.read(32*1024)
@@ -1146,7 +1146,7 @@ class TableFileRDD(TextFileRDD):
             return -1
         p = block.find(magic)
         while p < 0:
-            pos += len(block) - len(magic) + 1 
+            pos += len(block) - len(magic) + 1
             block = block[1 - len(magic):] + f.read(32<<10)
             if len(block) == len(magic) - 1:
                 return -1
@@ -1181,7 +1181,7 @@ class TableFileRDD(TextFileRDD):
 
 class BZip2FileRDD(TextFileRDD):
     "the bzip2ed file must be seekable, compressed by pbzip2"
-    
+
     DEFAULT_SPLIT_SIZE = 32*1024*1024
     BLOCK_SIZE = 9000
 
@@ -1197,7 +1197,7 @@ class BZip2FileRDD(TextFileRDD):
         if fp > 0:
             d = d[fp:] # drop end of last block
 
-        # real all the block    
+        # real all the block
         nd = f.read(self.BLOCK_SIZE)
         np = nd.find(magic)
         while nd and np < 0:
@@ -1224,7 +1224,7 @@ class BZip2FileRDD(TextFileRDD):
                     if last_line.endswith('\n'):
                         yield last_line
                         last_line = ''
-                
+
                 for line in io:
                     if line.endswith('\n'): # drop last line
                         yield line
@@ -1300,12 +1300,12 @@ class OutputTextFileRDD(DerivedRDD):
         return '<%s %s>' % (self.__class__, self.path)
 
     def compute(self, split):
-        path = os.path.join(self.path, 
+        path = os.path.join(self.path,
             "%04d%s" % (split.index, self.ext))
         if os.path.exists(path) and not self.overwrite:
             return
-        tpath = os.path.join(self.path, 
-            ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+        tpath = os.path.join(self.path,
+            ".%04d%s.%s.%d.tmp" % (split.index, self.ext,
             socket.gethostname(), os.getpid()))
         try:
             f = open(tpath,'w', 4096 * 1024 * 16)
@@ -1314,7 +1314,7 @@ class OutputTextFileRDD(DerivedRDD):
             f = open(tpath,'w', 4096 * 1024 * 16)
         if self.compress:
             have_data = self.write_compress_data(f, self.prev.iterator(split))
-        else:    
+        else:
             have_data = self.writedata(f, self.prev.iterator(split))
         f.close()
         if have_data and not os.path.exists(path):
@@ -1361,8 +1361,8 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 if not os.path.exists(dpath):
                     try: os.mkdir(dpath)
                     except: pass
-                tpath = os.path.join(dpath, 
-                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
+                tpath = os.path.join(dpath,
+                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext,
                     socket.gethostname(), os.getpid()))
                 try:
                     f = open(tpath,'w', 4096 * 1024 * 16)
@@ -1374,7 +1374,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 files[key] = f
                 paths[key] = tpath
             return f
-       
+
         sizes = {}
         for k, v in self.prev.iterator(split):
             f = get_file(k)
@@ -1414,9 +1414,9 @@ class OutputCSVFileRDD(OutputTextFileRDD):
                 row = (row,)
             writer.writerow(row)
             empty = False
-        return not empty 
+        return not empty
 
-        
+
 class OutputBinaryFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, fmt, overwrite):
         OutputTextFileRDD.__init__(self, rdd, path, '.bin', overwrite)
@@ -1430,7 +1430,7 @@ class OutputBinaryFileRDD(OutputTextFileRDD):
             else:
                 f.write(struct.pack(self.fmt, row))
             empty = False
-        return not empty 
+        return not empty
 
 class OutputTableFileRDD(OutputTextFileRDD):
     MAGIC = '\x00\xDE\x00\xAD\xFF\xBE\xFF\xEF'
@@ -1449,7 +1449,7 @@ class OutputTableFileRDD(OutputTextFileRDD):
             f.write(self.MAGIC)
             f.write(struct.pack("III", self.compress, count, len(d)))
             f.write(d)
-        
+
         count, buf = 0, StringIO()
         for row in rows:
             msgpack.pack(row, buf)

@@ -38,7 +38,7 @@ class DparkContext(object):
         #    from executor import run
         #    run()
         #    sys.exit(0)
-        
+
         options = parse_options()
         self.options = options
         master = self.master or options.master
@@ -64,9 +64,9 @@ class DparkContext(object):
 
             if ':' not in master:
                 master += ':5050'
-            self.scheduler = MesosScheduler(master, options) 
+            self.scheduler = MesosScheduler(master, options)
             self.isLocal = False
-            
+
         self.master = master
 
         if options.parallel:
@@ -81,7 +81,7 @@ class DparkContext(object):
         self.nextShuffleId += 1
         return self.nextShuffleId
 
-    def parallelize(self, seq, numSlices=None): 
+    def parallelize(self, seq, numSlices=None):
         self.init()
         if numSlices is None:
             numSlices = self.defaultParallelism
@@ -89,7 +89,7 @@ class DparkContext(object):
 
     def makeRDD(self, seq, numSlices=None):
         return self.parallelize(seq, numSlices)
-    
+
     def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
         if isinstance(path, (list, tuple)):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
@@ -120,7 +120,7 @@ class DparkContext(object):
                     if d.startswith('.'):
                         dirs.remove(d)
 
-            rdds = [create_rdd(cls, p, *ka, **kws) 
+            rdds = [create_rdd(cls, p, *ka, **kws)
                      for p in paths]
             return self.union(rdds)
         else:
@@ -143,7 +143,7 @@ class DparkContext(object):
 
     def table(self, path, **kwargs):
         p = None
-        for root, dirs, names in os.walk(path[0] 
+        for root, dirs, names in os.walk(path[0]
                 if isinstance(path, (list, tuple)) else path):
             if '.field_names' in names:
                 p = os.path.join(root, '.field_names')
@@ -169,7 +169,7 @@ class DparkContext(object):
     def start(self):
         if self.started:
             return
-        
+
         self.init()
 
         env.start(True, isLocal=self.isLocal)
@@ -185,7 +185,7 @@ class DparkContext(object):
         signal.signal(signal.SIGHUP, handler)
         signal.signal(signal.SIGABRT, handler)
         signal.signal(signal.SIGQUIT, handler)
-        
+
         try:
             from rfoo.utils import rconsole
             rconsole.spawn_server(locals(), 0)
@@ -208,7 +208,7 @@ class DparkContext(object):
     def clear(self):
         if not self.started:
             return
-        
+
         self.scheduler.clear()
         gc.collect()
 
@@ -235,7 +235,7 @@ def add_default_options():
             help="master of Mesos: local, process, or mesos://")
 #    group.add_option("-n", "--name", type="string", default="dpark",
 #            help="job name")
-    group.add_option("-p", "--parallel", type="int", default=0, 
+    group.add_option("-p", "--parallel", type="int", default=0,
             help="number of processes")
 
     group.add_option("-c", "--cpus", type="float", default=1.0,
@@ -269,5 +269,5 @@ def parse_options():
 
     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
         level=options.logLevel)
-    
+
     return options

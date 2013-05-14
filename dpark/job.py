@@ -1,4 +1,4 @@
-import time 
+import time
 import sys
 import logging
 import socket
@@ -12,7 +12,7 @@ TASK_FINISHED = 2
 TASK_FAILED   = 3
 TASK_KILLED   = 4
 TASK_LOST     = 5
-            
+
 def readable(size):
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
     unit = 0
@@ -34,7 +34,7 @@ class Job:
 
     def error(self, code, message):
         raise NotImplementedError
-    
+
     nextJobId = 0
     @classmethod
     def newJobId(cls):
@@ -112,7 +112,7 @@ class SimpleJob(Job):
             h, hs, ips = socket.gethostbyname_ex(host)
         except Exception:
             h, hs, ips = host, [], []
-        tasks = sum((self.pendingTasksForHost.get(h, []) 
+        tasks = sum((self.pendingTasksForHost.get(h, [])
             for h in [h] + hs + ips), [])
         st = {}
         for t in tasks:
@@ -144,7 +144,7 @@ class SimpleJob(Job):
         return None, False
 
     # Respond to an offer of a single slave from the scheduler by finding a task
-    def slaveOffer(self, host, availableCpus=1, availableMem=100): 
+    def slaveOffer(self, host, availableCpus=1, availableMem=100):
         now = time.time()
         localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
         i, preferred = self.findTask(host, localOnly, availableCpus, availableMem)
@@ -155,7 +155,7 @@ class SimpleJob(Job):
             task.host = host
             task.tried += 1
             prefStr = preferred and "preferred" or "non-preferred"
-            logger.debug("Starting task %d:%d as TID %s on slave %s (%s)", 
+            logger.debug("Starting task %d:%d as TID %s on slave %s (%s)",
                 self.id, i, task, host, prefStr)
             self.tidToIndex[task.id] = i
             self.launched[i] = True
@@ -174,18 +174,18 @@ class SimpleJob(Job):
         if self.finished[i]:
             if status == TASK_FINISHED:
                 logger.info("Task %d is already finished, ignore it", tid)
-            return 
+            return
 
         task = self.tasks[i]
         task.status = status
         # when checking, task been masked as not launched
         if not self.launched[i]:
             self.launched[i] = True
-            self.tasksLaunched += 1 
-        
+            self.tasksLaunched += 1
+
         if status == TASK_FINISHED:
             self.taskFinished(tid, tried, result, update)
-        elif status in (TASK_LOST, TASK_FAILED, TASK_KILLED): 
+        elif status in (TASK_LOST, TASK_FAILED, TASK_KILLED):
             self.taskLost(tid, tried, status, reason)
         task.start = time.time()
 
@@ -212,12 +212,12 @@ class SimpleJob(Job):
             ts = [t.used for t in self.tasks]
             tried = [t.tried for t in self.tasks]
             logger.info("Job %d finished in %.1fs: min=%.1fs, avg=%.1fs, max=%.1fs, maxtry=%d",
-                self.id, time.time()-self.start, 
+                self.id, time.time()-self.start,
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
             from accumulator import LocalReadBytes, RemoteReadBytes
             lb, rb = LocalReadBytes.reset(), RemoteReadBytes.reset()
             if rb > 0:
-                logger.info("read %s (%d%% localized)",  
+                logger.info("read %s (%d%% localized)",
                     readable(lb+rb), lb*100/(rb+lb))
 
             self.sched.jobFinished(self)
@@ -225,7 +225,7 @@ class SimpleJob(Job):
     def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
         self.launched[index] = False
-        if self.tasksLaunched == self.numTasks:    
+        if self.tasksLaunched == self.numTasks:
             self.sched.requestMoreResources()
         self.tasksLaunched -= 1
 
@@ -240,7 +240,7 @@ class SimpleJob(Job):
             if self.tasksFinished == self.numTasks:
                 self.sched.jobFinished(self)
             return
-       
+
         task = self.tasks[index]
         if status == TASK_KILLED:
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
@@ -255,9 +255,9 @@ class SimpleJob(Job):
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:
-            logger.error("Task %d failed more than %d times; aborting job", 
+            logger.error("Task %d failed more than %d times; aborting job",
                 index, MAX_TASK_FAILURES)
-            self.abort("Task %d failed more than %d times" 
+            self.abort("Task %d failed more than %d times"
                 % (index, MAX_TASK_FAILURES))
 
     def check_task_timeout(self):
@@ -265,7 +265,7 @@ class SimpleJob(Job):
         if self.last_check + 5 > now:
             return False
         self.last_check = now
-        
+
         n = self.launched.count(True)
         if n != self.tasksLaunched:
             logger.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
@@ -275,7 +275,7 @@ class SimpleJob(Job):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TASK_STARTING
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.warning("task %d timeout %.1f (at %s), re-assign it", 
+                logger.warning("task %d timeout %.1f (at %s), re-assign it",
                         task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.blacklist[i].append(task.host)
@@ -284,8 +284,8 @@ class SimpleJob(Job):
         if self.tasksFinished > self.numTasks / 3:
             scale = 1.0 * self.numTasks / self.tasksFinished
             avg = self.taskEverageTime
-            tasks = sorted((task.start, i, task) 
-                for i,task in enumerate(self.tasks) 
+            tasks = sorted((task.start, i, task)
+                for i,task in enumerate(self.tasks)
                 if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 used = now - task.start
@@ -298,7 +298,7 @@ class SimpleJob(Job):
                         task.used += used
                         task.start = now
                         self.launched[idx] = False
-                        self.tasksLaunched -= 1 
+                        self.tasksLaunched -= 1
                     else:
                         logger.error("task %s timeout, aborting job %s",
                             task, self.id)

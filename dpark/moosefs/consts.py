@@ -12,7 +12,7 @@ CHUNKSIZE = 1<<26
 
 GETDIR_FLAG_WITHATTR = 0x01
 
-#type for readdir command 
+#type for readdir command
 TYPE_FILE      = 'f'
 TYPE_SYMLINK   = 'l'
 TYPE_DIRECTORY = 'd'
@@ -144,7 +144,7 @@ CSTOAN_CHUNK_CHECKSUM_TAB = 303
 #   in case of BLOCKDEV and CHARDEV instead of 'length:64' on the end there is 'mojor:16 minor:16 empty:32'
 
 # NAME type:
-# ( leng:8 data:lengB 
+# ( leng:8 data:lengB
 
 
 FUSE_REGISTER_BLOB_NOACL = "kFh9mdZsR84l5e675v8bi54VfXaXSYozaU3DSz9AsLLtOtKipzb9aQNkxeOISx64"

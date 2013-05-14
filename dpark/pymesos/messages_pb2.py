@@ -1657,265 +1657,265 @@ DESCRIPTOR.message_types_by_name['GotMasterTokenMessage'] = _GOTMASTERTOKENMESSA
 class Task(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASK
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.Task)
 
 class StatusUpdate(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _STATUSUPDATE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.StatusUpdate)
 
 class Slaves(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVES
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.Slaves)
 
 class SubmitSchedulerRequest(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SUBMITSCHEDULERREQUEST
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.SubmitSchedulerRequest)
 
 class SubmitSchedulerResponse(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SUBMITSCHEDULERRESPONSE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.SubmitSchedulerResponse)
 
 class ExecutorToFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORTOFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ExecutorToFrameworkMessage)
 
 class FrameworkToExecutorMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKTOEXECUTORMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.FrameworkToExecutorMessage)
 
 class RegisterFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REGISTERFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RegisterFrameworkMessage)
 
 class ReregisterFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REREGISTERFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ReregisterFrameworkMessage)
 
 class FrameworkRegisteredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKREGISTEREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.FrameworkRegisteredMessage)
 
 class FrameworkReregisteredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKREREGISTEREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.FrameworkReregisteredMessage)
 
 class UnregisterFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _UNREGISTERFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.UnregisterFrameworkMessage)
 
 class DeactivateFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _DEACTIVATEFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.DeactivateFrameworkMessage)
 
 class ResourceRequestMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RESOURCEREQUESTMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ResourceRequestMessage)
 
 class ResourceOffersMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RESOURCEOFFERSMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ResourceOffersMessage)
 
 class LaunchTasksMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _LAUNCHTASKSMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.LaunchTasksMessage)
 
 class RescindResourceOfferMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RESCINDRESOURCEOFFERMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RescindResourceOfferMessage)
 
 class ReviveOffersMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REVIVEOFFERSMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ReviveOffersMessage)
 
 class RunTaskMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RUNTASKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RunTaskMessage)
 
 class KillTaskMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _KILLTASKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.KillTaskMessage)
 
 class StatusUpdateMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _STATUSUPDATEMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.StatusUpdateMessage)
 
 class StatusUpdateAcknowledgementMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _STATUSUPDATEACKNOWLEDGEMENTMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.StatusUpdateAcknowledgementMessage)
 
 class LostSlaveMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _LOSTSLAVEMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.LostSlaveMessage)
 
 class FrameworkErrorMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKERRORMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.FrameworkErrorMessage)
 
 class RegisterSlaveMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REGISTERSLAVEMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RegisterSlaveMessage)
 
 class ReregisterSlaveMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REREGISTERSLAVEMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ReregisterSlaveMessage)
 
 class SlaveRegisteredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEREGISTEREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.SlaveRegisteredMessage)
 
 class SlaveReregisteredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEREREGISTEREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.SlaveReregisteredMessage)
 
 class UnregisterSlaveMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _UNREGISTERSLAVEMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.UnregisterSlaveMessage)
 
 class HeartbeatMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _HEARTBEATMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.HeartbeatMessage)
 
 class ShutdownFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SHUTDOWNFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ShutdownFrameworkMessage)
 
 class ShutdownExecutorMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SHUTDOWNEXECUTORMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ShutdownExecutorMessage)
 
 class UpdateFrameworkMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _UPDATEFRAMEWORKMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.UpdateFrameworkMessage)
 
 class RegisterExecutorMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REGISTEREXECUTORMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RegisterExecutorMessage)
 
 class ExecutorRegisteredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORREGISTEREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ExecutorRegisteredMessage)
 
 class ExitedExecutorMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXITEDEXECUTORMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ExitedExecutorMessage)
 
 class RegisterProjdMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REGISTERPROJDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.RegisterProjdMessage)
 
 class ProjdReadyMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PROJDREADYMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ProjdReadyMessage)
 
 class ProjdUpdateResourcesMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PROJDUPDATERESOURCESMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ProjdUpdateResourcesMessage)
 
 class FrameworkExpiredMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKEXPIREDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.FrameworkExpiredMessage)
 
 class ShutdownMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SHUTDOWNMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.ShutdownMessage)
 
 class NoMasterDetectedMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _NOMASTERDETECTEDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.NoMasterDetectedMessage)
 
 class NewMasterDetectedMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _NEWMASTERDETECTEDMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.NewMasterDetectedMessage)
 
 class GotMasterTokenMessage(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _GOTMASTERTOKENMESSAGE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.internal.GotMasterTokenMessage)
 
 # @@protoc_insertion_point(module_scope)

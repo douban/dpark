@@ -1,4 +1,4 @@
-DPark is a Python clone of Spark, MapReduce(R) alike computing 
+DPark is a Python clone of Spark, MapReduce(R) alike computing
 framework supporting regression computation.
 
 Example for word counting (wc.py):
@@ -30,12 +30,12 @@ If $MESOS_MASTER was configured, then you can run it with mesos just typing
 ``` bash
 $ python wc.py -m mesos
 ```
-for shutcut. $MESOS_MASTER can be any scheme of mesos master, such as 
+for shutcut. $MESOS_MASTER can be any scheme of mesos master, such as
 ``` bash
-$ export MESOS_MASTER=zk://zk1:2181,zk2:2181,zk3:2181/mesos_master 
+$ export MESOS_MASTER=zk://zk1:2181,zk2:2181,zk3:2181/mesos_master
 ```
 
-In order to speed up shuffing, should deploy Nginx at port 5055 
+In order to speed up shuffing, should deploy Nginx at port 5055
 for accessing data in DPARK_WORK_DIR (default is /tmp/dpark), such as:
 
 ``` bash
