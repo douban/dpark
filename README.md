@@ -1,5 +1,5 @@
 DPark is a Python clone of Spark, MapReduce(R) alike computing
-framework supporting logistic regression computation.
+framework supporting iterative computation.
 
 Example for word counting (`wc.py`):
 
