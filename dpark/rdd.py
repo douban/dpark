@@ -1750,7 +1750,8 @@ class BeansdbFileRDD(TextFileRDD):
             r = self.try_read_record(f)
             if r: break
             begin += PADDING
-        if begin >= split.end:
+            if begin >= end: break
+        if begin >= end:
             return
         
         f.seek(begin)
