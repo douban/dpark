@@ -1835,6 +1835,7 @@ class OutputBeansdbRDD(DerivedRDD):
         f = open(tp, 'w')
         hint = []
         for key, value in self.prev.iterator(split):
+            key = str(key)
             flag, value = self.prepare(value)
             h = self.gen_hash(value)
             hint.append(struct.pack("IIH", pos + len(key), 1, h) + key + '\x00')
