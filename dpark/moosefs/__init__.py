@@ -136,6 +136,9 @@ class File(object):
         self.master = master
         self.cscache = {}
 
+    def __len__(self):
+        return (self.length - 1) / CHUNKSIZE + 1
+
     def get_chunk(self, i):
         chunk = self.cscache.get(i)
         if not chunk:
