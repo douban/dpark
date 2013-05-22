@@ -377,7 +377,7 @@ class TreeBroadcast(Broadcast):
 
         self.blocks = []
         start = time.time()
-        for i in range(10):
+        while True:
             guide_sock.send_pyobj(self.server_addr)
             source_info = guide_sock.recv_pyobj()
 
@@ -385,18 +385,16 @@ class TreeBroadcast(Broadcast):
             self.total_bytes = source_info.total_bytes
             logger.debug("received SourceInfo from master: %s", 
                 source_info)
-            if self.receiveSingleTransmission(source_info):
+            self.receiveSingleTransmission(source_info)
+            if len(self.blocks) == self.total_blocks:
                 break
-        else:
-            raise Exception("receiveSingleTransmission failed")
-        
+
         logger.debug("%s got broadcast in %.1fs from %s", self.server_addr, time.time() - start, source_info.addr)
 
 #        guide_sock.send_pyobj(source_info)
 #        guide_sock.recv_pyobj()
         guide_sock.close()
 
-        return len(self.blocks) == self.total_blocks
 
     def receiveSingleTransmission(self, source_info):
         logger.debug("Inside receiveSingleTransmission")
@@ -411,7 +409,7 @@ class TreeBroadcast(Broadcast):
             for i in range(len(self.blocks), source_info.total_blocks):
                 while True:
                     sock.send_pyobj(i)
-                    avail = dict(poller.poll(3 * 1000))
+                    avail = dict(poller.poll(10 * 1000)) # unmarshal object will block server thread
                     if not avail or avail.get(sock) != zmq.POLLIN:
                         logger.warning("%s recv broadcast %d from %s timeout", self.server_addr, i, source_info.addr)
                         return False
@@ -430,8 +428,6 @@ class TreeBroadcast(Broadcast):
         finally:
             poller.unregister(sock)
             sock.close()
-
-        return len(self.blocks) == source_info.total_blocks
 
     @classmethod
     def initialize(cls, is_master):
