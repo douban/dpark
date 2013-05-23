@@ -25,12 +25,6 @@ except ImportError:
     def setproctitle(x):
         pass
 
-def ilen(x):
-    try:
-        return len(x)
-    except TypeError:
-        return sum(1 for i in x)
-
 def spawn(target, *args, **kw):
     t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
     t.daemon = True

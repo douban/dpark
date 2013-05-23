@@ -20,7 +20,7 @@ import struct
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
-from dpark.util import ilen, spawn, chain
+from dpark.util import spawn, chain
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
@@ -270,7 +270,7 @@ class RDD(object):
                       zero)
 
     def count(self):
-        return sum(self.ctx.runJob(self, lambda x: ilen(x)))
+        return sum(self.ctx.runJob(self, lambda x: sum(1 for i in x)))
 
     def toList(self):
         return self.collect()
