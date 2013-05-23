@@ -63,7 +63,6 @@ class Broadcast:
 
     def clear(self):
         self.cache.put(self.uuid, None)
-        self.value = None
 
     def __getstate__(self):
         return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/20 else None)
@@ -82,20 +81,22 @@ class Broadcast:
             raise AttributeError(name)
 
         uuid = self.uuid
-        self.value = self.cache.get(uuid)
-        if self.value is not None:
-            return self.value    
+        value = self.cache.get(uuid)
+        if value is not None:
+            self.value = value
+            return value    
         
         oldtitle = getproctitle()
         setproctitle('dpark worker: broadcasting ' + uuid)
 
-        self.recv()
-        if self.value is None:
+        value = self.recv()
+        if value is None:
             raise Exception("recv broadcast failed")
-        self.cache.put(uuid, self.value)
+        self.value = value
+        self.cache.put(uuid, value)
 
         setproctitle(oldtitle)
-        return self.value                
+        return value 
                 
     def send(self):
         raise NotImplementedError
@@ -200,7 +201,7 @@ class TreeBroadcast(Broadcast):
                     self.MaxDegree += 1
                     ssi = self.selectSuitableSource(listOfSources, addr)
                 if ssi:
-                    if not self.check_activity(ssi):
+                    if not self.check_activity(ssi.addr):
                         ssi.failed = True
                     else:
                         break
@@ -240,9 +241,9 @@ class TreeBroadcast(Broadcast):
             if (not s.failed and s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
                 return s
 
-    def check_activity(self, source_info):
+    def check_activity(self, addr):
         try:
-            host, port = source_info.addr.split('://')[1].split(':')
+            host, port = addr.split('://')[1].split(':')
             c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             c.connect((host, int(port)))
             c.close()
@@ -272,8 +273,6 @@ class TreeBroadcast(Broadcast):
 
             # clear cache
             self.cache.put(self.uuid, None)
-            self.blocks = []
-            self.value = None
 
         self.server_thread = spawn(run)
 
@@ -293,9 +292,10 @@ class TreeBroadcast(Broadcast):
 
         start = time.time()
         self.receive(self.uuid)
-        self.value = self.unBlockifyObject(self.blocks)
+        value = self.unBlockifyObject(self.blocks)
         used = time.time() - start
         logger.debug("Reading Broadcasted variable %s took %ss", self.uuid, used)
+        return value
 
     def receive(self, uuid):
         guide_addr, total_blocks = self.get_guide_addr(uuid)
@@ -394,13 +394,24 @@ class TreeBroadcast(Broadcast):
 class P2PBroadcast(TreeBroadcast):
     def guide(self, sock):
         sources = {self.server_addr: [1] * len(self.blocks)}
+        last_check = 0
         while True:
+            avail = sock.poll(1*1000, zmq.POLLIN)
+            if not avail:
+                now = time.time()
+                if last_check + 10 < now:
+                    for addr in sources.keys():
+                        if addr != self.server_addr and not self.check_activity(addr):
+                            del sources[addr]
+                    last_check = now
+                continue
+
             msg = sock.recv_pyobj()
             if msg == SourceInfo.Stop:
                 sock.send_pyobj(0)
                 break
-            sock.send_pyobj(sources)
             addr, bitmap = msg
+            sock.send_pyobj(sources)
             sources[addr] = bitmap
         
         sock.close()
@@ -411,8 +422,9 @@ class P2PBroadcast(TreeBroadcast):
         self.guides.pop(self.uuid, None)
             
     def receive(self, uuid):
-        guide_addr, total_blocks = self.get_guide_addr(uuid)
-        assert guide_addr, 'guide addr is not available'
+        r = self.get_guide_addr(uuid)
+        assert r, 'broadcast guide has shutdown'
+        guide_addr, total_blocks = r
         guide_sock = env.ctx.socket(zmq.REQ)
         guide_sock.connect(guide_addr)
         logger.debug("connect to guide %s", guide_addr)
@@ -420,10 +432,12 @@ class P2PBroadcast(TreeBroadcast):
         self.blocks = [None] * total_blocks
         self.bitmap = [0] * total_blocks
         start = time.time()
+        hostname = socket.gethostname()
         while True:
             guide_sock.send_pyobj((self.server_addr, self.bitmap))
             source_infos = guide_sock.recv_pyobj()
-            logger.debug("received SourceInfo from master: %s", source_infos) 
+            logger.debug("received SourceInfo from master: %s", source_infos.keys()) 
+            self.receive_from_local(dict((k,v) for k,v in source_infos.iteritems() if hostname in k))
             self.receive_one(source_infos)
             if all(self.bitmap):
                 break
@@ -431,11 +445,54 @@ class P2PBroadcast(TreeBroadcast):
         logger.debug("%s got broadcast in %.1fs", self.server_addr, time.time() - start)
         guide_sock.close()
 
+    def receive_from_local(self, sources):
+        poller = zmq.Poller()
+        socks = []
+        addrs = {}
+        for addr in sources:
+            i = self.peek(sources[addr])
+            if i is None: continue
+            self.bitmap[i] = 1
+            sock = env.ctx.socket(zmq.REQ)
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(addr)
+            sock.send_pyobj(i)
+            poller.register(sock, zmq.POLLIN)
+            socks.append(sock)
+            addrs[sock] = addr
+
+        while socks:
+            t = time.time()
+            avail = poller.poll(5 * 1000) # unmarshal object will block server thread
+            if not avail:
+                break
+            for sock, _ in avail:
+                block = sock.recv_pyobj()
+                assert block
+                if block is not None and isinstance(block, Block):
+                    self.blocks[block.id] = block
+                    logger.debug("Received block: %s from %s", block.id, addrs[sock])
+                else:
+                    raise Exception(str(block))
+                i = self.peek(sources[addrs[sock]]) 
+                if i is not None:
+                    self.bitmap[i] = 1
+                    sock.send_pyobj(i)
+                else:
+                    poller.unregister(sock)
+                    socks.remove(sock)
+                    sock.close()
+
+        # rebuild bitmap 
+        self.bitmap = [int(bool(b)) for b in self.blocks]
+        timeout_servers = [addrs.get(sock) for sock in socks]
+        if timeout_servers:
+            logger.debug("recv from %s timeout", timeout_servers)
+
+
     def receive_one(self, sources):
         host = socket.gethostname()
-        def parse_host(addr):
-            return addr.split(':')[1][2:]
-        sources = sorted(sources.items(), key=lambda (k,b):(host not in k, len(b)))
+        sources = sorted(sources.items(), key=lambda (k,b):len(b))
 
         poller = zmq.Poller()
         socks = []
@@ -453,7 +510,8 @@ class P2PBroadcast(TreeBroadcast):
             socks.append(sock)
 
         while socks:
-            avail = poller.poll(1 * 1000) # unmarshal object will block server thread
+            t = time.time()
+            avail = poller.poll(5 * 1000) # unmarshal object will block server thread
             if not avail:
                 break
             for sock, _ in avail:
@@ -467,6 +525,9 @@ class P2PBroadcast(TreeBroadcast):
 
         # rebuild bitmap 
         self.bitmap = [bool(b) for b in self.blocks]
+        timeout_servers = [addrs.get(sock) for sock in socks]
+        if timeout_servers:
+            logger.debug("recv from %s timeout", timeout_servers)
 
     def peek(self, bitmap):
         avails = [i for i in range(len(bitmap)) if not self.bitmap[i] and bitmap[i]]
