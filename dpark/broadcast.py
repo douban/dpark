@@ -428,7 +428,7 @@ class P2PBroadcast(TreeBroadcast):
             if all(self.bitmap):
                 break
         
-        logger.info("%s got broadcast in %.1fs", self.server_addr, time.time() - start)
+        logger.debug("%s got broadcast in %.1fs", self.server_addr, time.time() - start)
         guide_sock.close()
 
     def receive_one(self, sources):
@@ -460,7 +460,7 @@ class P2PBroadcast(TreeBroadcast):
                 block = sock.recv_pyobj()
                 if block is not None and isinstance(block, Block):
                     self.blocks[block.id] = block
-                    logger.info("Received block: %s from %s", block.id, addrs.get(sock))
+                    logger.debug("Received block: %s from %s", block.id, addrs.get(sock))
                 poller.unregister(sock)
                 socks.remove(sock)
                 sock.close()
