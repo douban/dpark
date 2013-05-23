@@ -136,9 +136,6 @@ class File(object):
         self.master = master
         self.cscache = {}
 
-    def __len__(self):
-        return (self.length - 1) / CHUNKSIZE + 1
-
     def get_chunk(self, i):
         chunk = self.cscache.get(i)
         if not chunk:
@@ -148,8 +145,9 @@ class File(object):
 
     def locs(self, i=None):
         if i is None:
+            n = (self.length - 1) / CHUNKSIZE + 1
             return [[host for host, _ in self.get_chunk(i).addrs]
-                     for i in range(len(self))]
+                     for i in range(n)]
         return [host for host, _ in self.get_chunk(i).addrs]
 
 
