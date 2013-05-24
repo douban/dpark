@@ -306,10 +306,10 @@ class RDD(object):
         return OutputTableFileRDD(self, path, overwrite).collect()
 
     def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True, raw=False):
-        assert depth==0, 'only support depth==0 now' # TODO
+        assert depth<=2, 'only support depth<=2 now'
         if len(self) >= 256:
             self = self.mergeSplit(len(self) / 256 + 1)
-        return OutputBeansdbRDD(self, path, overwrite, compress, raw).collect()
+        return OutputBeansdbRDD(self, path, depth, overwrite, compress, raw).collect()
 
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
@@ -1774,22 +1774,30 @@ class BeansdbFileRDD(TextFileRDD):
 
 
 class OutputBeansdbRDD(DerivedRDD):
-    def __init__(self, rdd, path, overwrite, compress=False, raw=False):
+    def __init__(self, rdd, path, depth, overwrite, compress=False, raw=False):
         DerivedRDD.__init__(self, rdd)
         self.path = path
+        self.depth = depth
         self.overwrite = overwrite
         if not quicklz:
             compress = False
         self.compress = compress
         self.raw = raw
 
-        if os.path.exists(path):
-            if overwrite:
-                for n in os.listdir(path):
-                    if n[:3].isdigit():
-                        os.remove(os.path.join(path, n))
-        else:
-            os.makedirs(path)
+        for i in range(16 ** depth):
+            if depth > 0:
+                ps = list(('%%0%dx' % depth) % i)
+                p = os.path.join(path, *ps)
+            else:
+                p = path
+            if os.path.exists(p):
+                if overwrite:
+                    for n in os.listdir(p):
+                        if n[:3].isdigit():
+                            os.remove(os.path.join(p, n))
+            else:
+                os.makedirs(p)
+        
 
     def __repr__(self):
         return '%s(%s)' % (self.__class__.__name__, self.path)
@@ -1827,32 +1835,43 @@ class OutputBeansdbRDD(DerivedRDD):
         return rsize
 
     def compute(self, split):
-        p = os.path.join(self.path, '%03d.data' % split.index)
-        tp = p + '.%s.tmp' % (socket.gethostname())
-        
-        pos = 0
+        N = 16 ** self.depth
+        if self.depth > 0:
+            fmt='%%0%dx' % self.depth
+            ds = [os.path.join(self.path, *list(fmt % i)) for i in range(N)]
+        else:
+            ds = [self.path]
+        pname = '%03d.data' % split.index
+        tname = '.%03d.data.%s.tmp' % (split.index, socket.gethostname())
+        p = [os.path.join(d, pname) for d in ds]
+        tp = [os.path.join(d, tname) for d in ds]
+        pos = [0] * N
+        f = [open(t, 'w', 1<<20) for t in tp]
         now = int(time.time())
-        f = open(tp, 'w')
-        hint = []
+        hint = [[] for d in ds]
+        
+        bits = 32 - self.depth * 4
         for key, value in self.prev.iterator(split):
             key = str(key)
+            i = fnv1a(key) >> bits
             flag, value = self.prepare(value)
             h = self.gen_hash(value)
-            hint.append(struct.pack("IIH", pos + len(key), 1, h) + key + '\x00')
-            pos += self.write_record(f, key, flag, value, now)
-            if pos > (4000<<20):
+            hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, h) + key + '\x00')
+            pos[i] += self.write_record(f[i], key, flag, value, now)
+            if pos[i] > (4000<<20):
                 raise Exception("split is large than 4000M")
-        f.close()
+        [i.close() for i in f]
 
-        if hint and not os.path.exists(p):
-            os.rename(tp, p)
-            hint = ''.join(hint)
-            hint_path = os.path.join(self.path, '%03d.hint' % split.index)
-            if self.compress:
-                hint = quicklz.compress(hint)
-                hint_path += '.qlz'
-            open(hint_path, 'w').write(hint)
-        else:
-            os.remove(tp)
+        for i in range(N):
+            if hint[i] and not os.path.exists(p[i]):
+                os.rename(tp[i], p[i])
+                hintdata = ''.join(hint[i])
+                hint_path = os.path.join(os.path.dirname(p[i]), '%03d.hint' % split.index)
+                if self.compress:
+                    hintdata = quicklz.compress(hintdata)
+                    hint_path += '.qlz'
+                open(hint_path, 'w').write(hintdata)
+            else:
+                os.remove(tp[i])
 
-        return [p] if hint else []
+        return sum([([p[i]] if hint[i] else []) for i in range(N)], [])
