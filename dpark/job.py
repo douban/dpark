@@ -76,6 +76,7 @@ class SimpleJob(Job):
         self.pendingTasksWithNoPrefs = []
         self.allPendingTasks = []
 
+        self.reasons = set()
         self.failed = False
         self.causeOfFailure = ""
         self.last_check = 0
@@ -225,10 +226,6 @@ class SimpleJob(Job):
 
     def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
-        self.launched[index] = False
-        if self.tasksLaunched == self.numTasks:    
-            self.sched.requestMoreResources()
-        self.tasksLaunched -= 1
 
         from dpark.schedule import FetchFailed
         if isinstance(reason, FetchFailed):
@@ -245,11 +242,20 @@ class SimpleJob(Job):
         task = self.tasks[index]
         if status == TASK_KILLED:
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
+            for i,t in enumerate(self.tasks):
+                if not self.launched[i]:
+                    t.mem = max(task.mem, t.mem)
+
         elif status == TASK_FAILED:
             self.blacklist[index].append(task.host)
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
-            _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
+            if reason not in self.reasons:
+                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
+                self.reasons.add(reason)
+            else:
+                _logger("task %s failed @ %s: %s", task.id, task.host, task)
+
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
             logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id, 
@@ -261,6 +267,11 @@ class SimpleJob(Job):
                 index, MAX_TASK_FAILURES)
             self.abort("Task %d failed more than %d times" 
                 % (index, MAX_TASK_FAILURES))
+        
+        self.launched[index] = False
+        if self.tasksLaunched == self.numTasks:    
+            self.sched.requestMoreResources()
+        self.tasksLaunched -= 1
 
     def check_task_timeout(self):
         now = time.time()
