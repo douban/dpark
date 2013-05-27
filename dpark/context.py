@@ -179,8 +179,9 @@ class DparkContext(object):
                         for p in subs])
             else:
                 subs = [os.path.join(path, '%x'%i) for i in range(16)]
-                rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, False)
+                rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
                         for p in subs if os.path.exists(p)])
+                only_latest = False
         else:
             rdd = BeansdbFileRDD(self, path, filter, fullscan, True)
 
