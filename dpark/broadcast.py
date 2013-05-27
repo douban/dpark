@@ -410,7 +410,7 @@ class P2PBroadcast(TreeBroadcast):
                 sock.send_pyobj(0)
                 break
             addr, bitmap = msg
-            if not addr or not isinstrance(addr, str) or not addr.startswith('tcp://'):
+            if not addr or not isinstance(addr, str) or not addr.startswith('tcp://'):
                 logger.error('invalid server addr: %s', addr)
                 continue
             sock.send_pyobj(sources)
