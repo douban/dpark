@@ -261,11 +261,10 @@ class TreeBroadcast(Broadcast):
             logger.debug("server started at %s", self.server_addr)
 
             while True:
-                msg = sock.recv_pyobj()
-                if msg == SourceInfo.Stop:
+                id = sock.recv_pyobj()
+                if id == SourceInfo.Stop:
                     sock.send_pyobj(0)
                     break
-                id = msg
                 sock.send_pyobj(id < len(self.blocks) and self.blocks[id] or None)
 
             sock.close()
@@ -468,12 +467,9 @@ class P2PBroadcast(TreeBroadcast):
                 break
             for sock, _ in avail:
                 block = sock.recv_pyobj()
-                assert block
                 if block is not None and isinstance(block, Block):
                     self.blocks[block.id] = block
                     logger.debug("Received block: %s from %s", block.id, addrs[sock])
-                else:
-                    raise Exception(str(block))
                 i = self.peek(sources[addrs[sock]]) 
                 if i is not None:
                     self.bitmap[i] = 1
