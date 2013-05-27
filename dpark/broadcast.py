@@ -409,12 +409,13 @@ class P2PBroadcast(TreeBroadcast):
             if msg == SourceInfo.Stop:
                 sock.send_pyobj(0)
                 break
+            sock.send_pyobj(sources)
             addr, bitmap = msg
             if not addr or not isinstance(addr, str) or not addr.startswith('tcp://'):
                 logger.error('invalid server addr: %s', addr)
                 continue
-            sock.send_pyobj(sources)
-            sources[addr] = bitmap
+            if any(bitmap):
+                sources[addr] = bitmap
         
         sock.close()
         logger.debug("Sending stop notification to %d servers ...", len(sources))
@@ -491,15 +492,20 @@ class P2PBroadcast(TreeBroadcast):
 
     def receive_one(self, sources):
         host = socket.gethostname()
-        sources = sorted(sources.items(), key=lambda (k,b):len(b))
+        sources = sources.items() #sorted(sources.items(), key=lambda (k,b):len(b))
+        random.shuffle(sources)
 
         poller = zmq.Poller()
         socks = []
         addrs = {}
+        hosts = set()
         for addr, bitmap in sources:
+            host = addr.split(':')[0][5:]
+            if host in hosts: continue
             i = self.peek(bitmap)
             if i is None: continue
             self.bitmap[i] = 1
+            hosts.add(host)
             sock = env.ctx.socket(zmq.REQ)
             sock.setsockopt(zmq.LINGER, 0)
             sock.connect(addr)
