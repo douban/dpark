@@ -477,6 +477,8 @@ class MesosScheduler(DAGScheduler):
     def start_driver(self):
         name = '[dpark@%s] ' % socket.gethostname()
         name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
+        if len(name) > 512:
+            name = name[:512] + '...'
         framework = mesos_pb2.FrameworkInfo()
         framework.user = getpass.getuser()
         if framework.user == 'root':

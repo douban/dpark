@@ -56,7 +56,10 @@ class SubmitScheduler(object):
         self.framework.user = getpass.getuser()
         if self.framework.user == 'root':
             raise Exception("drun is not allowed to run as 'root'")
-        self.framework.name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
+        name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
+        if len(name) > 512:
+            name = name[:512] + '...'
+        self.framework.name = name
         self.executor = self.getExecutorInfo()
         self.cpus = options.cpus
         self.mem = parse_mem(options.mem)
