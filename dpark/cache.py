@@ -7,13 +7,13 @@ import time
 
 import zmq
 
-import shareddict
-from env import env
-from util import spawn
+from dpark.shareddict import SharedDicts
+from dpark.env import env
+from dpark.util import spawn
 
 logger = logging.getLogger("cache")
 
-mmapCache = shareddict.SharedDicts(1024)
+mmapCache = SharedDicts(10)
 
 class Cache:
     map = {}
@@ -98,9 +98,10 @@ class CacheTrackerServer(object):
     def __init__(self, locs):
         self.addr = None
         self.locs = locs
+        self.thread = None
 
     def start(self):
-        spawn(self.run)
+        self.thread = spawn(self.run)
         while self.addr is None:
             time.sleep(0.01)
 
@@ -109,6 +110,7 @@ class CacheTrackerServer(object):
         sock.connect(self.addr)
         sock.send_pyobj(StopCacheTracker())
         sock.close()
+        self.thread.join()
 
     def run(self):
         locs = self.locs
@@ -198,12 +200,12 @@ class LocalCacheTracker(object):
             logger.debug("Found partition in cache! %s", key)
             return cachedVal
         
+        host = socket.gethostname()
         logger.debug("partition not in cache, %s", key)
         self.removeHost(rdd.id, split.index, host)
         r = list(rdd.compute(split))
         self.cache.put(key, r)
         
-        host = socket.gethostname()
         self.addHost(rdd.id, split.index, host)
         return r
 
@@ -230,10 +232,10 @@ class CacheTracker(LocalCacheTracker):
         self.client = CacheTrackerClient(addr)
 
     def addHost(self, rdd_id, index, host):
-        return self.client.call(AddedToCache(rdd.id, split.index, host))
+        return self.client.call(AddedToCache(rdd_id, index, host))
 
     def removeHost(self, rdd_id, index, host):
-        return self.client.call(DroppedFromCache(rdd.id, split.index, host)) 
+        return self.client.call(DroppedFromCache(rdd_id, index, host)) 
 
     def stop(self):
         self.client.stop()
@@ -263,7 +265,7 @@ def test():
     pool.join()
     assert cache.get('a') == 'b'
     
-    from context import DparkContext
+    from dpark.context import DparkContext
     dc = DparkContext("local")
     nums = dc.parallelize(range(100), 10)
     cache = mmapCache

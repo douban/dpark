@@ -18,16 +18,16 @@ import shutil
 import heapq
 import struct
 
-from serialize import load_func, dump_func
-from dependency import *
-from util import ilen, spawn
-import shuffle
-import moosefs
-from env import env
+from dpark.serialize import load_func, dump_func
+from dpark.dependency import *
+from dpark.util import spawn, chain
+from dpark.shuffle import Merger, CoGroupMerger
+from dpark.env import env
+from dpark import moosefs
 
 logger = logging.getLogger("rdd")
 
-class Split:
+class Split(object):
     def __init__(self, idx):
         self.index = idx
 
@@ -148,15 +148,17 @@ class RDD(object):
     def sort(self, key=lambda x:x, reverse=False, numSplits=None):
         if not len(self):
             return self
+        if len(self) == 1:
+            return self.mapPartitions(lambda it: sorted(it, key=key, reverse=reverse))
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
         n = numSplits * 10 / len(self)
-        samples = self.glom().flatMap(lambda x:itertools.islice(x, n)).map(key).collect()
+        samples = self.mapPartitions(lambda x:itertools.islice(x, n)).map(key).collect()
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
         parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
-        return parted.glom().flatMap(lambda x:sorted(x, key=key, reverse=reverse))
+        return parted.mapPartitions(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
         return GlommedRDD(self)
@@ -224,7 +226,7 @@ class RDD(object):
             
             return [s] if s is not None else []
         
-        return reduce(f, itertools.chain.from_iterable(self.ctx.runJob(self, reducePartition)))
+        return reduce(f, chain(self.ctx.runJob(self, reducePartition)))
 
     def uniq(self, numSplits=None, taskMemory=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory)
@@ -268,7 +270,7 @@ class RDD(object):
                       zero)
 
     def count(self):
-        return sum(self.ctx.runJob(self, lambda x: ilen(x)))
+        return sum(self.ctx.runJob(self, lambda x: sum(1 for i in x)))
 
     def toList(self):
         return self.collect()
@@ -303,6 +305,12 @@ class RDD(object):
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
 
+    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True, raw=False):
+        assert depth<=2, 'only support depth<=2 now'
+        if len(self) >= 256:
+            self = self.mergeSplit(len(self) / 256 + 1)
+        return OutputBeansdbRDD(self, path, depth, overwrite, compress, raw).collect()
+
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):
@@ -335,6 +343,12 @@ class RDD(object):
     def innerJoin(self, other):
         o_b = self.ctx.broadcast(other.collectAsMap())
         r = self.filter(lambda (k,v):k in o_b.value).map(lambda (k,v):(k,(v,o_b.value[k])))
+        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        return r
+
+    def update(self, other):
+        o_b = self.ctx.broadcast(other.collectAsMap())
+        r = self.map(lambda (k,v): (k, o_b.value.get(k, v)))
         r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
         return r
 
@@ -381,11 +395,13 @@ class RDD(object):
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, *others, **kw):
-        numSplits = kw.get('numSplits') or self.ctx.defaultParallelism
-        taskMemory = kw.get('taskMemory')
-        part = self.partitioner or HashPartitioner(numSplits)
-        return CoGroupedRDD([self]+list(others), part, taskMemory)
+    def groupWith(self, others, numSplits=None, taskMemory=None):
+        if isinstance(others, RDD):
+            others = [others]
+        part = self.partitioner or HashPartitioner(numSplits or self.ctx.defaultParallelism)
+        return CoGroupedRDD([self]+others, part, taskMemory)
+
+    cogroup = groupWith
 
     def lookup(self, key):
         if self.partitioner:
@@ -398,9 +414,40 @@ class RDD(object):
         else:
             raise Exception("lookup() called on an RDD without a partitioner")
 
-    def asTable(self, fields):
-        from table import TableRDD
-        return TableRDD(self, fields)
+    def asTable(self, fields, name=''):
+        from dpark.table import TableRDD
+        return TableRDD(self, fields, name)
+
+    def batch(self, size):
+        def _batch(iterable):
+            sourceiter = iter(iterable)
+            while True:
+                s = list(itertools.islice(sourceiter, size))
+                if s:
+                    yield s
+                else:
+                    return
+
+        return self.glom().flatMap(_batch)
+
+    def adcount(self):
+        "approximate distinct counting"
+        r = self.map(lambda x:(1, x)).adcountByKey(1).collectAsMap()
+        return r and r[1] or 0
+
+    def adcountByKey(self, splits=None, taskMemory=None):
+        try:
+            from pyhll import HyperLogLog
+        except ImportError:
+            from hyperloglog import HyperLogLog
+        def create(v):
+            return HyperLogLog([v], 16)
+        def combine(s, v):
+            return s.add(v) or s
+        def merge(s1, s2):
+            return s1.update(s2) or s1
+        agg = Aggregator(create, combine, merge)
+        return self.combineByKey(agg, splits, taskMemory).mapValue(len)
 
 
 class DerivedRDD(RDD):
@@ -431,7 +478,7 @@ class MappedRDD(DerivedRDD):
     
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.imap(self.func, self.prev.iterator(split))
+            return (self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -460,14 +507,13 @@ class MappedRDD(DerivedRDD):
         try:
             self.func = load_func(code)
         except Exception:
-            print 'load failed', self.__class__, code
+            print 'load failed', self.__class__, code[:1024]
             raise
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.chain.from_iterable(itertools.imap(self.func,
-                self.prev.iterator(split)))
+            return chain(self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
     
     def _compute_with_error(self, split):
@@ -490,7 +536,7 @@ class FlatMappedRDD(MappedRDD):
 class FilteredRDD(MappedRDD):
     def compute(self, split):
         if self.err < 1e-8:
-            return itertools.ifilter(self.func, self.prev.iterator(split))
+            return (v for v in self.prev.iterator(split) if self.func(v))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -536,7 +582,7 @@ class PipedRDD(DerivedRDD):
                 shell=self.shell)
         def read(stdin):
             try:
-                it = self.prev.iterator(split)
+                it = iter(self.prev.iterator(split))
                 # fetch the first item
                 for first in it:
                     break
@@ -547,7 +593,7 @@ class PipedRDD(DerivedRDD):
                     stdin.writelines(it)
                 else:
                     stdin.write("%s\n"%first)
-                    stdin.writelines(itertools.imap(lambda x:"%s\n"%x, it))
+                    stdin.writelines("%s\n"%x for x in it)
             finally:
                 stdin.close()
                 devnull.close()
@@ -562,8 +608,7 @@ class MappedValuesRDD(MappedRDD):
     def compute(self, split):
         func = self.func
         if self.err < 1e-8:
-            return itertools.imap(lambda (k,v):(k,func(v)),
-                self.prev.iterator(split))
+            return ((k,func(v)) for k,v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
     def _compute_with_error(self, split):
@@ -631,7 +676,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = shuffle.Merger(self.numParts, self.aggregator.mergeCombiners) 
+        merger = Merger(self.numParts, self.aggregator.mergeCombiners) 
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
@@ -736,7 +781,7 @@ class CoGroupedRDD(RDD):
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
-        m = shuffle.CoGroupMerger(self.len)
+        m = CoGroupMerger(self.len)
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))
@@ -770,7 +815,7 @@ class SampleRDD(DerivedRDD):
                     yield i
 
 
-class UnionSplit:
+class UnionSplit(Split):
     def __init__(self, idx, rdd, split):
         self.index = idx
         self.rdd = rdd
@@ -779,17 +824,13 @@ class UnionSplit:
 class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
-        self.mem = max(r.mem for r in rdds) if rdds else self.mem
-        self._splits = [UnionSplit(0, rdd, split) 
-                for rdd in rdds for split in rdd.splits]
-        for i,split in enumerate(self._splits):
-            split.index = i
-        self.dependencies = []
+        self.mem = rdds[0].mem if rdds else self.mem
         pos = 0
         for rdd in rdds:
+            self._splits.extend([UnionSplit(pos + i, rdd, sp) for i, sp in enumerate(rdd.splits)])
             self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
-        self.name = '<union %d %s>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:2]))
+        self.name = '<UnionRDD %d %s ...>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:1]))
 
     def __repr__(self):
         return self.name
@@ -856,7 +897,7 @@ class MergedRDD(RDD):
         return sum([self.rdd.preferredLocations(sp) for sp in split.splits], [])
 
     def compute(self, split):
-        return itertools.chain.from_iterable(self.rdd.iterator(sp) for sp in split.splits)
+        return chain(self.rdd.iterator(sp) for sp in split.splits)
 
 
 class ZippedRDD(RDD):
@@ -943,12 +984,12 @@ class ParallelCollection(RDD):
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
 
-def open_mfs_file(path):
-    rpath = os.path.realpath(path)
-    if rpath.startswith('/mfs/'):
-        return moosefs.mfsopen(rpath[4:], 'mfsmaster')
-    if rpath.startswith('/home2/'):
-        return moosefs.mfsopen(rpath[6:], 'mfsmaster2')
+
+class PartialSplit(Split):
+    def __init__(self, index, begin, end):
+        self.index = index
+        self.begin = begin
+        self.end = end
 
 class TextFileRDD(RDD):
 
@@ -957,7 +998,7 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = open_mfs_file(path)
+        self.fileinfo = moosefs.open_file(path)
         self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
         
         if splitSize is None:
@@ -970,24 +1011,25 @@ class TextFileRDD(RDD):
             n += 1
         self.splitSize = splitSize
         self.len = n
-        self._splits = [Split(i) for i in range(self.len)]
+        self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize)) 
+                    for i in range(self.len)]
 
     def __len__(self):
         return self.len
 
     def __repr__(self):
-        return '<%s %s>' % (self.__class__, self.path)
+        return '<%s %s>' % (self.__class__.__name__, self.path)
 
     def _preferredLocations(self, split):
         if not self.fileinfo:
             return []
 
         if self.splitSize != moosefs.CHUNKSIZE:
-            start = self.splitSize * split.index / moosefs.CHUNKSIZE
-            end = (self.splitSize * (split.index + 1) + moosefs.CHUNKSIZE - 1) / moosefs.CHUNKSIZE
+            start = split.begin / moosefs.CHUNKSIZE
+            end = (split.end + moosefs.CHUNKSIZE - 1)/ moosefs.CHUNKSIZE
             return sum((self.fileinfo.locs(i) for i in range(start, end)), [])
         else:
-            return self.fileinfo.locs(split.index)
+            return self.fileinfo.locs(split.begin / self.splitSize)
 
     def open_file(self):
         if self.fileinfo:
@@ -997,11 +1039,11 @@ class TextFileRDD(RDD):
 
     def compute(self, split):
         f = self.open_file() 
-        if len(self) == 1 and split.index == 0:
-            return f
+        #if len(self) == 1 and split.index == 0 and split.begin == 0:
+        #    return f
         
-        start = split.index * self.splitSize
-        end = start + self.splitSize
+        start = split.begin
+        end = split.end
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
@@ -1009,9 +1051,12 @@ class TextFileRDD(RDD):
                 byte = f.read(1)
                 start += 1
 
+        if start >= end:
+            return []
+
         if self.fileinfo:
             # cut by end
-            if end < self.size:
+            if end < self.fileinfo.length:
                 f.seek(end-1)
                 while f.read(1) not in ('', '\n'):
                     end += 1
@@ -1027,6 +1072,38 @@ class TextFileRDD(RDD):
             yield line
             if start >= end: break
         f.close()
+
+
+class PartialTextFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
+        RDD.__init__(self, ctx)
+        self.path = path
+        self.fileinfo = moosefs.open_file(path)
+        self.firstPos = firstPos
+        self.lastPos = lastPos
+        self.size = size = lastPos - firstPos
+        
+        if splitSize is None:
+            if numSplits is None:
+                splitSize = self.DEFAULT_SPLIT_SIZE
+            else:
+                splitSize = size / numSplits
+        self.splitSize = splitSize
+        if size <= splitSize:
+            self._splits = [PartialSplit(0, firstPos, lastPos)]
+        else:
+            first_edge = firstPos / splitSize * splitSize + splitSize
+            last_edge = (lastPos-1) / splitSize * splitSize
+            ns = (last_edge - first_edge) / splitSize
+            self._splits = [PartialSplit(0, firstPos, first_edge)] + [
+                PartialSplit(i+1, first_edge + i*splitSize, first_edge + (i+1) * splitSize)
+                    for i in  range(ns)
+                 ] + [PartialSplit(ns+1, last_edge, lastPos)]
+        self.len = len(self._splits)
+
+    def __repr__(self):
+        return '<%s %s (%d-%d)>' % (self.__class__.__name__, self.path, self.firstPos, self.lastPos)
+
 
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"    
@@ -1297,7 +1374,7 @@ class OutputTextFileRDD(DerivedRDD):
         self.compress = compress
 
     def __repr__(self):
-        return '<%s %s>' % (self.__class__, self.path)
+        return '<%s %s>' % (self.__class__.__name__, self.path)
 
     def compute(self, split):
         path = os.path.join(self.path, 
@@ -1324,13 +1401,21 @@ class OutputTextFileRDD(DerivedRDD):
             os.remove(tpath)
 
     def writedata(self, f, lines):
-        empty = True
-        for line in lines:
-            f.write(line)
-            if not line.endswith('\n'):
+        it = iter(lines)
+        try:
+            line = it.next()
+        except StopIteration:
+            return False
+        f.write(line)
+        if line.endswith('\n'):
+            f.write(''.join(it))
+        else:
+            f.write('\n')
+            s = '\n'.join(it)
+            if s:
+                f.write(s)
                 f.write('\n')
-            empty = False
-        return not empty
+        return True
 
     def write_compress_data(self, f, lines):
         empty = True
@@ -1464,3 +1549,334 @@ class OutputTableFileRDD(OutputTextFileRDD):
         return f.tell() > 0
 
     write_compress_data = writedata
+
+#
+# Beansdb
+#
+import marshal
+import binascii
+try:
+    import quicklz
+except ImportError:
+    quicklz = None
+
+try:
+    from fnv1a import get_hash
+    def fnv1a(d):
+        return get_hash(d) & 0xffffffff
+except ImportError:
+    FNV_32_PRIME = 0x01000193
+    FNV_32_INIT = 0x811c9dc5
+    def fnv1a(d):
+        h = FNV_32_INIT
+        for c in d:
+            h ^= ord(c)
+            h *= FNV_32_PRIME
+            h &= 0xffffffff
+        return h
+
+
+FLAG_PICKLE   = 0x00000001
+FLAG_INTEGER  = 0x00000002
+FLAG_LONG     = 0x00000004
+FLAG_BOOL     = 0x00000008
+FLAG_COMPRESS1= 0x00000010 # by cmemcached
+FLAG_MARSHAL  = 0x00000020
+FLAG_COMPRESS = 0x00010000 # by beansdb
+
+PADDING = 256
+
+def restore_value(flag, val):
+    if flag & FLAG_COMPRESS:
+        val = quicklz.decompress(val)
+    if flag & FLAG_COMPRESS1:
+        val = zlib.decompress(val)
+
+    if flag & FLAG_BOOL:
+        val = bool(int(val))
+    elif flag & FLAG_INTEGER:
+        val = int(val)
+    elif flag & FLAG_MARSHAL:
+        val = marshal.loads(val)
+    elif flag & FLAG_PICKLE:
+        val = cPickle.loads(val)
+    return val
+
+def prepare_value(val, compress):
+    flag = 0
+    if isinstance(val, str):
+        pass
+    elif isinstance(val, (bool)):
+        flag = FLAG_BOOL
+        val = str(int(val))
+    elif isinstance(val, (int, long)):
+        flag = FLAG_INTEGER
+        val = str(val)
+    elif type(val) is unicode:
+        flag = FLAG_MARSHAL
+        val = marshal.dumps(val, 2)
+    else:
+        try:
+            val = marshal.dumps(val, 2)
+            flag = FLAG_MARSHAL
+        except ValueError:
+                val = cPickle.dumps(val, -1)
+                flag = FLAG_PICKLE
+
+    if compress and len(val) > 1024:
+        flag |= FLAG_COMPRESS
+        val = quicklz.compress(val)
+
+    return flag, val
+
+
+class BeansdbFileRDD(TextFileRDD):
+    def __init__(self, ctx, path, filter=None, fullscan=False, raw=False):
+        if not fullscan:
+            hint = path[:-5] + '.hint'
+            if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
+                fullscan = True
+            if not filter:
+                fullscan = True
+        TextFileRDD.__init__(self, ctx, path, numSplits=None if fullscan else 1)
+        self.func = filter
+        self.fullscan = fullscan
+        self.raw = raw
+    
+    @cached
+    def __getstate__(self):
+        d = RDD.__getstate__(self)
+        del d['func']
+        return d, dump_func(self.func)
+
+    def __setstate__(self, state):
+        self.__dict__, code = state
+        try:
+            self.func = load_func(code)
+        except Exception:
+            print 'load failed', self.__class__, code[:1024]
+            raise
+    
+    def compute(self, split):
+        if self.fullscan:
+            return self.full_scan(split)
+        hint = self.path[:-5] + '.hint.qlz'
+        if os.path.exists(hint):
+            return self.scan_hint(hint)
+        hint = self.path[:-5] + '.hint'
+        if os.path.exists(hint):
+            return self.scan_hint(hint)
+        return self.full_scan(split)
+
+    def scan_hint(self, hint_path):
+        hint = open(hint_path).read()
+        if hint_path.endswith('.qlz'):
+            try:
+                hint = quicklz.decompress(hint)
+            except ValueError, e:
+                msg = str(e.message)
+                if msg.startswith('compressed length not match'):
+                    hint = hint[:int(msg.split('!=')[1])]
+                    hint = quicklz.decompress(hint)
+
+        func = self.func or (lambda x:True)
+        dataf = open(self.path)
+        p = 0
+        while p < len(hint):
+            pos, ver, hash = struct.unpack("IIH", hint[p:p+10])
+            p += 10
+            ksz = pos & 0xff
+            key = hint[p: p+ksz]
+            if func(key):
+                dataf.seek(pos & 0xffffff00)
+                r = self.read_record(dataf)
+                if r: 
+                    rsize, key, value = r
+                    yield key, value
+                else:
+                    logger.error("read failed from %s at %d", self.path, pos & 0xffffff00)
+            p += ksz + 1 # \x00
+
+    def restore(self, flag, val):
+        if self.raw:
+            return (flag, val)
+        return restore_value(flag, val)
+
+    def try_read_record(self, f):
+        block = f.read(PADDING)
+        if not block: 
+            return
+
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
+            return
+        rsize = 24 + ksz + vsz
+        if rsize & 0xff:
+            rsize = ((rsize >> 8) + 1) << 8
+        if rsize > PADDING:
+            block += f.read(rsize-PADDING)
+        crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
+        if crc != crc32:
+            return
+        return True
+
+    def read_record(self, f):
+        block = f.read(PADDING)
+        if len(block) < 24: 
+            return
+
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
+            logger.warning('bad key length %d %d', ksz, vsz)
+            return
+
+        rsize = 24 + ksz + vsz
+        if rsize & 0xff:
+            rsize = ((rsize >> 8) + 1) << 8
+        if rsize > PADDING:
+            block += f.read(rsize-PADDING)
+        #crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
+        #if crc != crc32:
+        #    print 'crc broken', crc, crc32
+        #    return
+        key = block[24:24+ksz]
+        value = block[24+ksz:24+ksz+vsz]
+        if not self.func or self.func(key):
+            value = self.restore(flag, value)
+        return rsize, key, (value, ver, tstamp)
+
+    def full_scan(self, split):
+        f = self.open_file()
+        
+        # try to find first record
+        begin, end = split.begin, split.end
+        while True:
+            f.seek(begin)
+            r = self.try_read_record(f)
+            if r: break
+            begin += PADDING
+            if begin >= end: break
+        if begin >= end:
+            return
+        
+        f.seek(begin)
+        func = self.func or (lambda x:True)
+        while begin < end:
+            r = self.read_record(f)
+            if not r:
+                begin += PADDING
+                logger.error('read fail at %s pos: %d', self.path, begin)
+                while begin < end:
+                    f.seek(begin)
+                    if self.try_read_record(f):
+                        break
+                    begin += PADDING
+                continue
+            size, key, value = r
+            if func(key):
+                yield key, value
+            begin += size
+
+
+class OutputBeansdbRDD(DerivedRDD):
+    def __init__(self, rdd, path, depth, overwrite, compress=False, raw=False):
+        DerivedRDD.__init__(self, rdd)
+        self.path = path
+        self.depth = depth
+        self.overwrite = overwrite
+        if not quicklz:
+            compress = False
+        self.compress = compress
+        self.raw = raw
+
+        for i in range(16 ** depth):
+            if depth > 0:
+                ps = list(('%%0%dx' % depth) % i)
+                p = os.path.join(path, *ps)
+            else:
+                p = path
+            if os.path.exists(p):
+                if overwrite:
+                    for n in os.listdir(p):
+                        if n[:3].isdigit():
+                            os.remove(os.path.join(p, n))
+            else:
+                os.makedirs(p)
+        
+
+    def __repr__(self):
+        return '%s(%s)' % (self.__class__.__name__, self.path)
+
+    def prepare(self, val):
+        if self.raw:
+            return val
+
+        return prepare_value(val, self.compress)
+
+    def gen_hash(self, d):
+        # used in beansdb
+        h = len(d) * 97
+        if len(d) <= 1024:
+            h += fnv1a(d)
+        else:
+            h += fnv1a(d[:512])
+            h *= 97
+            h += fnv1a(d[-512:])
+        return h & 0xffff
+
+    def write_record(self, f, key, flag, value, now=None):
+        header = struct.pack('IIIII', now, flag, 1, len(key), len(value))
+        crc32 = binascii.crc32(header)
+        crc32 = binascii.crc32(key, crc32)
+        crc32 = binascii.crc32(value, crc32) & 0xffffffff
+        f.write(struct.pack("I", crc32))
+        f.write(header)
+        f.write(key)
+        f.write(value)
+        rsize = 24 + len(key) + len(value)
+        if rsize & 0xff:
+            f.write('\x00' * (PADDING - (rsize & 0xff)))
+            rsize = ((rsize >> 8) + 1) << 8
+        return rsize
+
+    def compute(self, split):
+        N = 16 ** self.depth
+        if self.depth > 0:
+            fmt='%%0%dx' % self.depth
+            ds = [os.path.join(self.path, *list(fmt % i)) for i in range(N)]
+        else:
+            ds = [self.path]
+        pname = '%03d.data' % split.index
+        tname = '.%03d.data.%s.tmp' % (split.index, socket.gethostname())
+        p = [os.path.join(d, pname) for d in ds]
+        tp = [os.path.join(d, tname) for d in ds]
+        pos = [0] * N
+        f = [open(t, 'w', 1<<20) for t in tp]
+        now = int(time.time())
+        hint = [[] for d in ds]
+        
+        bits = 32 - self.depth * 4
+        for key, value in self.prev.iterator(split):
+            key = str(key)
+            i = fnv1a(key) >> bits
+            flag, value = self.prepare(value)
+            h = self.gen_hash(value)
+            hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, h) + key + '\x00')
+            pos[i] += self.write_record(f[i], key, flag, value, now)
+            if pos[i] > (4000<<20):
+                raise Exception("split is large than 4000M")
+        [i.close() for i in f]
+
+        for i in range(N):
+            if hint[i] and not os.path.exists(p[i]):
+                os.rename(tp[i], p[i])
+                hintdata = ''.join(hint[i])
+                hint_path = os.path.join(os.path.dirname(p[i]), '%03d.hint' % split.index)
+                if self.compress:
+                    hintdata = quicklz.compress(hintdata)
+                    hint_path += '.qlz'
+                open(hint_path, 'w').write(hintdata)
+            else:
+                os.remove(tp[i])
+
+        return sum([([p[i]] if hint[i] else []) for i in range(N)], [])

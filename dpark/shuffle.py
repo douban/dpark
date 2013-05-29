@@ -14,9 +14,9 @@ import platform
 
 import zmq
 
-from util import decompress, spawn
-from env import env
-from cache import CacheTrackerServer, CacheTrackerClient
+from dpark.util import decompress, spawn
+from dpark.env import env
+from dpark.cache import CacheTrackerServer, CacheTrackerClient
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
@@ -27,19 +27,37 @@ class LocalFileShuffle:
     shuffleDir = None
     @classmethod
     def initialize(cls, isMaster):
-        cls.shuffleDir = env.get('WORKDIR')
+        cls.shuffleDir = [p for p in env.get('WORKDIR') 
+                if os.path.exists(os.path.dirname(p))]
         if not cls.shuffleDir:
             return
-        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir)
+        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir[0])
         logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
-    def getOutputFile(cls, shuffleId, inputId, outputId):
-        path = os.path.join(cls.shuffleDir, str(shuffleId), str(inputId))
+    def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
+        path = os.path.join(cls.shuffleDir[0], str(shuffleId), str(inputId))
         if not os.path.exists(path):
             try: os.makedirs(path)
             except OSError: pass
-        return os.path.join(path, str(outputId))
+        p = os.path.join(path, str(outputId))
+
+        if datasize > 0 and len(cls.shuffleDir) > 1:
+            st = os.statvfs(path)
+            free = st.f_bfree * st.f_bsize
+            ratio = st.f_bfree * 1.0 / st.f_blocks
+            if free < max(datasize, 1<<30) or ratio < 0.66:
+                d2 = os.path.join(random.choice(cls.shuffleDir[1:]), str(shuffleId), str(inputId))
+                if not os.path.exists(d2):
+                    try: os.makedirs(d2)
+                    except IOError: pass
+                assert os.path.exists(d2), 'create %s failed' % d2
+                p2 = os.path.join(d2, str(outputId))
+                os.symlink(p2, p)
+                if os.path.islink(p2):
+                    os.unlink(p2) # p == p2
+                return p2
+        return p
 
     @classmethod
     def getServerUri(cls):
@@ -55,20 +73,25 @@ class ShuffleFetcher:
 class SimpleShuffleFetcher(ShuffleFetcher):
     def fetch_one(self, uri, shuffleId, part, reduceId):
         if uri == LocalFileShuffle.getServerUri():
-            urlopen, url = (file, LocalFileShuffle.getOutputFile(shuffleId, part, reduceId))
+            # urllib can open local file
+            url = LocalFileShuffle.getOutputFile(shuffleId, part, reduceId)
         else:
-            urlopen, url = (urllib.urlopen, "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId))
+            url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
         
         tries = 4
         while True:
             try:
-                f = urlopen(url)
+                f = urllib.urlopen(url)
+                if f.code == 404:
+                    f.close()
+                    raise IOError("%s not found", url)
+                
                 d = f.read()
                 flag = d[:1]
                 length, = struct.unpack("I", d[1:5])
                 if length != len(d):
-                    raise IOError("length not match: expected %d, but got %d" % (length, len(d)))
+                    raise ValueError("length not match: expected %d, but got %d" % (length, len(d)))
                 d = decompress(d[5:])
                 f.close()
                 if flag == 'm':
@@ -102,14 +125,12 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self.nthreads = nthreads
         self.requests = Queue.Queue()
         self.results = Queue.Queue(1)
-        for i in range(nthreads):
-            spawn(self._worker_thread)
+        self.threads = [spawn(self._worker_thread) for i in range(nthreads)]
 
     def _worker_thread(self):
         while True:
             r = self.requests.get()
             if r is None:
-                self.results.put(r)
                 break
 
             uri, shuffleId, part, reduceId = r
@@ -122,6 +143,9 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
+        if not serverUris:
+            return
+
         parts = zip(range(len(serverUris)), serverUris)
         random.shuffle(parts)
         for part, uri in parts:
@@ -131,7 +155,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             r = self.results.get()
             if isinstance(r, Exception):
                 raise r
-
+            
             sid, rid, part, d = r
             func(d.iteritems())
 
@@ -139,8 +163,8 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         logger.debug("stop parallel shuffle fetcher ...")
         for i in range(self.nthreads):
             self.requests.put(None)
-        for i in range(self.nthreads):
-            self.results.get()
+        for t in self.threads:
+            t.join()
 
 
 class Merger(object):
@@ -220,25 +244,27 @@ class sorted_items(object):
             'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
         f = gzip.open(path, 'wb+')
 
+        items = sorted(items)
         try:
-            for i in sorted(items):
+            for i in items:
                 s = marshal.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
             self.loads = marshal.loads
         except Exception, e:
-            for i in sorted(items):
-                s = pickle.dumps(i)
+            f.rewind()
+            for i in items:
+                s = cPickle.dumps(i)
                 f.write(struct.pack("I", len(s)))
                 f.write(s)
-            self.loads = pickle.loads
+            self.loads = cPickle.loads
         f.close()
 
         self.f = gzip.open(path)
         self.c = 0
 
     def __iter__(self):
-        self.f = gzip.open(path)
+        self.f = gzip.open(self.path)
         self.c = 0
         return self
 
@@ -255,7 +281,7 @@ class sorted_items(object):
         return self.loads(f.read(sz))
 
     def __dealloc__(self):
-        f.close()
+        self.f.close()
         if os.path.exists(self.path):
             os.remove(self.path)
 
@@ -263,6 +289,7 @@ class sorted_items(object):
 class DiskMerger(Merger):
     def __init__(self, total, combiner):
         Merger.__init__(self, total, combiner)
+        self.total = total
         self.archives = []
         self.base_memory = self.get_used_memory()
         self.max_merge = None
@@ -318,6 +345,7 @@ class MapOutputTrackerServer(CacheTrackerServer):
         sock.connect(self.addr)
         sock.send_pyobj(StopMapOutputTracker())
         sock.close()
+        self.thread.join()
 
     def run(self):
         sock = env.ctx.socket(zmq.REP)
@@ -431,7 +459,7 @@ def test():
     
     import logging
     logging.basicConfig(level=logging.INFO)
-    from env import env
+    from dpark.env import env
     import cPickle
     env.start(True)
     

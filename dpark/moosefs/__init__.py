@@ -11,11 +11,20 @@ MFS_ROOT_INODE = 1
 
 logger = logging.getLogger(__name__)
 
+class CrossSystemSymlink(Exception):
+    def __init__(self, src, dst):
+        self.src = src
+        self.dst = dst
+    def __str__(self):
+        return '%s -> %s' % (self.src, self.dst)
+
 class MooseFS(object):
-    def __init__(self, host='mfsmaster', port=9421):
+    def __init__(self, host='mfsmaster', port=9421, mountpoint='/mfs'):
         self.host = host
+        self.mountpoint = mountpoint
         self.mc = MasterConn(host, port)
         self.inode_cache = {}
+        self.symlink_cache = {}
 
     def _lookup(self, parent, name):
         cache = self.inode_cache.setdefault(parent, {})
@@ -28,6 +37,13 @@ class MooseFS(object):
             cache[name] = info
         return info
 
+    def readlink(self, inode):
+        target = self.symlink_cache.get(inode)
+        if target is None:
+            target = self.mc.readlink(inode)
+            self.symlink_cache[inode] = target
+        return target
+
     def lookup(self, path, followSymlink=True):
         parent = MFS_ROOT_INODE
         info = None
@@ -37,12 +53,15 @@ class MooseFS(object):
             info = self._lookup(parent, n)
             if not info:
                 return
-            if info.is_symlink() and followSymlink:
-                target = self.mc.readlink(info.inode)
+            while info.is_symlink() and followSymlink:
+                target = self.readlink(info.inode)
                 if not target.startswith('/'):
-                    target = os.path.join('/'.join(ps[:i]),
-                        target)
-                return self.lookup(target, True)
+                    target = os.path.join('/'.join(ps[:i]), target)
+                    info = self.lookup(target, followSymlink)
+                elif target.startswith(self.mountpoint):
+                    info = self.lookup(target[len(self.mountpoint):], followSymlink)
+                else:
+                    raise CrossSystemSymlink(path, os.path.join(target, *ps[i+1:]))
             parent = info.inode
         if info is None and parent == MFS_ROOT_INODE:
             info = self.mc.getattr(parent)
@@ -59,9 +78,50 @@ class MooseFS(object):
         if not info:
             raise Exception("not found")
         files = self.mc.getdirplus(info.inode)
-        for i in files.values():
+        for i in files.itervalues():
             self.inode_cache.setdefault(info.inode, {})[i.name] = i
         return files
+    
+    def walk(self, path, followlinks=False):
+        ds = [path]
+        while ds:
+            root = ds.pop()
+            cs = self.listdir(root)
+            dirs, files = [], []
+            for name, info in cs.iteritems():
+                if name in '..': continue
+                while followlinks and info and info.type == TYPE_SYMLINK:
+                    target = self.readlink(info.inode)
+                    if target.startswith('/'):
+                        if not target.startswith(self.mountpoint):
+                            if os.path.exists(target):
+                                if os.path.isdir(target):
+                                    dirs.append(target)
+                                else:
+                                    files.append(target)
+                            info = None # ignore broken symlink
+                            break
+                        else:
+                            target = target[len(self.mountpoint):]
+                            # use relative path for internal symlinks
+                            name = ('../' * len(filter(None, root.split('/')))) + target
+                    else:
+                        name = target
+                        target = os.path.join(root, target)
+                    info = self.lookup(target)
+                
+                if info:
+                    if info.type == TYPE_DIRECTORY:
+                        if name not in dirs:
+                            dirs.append(name)
+                    elif info.type == TYPE_FILE:
+                        if name not in files:
+                            files.append(name)
+
+            yield root, dirs, files
+            for d in sorted(dirs, reverse=True):
+                if not d.startswith('/'): # skip external links
+                    ds.append(os.path.join(root, d))
 
     def close(self):
         self.mc.close()
@@ -85,8 +145,9 @@ class File(object):
 
     def locs(self, i=None):
         if i is None:
+            n = (self.length - 1) / CHUNKSIZE + 1
             return [[host for host, _ in self.get_chunk(i).addrs]
-                     for i in range(len(self))]
+                     for i in range(n)]
         return [host for host, _ in self.get_chunk(i).addrs]
 
 
@@ -100,7 +161,7 @@ class ReadableFile(File):
 
     def seek(self, offset, whence=0):
         if whence == 1:
-            offset = self.roff + offest
+            offset = self.roff + offset
         elif whence == 2:
             offset = self.length + offset
         assert offset >= 0, 'offset should greater than 0'
@@ -233,10 +294,13 @@ class ReadableFile(File):
 
 _mfs = {}
 
-def get_mfs(master):
+MFS_PREFIX = {
+    }
+
+def get_mfs(master, mountpoint=''):
     if master in _mfs:
         return _mfs[master]
-    _mfs[master] = MooseFS(master)
+    _mfs[master] = MooseFS(master, mountpoint=mountpoint)
     return _mfs[master]
 
 def mfsopen(path, master='mfsmaster'):
@@ -245,18 +309,35 @@ def mfsopen(path, master='mfsmaster'):
 def listdir(path, master='mfsmaster'):
     return get_mfs(master).listdir(path)
 
-def walk(path, master='mfsmaster'):
-    ds = [path]
-    while ds:
-        root = ds.pop()
-        cs = listdir(root, master)
-        dirs = [name for name, info in cs.iteritems() 
-                if info.type == TYPE_DIRECTORY
-                    and name not in '..']
-        files = [i.name for i in cs.values() if i.type == TYPE_FILE]
-        yield root, dirs, files
+def get_mfs_by_path(path):
+    for prefix, master in MFS_PREFIX.iteritems():
+        if path.startswith(prefix):
+            return get_mfs(master, prefix)
+
+def add_prefix(gen, prefix):
+    for root, dirs, names in gen:
+        yield prefix + root, dirs, names
         for d in dirs:
-            ds.append(os.path.join(root, d))
+            if d.startswith('/'):
+                for root, dd, ns in walk(d, True):
+                    yield root, dd, ns
+
+def walk(path, followlinks=False):
+    path = os.path.realpath(path)
+    mfs = get_mfs_by_path(path)
+    if mfs:
+        rs = mfs.walk(path[len(mfs.mountpoint):], followlinks)
+        return add_prefix(rs, mfs.mountpoint)
+    else:
+        return os.walk(path, followlinks=followlinks)
+
+def open_file(path):
+    mfs = get_mfs_by_path(path)
+    if mfs:
+        try:
+            return mfs.open(path[len(mfs.mountpoint):])
+        except CrossSystemSymlink, e:
+            return open_file(e.dst)
 
 def _test():
     f = open('/mfs2/test.csv')

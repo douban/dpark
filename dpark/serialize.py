@@ -1,5 +1,44 @@
+import sys, types
+from cStringIO import StringIO
 import marshal, new, cPickle
 import itertools
+from pickle import Pickler, whichmodule
+import logging
+
+logger = logging.getLogger(__name__)
+
+class MyPickler(Pickler):
+    dispatch = Pickler.dispatch.copy()
+
+    @classmethod
+    def register(cls, type, reduce):
+        def dispatcher(self, obj):
+            rv = reduce(obj)
+            if isinstance(rv, str):
+                self.save_global(obj, rv)
+            else:
+                self.save_reduce(obj=obj, *rv)
+        cls.dispatch[type] = dispatcher
+
+def dumps(o):
+    io = StringIO()
+    MyPickler(io, -1).dump(o)
+    return io.getvalue()
+
+def loads(s):
+    return cPickle.loads(s)
+
+dump_func = dumps
+load_func = loads
+
+def reduce_module(mod):
+    return load_module, (mod.__name__, )
+
+def load_module(name):
+    __import__(name)
+    return sys.modules[name]
+
+MyPickler.register(types.ModuleType, reduce_module)
 
 class RecursiveFunctionPlaceholder(object):
     """
@@ -28,67 +67,52 @@ def marshalable(o):
         return True
     return False
 
-def dump_object(o):
-    if type(o) == type(marshal):
-        return 2, o.__name__
-    if isinstance(o, new.function) and o.__module__ == '__main__':
-        return 1, dump_func(o)
-    try:
-        return 3, cPickle.dumps(o, -1)
-    except Exception:
-        if isinstance(o, new.function): # lambda in module
-            return 1, dump_func(o)
-        if isinstance(o, list) and isinstance(o[0], new.function):
-            return 4, [dump_func(i) for i in o]
-        print 'unable to pickle:', o
-        raise
+OBJECT_SIZE_LIMIT = 100 << 10
 
-def load_object((t, d)):
-    if t == 1:
-        return load_func(d)
-    elif t == 2:
-        return __import__(d)
-    elif t == 3:
-        return cPickle.loads(d)
-    elif t == 4:
-        return [load_func(i) for i in d]
-    else:
-        raise Exception("invalid flag %d" % t)
+def create_broadcast(name, obj, func_name):
+    import dpark
+    logger.info("use broadcast for object %s %s (used in function %s)", 
+        name, type(obj), func_name)
+    return dpark._ctx.broadcast(obj)
 
-def dump_func(f):
-    if not isinstance(f, new.function):
-        return 1, cPickle.dumps(f, -1)
-    if f.__module__ != '__main__':
-        try:
-            return 1, cPickle.dumps(f, -1)
-        except Exception:
-            pass
+def dump_obj(f, name, obj):
+    if obj is f:
+        # Prevent infinite recursion when dumping a recursive function
+        return dumps(RECURSIVE_FUNCTION_PLACEHOLDER)
 
+    if sys.getsizeof(obj) > OBJECT_SIZE_LIMIT:
+        obj = create_broadcast(name, obj, f.__name__)
+    b = dumps(obj)
+    if len(b) > OBJECT_SIZE_LIMIT:
+        b = dumps(create_broadcast(name, obj, f.__name__))
+    if len(b) > OBJECT_SIZE_LIMIT:
+        logger.warning("broadcast of %s obj too large", type(obj))
+    return b
+
+
+def dump_closure(f):
     code = f.func_code
     glob = {}
     for n in code.co_names:
         r = f.func_globals.get(n)
         if r is not None:
-            if r is f:
-                # Prevent infinite recursion when dumping a recursive function
-                glob[n] = dump_object(RECURSIVE_FUNCTION_PLACEHOLDER)
-            else:
-                glob[n] = dump_object(r)
+            glob[n] = dump_obj(f, n, r)
 
-    closure = f.func_closure and tuple(dump_object(c.cell_contents) for c in f.func_closure) or None
-    return 0, marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
+    closure = None
+    if f.func_closure:
+        closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents) 
+                for i, c in enumerate(f.func_closure))
+    return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
 
-def load_func((flag, bytes)):
-    if flag == 1:
-        return cPickle.loads(bytes)
+def load_closure(bytes):
     code, glob, name, defaults, closure = marshal.loads(bytes)
-    glob = dict((k, load_object(v)) for k,v in glob.items())
+    glob = dict((k, loads(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    closure = closure and reconstruct_closure([load_object(c) for c in closure]) or None
+    closure = closure and reconstruct_closure([loads(c) for c in closure]) or None
     f = new.function(code, glob, name, defaults, closure)
     # Replace the recursive function placeholders with this simulated function pointer
     for key, value in glob.items():
-        if value == RECURSIVE_FUNCTION_PLACEHOLDER:
+        if RECURSIVE_FUNCTION_PLACEHOLDER == value:
             f.func_globals[key] = f
     return f
 
@@ -105,10 +129,40 @@ def reconstruct_closure(values):
         return f(*values).func_closure
     return closure
 
+def get_global_function(module, name):
+    __import__(module)
+    mod = sys.modules[module]
+    return getattr(mod, name)
+
+def reduce_function(obj):
+    name = obj.__name__
+    if not name or name == '<lambda>':
+        return load_closure, (dump_closure(obj),)
+
+    module = getattr(obj, "__module__", None)
+    if module is None:
+        module = whichmodule(obj, name)
+
+    if module == '__main__' and name != 'load_closure': # fix for test
+        return load_closure, (dump_closure(obj),)
+
+    try:
+        f = get_global_function(module, name)
+    except (ImportError, KeyError, AttributeError):
+        return load_closure, (dump_closure(obj),)
+    else:
+        if f is not obj:
+            return load_closure, (dump_closure(obj),)
+        return name
+
+MyPickler.register(types.LambdaType, reduce_function)
+
+
 if __name__ == "__main__":
     assert marshalable(None)
     assert marshalable("")
     assert marshalable(u"")
+    assert not marshalable(buffer(""))
     assert marshalable(0)
     assert marshalable(0L)
     assert marshalable(0.0)
@@ -131,14 +185,14 @@ if __name__ == "__main__":
             return (a * x + int(b), glob_func(foo(some_global)+last))
         return the_closure
 
-#    glob_func = load_func(dump_func(glob_func))
-#    get_closure = load_func(dump_func(get_closure))
     f = get_closure(10)
-    ff = load_func(dump_func(f))
+    ff = loads(dumps(f))
     #print globals()
     print f(2)
     print ff(2)
+    glob_func = loads(dumps(glob_func))
+    get_closure = loads(dumps(get_closure))
 
     # Test recursive functions
     def fib(n): return n if n <= 1 else fib(n-1) + fib(n-2)
-    assert fib(8) == load_func(dump_func(fib))(8)
+    assert fib(8) == loads(dumps(fib))(8)

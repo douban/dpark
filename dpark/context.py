@@ -5,11 +5,12 @@ import signal
 import logging
 import gc
 
-from rdd import *
-from accumulator import Accumulator
-from schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
-from env import env
-from broadcast import Broadcast
+from dpark.rdd import *
+from dpark.accumulator import Accumulator
+from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
+from dpark.env import env
+from dpark.moosefs import walk
+import dpark.conf as conf
 
 logger = logging.getLogger("context")
 
@@ -22,6 +23,18 @@ def singleton(cls):
         return instances[key]
     return getinstance
 
+def setup_conf(options):
+    if options.conf:
+        conf.load_conf(options.conf)
+    elif 'DPARK_CONF' in os.environ:
+        conf.load_conf(os.environ['DPARK_CONF'])
+    elif os.path.exists('/etc/dpark.conf'):
+        conf.load_conf('/etc/dpark.conf')
+
+    conf.__dict__.update(os.envrion)
+    import moosefs
+    moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
+
 @singleton
 class DparkContext(object):
     nextShuffleId = 0
@@ -29,20 +42,17 @@ class DparkContext(object):
         self.master = master
         self.initialized = False
         self.started = False
+        self.defaultParallelism = 2
 
     def init(self):
         if self.initialized:
             return
 
-        #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
-        #    from executor import run
-        #    run()
-        #    sys.exit(0)
-        
         options = parse_options()
         self.options = options
-        master = self.master or options.master
+   
 
+        master = self.master or options.master
         if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
@@ -51,9 +61,8 @@ class DparkContext(object):
             self.isLocal = False
         else:
             if master == 'mesos':
-                master = os.environ.get('MESOS_MASTER')
-                if not master:
-                    raise Exception("invalid uri of mesos master: %s" % master)
+                master = conf.MESOS_MASTER
+
             if master.startswith('mesos://'):
                 if '@' in master:
                     master = master[master.rfind('@')+1:]
@@ -61,7 +70,7 @@ class DparkContext(object):
                     master = master[master.rfind('//')+2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
-
+        
             if ':' not in master:
                 master += ':5050'
             self.scheduler = MesosScheduler(master, options) 
@@ -95,6 +104,7 @@ class DparkContext(object):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
                 for p in path])
 
+        path = os.path.realpath(path)
         def create_rdd(cls, path, *ka, **kw):
             if cls is TextFileRDD:
                 if path.endswith('.bz2'):
@@ -105,7 +115,7 @@ class DparkContext(object):
 
         if os.path.isdir(path):
             paths = []
-            for root,dirs,names in os.walk(path, followlinks=followLink):
+            for root,dirs,names in walk(path, followlinks=followLink):
                 if maxdepth > 0:
                     depth = len(filter(None, root[len(path):].split('/'))) + 1
                     if depth > maxdepth:
@@ -126,13 +136,15 @@ class DparkContext(object):
         else:
             return create_rdd(cls, path, *ka, **kws)
 
+    def partialTextFile(self, path, begin, end, splitSize=None, numSplits=None):
+        return PartialTextFileRDD(self, path, begin, end, splitSize, numSplits)
+
     def bzip2File(self, *args, **kwargs):
         "deprecated"
         logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
     def csvFile(self, path, dialect='excel', *args, **kwargs):
-        """ deprecated. """
         return self.textFile(path, cls=TextFileRDD, *args, **kwargs).fromCsv(dialect)
 
     def binaryFile(self, path, fmt=None, length=None, *args, **kwargs):
@@ -142,16 +154,56 @@ class DparkContext(object):
         return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
 
     def table(self, path, **kwargs):
-        p = None
-        for root, dirs, names in os.walk(path[0] 
-                if isinstance(path, (list, tuple)) else path):
+        dpath = path[0] if isinstance(path, (list, tuple)) else path
+        for root, dirs, names in walk(dpath): 
             if '.field_names' in names:
                 p = os.path.join(root, '.field_names')
+                fields = open(p).read().split('\t')
                 break
-        if p is None:
+        else:
             raise Exception("no .field_names found in %s" % path)
-        fields = open(p).read().split('\t')
         return self.tableFile(path, **kwargs).asTable(fields)
+
+    def beansdb(self, path, depth=None, filter=None, fullscan=False, raw=False, only_latest=False):
+        "(Key, (Value, Version, Timestamp)) data in beansdb"
+        if isinstance(path, (tuple, list)):
+            return self.union([self.beansdb(p, depth, filter, fullscan, raw, only_latest)
+                    for p in path])
+
+        path = os.path.realpath(path)
+        assert os.path.exists(path), "%s no exists" % path
+        if os.path.isdir(path):
+            subs = []
+            if not depth:
+                subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
+            if subs:
+                rdd = self.union([BeansdbFileRDD(self, p, filter, fullscan, True)
+                        for p in subs])
+            else:
+                subs = [os.path.join(path, '%x'%i) for i in range(16)]
+                rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
+                        for p in subs if os.path.exists(p)])
+                only_latest = False
+        else:
+            rdd = BeansdbFileRDD(self, path, filter, fullscan, True)
+
+        # choose only latest version
+        if only_latest:
+            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, len(rdd) / 4)
+        if not raw:
+            rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
+        return rdd
+
+    def mysql(self, sql, args=None, config='shire-offline'):
+        from douban import sqlstore
+        store = sqlstore.store_from_config(config)
+        cmd, tables = store.parse_execute_sql(sql)
+        if cmd != 'select':
+            raise Exception("Only 'select' is supported")
+        cursor = store.get_cursor(tables=tables)
+        rs = cursor.execute(sql, args)
+        fields = [c[0] for c in cursor.description]
+        return self.makeRDD(cursor.fetchall()).asTable(fields, name=tables[0])
 
     def union(self, rdds):
         return UnionRDD(self, rdds)
@@ -164,7 +216,8 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        return Broadcast.newBroadcast(v, self.isLocal)
+        from dpark.broadcast import TheBroadcast
+        return TheBroadcast(v, self.isLocal)
 
     def start(self):
         if self.started:
@@ -180,12 +233,13 @@ class DparkContext(object):
         def handler(signm, frame):
             logger.error("got signal %d, exit now", signm)
             self.scheduler.shutdown()
+        try:
+            signal.signal(signal.SIGTERM, handler)
+            signal.signal(signal.SIGHUP, handler)
+            signal.signal(signal.SIGABRT, handler)
+            signal.signal(signal.SIGQUIT, handler)
+        except: pass
 
-        signal.signal(signal.SIGTERM, handler)
-        signal.signal(signal.SIGHUP, handler)
-        signal.signal(signal.SIGABRT, handler)
-        signal.signal(signal.SIGQUIT, handler)
-        
         try:
             from rfoo.utils import rconsole
             rconsole.spawn_server(locals(), 0)
@@ -216,8 +270,8 @@ class DparkContext(object):
         if not self.started:
             return
 
-        self.scheduler.stop()
         env.stop()
+        self.scheduler.stop()
         self.started = False
 
     def __getstate__(self):
@@ -232,7 +286,7 @@ def add_default_options():
     group = optparse.OptionGroup(parser, "Dpark Options")
 
     group.add_option("-m", "--master", type="string", default="local",
-            help="master of Mesos: local, process, or mesos://")
+            help="master of Mesos: local, process, host[:port], or mesos://")
 #    group.add_option("-n", "--name", type="string", default="dpark",
 #            help="job name")
     group.add_option("-p", "--parallel", type="int", default=0, 
@@ -249,11 +303,14 @@ def add_default_options():
     group.add_option("--snapshot_dir", type="string", default="",
             help="shared dir to keep snapshot of RDDs")
 
+    group.add_option("--conf", type="string",
+            help="path for configuration file")
     group.add_option("--self", action="store_true",
             help="user self as exectuor")
     group.add_option("--profile", action="store_true",
             help="do profiling")
-    group.add_option("--keep-order", action="store_true")
+    group.add_option("--keep-order", action="store_true",
+            help="deprecated, always keep order")
 
     parser.add_option_group(group)
 

@@ -1,4 +1,5 @@
-import sys
+import sys, os.path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import cPickle
 import unittest
 import pprint
@@ -80,7 +81,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
                 [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
         nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2).flatMapValue(lambda x:x)
-        self.assertEqual(sorted(nums.groupWith(nums2, nums3).collect()),
+        self.assertEqual(sorted(nums.groupWith([nums2, nums3]).collect()),
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
                 (4,([],[3],[1])), (5,([],[],[2]))])
     
@@ -125,7 +126,7 @@ class TestRDD(unittest.TestCase):
         n = len(open(path).read().split())
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['import'], 10)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['class'], 1)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout'),
             ['/tmp/tout/0000']) 
@@ -170,6 +171,52 @@ class TestRDD(unittest.TestCase):
         rd = self.sc.table('/tmp/tout')
         self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(xrange(N)))
 
+    def test_batch(self):
+        from math import ceil
+        d = range(1234)
+        rdd = self.sc.makeRDD(d, 10).batch(100)
+        self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
+        self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
+
+    def test_partial_file(self):
+        p = 'tests/test_rdd.py' 
+        l = 300
+        d = open(p).read(l+50)
+        start = 100
+        while d[start-1] != '\n':
+            start += 1
+        while d[l-1] != '\n':
+            l += 1
+        d = d[start:l] 
+        rdd = self.sc.partialTextFile(p, start, l, l)
+        self.assertEqual(len(''.join(rdd.collect())), l-start)
+        self.assertEqual(''.join(rdd.collect()), d)
+        rdd = self.sc.partialTextFile(p, start, l, (l-start)/5)
+        self.assertEqual(len(''.join(rdd.collect())), l-start)
+        self.assertEqual(''.join(rdd.collect()), d)
+
+    def test_beansdb(self):
+        N = 100
+        l = range(N)
+        d = zip(map(str, l), l)
+        rdd = self.sc.makeRDD(d, 10)
+        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'), 
+                       ['/tmp/beansdb/%03d.data' % i for i in range(10)])
+        rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
+        self.assertEqual(len(rdd), 10)
+        self.assertEqual(rdd.count(), N)
+        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+        self.assertEqual(s, sum(l))
+    
+        rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
+        self.assertEqual(len(rdd), 10)
+        self.assertEqual(rdd.count(), N)
+        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+        self.assertEqual(s, sum(l))
+    
+    
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")

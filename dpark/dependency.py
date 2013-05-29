@@ -1,5 +1,7 @@
 import bisect
-from serialize import load_func, dump_func
+
+from dpark.util import portable_hash
+from dpark.serialize import load_func, dump_func
 
 class Dependency:
     def __init__(self, rdd):
@@ -122,8 +124,7 @@ class HashPartitioner(Partitioner):
         return self.partitions
 
     def getPartition(self, key):
-        # hash of tuple() has bad distribution
-        return (hash(key) % 1000003) % self.partitions
+        return portable_hash(key) % self.partitions
 
     def __eq__(self, other):
         if isinstance(other, Partitioner):

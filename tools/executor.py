@@ -1,33 +1,33 @@
 #!/usr/bin/env python
+
+# hook for virtualenv
+# switch to the virtualenv where the executor belongs,
+# replace all the path for modules
+import sys, os.path
+P = 'site-packages'
+apath = os.path.abspath(__file__)
+if P in apath:
+    virltualenv = apath[:apath.index(P)]
+    sysp = [p[:-len(P)] for p in sys.path if p.endswith(P)][0]
+    if sysp != virltualenv:
+        sys.path = [p.replace(sysp, virltualenv) for p in sys.path]
+
 import os
 import pickle
 import subprocess
-import sys
 import threading
-import time
 from threading import Thread
 import socket
-import logging
 
 import zmq
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
-
-try:
-    import mesos
-    import mesos_pb2
-except ImportError:
-    import dpark.pymesos as mesos
-    from dpark.pymesos import mesos_pb2
-
-logger = logging.getLogger('executor')
+import dpark.pymesos as mesos
+from dpark.pymesos import mesos_pb2
 
 ctx = zmq.Context()
 
 def forword(fd, addr, prefix=''):
-    f = os.fdopen(fd, 'r', 0)
+    f = os.fdopen(fd, 'r', 4096)
     out = ctx.socket(zmq.PUSH)
     out.connect(addr)
     while True:
@@ -37,23 +37,21 @@ def forword(fd, addr, prefix=''):
             out.send(prefix+line)
         except IOError:
             break
-    out.close()
     f.close()
+    out.close()
 
-def reply_status(driver, task, status):
+def reply_status(driver, task_id, status):
     update = mesos_pb2.TaskStatus()
-    update.task_id.value = task.task_id.value
+    update.task_id.MergeFrom(task_id)
     update.state = status
     driver.sendStatusUpdate(update)
     
 
 def launch_task(self, driver, task):
-    reply_status(driver, task, mesos_pb2.TASK_RUNNING)
+    reply_status(driver, task.task_id, mesos_pb2.TASK_RUNNING)
     
     host = socket.gethostname()
     cwd, command, _env, shell, addr1, addr2, addr3 = pickle.loads(task.data)
-    stderr = ctx.socket(zmq.PUSH)
-    stderr.connect(addr2)
 
     prefix = "[%s@%s] " % (str(task.task_id.value), host)
     outr, outw = os.pipe()
@@ -74,22 +72,16 @@ def launch_task(self, driver, task):
         subscriber.setsockopt(zmq.SUBSCRIBE, '')
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
-        #print >> werr, 'start polling at %s' % host
         socks = dict(poller.poll(60 * 1000))
-        #print >> werr, 'stop polling at %s' % host
         if socks and socks.get(subscriber) == zmq.POLLIN:
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
             if line:
                 command = line.split(' ')
             else:
-                #print >> werr, 'publisher canceled task'
-                reply_status(driver, task, mesos_pb2.TASK_FAILED)
-                return
+                return reply_status(driver, task.task_id, mesos_pb2.TASK_FAILED)
         else:
-            #print >> werr, 'waiting publisher timeout'
-            reply_status(driver, task, mesos_pb2.TASK_FAILED)
-            return
+            return reply_status(driver, task.task_id, mesos_pb2.TASK_FAILED)
 
     try:
         env = dict(os.environ)
@@ -106,52 +98,51 @@ def launch_task(self, driver, task):
         if code == 0 or code is None:
             status = mesos_pb2.TASK_FINISHED
         else:
-            stderr.send(prefix+' '.join(command) 
-                + (' exit with %s\n' % code))
+            print >>werr, ' '.join(command) + ' exit with %s' % code
             status = mesos_pb2.TASK_FAILED
     except Exception, e:
         status = mesos_pb2.TASK_FAILED
         import traceback
-        stderr.send('exception while open '+
-                ' '.join(command) + '\n')
+        print >>werr, 'exception while open ' + ' '.join(command)
         for line in traceback.format_exc():
-            stderr.send(line)
+            werr.write(line)
     
+    reply_status(driver, task.task_id, status)
+
     wout.close()
     werr.close()
     t1.join()
     t2.join()
-    stderr.close()
-    if task.task_id.value in self.ps:
-        del self.ps[task.task_id.value]
 
-    reply_status(driver, task, status)
-
+    tid = task.task_id.value
+    self.ps.pop(tid, None)
+    self.ts.pop(tid, None)
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
         self.ps = {}
-
-    def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
-        logger.debug("registered as %s", slaveInfo)
+        self.ts = {}
 
     def launchTask(self, driver, task):
         t = Thread(target=launch_task, args=(self, driver, task)) 
         t.daemon = True
         t.start()
+        self.ts[task.task_id.value] = t
   
     def killTask(self, driver, task_id):
-        if task_id.value in self.ps:
-            self.ps[task_id.value].kill()
-    
+        try:
+            if task_id.value in self.ps:
+                self.ps[task_id.value].kill()
+                reply_status(driver, task_id, mesos_pb2.TASK_KILLED) 
+        except: pass
+
     def shutdown(self, driver):
         for p in self.ps.values():
             try: p.kill()
             except: pass
-
-    def frameworkMessage(self, driver, message):
-        pass
+        for t in self.ts.values():
+            t.join()
 
 if __name__ == "__main__":
-  executor = MyExecutor()
-  mesos.MesosExecutorDriver(executor).run()
+    executor = MyExecutor()
+    mesos.MesosExecutorDriver(executor).run()

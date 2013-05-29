@@ -76,6 +76,7 @@ class SimpleJob(Job):
         self.pendingTasksWithNoPrefs = []
         self.allPendingTasks = []
 
+        self.reasons = set()
         self.failed = False
         self.causeOfFailure = ""
         self.last_check = 0
@@ -127,7 +128,7 @@ class SimpleJob(Job):
             if host in self.blacklist[i]:
                 continue
             t = self.tasks[i]
-            if t.cpus <= cpus and t.mem <= mem:
+            if t.cpus <= cpus+1e-4 and t.mem <= mem:
                 return i
 
     def findTask(self, host, localOnly, cpus, mem):
@@ -196,12 +197,13 @@ class SimpleJob(Job):
         task = self.tasks[i]
         task.used += time.time() - task.start
         self.total_used += task.used
-        title = "Job %d: task %s finished in %.1fs (%d/%d)     " % (self.id, tid,
+        if sys.stderr.isatty():
+            title = "Job %d: task %s finished in %.1fs (%d/%d)     " % (self.id, tid,
                 task.used, self.tasksFinished, self.numTasks)
-        logger.info("Task %s finished in %.1fs (%d/%d)      \x1b]2;%s\x07\x1b[1A",
-                tid, task.used, self.tasksFinished, self.numTasks, title)
+            logger.info("Task %s finished in %.1fs (%d/%d)      \x1b]2;%s\x07\x1b[1A",
+                    tid, task.used, self.tasksFinished, self.numTasks, title)
 
-        from schedule import Success
+        from dpark.schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
 
         for t in range(task.tried):
@@ -214,22 +216,18 @@ class SimpleJob(Job):
             logger.info("Job %d finished in %.1fs: min=%.1fs, avg=%.1fs, max=%.1fs, maxtry=%d",
                 self.id, time.time()-self.start, 
                 min(ts), sum(ts)/len(ts), max(ts), max(tried))
-            from accumulator import LocalReadBytes, RemoteReadBytes
+            from dpark.accumulator import LocalReadBytes, RemoteReadBytes
             lb, rb = LocalReadBytes.reset(), RemoteReadBytes.reset()
             if rb > 0:
                 logger.info("read %s (%d%% localized)",  
                     readable(lb+rb), lb*100/(rb+lb))
-
+            
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
-        self.launched[index] = False
-        if self.tasksLaunched == self.numTasks:    
-            self.sched.requestMoreResources()
-        self.tasksLaunched -= 1
 
-        from schedule import FetchFailed
+        from dpark.schedule import FetchFailed
         if isinstance(reason, FetchFailed):
             logger.warning("Loss was due to fetch failure from %s",
                 reason.serverUri)
@@ -244,14 +242,24 @@ class SimpleJob(Job):
         task = self.tasks[index]
         if status == TASK_KILLED:
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
+            for i,t in enumerate(self.tasks):
+                if not self.launched[i]:
+                    t.mem = max(task.mem, t.mem)
+
         elif status == TASK_FAILED:
             self.blacklist[index].append(task.host)
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
-            _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
+            if reason not in self.reasons:
+                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
+                self.reasons.add(reason)
+            else:
+                _logger("task %s failed @ %s: %s", task.id, task.host, task)
+
         elif status == TASK_LOST:
             self.blacklist[index].append(task.host)
-            logger.warning("Lost Task %d (task %d:%d:%s) %s", index, self.id, tid, tried, reason)
+            logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id, 
+                    tid, tried, reason, task.host)
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:
@@ -259,6 +267,11 @@ class SimpleJob(Job):
                 index, MAX_TASK_FAILURES)
             self.abort("Task %d failed more than %d times" 
                 % (index, MAX_TASK_FAILURES))
+        
+        self.launched[index] = False
+        if self.tasksLaunched == self.numTasks:    
+            self.sched.requestMoreResources()
+        self.tasksLaunched -= 1
 
     def check_task_timeout(self):
         now = time.time()
@@ -281,16 +294,16 @@ class SimpleJob(Job):
                 self.blacklist[i].append(task.host)
                 self.tasksLaunched -= 1
 
-        if self.tasksFinished > self.numTasks / 3:
+        if self.tasksFinished > self.numTasks * 2.0 / 3:
             scale = 1.0 * self.numTasks / self.tasksFinished
-            avg = self.taskEverageTime
+            avg = max(self.taskEverageTime, 10)
             tasks = sorted((task.start, i, task) 
                 for i,task in enumerate(self.tasks) 
                 if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 used = now - task.start
                 #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
-                if used > avg * (task.tried + 1) * scale and used > 30:
+                if used > avg * (task.tried + 1) * scale:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
                         logger.warning("re-submit task %s for timeout %.1f, try %d",
@@ -309,6 +322,9 @@ class SimpleJob(Job):
 
     def abort(self, message):
         logger.error("abort the job: %s", message)
+        tasks = ' '.join(str(i) for i in xrange(len(self.finished))
+                if not self.finished[i])
+        logger.error("not finished tasks: %s", tasks)
         self.failed = True
         self.causeOfFailure = message
         self.sched.jobFinished(self)

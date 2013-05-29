@@ -30,15 +30,8 @@ import gc
 
 import zmq
 
-# ignore INFO and DEBUG log
-os.environ['GLOG_logtostderr'] = '1'
-os.environ['GLOG_minloglevel'] = '1'
-try:
-    import mesos
-    import mesos_pb2
-except ImportError:
-    import pymesos as mesos
-    import pymesos.mesos_pb2 as mesos_pb2
+import pymesos as mesos
+import pymesos.mesos_pb2 as mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
@@ -47,16 +40,12 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
-from dpark.broadcast import Broadcast
 
 logger = logging.getLogger("executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_TASKS_PER_WORKER = 50
 MAX_IDLE_TIME = 60
-MAX_IDLE_WORKERS = 8
-MAX_IDLE_CYCLE = 60 * 30
 
 Script = ''
 
@@ -85,39 +74,26 @@ def run_task(task_data):
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
-            workdir = env.get('WORKDIR')
-            name = 'task_%s_%s.result' % (task.id, ntry)
-            path = os.path.join(workdir, name) 
+            path = LocalFileShuffle.getOutputFile(0, ntry, task.id, len(data))
             f = open(path, 'w')
             f.write(data)
             f.close()
-            data = LocalFileShuffle.getServerUri() + '/' + name
+            data = '/'.join([LocalFileShuffle.getServerUri()] + path.split('/')[-3:])
             flag += 2
 
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((task.id, Success(), (flag, data), accUpdate), -1)
-    except Exception, e:
+        return mesos_pb2.TASK_FINISHED, cPickle.dumps((Success(), (flag, data), accUpdate), -1)
+    except :
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((task.id, OtherFailure(msg), None, None), -1)
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((OtherFailure(msg), None, None), -1)
     finally:
         setproctitle('dpark worker: idle')
         gc.collect()
         gc.enable()
 
-def cleanup(workdir):
-    while os.getppid() > 1:
-        time.sleep(1)
-
-    while os.path.exists(workdir):
-        try: shutil.rmtree(workdir, True)
-        except: pass 
-    
-    os._exit(0)
-
-def init_env(args, workdir):
+def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
-    threading.Thread(target=cleanup, args=[workdir]).start()
 
 basedir = None
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
@@ -148,6 +124,8 @@ class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
 
 def startWebServer(path):
     # check the default web server
+    if not os.path.exists(path):
+        os.makedirs(path)
     testpath = os.path.join(path, 'test')
     with open(testpath, 'w') as f:
         f.write(path)
@@ -196,10 +174,11 @@ def forword(fd, addr, prefix=''):
     f.close()
     ctx.shutdown()
 
-def start_forword(addr, prefix=''):
+def start_forword(addr, prefix, oldfile):
     rfd, wfd = os.pipe()
     t = spawn(forword, rfd, addr, prefix)
-    return t, os.fdopen(wfd, 'w', 0) 
+    newfile = os.fdopen(wfd, 'w', 0)
+    return t, newfile
 
 def get_pool_memory(pool):
     try:
@@ -223,14 +202,35 @@ def safe(f):
         return r
     return _
             
-# cleaner process
-def clean_work_dir(path):
-    setproctitle('dpark cleaner %s' % path)
-    threading.Thread(target=cleanup, args=[path]).start()
+def setup_cleaner_process(workdir):
+    ppid = os.getpid()
+    pid = os.fork()
+    if pid == 0:
+        os.setsid()
+        pid = os.fork()
+        if pid == 0:
+            try:
+                import psutil
+            except ImportError:
+                os._exit(1)
+            try: 
+                setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
+                psutil.Process(ppid).wait()
+                os.killpg(ppid, signal.SIGKILL) # kill workers
+            except Exception, e:
+                pass # make sure to exit
+            finally:
+                setproctitle('dpark cleaning %s ' % workdir)
+                for d in workdir:
+                    while os.path.exists(d):
+                        try: shutil.rmtree(d, True)
+                        except: pass
+        os._exit(0)
+    os.wait()
 
 class MyExecutor(mesos.Executor):
     def __init__(self):
-        self.workdir = None
+        self.workdir = []
         self.idle_workers = []
         self.busy_workers = {}
         self.lock = threading.RLock()
@@ -243,7 +243,6 @@ class MyExecutor(mesos.Executor):
             return
 
         mem_limit = {}
-        idle_cycle = 0
 
         while True:
             self.lock.acquire()
@@ -268,8 +267,8 @@ class MyExecutor(mesos.Executor):
                 offered = get_task_memory(task)
                 if not offered:
                     continue
-                if rss > offered * 2:
-                    logger.warning("task %s used too much memory: %dMB > %dMB * 2, kill it. "
+                if rss > offered * 1.5:
+                    logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
                             + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
                     reply_status(driver, task, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
@@ -277,7 +276,7 @@ class MyExecutor(mesos.Executor):
                 elif rss > offered * mem_limit.get(tid, 1.0):
                     logger.debug("task %s used too much memory: %dMB > %dMB, "
                             + "use -M to request or taskMemory for more memory", tid, rss, offered)
-                    mem_limit[tid] = rss / offered + 0.2
+                    mem_limit[tid] = rss / offered + 0.1
 
             now = time.time() 
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
@@ -287,14 +286,6 @@ class MyExecutor(mesos.Executor):
                 self.idle_workers = self.idle_workers[n:]
             
             self.lock.release()
-
-            if self.idle_workers or self.busy_workers:
-                idle_cycle = 0
-            else:
-                idle_cycle += 1
-                if idle_cycle > MAX_IDLE_CYCLE:
-                    logger.warning("shutdown idle executor")
-                    self.shutdown()
 
             time.sleep(1) 
 
@@ -311,33 +302,20 @@ class MyExecutor(mesos.Executor):
             sys.path = python_path
             os.environ.update(osenv)
             prefix = '[%s] ' % socket.gethostname()
-            if out_logger:
-                self.outt, sys.stdout = start_forword(out_logger, prefix)
-            if err_logger:
-                self.errt, sys.stderr = start_forword(err_logger, prefix)
+            self.outt, sys.stdout = start_forword(out_logger, prefix, sys.stdout)
+            self.errt, sys.stderr = start_forword(err_logger, prefix, sys.stderr)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             self.workdir = args['WORKDIR']
-            root = os.path.dirname(self.workdir)
+            root = os.path.dirname(self.workdir[0])
             if not os.path.exists(root):
                 os.mkdir(root)
                 os.chmod(root, 0777) # because umask
-            if not os.path.exists(self.workdir):
-                os.mkdir(self.workdir)
-            args['SERVER_URI'] = startWebServer(args['WORKDIR'])
+            args['SERVER_URI'] = startWebServer(self.workdir[0])
+            if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
+                setup_cleaner_process(self.workdir)
 
             spawn(self.check_memory, driver)
-
-            # wait background threads to been initialized
-            time.sleep(0.1)
-            if out_logger:
-                os.close(1)
-                assert os.dup(sys.stdout.fileno()) == 1, 'redirect stdout failed'
-            if err_logger:
-                os.close(2)
-                assert os.dup(sys.stderr.fileno()) == 2, 'redirect stderr failed'
-
-            multiprocessing.Pool(1, clean_work_dir, [self.workdir])
 
             logger.debug("executor started at %s", slaveInfo.hostname)
 
@@ -347,17 +325,11 @@ class MyExecutor(mesos.Executor):
             logger.error("init executor failed: %s", msg)
             raise
 
-    def reregitered(self, driver, slaveInfo):
-        logger.info("executor is reregistered at %s", slaveInfo.hostname)
-
-    def disconnected(self, driver, slaveInfo):
-        logger.info("executor is disconnected at %s", slaveInfo.hostname)
-
     def get_idle_worker(self):
         try:
             return self.idle_workers.pop()[1]
         except IndexError:
-            p = multiprocessing.Pool(1, init_env, [self.init_args, self.workdir])
+            p = multiprocessing.Pool(1, init_env, [self.init_args])
             p.done = 0
             return p 
 
@@ -377,14 +349,7 @@ class MyExecutor(mesos.Executor):
                     _, pool = self.busy_workers.pop(task.task_id.value)
                     pool.done += 1
                     reply_status(driver, task, state, data)
-                    if (len(self.idle_workers) + len(self.busy_workers) < self.parallel 
-                            and len(self.idle_workers) < MAX_IDLE_WORKERS
-                            and pool.done < MAX_TASKS_PER_WORKER 
-                            and get_pool_memory(pool) < get_task_memory(task)): # maybe memory leak in executor
-                        self.idle_workers.append((time.time(), pool))
-                    else:
-                        try: pool.terminate()
-                        except: pass
+                    self.idle_workers.append((time.time(), pool))
         
             pool.apply_async(run_task, [task.data], callback=callback)
     
@@ -415,17 +380,17 @@ class MyExecutor(mesos.Executor):
             terminate(p)
 
         # clean work files
-        try: shutil.rmtree(self.workdir, True)
-        except: pass
-
-        os._exit(0)
-
-    def error(self, driver, code, message):
-        logger.error("error: %s, %s", code, message)
-
-    def frameworkMessage(self, driver, data):
-        pass
-
+        for d in self.workdir:
+            try: shutil.rmtree(d, True)
+            except: pass
+        
+        sys.stdout.close()
+        sys.stderr.close()
+        os.close(1)
+        os.close(2)
+        self.outt.join()
+        self.errt.join()
+        
 def run():
     executor = MyExecutor()
     driver = mesos.MesosExecutorDriver(executor)

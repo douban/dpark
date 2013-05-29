@@ -1,17 +1,23 @@
 import os, sys
 import time
 import getpass
+import logging
 
-from process import UPID, Process
+from process import UPID, Process, async
 
-from mesos_pb2 import *
-from messages_pb2 import *
+from mesos_pb2 import TASK_LOST
+from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage, 
+        DeactivateFrameworkMessage, UnregisterFrameworkMessage, 
+        ResourceRequestMessage, ReviveOffersMessage, LaunchTasksMessage, KillTaskMessage, 
+        StatusUpdate, StatusUpdateAcknowledgementMessage, FrameworkToExecutorMessage)
+
+logger = logging.getLogger(__name__)
 
 class Scheduler(object):
     def registered(self, driver, framework_id, masterInfo): pass
     def reregistered(self, driver, masterInfo): pass
     def disconnected(self, driver): pass
-    def frameworkMessage(self, driver, message): pass
+    def frameworkMessage(self, driver, slave_id, executor_id, message): pass
     def resourceOffers(self, driver, offers): pass
     def offerRescinded(self, driver, offer_id): pass
     def statusUpdate(self, driver, status): pass
@@ -42,45 +48,57 @@ class MesosSchedulerDriver(Process):
         self.framework = framework
         self.framework.failover_timeout = 100
         self.framework_id = framework.id
+
         self.master = None
+        self.detector = None
 
         self.connected = False
-        self.aborted = False
         self.savedOffers = {}
         self.savedSlavePids = {}
 
+    @async # called by detector
     def onNewMasterDetectedMessage(self, pid):
         self.master = UPID(pid)
         self.register()
 
-    def onNoMasterDetectedMessage(self, pid):
+    @async # called by detector
+    def onNoMasterDetectedMessage(self):
         self.connected = False
         self.master = None
-        self.sched.disconnected()
 
     def register(self):
-        if not self.framework_id.value:
-            msg = RegisterFrameworkMessage()
-            msg.framework.MergeFrom(self.framework)
-        else:
-            msg = ReregisterFrameworkMessage()
-            msg.framework.MergeFrom(self.framework)
-            msg.failover = True
-        self.send(self.master, msg)
-        # redo after 1 second
+        if self.connected or self.aborted:
+            return
+        
+        if self.master:
+            if not self.framework_id.value:
+                msg = RegisterFrameworkMessage()
+                msg.framework.MergeFrom(self.framework)
+            else:
+                msg = ReregisterFrameworkMessage()
+                msg.framework.MergeFrom(self.framework)
+                msg.failover = True
+            self.send(self.master, msg)
+            
+        self.delay(2, self.register)
 
     def onFrameworkRegisteredMessage(self, framework_id, master_info):
         self.framework_id = framework_id
         self.framework.id.MergeFrom(framework_id)
         self.connected = True
-        self.failover = False
+        self.link(self.master, self.onDisconnected)
         self.sched.registered(self, framework_id, master_info)
 
-    def onFrameworkReregisteredMessage(self, framework_id):
+    def onFrameworkReregisteredMessage(self, framework_id, master_info):
         assert self.framework_id == framework_id
         self.connected = True
-        self.failover = False
+        self.link(self.master, self.onDisconnected)
         self.sched.reregistered(self, master_info)
+
+    def onDisconnected(self):
+        self.connected = False
+        logger.warning("disconnected from master")
+        self.delay(5, self.register)
 
     def onResourceOffersMessage(self, offers, pids):
         for offer, pid in zip(offers, pids):
@@ -93,24 +111,25 @@ class MesosSchedulerDriver(Process):
 
     def onStatusUpdateMessage(self, update, pid=''):
         assert self.framework_id == update.framework_id
-        self.sched.statusUpdate(self, update.status)
-        if not self.aborted and pid:
+        
+        if pid and not pid.endswith('0.0.0.0:0'):
             reply = StatusUpdateAcknowledgementMessage()
             reply.framework_id.MergeFrom(self.framework_id)
             reply.slave_id.MergeFrom(update.slave_id)
             reply.task_id.MergeFrom(update.status.task_id)
             reply.uuid = update.uuid
-            self.send(UPID(pid), reply)
+            try: self.send(UPID(pid), reply)
+            except IOError: pass
+
+        self.sched.statusUpdate(self, update.status)
 
     def onLostSlaveMessage(self, slave_id):
         self.sched.slaveLost(self, slave_id)
 
-    def onExecutorToFrameworkMessage(self, slave_id, executor_id, data):
-        self.sched.frameworkMessage(self, msg.slave_id, 
-                msg.executor_id, msg.data)
+    def onExecutorToFrameworkMessage(self, slave_id, framework_id, executor_id, data):
+        self.sched.frameworkMessage(self, slave_id, executor_id, data)
 
     def onFrameworkErrorMessage(self, message, code=0):
-        self.abort()
         self.sched.error(self, code, message)
 
     def start(self):
@@ -121,67 +140,89 @@ class MesosSchedulerDriver(Process):
             self.detector = MasterDetector(uri[uri.index('://') + 3:], self)
             self.detector.start()
         else:
+            if not ':' in uri:
+                uri += ':5050'
             self.onNewMasterDetectedMessage('master@%s' % uri)
         
     def abort(self):
         if self.connected:
-            msg = DeactivateFrameworkMessage()
+            msg = UnregisterFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
         Process.abort(self)
 
     def stop(self, failover=False):
         if self.connected and not failover:
-            msg = UnregisterFrameworkMessage()
+            msg = DeactivateFrameworkMessage()
             msg.framework_id.MergeFrom(self.framework_id)
             self.send(self.master, msg)
-        self.abort()
+        if self.detector:
+            self.detector.stop()
+        Process.stop(self)
 
+    @async
     def requestResources(self, requests):
+        if not self.connected:
+            return
         msg = ResourceRequestMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         for req in requests:
             msg.requests.add().MergeFrom(req)
         self.send(self.master, msg)
 
+    @async
     def reviveOffers(self):
+        if not self.connected:
+            return
         msg = ReviveOffersMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         self.send(self.master, msg)
 
-    def launchTasks(self, offer_id, tasks, filters=None):
-        if not self.connected:
-            update = StatusUpdate()
-            update.framework_id.MergeFrom(self.framework_id)
-            update.status.task_id.MergeFrom(task.task_id)
-            update.status.state = TASK_LOST
-            update.status.message = 'Master disconnected'
-            update.timestamp = time.time()
-            update.uuid = ''
-            return self.statusUpdate(update)
+    def launchTasks(self, offer_id, tasks, filters):
+        if not self.connected or offer_id.value not in self.savedOffers:
+            for task in tasks:
+                update = StatusUpdate()
+                update.framework_id.MergeFrom(self.framework_id)
+                update.status.task_id.MergeFrom(task.task_id)
+                update.status.state = TASK_LOST
+                update.status.message = 'Master disconnected' if not self.connected else "invalid offer_id"
+                update.timestamp = time.time()
+                update.uuid = ''
+                self.onStatusUpdateMessage(update)
+            return
         
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.offer_id.MergeFrom(offer_id)
-        if filters:
-             msg.filters.MergeFrom(filters)
+        msg.filters.MergeFrom(filters)
         for task in tasks:
             msg.tasks.add().MergeFrom(task)
             pid = self.savedOffers.get(offer_id.value, {}).get(task.slave_id.value)
-            if pid:
+            if pid and task.slave_id.value not in self.savedSlavePids:
                 self.savedSlavePids[task.slave_id.value] = pid
         self.savedOffers.pop(offer_id.value)
         self.send(self.master, msg)
 
     def declineOffer(self, offer_id, filters=None):
-        pass
+        if not self.connected:
+            return
+        msg = LaunchTasksMessage()
+        msg.framework_id.MergeFrom(self.framework_id)
+        msg.offer_id.MergeFrom(offer_id)
+        if filters:
+             msg.filters.MergeFrom(filters)
+        self.send(self.master, msg)
 
+    @async
     def killTask(self, task_id):
+        if not self.connected:
+            return
         msg = KillTaskMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.task_id.MergeFrom(task_id)
         self.send(self.master, msg)
 
+    @async
     def sendFrameworkMessage(self, executor_id, slave_id, data):
         if not self.connected:
             return

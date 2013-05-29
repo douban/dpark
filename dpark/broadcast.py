@@ -5,25 +5,22 @@ import marshal
 import cPickle
 import logging
 import gc
+import random
 
 import zmq
 
-from util import compress, decompress, getproctitle, setproctitle, spawn
-import cache
-from serialize import marshalable
-from env import env
+from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
+from dpark.cache import Cache
+from dpark.serialize import marshalable
+from dpark.env import env
 
 logger = logging.getLogger("broadcast")
 
 class SourceInfo:
-    StopBroadcast = -2
+    Stop = -2
 
-    def __init__(self, addr, total_blocks=0, total_bytes=0, block_size=0):
+    def __init__(self, addr):
         self.addr = addr
-        self.total_blocks = total_blocks
-        self.total_bytes = total_bytes
-        self.block_size = block_size
-
         self.parents = []
         self.leechers = 0
         self.failed = False
@@ -40,82 +37,71 @@ class SourceInfo:
                 return True
         return False
 
-class BroadcastBlock:
+class Block:
     def __init__(self, id, data):
         self.id = id
         self.data = data
 
-class VariableInfo:
-    def __init__(self, blocks, total_blocks, total_bytes):
-        self.blocks = blocks
-        self.total_blocks = total_blocks
-        self.total_bytes = total_bytes
-        self.has_blocks = 0
-
-class Broadcast(object):
+class Broadcast:
     initialized = False
-    ever_used = False
     is_master = False
-    cache = cache.Cache() 
+    cache = Cache() 
     broadcastFactory = None
     BlockSize = 1024 * 1024
-    MaxRetryCount = 2
-    MinKnockInterval = 500
-    MaxKnockInterval = 999
         
     def __init__(self, value, is_local):
         assert value is not None, 'broadcast object should not been None'
-        Broadcast.ever_used = True
         self.uuid = str(uuid.uuid4())
         self.value = value
         self.is_local = is_local
+        self.bytes = 0
         if is_local:
             if not self.cache.put(self.uuid, value):
                 raise Exception('object %s is too big to cache', repr(value))
         else:
-            self.sendBroadcast()
+            self.send()
 
     def clear(self):
         self.cache.put(self.uuid, None)
-        self.value = None
 
     def __getstate__(self):
-        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/2 else None)
+        return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/20 else None)
 
     def __setstate__(self, v):
         self.uuid, self.bytes, value = v
         if value is not None:
             self.value = value
-        Broadcast.ever_used = True
     
     def __getattr__(self, name):
         if name != 'value':
-            raise AttributeError(name)
+            return getattr(self.value, name)
 
         # in the executor process, Broadcast is not initialized
         if not self.initialized:
             raise AttributeError(name)
 
         uuid = self.uuid
-        self.value = self.cache.get(uuid)
-        if self.value is not None:
-            return self.value    
+        value = self.cache.get(uuid)
+        if value is not None:
+            self.value = value
+            return value    
         
         oldtitle = getproctitle()
         setproctitle('dpark worker: broadcasting ' + uuid)
 
-        self.recvBroadcast()
-        if self.value is None:
+        value = self.recv()
+        if value is None:
             raise Exception("recv broadcast failed")
-        self.cache.put(uuid, self.value)
+        self.value = value
+        self.cache.put(uuid, value)
 
         setproctitle(oldtitle)
-        return self.value                
+        return value 
                 
-    def sendBroadcast(self):
+    def send(self):
         raise NotImplementedError
 
-    def recvBroadcast(self):
+    def recv(self):
         raise NotImplementedError
 
     def blockifyObject(self, obj):
@@ -126,11 +112,9 @@ class Broadcast(object):
 
         N = self.BlockSize
         blockNum = len(buf) / N + 1
-        val = [BroadcastBlock(i, compress(buf[i*N:i*N+N])) 
+        val = [Block(i, compress(buf[i*N:i*N+N])) 
                     for i in range(blockNum)]
-        vi = VariableInfo(val, blockNum, len(buf))
-        vi.has_blocks = blockNum
-        return vi
+        return val, len(buf)
 
     def unBlockifyObject(self, blocks):
         s = ''.join(decompress(b.data) for b in blocks)
@@ -144,172 +128,109 @@ class Broadcast(object):
         if cls.initialized:
             return
 
+        cls.initialized = True
         cls.is_master = is_master
         cls.host = socket.gethostname()
 
-#        cls.broadcastFactory = FileBroadcastFactory()
-        cls.broadcastFactory = TreeBroadcastFactory()
-        cls.broadcastFactory.initialize(is_master)
-        cls.initialized = True
         logger.debug("Broadcast initialized")
-
+    
     @classmethod
-    def getBroadcastFactory(cls):
-        return cls.broadcastFactory
+    def shutdown(cls):
+        pass
 
-    @classmethod
-    def newBroadcast(cls, value, is_local):
-        return cls.broadcastFactory.newBroadcast(value, is_local)
 
-class BroadcastFactory(object):
-    def initialize(self, is_master):
-        raise NotImplementedError
-    def newBroadcast(self, value, is_local):
-        raise NotImplementedError
-
-class FileBroadcast(Broadcast):
-    workdir = None
-    @property
-    def path(self):
-        return os.path.join(self.workdir, self.uuid)
-
-    def sendBroadcast(self):
-        try:
-            d = marshal.dumps(self.value)
-        except Exception:
-            d = cPickle.dumps(self.value, -1)
-        d = compress(d)
-        self.bytes = len(d)
-        f = open(self.path, 'wb')
-        f.write(d)
-        f.close()
-        logger.debug("dump to %s", self.path)
-
-    def recvBroadcast(self):
-        d = decompress(open(self.path, 'rb').read())
-        try:
-            self.value = marshal.loads(d)
-        except Exception:
-            self.value = cPickle.loads(d)
-        logger.debug("load from %s", self.path)
-
-    def clear(self):
-        Broadcast.clear(self)
-        os.remove(self.path())
-
-    @classmethod
-    def initialize(cls, is_master):
-        cls.workdir = env.get('WORKDIR')
-        logger.debug("FileBroadcast initialized")
-
-class FileBroadcastFactory(BroadcastFactory):
-    def initialize(self, is_master):
-        return FileBroadcast.initialize(is_master)
-    def newBroadcast(self, value, is_local):
-        return FileBroadcast(value, is_local)
-
-class TreeBroadcast(FileBroadcast):
+class TreeBroadcast(Broadcast):
     guides = {}
     MaxDegree = 3
-    master_addr = None
+    tracker_addr = None
+    tracker_thread = None
 
     def __init__(self, value, is_local):
         self.initializeSlaveVariables()
         Broadcast.__init__(self, value, is_local)
 
-    def initializeSlaveVariables(self):    
+    def initializeSlaveVariables(self):
         self.blocks = []
-        self.total_bytes = -1
-        self.total_blocks = -1
-        self.block_size = self.BlockSize
-
-        self.listOfSources = []
-        self.serverAddr = None
+        self.server_addr = None
         self.guide_addr = None
 
     def clear(self):
         Broadcast.clear(self)
         if not self.is_local:
             self.stopServer(self.guide_addr)
+            self.server_thread.join()
+            self.guide_thread.join()
 
-    def sendBroadcast(self):
-        logger.debug("start sendBroadcast %s", self.uuid)
-        variableInfo = self.blockifyObject(self.value)
-        self.blocks = variableInfo.blocks
-        self.total_bytes = variableInfo.total_bytes
-        self.total_blocks = variableInfo.total_blocks
+    def send(self):
+        logger.debug("start send %s", self.uuid)
+        self.blocks, self.bytes = self.blockifyObject(self.value)
         logger.info("broadcast %s: %d bytes in %d blocks", self.uuid, 
-                self.total_bytes, self.total_blocks)
-        self.bytes = self.total_bytes
+                self.bytes, len(self.blocks))
 
-        self.startGuide()
         self.startServer()
+        self.startGuide()
     
     def startGuide(self):
-        def run():
-            sock = env.ctx.socket(zmq.REP)
-            port = sock.bind_to_random_port("tcp://0.0.0.0")
-            self.guide_addr = "tcp://%s:%d" % (self.host, port)
-            logger.debug("guide start at %s", self.guide_addr)
-           
-            sources = {}
-            while True:
-                msg = sock.recv_pyobj()
-                if msg == SourceInfo.StopBroadcast:
-                    sock.send_pyobj(0)
-                    break
-                addr = msg
-                # use the first one to recover
-                if addr in sources:
-                    ssi = self.listOfSources[0]
-                    sock.send_pyobj(ssi)
-                    continue
+        sock = env.ctx.socket(zmq.REP)
+        port = sock.bind_to_random_port("tcp://0.0.0.0")
+        self.guide_addr = "tcp://%s:%d" % (self.host, port)
+        
+        self.guide_thread = spawn(self.guide, sock)
+        self.guides[self.uuid] = self
 
-                while True:
-                    ssi = self.selectSuitableSource(addr)
-                    if not ssi:
-                        self.MaxDegree += 1
-                        ssi = self.selectSuitableSource(addr)
-                    if ssi:
-                        if not self.check_activity(ssi):
-                            ssi.failed = True
-                        else:
-                            break
-
-                logger.debug("sending selected sourceinfo %s", ssi.addr)
+    def guide(self, sock):
+        logger.debug("guide start at %s", self.guide_addr)
+       
+        sources = {}
+        listOfSources = [SourceInfo(self.server_addr)]
+        while True:
+            msg = sock.recv_pyobj()
+            if msg == SourceInfo.Stop:
+                sock.send_pyobj(0)
+                break
+            addr = msg
+            # use the first one to recover
+            if addr in sources:
+                ssi = listOfSources[0]
                 sock.send_pyobj(ssi)
-                
-                o = SourceInfo(addr, self.total_blocks,
-                    self.total_bytes, self.block_size)
-                logger.debug("Adding possible new source to listOfSource: %s",
-                    o)
-                sources[addr] = o
-                self.listOfSources.append(o)
-                sources[addr].parents.append(ssi)                
+                continue
 
-            sock.close()
-            logger.debug("Sending stop notification to %d servers ...", len(self.listOfSources))
-            for source_info in self.listOfSources:
-                self.stopServer(source_info.addr)
-            self.listOfSources = []
-            self.unregisterValue(self.uuid)
+            while True:
+                ssi = self.selectSuitableSource(listOfSources, addr)
+                if not ssi:
+                    self.MaxDegree += 1
+                    ssi = self.selectSuitableSource(listOfSources, addr)
+                if ssi:
+                    if not self.check_activity(ssi.addr):
+                        ssi.failed = True
+                    else:
+                        break
 
-        spawn(run)
-        # wait for guide to start
-        while self.guide_addr is None:
-            time.sleep(0.01)
-        self.registerValue(self.uuid, self.guide_addr)
-        logger.debug("guide started...")
+            logger.debug("sending selected sourceinfo %s", ssi.addr)
+            sock.send_pyobj(ssi)
+            
+            o = SourceInfo(addr)
+            logger.debug("Adding possible new source to listOfSource: %s",
+                o)
+            sources[addr] = o
+            listOfSources.append(o)
+            sources[addr].parents.append(ssi)                
 
-    def selectSuitableSource(self, skip):
+        sock.close()
+        logger.debug("Sending stop notification to %d servers ...", len(listOfSources))
+        for source_info in listOfSources:
+            self.stopServer(source_info.addr)
+        self.guides.pop(self.uuid, None)
+
+    def selectSuitableSource(self, listOfSources, skip):
         def parse_host(addr):
             return addr.split(':')[1][2:]
         host = parse_host(skip)
-        samehost = [s for s in self.listOfSources
+        samehost = [s for s in listOfSources
                 if parse_host(s.addr) == host]
         selected = self._selectSource(samehost, skip)
         if not selected:
-            selected = self._selectSource(self.listOfSources, skip)
+            selected = self._selectSource(listOfSources, skip)
 
         if selected:
             selected.leechers += 1
@@ -320,9 +241,9 @@ class TreeBroadcast(FileBroadcast):
             if (not s.failed and s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
                 return s
 
-    def check_activity(self, source_info):
+    def check_activity(self, addr):
         try:
-            host, port = source_info.addr.split('://')[1].split(':')
+            host, port = addr.split('://')[1].split(':')
             c = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             c.connect((host, int(port)))
             c.close()
@@ -331,106 +252,81 @@ class TreeBroadcast(FileBroadcast):
             return False
 
     def startServer(self):
+        sock = env.ctx.socket(zmq.REP)
+        sock.setsockopt(zmq.LINGER, 0)
+        port = sock.bind_to_random_port("tcp://0.0.0.0")
+        self.server_addr = 'tcp://%s:%d' % (self.host,port)
+
         def run():
-            sock = env.ctx.socket(zmq.REP)
-            sock.setsockopt(zmq.LINGER, 0)
-            port = sock.bind_to_random_port("tcp://0.0.0.0")
-            self.serverAddr = 'tcp://%s:%d' % (self.host,port)
-            logger.debug("server started at %s", self.serverAddr)
+            logger.debug("server started at %s", self.server_addr)
 
             while True:
-                msg = sock.recv_pyobj()
-                if msg == SourceInfo.StopBroadcast:
+                id = sock.recv_pyobj()
+                if id == SourceInfo.Stop:
                     sock.send_pyobj(0)
                     break
-                id = msg
                 sock.send_pyobj(id < len(self.blocks) and self.blocks[id] or None)
 
             sock.close()
-            logger.debug("stop TreeBroadcast server %s", self.serverAddr)
+            logger.debug("stop TreeBroadcast server %s", self.server_addr)
 
             # clear cache
             self.cache.put(self.uuid, None)
-            self.blocks = []
-            self.value = None
 
-        spawn(run)
-        while self.serverAddr is None:
-            time.sleep(0.01)
-        #logger.debug("server started...")
-        self.listOfSources = [SourceInfo(self.serverAddr, 
-            self.total_blocks, self.total_bytes,
-            self.block_size)]
+        self.server_thread = spawn(run)
 
     def stopServer(self, addr):
         req = env.ctx.socket(zmq.REQ)
         req.setsockopt(zmq.LINGER, 0)
         req.connect(addr)
-        req.send_pyobj(SourceInfo.StopBroadcast)
-        poller = zmq.Poller()
-        poller.register(req, zmq.POLLIN)
-        avail = dict(poller.poll(1 * 1000))
-        if avail and avail.get(req) == zmq.POLLIN:
+        req.send_pyobj(SourceInfo.Stop)
+        avail = req.poll(1 * 100, zmq.POLLIN)
+        if avail:
             req.recv_pyobj()
-        poller.unregister(req)
         req.close()
 
-    def recvBroadcast(self):
+    def recv(self):
         self.initializeSlaveVariables()
-                
         self.startServer()
 
         start = time.time()
-        self.receiveBroadcast(self.uuid)
-        self.value = self.unBlockifyObject(self.blocks)
+        self.receive(self.uuid)
+        value = self.unBlockifyObject(self.blocks)
         used = time.time() - start
         logger.debug("Reading Broadcasted variable %s took %ss", self.uuid, used)
+        return value
 
-    def receiveBroadcast(self, uuid):
-        master_addr = self.getMasterAddr(uuid)
+    def receive(self, uuid):
+        guide_addr, total_blocks = self.get_guide_addr(uuid)
         guide_sock = env.ctx.socket(zmq.REQ)
-        guide_sock.connect(master_addr)
-        logger.debug("connect to guide %s", master_addr)
+        guide_sock.connect(guide_addr)
+        logger.debug("connect to guide %s", guide_addr)
 
         self.blocks = []
         start = time.time()
-        for i in range(10):
-            guide_sock.send_pyobj(self.serverAddr)
+        while True:
+            guide_sock.send_pyobj(self.server_addr)
             source_info = guide_sock.recv_pyobj()
-
-            self.total_blocks = source_info.total_blocks
-            self.total_bytes = source_info.total_bytes
             logger.debug("received SourceInfo from master: %s", 
                 source_info)
-            if self.receiveSingleTransmission(source_info):
+            self.receiveSingleTransmission(source_info, total_blocks)
+            if len(self.blocks) == total_blocks:
                 break
-        else:
-            raise Exception("receiveSingleTransmission failed")
-        
-        logger.debug("%s got broadcast in %.1fs from %s", self.serverAddr, time.time() - start, source_info.addr)
 
-#        guide_sock.send_pyobj(source_info)
-#        guide_sock.recv_pyobj()
+        logger.debug("%s got broadcast in %.1fs from %s", self.server_addr, time.time() - start, source_info.addr)
         guide_sock.close()
 
-        return len(self.blocks) == self.total_blocks
-
-    def receiveSingleTransmission(self, source_info):
-        logger.debug("Inside receiveSingleTransmission")
-        logger.debug("total_blocks: %s has %s", self.total_blocks,
-                len(self.blocks))
+    def receiveSingleTransmission(self, source_info, total_blocks):
         sock = env.ctx.socket(zmq.REQ)
         sock.setsockopt(zmq.LINGER, 0)
         sock.connect(source_info.addr)
-        poller = zmq.Poller()
-        poller.register(sock, zmq.POLLIN)
         try:
-            for i in range(len(self.blocks), source_info.total_blocks):
+            for i in range(len(self.blocks), total_blocks):
                 while True:
                     sock.send_pyobj(i)
-                    avail = dict(poller.poll(3 * 1000))
-                    if not avail or avail.get(sock) != zmq.POLLIN:
-                        logger.warning("%s recv broadcast %d from %s timeout", self.serverAddr, i, source_info.addr)
+                    avail = sock.poll(10 * 1000, zmq.POLLIN) # unmarshal object will block server thread
+                    if not avail:
+                        logger.warning("%s recv broadcast %d from %s timeout", self.server_addr, i, source_info.addr)
                         return False
                     block = sock.recv_pyobj()
                     if block is not None:
@@ -438,76 +334,215 @@ class TreeBroadcast(FileBroadcast):
                     # not available
                     time.sleep(0.1)
 
-                if not isinstance(block, BroadcastBlock) or i != block.id:
-                    logger.error("%s recv bad block %d %s", self.serverAddr, i, block)
+                if not isinstance(block, Block) or i != block.id:
+                    logger.error("%s recv bad block %d %s", self.server_addr, i, block)
                     return False
                 logger.debug("Received block: %s from %s", 
                     block.id, source_info.addr)
                 self.blocks.append(block)
         finally:
-            poller.unregister(sock)
             sock.close()
 
-        return len(self.blocks) == source_info.total_blocks
+    @classmethod
+    def initialize(cls, is_master):
+        Broadcast.initialize(is_master)
+        sock = env.ctx.socket(zmq.REP)
+        sock.setsockopt(zmq.LINGER, 0)
+        port = sock.bind_to_random_port("tcp://0.0.0.0")
+        cls.tracker_addr = 'tcp://%s:%d' % (cls.host, port)
 
-    def getMasterAddr(self, uuid):
+        def run():
+            logger.debug("TreeBroadcast tracker started at %s", 
+                    cls.tracker_addr)
+            while True:
+                uuid = sock.recv_pyobj()
+                obj = cls.guides.get(uuid, '')
+                sock.send_pyobj(obj and (obj.guide_addr, len(obj.blocks)))
+                if not uuid:
+                    break
+            sock.close()
+            logger.debug("TreeBroadcast tracker stopped")
+
+        if is_master:
+            cls.tracker_thread = spawn(run)
+            env.register('TreeBroadcastTrackerAddr', cls.tracker_addr)
+        else:
+            cls.tracker_addr = env.get('TreeBroadcastTrackerAddr')
+            
+        logger.debug("TreeBroadcast initialized")
+
+    @classmethod
+    def get_guide_addr(cls, uuid):
         sock = env.ctx.socket(zmq.REQ)
         sock.setsockopt(zmq.LINGER, 0)
-        sock.connect(self.master_addr)
+        sock.connect(cls.tracker_addr)
         sock.send_pyobj(uuid)
         guide_addr = sock.recv_pyobj()
         sock.close()
         return guide_addr
 
     @classmethod
-    def initialize(cls, is_master):
+    def shutdown(cls):
+        for uuid, obj in cls.guides.items():
+            obj.clear()
+        if cls.tracker_thread:
+            cls.get_guide_addr('')
+            cls.tracker_thread.join()
+        Broadcast.shutdown()
 
-        FileBroadcast.initialize(is_master)
+class P2PBroadcast(TreeBroadcast):
+    def guide(self, sock):
+        sources = {self.server_addr: [1] * len(self.blocks)}
+        last_check = 0
+        while True:
+            avail = sock.poll(1*1000, zmq.POLLIN)
+            if not avail:
+                now = time.time()
+                if last_check + 10 < now:
+                    for addr in sources.keys():
+                        if addr != self.server_addr and not self.check_activity(addr):
+                            del sources[addr]
+                    last_check = now
+                continue
 
-        def run():
-            sock = env.ctx.socket(zmq.REP)
-            sock.setsockopt(zmq.LINGER, 0)
-            port = sock.bind_to_random_port("tcp://0.0.0.0")
-            cls.master_addr = 'tcp://%s:%d' % (cls.host, port)
-            logger.debug("TreeBroadcast tracker started at %s", 
-                    cls.master_addr)
-            while True:
-                uuid = sock.recv_pyobj()
-                guide = cls.guides.get(uuid, '')
-                if not guide:
-                    logger.warning("broadcast %s is not registered", uuid)
-                sock.send_pyobj(guide)
-            sock.close()
-            logger.debug("TreeBroadcast tracker stopped")
-
-        if is_master:
-            spawn(run)
-            while cls.master_addr is None:
-                time.sleep(0.01)
-            env.register('TreeBroadcastTrackerAddr', cls.master_addr)
-        else:
-            cls.master_addr = env.get('TreeBroadcastTrackerAddr')
+            msg = sock.recv_pyobj()
+            if msg == SourceInfo.Stop:
+                sock.send_pyobj(0)
+                break
+            sock.send_pyobj(sources)
+            addr, bitmap = msg
+            if not addr or not isinstance(addr, str) or not addr.startswith('tcp://'):
+                logger.error('invalid server addr: %s', addr)
+                continue
+            if any(bitmap):
+                sources[addr] = bitmap
+        
+        sock.close()
+        logger.debug("Sending stop notification to %d servers ...", len(sources))
+        for addr in sources:
+            self.stopServer(addr)
+        self.sources = {}
+        self.guides.pop(self.uuid, None)
             
-        logger.debug("TreeBroadcast initialized")
+    def receive(self, uuid):
+        r = self.get_guide_addr(uuid)
+        assert r, 'broadcast guide has shutdown'
+        guide_addr, total_blocks = r
+        guide_sock = env.ctx.socket(zmq.REQ)
+        guide_sock.connect(guide_addr)
+        logger.debug("connect to guide %s", guide_addr)
 
-    @classmethod
-    def registerValue(cls, uuid, guide_addr):
-        cls.guides[uuid] = guide_addr
-        logger.debug("New value registered with the Tracker %s, %s", uuid, guide_addr) 
+        self.blocks = [None] * total_blocks
+        self.bitmap = [0] * total_blocks
+        start = time.time()
+        hostname = socket.gethostname()
+        while True:
+            guide_sock.send_pyobj((self.server_addr, self.bitmap))
+            source_infos = guide_sock.recv_pyobj()
+            logger.debug("received SourceInfo from master: %s", source_infos.keys()) 
+            self.receive_from_local(dict((k,v) for k,v in source_infos.iteritems() if hostname in k))
+            self.receive_one(source_infos)
+            if all(self.bitmap):
+                break
+        
+        logger.debug("%s got broadcast in %.1fs", self.server_addr, time.time() - start)
+        guide_sock.close()
 
-    @classmethod
-    def unregisterValue(cls, uuid):
-        guide_addr = cls.guides.pop(uuid, None)
-        logger.debug("value unregistered from Tracker %s, %s", uuid, guide_addr) 
+    def receive_from_local(self, sources):
+        poller = zmq.Poller()
+        socks = []
+        addrs = {}
+        for addr in sources:
+            i = self.peek(sources[addr])
+            if i is None: continue
+            self.bitmap[i] = 1
+            sock = env.ctx.socket(zmq.REQ)
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(addr)
+            sock.send_pyobj(i)
+            poller.register(sock, zmq.POLLIN)
+            socks.append(sock)
+            addrs[sock] = addr
 
-class TreeBroadcastFactory(BroadcastFactory):
-    def initialize(self, is_master):
-        return TreeBroadcast.initialize(is_master)
-    def newBroadcast(self, value, is_local):
-        return TreeBroadcast(value, is_local)
+        while socks:
+            t = time.time()
+            avail = poller.poll(5 * 1000) # unmarshal object will block server thread
+            if not avail:
+                break
+            for sock, _ in avail:
+                block = sock.recv_pyobj()
+                if block is not None and isinstance(block, Block):
+                    self.blocks[block.id] = block
+                    logger.debug("Received block: %s from %s", block.id, addrs[sock])
+                i = self.peek(sources[addrs[sock]]) 
+                if i is not None:
+                    self.bitmap[i] = 1
+                    sock.send_pyobj(i)
+                else:
+                    poller.unregister(sock)
+                    socks.remove(sock)
+                    sock.close()
+
+        # rebuild bitmap 
+        self.bitmap = [int(bool(b)) for b in self.blocks]
+        timeout_servers = [addrs.get(sock) for sock in socks]
+        if timeout_servers:
+            logger.debug("recv from %s timeout", timeout_servers)
+
+
+    def receive_one(self, sources):
+        host = socket.gethostname()
+        sources = sources.items() #sorted(sources.items(), key=lambda (k,b):len(b))
+        random.shuffle(sources)
+
+        poller = zmq.Poller()
+        socks = []
+        addrs = {}
+        hosts = set()
+        for addr, bitmap in sources:
+            host = addr.split(':')[0][5:]
+            if host in hosts: continue
+            i = self.peek(bitmap)
+            if i is None: continue
+            self.bitmap[i] = 1
+            hosts.add(host)
+            sock = env.ctx.socket(zmq.REQ)
+            sock.setsockopt(zmq.LINGER, 0)
+            sock.connect(addr)
+            addrs[sock] = addr
+            sock.send_pyobj(i)
+            poller.register(sock, zmq.POLLIN)
+            socks.append(sock)
+
+        while socks:
+            t = time.time()
+            avail = poller.poll(5 * 1000) # unmarshal object will block server thread
+            if not avail:
+                break
+            for sock, _ in avail:
+                block = sock.recv_pyobj()
+                if block is not None and isinstance(block, Block):
+                    self.blocks[block.id] = block
+                    logger.debug("Received block: %s from %s", block.id, addrs.get(sock))
+                poller.unregister(sock)
+                socks.remove(sock)
+                sock.close()
+
+        # rebuild bitmap 
+        self.bitmap = [bool(b) for b in self.blocks]
+        timeout_servers = [addrs.get(sock) for sock in socks]
+        if timeout_servers:
+            logger.debug("recv from %s timeout", timeout_servers)
+
+    def peek(self, bitmap):
+        avails = [i for i in range(len(bitmap)) if not self.bitmap[i] and bitmap[i]]
+        if avails:
+            return random.choice(avails)
+
+TheBroadcast = P2PBroadcast
 
 def _test_init():
-    Broadcast.initialize(False)
+    TheBroadcast.initialize(False)
 
 def _test_in_process(v):
     assert v.value[0] == 0
@@ -518,13 +553,13 @@ if __name__ == '__main__':
     logging.basicConfig(
         format="%(process)d:%(threadName)s:%(levelname)s %(message)s",
         level=logging.DEBUG)
-    Broadcast.initialize(True)
+    TheBroadcast.initialize(True)
     import multiprocessing
-    from env import env
+    from dpark.env import env
     pool = multiprocessing.Pool(4, _test_init)
 
     v = range(1000*1000)
-    b = Broadcast.newBroadcast(v, False)
+    b = TreeBroadcast(v, False)
     b = cPickle.loads(cPickle.dumps(b, -1))
     assert len(b.value) == len(v), b.value
 

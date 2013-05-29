@@ -1,6 +1,7 @@
 from operator import add
 import copy
-from serialize import load_func, dump_func
+
+from dpark.serialize import load_func, dump_func
 
 class AccumulatorParam:
     def __init__(self, zero, addInPlace):
