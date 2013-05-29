@@ -500,12 +500,14 @@ class P2PBroadcast(TreeBroadcast):
         addrs = {}
         hosts = set()
         for addr, bitmap in sources:
-            host = addr.split(':')[0][5:]
-            if host in hosts: continue
             i = self.peek(bitmap)
             if i is None: continue
             self.bitmap[i] = 1
+
+            host = addr.split(':')[0][5:]
+            if host in hosts: continue
             hosts.add(host)
+
             sock = env.ctx.socket(zmq.REQ)
             sock.setsockopt(zmq.LINGER, 0)
             sock.connect(addr)
