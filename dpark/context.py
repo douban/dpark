@@ -10,6 +10,7 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.moosefs import walk
+import dpark.conf as conf
 
 logger = logging.getLogger("context")
 
@@ -21,6 +22,18 @@ def singleton(cls):
             instances[key] = cls(*a, **kw)
         return instances[key]
     return getinstance
+
+def setup_conf(options):
+    if options.conf:
+        conf.load_conf(options.conf)
+    elif 'DPARK_CONF' in os.environ:
+        conf.load_conf(os.environ['DPARK_CONF'])
+    elif os.path.exists('/etc/dpark.conf'):
+        conf.load_conf('/etc/dpark.conf')
+
+    conf.__dict__.update(os.envrion)
+    import moosefs
+    moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
 
 @singleton
 class DparkContext(object):
@@ -35,15 +48,11 @@ class DparkContext(object):
         if self.initialized:
             return
 
-        #if 'MESOS_SLAVE_PID' in os.environ and 'DRUN_SIZE' not in os.environ:
-        #    from executor import run
-        #    run()
-        #    sys.exit(0)
-        
         options = parse_options()
         self.options = options
-        master = self.master or options.master
+   
 
+        master = self.master or options.master
         if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
@@ -52,9 +61,7 @@ class DparkContext(object):
             self.isLocal = False
         else:
             if master == 'mesos':
-                master = os.environ.get('MESOS_MASTER')
-                if not master:
-                    master = 'zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2'
+                master = conf.MESOS_MASTER
 
             if master.startswith('mesos://'):
                 if '@' in master:
@@ -64,9 +71,6 @@ class DparkContext(object):
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
         
-            #FIXME
-            if master.endswith('mesos_master'):
-                master += '2'
             if ':' not in master:
                 master += ':5050'
             
@@ -142,7 +146,6 @@ class DparkContext(object):
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
     def csvFile(self, path, dialect='excel', *args, **kwargs):
-        """ deprecated. """
         return self.textFile(path, cls=TextFileRDD, *args, **kwargs).fromCsv(dialect)
 
     def binaryFile(self, path, fmt=None, length=None, *args, **kwargs):
@@ -284,7 +287,7 @@ def add_default_options():
     group = optparse.OptionGroup(parser, "Dpark Options")
 
     group.add_option("-m", "--master", type="string", default="local",
-            help="master of Mesos: local, process, or mesos://")
+            help="master of Mesos: local, process, host[:port], or mesos://")
 #    group.add_option("-n", "--name", type="string", default="dpark",
 #            help="job name")
     group.add_option("-p", "--parallel", type="int", default=0, 
@@ -301,6 +304,8 @@ def add_default_options():
     group.add_option("--snapshot_dir", type="string", default="",
             help="shared dir to keep snapshot of RDDs")
 
+    group.add_option("--conf", type="string",
+            help="path for configuration file")
     group.add_option("--self", action="store_true",
             help="user self as exectuor")
     group.add_option("--profile", action="store_true",

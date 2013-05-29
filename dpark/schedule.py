@@ -485,9 +485,6 @@ class MesosScheduler(DAGScheduler):
             raise Exception("dpark is not allowed to run as 'root'")
         framework.name = name
 
-        # ignore INFO and DEBUG log
-        os.environ['GLOG_logtostderr'] = '1'
-        os.environ['GLOG_minloglevel'] = '1'
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
         self.driver.start()

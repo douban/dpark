@@ -6,6 +6,7 @@ import shutil
 import zmq
 
 from dpark import util
+import dpark.conf as conf
 
 logger = logging.getLogger("env")
 
@@ -29,10 +30,7 @@ class DparkEnv:
         self.isMaster = isMaster
         self.isLocal = isLocal
         if isMaster:
-            default_dir = '/tmp/dpark'
-            if os.path.exists('/dev/shm'):
-                default_dir = '/dev/shm,/tmp/dpark'
-            roots = os.environ.get('DPARK_WORK_DIR', default_dir).split(',')
+            roots = conf.DPARK_WORK_DIR.split(',')
             if isLocal:
                 root = roots[0] # for local mode 
                 if not os.path.exists(root):

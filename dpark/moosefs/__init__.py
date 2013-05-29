@@ -295,8 +295,6 @@ class ReadableFile(File):
 _mfs = {}
 
 MFS_PREFIX = {
-    '/mfs': 'mfsmaster',
-    '/home2': 'mfsmaster2',
     }
 
 def get_mfs(master, mountpoint=''):
