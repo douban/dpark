@@ -34,7 +34,7 @@ def include_path(path):
     return _
 
 def echo(s):
-    sys.stdout.write(s)
+    sys.stdout.write(s+'\n')
 
 if len(filepaths) == 1:
     path = filepaths[0]
