@@ -580,6 +580,7 @@ class PipedRDD(DerivedRDD):
                 stdout=subprocess.PIPE,
                 stderr=self.quiet and devnull or sys.stderr,
                 shell=self.shell)
+        
         def read(stdin):
             try:
                 it = iter(self.prev.iterator(split))
@@ -588,21 +589,33 @@ class PipedRDD(DerivedRDD):
                     break
                 else:
                     return
-                if isinstance(first, str) and first.endswith('\n'):
-                    stdin.write(first)
-                    stdin.writelines(it)
-                else:
-                    stdin.write("%s\n"%first)
-                    stdin.writelines("%s\n"%x for x in it)
+                try:
+                    if isinstance(first, str) and first.endswith('\n'):
+                        stdin.write(first)
+                        stdin.writelines(it)
+                    else:
+                        stdin.write("%s\n"%first)
+                        stdin.writelines("%s\n"%x for x in it)
+                except Exception, e:
+                    if not (isinstance(e, IOError) and e.errno == 32): # Broken Pipe
+                        self.error = e
+                        p.kill()
             finally:
                 stdin.close()
                 devnull.close()
+        
+        self.error = None
         spawn(read, p.stdin)
-        return self.read(p.stdout)
+        return self.read(p)
 
-    def read(self, pipe):
-        for line in pipe:
+    def read(self, p):
+        for line in p.stdout:
             yield line[:-1]
+        if self.error:
+            raise self.error
+        ret = p.wait()
+        if ret:
+            raise Exception('Subprocess exited with status %d' % ret)
 
 class MappedValuesRDD(MappedRDD):
     @property
