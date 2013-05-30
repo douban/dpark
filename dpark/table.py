@@ -75,7 +75,7 @@ def table_join(f):
         assert left_keys, 'need field names to join'
         if right_keys is None:
             right_keys = left_keys
-        
+
         joined = f(self, other, left_keys, right_keys)
 
         ln = [n for n in self.fields if n not in left_keys]
@@ -128,7 +128,7 @@ class TableRDD(DerivedRDD):
         return ''.join(es) 
 
     def _create_expression(self, e):
-        if callable(e): 
+        if callable(e):
             return e
         e = re.compile(r' as (\w+)', re.I).split(e)[0]
         return self._replace_attr(e)
@@ -137,7 +137,7 @@ class TableRDD(DerivedRDD):
         asp = re.compile(r' as (\w+)', re.I)
         m = asp.search(e)
         if m: return m.group(1)
-        return re.sub(r'[(, )+*/\-]', '_', e).strip('_') 
+        return re.sub(r'[(, )+*/\-]', '_', e).strip('_')
 
     def select(self, *fields, **named_fields):
         if len(fields) == 1 and not named_fields and fields[0] == '*':
@@ -145,7 +145,7 @@ class TableRDD(DerivedRDD):
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
-        
+
         selector = [self._create_expression(e) for e in fields] + \
             [self._create_expression(named_fields[n]) for n in new_fields[len(fields):]]
         _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector))) 
@@ -182,9 +182,9 @@ class TableRDD(DerivedRDD):
         new_fields = [self._create_field_name(e) for e in fields] + named_fields.keys()
         if len(set(new_fields)) != len(new_fields):
             raise Exception("dupicated fields: " + (','.join(new_fields)))
-        
+
         codes = ([self._create_reducer(i, e) for i,e in enumerate(fields)]
-              + [self._create_reducer(i + len(fields), named_fields[n]) 
+              + [self._create_reducer(i + len(fields), named_fields[n])
                     for i,n in enumerate(new_fields[len(fields):])])
 
         creater = eval('lambda _v:(%s,)' % (','.join(c[0] for c in codes)))
@@ -230,7 +230,7 @@ class TableRDD(DerivedRDD):
         combiner = eval('lambda _x, _y:(%s,)' % (','.join(c[2] for c in codes)))
         mapper = eval('lambda _x:(%s,)' % ','.join(c[3] for c in codes))
 
-        agg = Aggregator(creater, merger, combiner) 
+        agg = Aggregator(creater, merger, combiner)
         g = self.prev.map(lambda v:(gen_key(v), v)).combineByKey(agg, numSplits)
         return g.map(lambda (k,v): k + mapper(v)).asTable(key_names + values, self.name)
 
@@ -239,7 +239,7 @@ class TableRDD(DerivedRDD):
             keys = self.fields[:1]
         if not isinstance(keys, (list, tuple)):
             keys = (keys,)
-        
+
         def pick(keys, fields):
             ki = [fields.index(n) for n in keys]
             vi = [i for i in range(len(fields)) if fields[i] not in keys]

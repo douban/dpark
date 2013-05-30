@@ -26,7 +26,7 @@ class OneToRangeDependency(NarrowDependency):
         self.length = length
 
     def getParents(self, pid):
-        return range(pid * self.splitSize, 
+        return range(pid * self.splitSize,
                 min((pid+1) * self.splitSize, self.length))
 
 class CartesianDependency(NarrowDependency):
@@ -118,7 +118,7 @@ class Partitioner:
 class HashPartitioner(Partitioner):
     def __init__(self, partitions):
         self.partitions = int(partitions)
-        
+
     @property
     def numPartitions(self):
         return self.partitions
@@ -136,7 +136,7 @@ class RangePartitioner(Partitioner):
         self.keys = sorted(keys)
         self.reverse = reverse
 
-    @property        
+    @property
     def numPartitions(self):
         return len(self.keys) + 1
 

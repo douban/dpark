@@ -14,7 +14,7 @@ class MockDriver:
         pass
     def launchTasks(self, oid, tasks):
         self.tasks.extend(tasks)
-            
+
 
 class TestScheduler(unittest.TestCase):
     def setUp(self):
@@ -35,7 +35,7 @@ class TestScheduler(unittest.TestCase):
 
         info = self.sched.getExecutorInfo()
         assert isinstance(info, mesos_pb2.ExecutorInfo)
-        
+
         tasks = [Task() for i in range(10)]
         sched.submitTasks(tasks)
         assert len(sched.activeJobs) == 1
@@ -76,7 +76,7 @@ class TestScheduler(unittest.TestCase):
         assert len(sched.taskIdToSlaveId) == 0
         assert len(sched.activeJobs) == 0
         assert len(sched.activeJobQueue) == 0
-           
+
         sched.error(driver, 1, 'error')
 
 if __name__ == '__main__':

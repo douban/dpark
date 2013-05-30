@@ -10,7 +10,7 @@ def compress(s):
 try:
     from lz4 import compress, decompress
     COMPRESS = 'lz4'
-except ImportError:    
+except ImportError:
     try:
         from snappy import compress, decompress
         COMPRESS = 'snappy'

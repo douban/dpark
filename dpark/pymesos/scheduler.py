@@ -40,7 +40,7 @@ class SchedulerDriver(object):
 
 
 class MesosSchedulerDriver(Process):
-    def __init__(self, sched, framework, master_uri): 
+    def __init__(self, sched, framework, master_uri):
         Process.__init__(self, 'scheduler')
         self.sched = sched
         #self.executor_info = executor_info
@@ -143,7 +143,7 @@ class MesosSchedulerDriver(Process):
             if not ':' in uri:
                 uri += ':5050'
             self.onNewMasterDetectedMessage('master@%s' % uri)
-        
+
     def abort(self):
         if self.connected:
             msg = UnregisterFrameworkMessage()
@@ -226,12 +226,12 @@ class MesosSchedulerDriver(Process):
     def sendFrameworkMessage(self, executor_id, slave_id, data):
         if not self.connected:
             return
-        
+
         msg = FrameworkToExecutorMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.executor_id.MergeFrom(executor_id)
         msg.slave_id.MergeFrom(slave_id)
         msg.data = data
-        
+
         slave = self.savedSlavePids.get(slave_id.value, self.master) # can not send to slave directly
         self.send(slave, msg)

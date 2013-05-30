@@ -1315,169 +1315,169 @@ DESCRIPTOR.message_types_by_name['Parameters'] = _PARAMETERS
 class FrameworkID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKID
-  
+
   # @@protoc_insertion_point(class_scope:mesos.FrameworkID)
 
 class OfferID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _OFFERID
-  
+
   # @@protoc_insertion_point(class_scope:mesos.OfferID)
 
 class SlaveID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEID
-  
+
   # @@protoc_insertion_point(class_scope:mesos.SlaveID)
 
 class TaskID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKID
-  
+
   # @@protoc_insertion_point(class_scope:mesos.TaskID)
 
 class ExecutorID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORID
-  
+
   # @@protoc_insertion_point(class_scope:mesos.ExecutorID)
 
 class FrameworkInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.FrameworkInfo)
 
 class CommandInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-  
+
   class URI(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _COMMANDINFO_URI
-    
+
     # @@protoc_insertion_point(class_scope:mesos.CommandInfo.URI)
   DESCRIPTOR = _COMMANDINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.CommandInfo)
 
 class ExecutorInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.ExecutorInfo)
 
 class MasterInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _MASTERINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.MasterInfo)
 
 class SlaveInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.SlaveInfo)
 
 class Value(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-  
+
   class Scalar(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_SCALAR
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Value.Scalar)
-  
+
   class Range(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_RANGE
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Value.Range)
-  
+
   class Ranges(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_RANGES
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Value.Ranges)
-  
+
   class Set(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_SET
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Value.Set)
-  
+
   class Text(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_TEXT
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Value.Text)
   DESCRIPTOR = _VALUE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Value)
 
 class Attribute(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _ATTRIBUTE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Attribute)
 
 class Resource(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RESOURCE
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Resource)
 
 class Request(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REQUEST
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Request)
 
 class Offer(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _OFFER
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Offer)
 
 class TaskInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKINFO
-  
+
   # @@protoc_insertion_point(class_scope:mesos.TaskInfo)
 
 class TaskStatus(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKSTATUS
-  
+
   # @@protoc_insertion_point(class_scope:mesos.TaskStatus)
 
 class Filters(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FILTERS
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Filters)
 
 class Environment(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-  
+
   class Variable(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _ENVIRONMENT_VARIABLE
-    
+
     # @@protoc_insertion_point(class_scope:mesos.Environment.Variable)
   DESCRIPTOR = _ENVIRONMENT
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Environment)
 
 class Parameter(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PARAMETER
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Parameter)
 
 class Parameters(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PARAMETERS
-  
+
   # @@protoc_insertion_point(class_scope:mesos.Parameters)
 
 # @@protoc_insertion_point(module_scope)

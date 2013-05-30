@@ -78,7 +78,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         else:
             url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
-        
+
         tries = 4
         while True:
             try:
@@ -106,7 +106,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                         shuffleId, reduceId, part, url, e)
                 tries -= 1
                 if not tries:
-                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", 
+                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s",
                             shuffleId, reduceId, part, url, e)
                     raise
                 time.sleep(2**(3-tries))
@@ -150,7 +150,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         random.shuffle(parts)
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
-        
+
         for i in xrange(len(serverUris)):
             r = self.results.get()
             if isinstance(r, Exception):
@@ -179,7 +179,7 @@ class Merger(object):
         for k,v in items:
             o = combined.get(k)
             combined[k] = mergeCombiner(o, v) if o is not None else v
-    
+
     def __iter__(self):
         return self.combined.iteritems()
 
@@ -223,7 +223,7 @@ def heap_merged(items_lists, combiner):
     while heap:
         k, i, v = heapq.heappop(heap)
         if k != last_key:
-            yield last_key, last_value 
+            yield last_key, last_value
             last_key, last_value = k, v
         else:
             last_value = combiner(last_value, v)
@@ -240,7 +240,7 @@ class sorted_items(object):
 
     def __init__(self, items):
         self.id = self.new_id()
-        self.path = path = os.path.join(LocalFileShuffle.shuffleDir, 
+        self.path = path = os.path.join(LocalFileShuffle.shuffleDir,
             'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
         f = gzip.open(path, 'wb+')
 
@@ -304,7 +304,7 @@ class DiskMerger(Merger):
 
     def merge(self, items):
         Merger.merge(self, items)
-        
+
         self.merged += 1
         #print 'used', self.merged, self.total, self.get_used_memory() - self.base_memory, self.base_memory
         if self.max_merge is None:
@@ -333,13 +333,13 @@ class MapOutputTrackerMessage: pass
 class GetMapOutputLocations:
     def __init__(self, shuffleId):
         self.shuffleId = shuffleId
-class StopMapOutputTracker: pass        
+class StopMapOutputTracker: pass
 
 
 class MapOutputTrackerServer(CacheTrackerServer):
     def __init__(self, locs):
         CacheTrackerServer.__init__(self, locs)
-    
+
     def stop(self):
         sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
@@ -453,28 +453,28 @@ def test():
     for i in range(10):
         d = zip(range(10000), range(10000))
         l.append(sorted_items(d))
-    hl = heap_merged(l, lambda x,y:x+y)    
+    hl = heap_merged(l, lambda x,y:x+y)
     for i in range(10):
         print i, hl.next()
-    
+
     import logging
     logging.basicConfig(level=logging.INFO)
     from dpark.env import env
     import cPickle
     env.start(True)
-    
-    path = LocalFileShuffle.getOutputFile(1, 0, 0) 
+
+    path = LocalFileShuffle.getOutputFile(1, 0, 0)
     f = open(path, 'w')
     f.write(cPickle.dumps([('key','value')], -1))
     f.close()
-    
+
     uri = LocalFileShuffle.getServerUri()
     env.mapOutputTracker.registerMapOutput(1, 1, 0, uri)
     fetcher = SimpleShuffleFetcher()
     def func(k,v):
         assert k=='key'
         assert v=='value'
-    fetcher.fetch(1, 0, func) 
+    fetcher.fetch(1, 0, func)
 
     tracker = MapOutputTracker(True)
     tracker.registerMapOutput(2, 5, 1, uri)

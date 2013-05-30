@@ -23,7 +23,7 @@ class UPID(object):
             name, addr = name.split('@')
         self.name = name
         self.addr = addr
-    
+
     def __str__(self):
         return "%s@%s" % (self.name, self.addr)
 

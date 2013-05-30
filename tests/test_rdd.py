@@ -62,37 +62,37 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey().collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
-        
+
         # join
         nums2 = self.sc.makeRDD(zip([2,3,4], [1,2,3]), 2)
-        self.assertEqual(nums.join(nums2).collect(), 
+        self.assertEqual(nums.join(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
         self.assertEqual(sorted(nums.leftOuterJoin(nums2).collect()),
                 [(1, (4,None)), (2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
         self.assertEqual(sorted(nums.rightOuterJoin(nums2).collect()),
                 [(2, (5,1)), (3, (6,2)), (3, (7,2)), (4,(None,3))])
 
-        self.assertEqual(nums.mapValue(lambda x:x+1).collect(), 
+        self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
         self.assertEqual(nums.flatMapValue(lambda x:range(x)).count(), 22)
         self.assertEqual(nums.groupByKey().lookup(3), [6,7])
 
         # group with
-        self.assertEqual(sorted(nums.groupWith(nums2).collect()), 
+        self.assertEqual(sorted(nums.groupWith(nums2).collect()),
                 [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
         nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2).flatMapValue(lambda x:x)
         self.assertEqual(sorted(nums.groupWith([nums2, nums3]).collect()),
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
                 (4,([],[3],[1])), (5,([],[],[2]))])
-    
+
     def test_accumulater(self):
         d = range(4)
         nums = self.sc.makeRDD(d, 2)
-        
+
         acc = self.sc.accumulator()
         nums.map(lambda x: acc.add(x)).count()
         self.assertEqual(acc.value, 6)
-        
+
         acc = self.sc.accumulator([], listAcc)
         nums.map(lambda x: acc.add([x])).count()
         self.assertEqual(list(sorted(acc.value)), range(4))
@@ -104,7 +104,7 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.makeRDD(d, 10)
         self.assertEqual(rdd.sort(numSplits=10).collect(), range(100))
         self.assertEqual(rdd.sort(reverse=True, numSplits=5).collect(), list(reversed(range(100))))
-        self.assertEqual(rdd.sort(key=lambda x:-x, reverse=True, numSplits=4).collect(), range(100))       
+        self.assertEqual(rdd.sort(key=lambda x:-x, reverse=True, numSplits=4).collect(), range(100))
 
         self.assertEqual(rdd.top(), range(90, 100)[::-1])
         self.assertEqual(rdd.top(15, lambda x:-x), range(0, 15))
@@ -129,9 +129,9 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['class'], 1)
         prefix = 'prefix:'
         self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout'),
-            ['/tmp/tout/0000']) 
+            ['/tmp/tout/0000'])
         self.assertEqual(f.map(lambda x:('test', prefix+x)).saveAsTextFileByKey('/tmp/tout'),
-            ['/tmp/tout/test/0000']) 
+            ['/tmp/tout/test/0000'])
         d = self.sc.textFile('/tmp/tout')
         n = len(open(path).readlines())
         self.assertEqual(d.count(), n)
@@ -139,20 +139,20 @@ class TestRDD(unittest.TestCase):
             ).saveAsCSVFile('/tmp/tout'),
             ['/tmp/tout/0000.csv'])
 
-    def test_compressed_file(self):        
-        # compress 
+    def test_compressed_file(self):
+        # compress
         d = self.sc.makeRDD(range(100000), 1)
-        self.assertEqual(d.map(str).saveAsTextFile('/tmp/tout', compress=True), 
+        self.assertEqual(d.map(str).saveAsTextFile('/tmp/tout', compress=True),
             ['/tmp/tout/0000.gz'])
         rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
-        
-        self.assertEqual(d.map(lambda i:('x', str(i))).saveAsTextFileByKey('/tmp/tout', compress=True), 
+
+        self.assertEqual(d.map(lambda i:('x', str(i))).saveAsTextFileByKey('/tmp/tout', compress=True),
             ['/tmp/tout/x/0000.gz'])
         rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
 
-    def test_binary_file(self): 
+    def test_binary_file(self):
         d = self.sc.makeRDD(range(100000), 1)
         self.assertEqual(d.saveAsBinaryFile('/tmp/tout', fmt="I"),
             ['/tmp/tout/0000.bin'])

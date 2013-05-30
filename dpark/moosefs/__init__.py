@@ -31,7 +31,7 @@ class MooseFS(object):
         info = cache.get(name)
         if info is not None:
             return info
-        
+
         info, err = self.mc.lookup(parent, name)
         if info is not None:
             cache[name] = info
@@ -172,7 +172,7 @@ class ReadableFile(File):
         else:
             self.rbuf = ''
             self.reader = None
-        
+
         self.roff = offset
         self.generator = None
 
@@ -227,7 +227,7 @@ class ReadableFile(File):
         length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
         if offset > length:
             return
-        
+
         local_ip = socket.gethostbyname(socket.gethostname())
         if any(ip == local_ip for ip,port in chunk.addrs):
             try:
@@ -258,7 +258,7 @@ class ReadableFile(File):
                     nerror += 1
 
         raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
-    
+
     def __iter__(self):
         # TODO: speedup
         line = ""
@@ -278,7 +278,7 @@ class ReadableFile(File):
 
                 for line in ll[:-1]:
                     yield line
-                line = ll[-1]    
+                line = ll[-1]
                 if line.endswith('\n'):
                     yield line
                     line = ''
@@ -343,7 +343,7 @@ def _test():
     f = open('/mfs2/test.csv')
     f.seek(1024)
     d = f.read(1024)
-    
+
     f2 = mfsopen('/test.csv')
     print 'f2 locs', f2.locs()
     f2.seek(1024)

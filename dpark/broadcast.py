@@ -122,7 +122,7 @@ class Broadcast:
             return marshal.loads(s)
         except Exception :
             return cPickle.loads(s)
-   
+
     @classmethod
     def initialize(cls, is_master):
         if cls.initialized:
@@ -235,7 +235,7 @@ class TreeBroadcast(Broadcast):
         if selected:
             selected.leechers += 1
         return selected
-    
+
     def _selectSource(self, sources, skip):
         for s in sources:
             if (not s.failed and s.addr != skip and not s.is_child_of(skip) and s.leechers < self.MaxDegree):
@@ -337,7 +337,7 @@ class TreeBroadcast(Broadcast):
                 if not isinstance(block, Block) or i != block.id:
                     logger.error("%s recv bad block %d %s", self.server_addr, i, block)
                     return False
-                logger.debug("Received block: %s from %s", 
+                logger.debug("Received block: %s from %s",
                     block.id, source_info.addr)
                 self.blocks.append(block)
         finally:

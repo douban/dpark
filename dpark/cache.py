@@ -23,17 +23,17 @@ class Cache:
     def newKeySpaceId(cls):
         cls.nextKeySpaceId += 1
         return cls.nextKeySpaceId
-   
+
     def newKeySpace(self):
         return KeySpace(self, self.newKeySpaceId())
 
-    def get(self, key): 
+    def get(self, key):
         return self.map.get(key)
-    
+
     def put(self, key, value):
         self.map[key] = value
         return True
-    
+
     def clear(self):
         self.map.clear()
 
@@ -179,7 +179,7 @@ class LocalCacheTracker(object):
         if rddId not in self.locs:
             logger.debug("Registering RDD ID %d with cache", rddId)
             self.locs[rddId] = [[] for i in range(numPartitions)]
-    
+
     def getLocationsSnapshot(self):
         return self.locs
 

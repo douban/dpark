@@ -73,8 +73,8 @@ class DparkEnv:
         TheBroadcast.initialize(isMaster)
 
         self.started = True
-        logger.debug("env started") 
-    
+        logger.debug("env started")
+
     def stop(self):
         if not getattr(self, 'started', False):
             return

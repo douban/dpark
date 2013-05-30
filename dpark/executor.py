@@ -62,7 +62,7 @@ def run_task(task_data):
         gc.disable()
         task, ntry = cPickle.loads(decompress(task_data))
         setproctitle('dpark worker %s: run task %s' % (Script, task))
-        
+
         Accumulator.clear()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
@@ -100,7 +100,7 @@ class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     def translate_path(self, path):
         out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
         return basedir + '/' + out[len(os.getcwd()):]
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -110,15 +110,15 @@ def startWebServer(path):
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     threading.Thread(target=ss.serve_forever).start()
     return ss.server_address[1]
-    
-    
+
+
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
     def translate_path(self, path):
         out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
         return self.basedir + '/' + os.path.relpath(out)
-    
+
     def log_message(self, format, *args):
         pass
 
@@ -137,14 +137,14 @@ def startWebServer(path):
             return default_uri
     except IOError, e:
         pass
-    
+
     logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     spawn(ss.serve_forever)
-    uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1], 
+    uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1],
             os.path.basename(path))
-    return uri 
+    return uri
 
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
@@ -246,7 +246,7 @@ class MyExecutor(mesos.Executor):
 
         while True:
             self.lock.acquire()
-            
+
             for tid, (task, pool) in self.busy_workers.items():
                 pid = pool._pool[0].pid
                 try:
@@ -257,7 +257,7 @@ class MyExecutor(mesos.Executor):
                     reply_status(driver, task, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
-                
+
                 if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
                     logger.error("worker process %d of task %s is zombie", pid, tid)
                     reply_status(driver, task, mesos_pb2.TASK_LOST)
@@ -278,13 +278,13 @@ class MyExecutor(mesos.Executor):
                             + "use -M to request or taskMemory for more memory", tid, rss, offered)
                     mem_limit[tid] = rss / offered + 0.1
 
-            now = time.time() 
+            now = time.time()
             n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
             if n:
                 for _, p in self.idle_workers[:n]:
                     p.terminate()
                 self.idle_workers = self.idle_workers[n:]
-            
+
             self.lock.release()
 
             time.sleep(1) 
@@ -331,14 +331,14 @@ class MyExecutor(mesos.Executor):
         except IndexError:
             p = multiprocessing.Pool(1, init_env, [self.init_args])
             p.done = 0
-            return p 
+            return p
 
     @safe
     def launchTask(self, driver, task):
         try:
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             logging.debug("launch task %s", task.task_id.value)
-            
+
             pool = self.get_idle_worker()
             self.busy_workers[task.task_id.value] = (task, pool)
 
@@ -352,7 +352,7 @@ class MyExecutor(mesos.Executor):
                     self.idle_workers.append((time.time(), pool))
         
             pool.apply_async(run_task, [task.data], callback=callback)
-    
+
         except Exception, e:
             import traceback
             msg = traceback.format_exc()

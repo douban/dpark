@@ -45,7 +45,7 @@ def reply_status(driver, task_id, status):
     update.task_id.MergeFrom(task_id)
     update.state = status
     driver.sendStatusUpdate(update)
-    
+
 
 def launch_task(self, driver, task):
     reply_status(driver, task.task_id, mesos_pb2.TASK_RUNNING)
@@ -124,7 +124,7 @@ class MyExecutor(mesos.Executor):
         self.ts = {}
 
     def launchTask(self, driver, task):
-        t = Thread(target=launch_task, args=(self, driver, task)) 
+        t = Thread(target=launch_task, args=(self, driver, task))
         t.daemon = True
         t.start()
         self.ts[task.task_id.value] = t
