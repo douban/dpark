@@ -38,7 +38,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.mapPartitions(lambda x:[sum(x)]).collect(),[1, 5])
         self.assertEqual(nums.map(lambda x:str(x)+"/").reduce(lambda x,y:x+y),
             "0/1/2/3/")
-        self.assertEqual(nums.pipe('grep 3').collect(), ['3\n'])
+        self.assertEqual(nums.pipe('grep 3').collect(), ['3'])
         self.assertEqual(nums.sample(0.5, True).count(), 2)
 
         self.assertEqual(len(nums[:1]), 1)
@@ -187,13 +187,11 @@ class TestRDD(unittest.TestCase):
             start += 1
         while d[l-1] != '\n':
             l += 1
-        d = d[start:l] 
+        d = d[start:l-1] 
         rdd = self.sc.partialTextFile(p, start, l, l)
-        self.assertEqual(len(''.join(rdd.collect())), l-start)
-        self.assertEqual(''.join(rdd.collect()), d)
+        self.assertEqual('\n'.join(rdd.collect()), d)
         rdd = self.sc.partialTextFile(p, start, l, (l-start)/5)
-        self.assertEqual(len(''.join(rdd.collect())), l-start)
-        self.assertEqual(''.join(rdd.collect()), d)
+        self.assertEqual('\n'.join(rdd.collect()), d)
 
     def test_beansdb(self):
         N = 100
