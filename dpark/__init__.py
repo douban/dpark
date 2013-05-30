@@ -21,8 +21,6 @@ table = _ctx.table
 
 beansdb = _ctx.beansdb
 
-mysql = _ctx.mysql
-
 union = _ctx.union
 
 zip = _ctx.zip
