@@ -31,7 +31,7 @@ def setup_conf(options):
     elif os.path.exists('/etc/dpark.conf'):
         conf.load_conf('/etc/dpark.conf')
 
-    conf.__dict__.update(os.envrion)
+    conf.__dict__.update(os.environ)
     import moosefs
     moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
 
@@ -50,7 +50,7 @@ class DparkContext(object):
 
         options = parse_options()
         self.options = options
-   
+        setup_conf(options) 
 
         master = self.master or options.master
         if master == 'local':

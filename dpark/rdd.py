@@ -598,7 +598,11 @@ class PipedRDD(DerivedRDD):
                 stdin.close()
                 devnull.close()
         spawn(read, p.stdin)
-        return p.stdout
+        return self.read(p.stdout)
+
+    def read(self, pipe):
+        for line in pipe:
+            yield line[:-1]
 
 class MappedValuesRDD(MappedRDD):
     @property
@@ -1049,27 +1053,29 @@ class TextFileRDD(RDD):
             byte = f.read(1)
             while byte != '\n':
                 byte = f.read(1)
+                if not byte: 
+                    return []
                 start += 1
 
         if start >= end:
             return []
 
-        if self.fileinfo:
-            # cut by end
-            if end < self.fileinfo.length:
-                f.seek(end-1)
-                while f.read(1) not in ('', '\n'):
-                    end += 1
-                f.length = end 
-            f.seek(start)
-            return f
+        #if self.fileinfo:
+        #    # cut by end
+        #    if end < self.fileinfo.length:
+        #        f.seek(end-1)
+        #        while f.read(1) not in ('', '\n'):
+        #            end += 1
+        #        f.length = end 
+        #    f.seek(start)
+        #    return f
 
         return self.read(f, start, end)
 
     def read(self, f, start, end):
         for line in f:
+            yield line[:-1]
             start += len(line)
-            yield line
             if start >= end: break
         f.close()
 
@@ -1193,7 +1199,7 @@ class GZipFileRDD(TextFileRDD):
             if skip_first:
                 skip_first = False
             elif last_line.endswith('\n'):
-                yield last_line
+                yield last_line[:-1]
             last_line = ''
 
             ll = list(io)
@@ -1201,9 +1207,9 @@ class GZipFileRDD(TextFileRDD):
 
             last_line = ll.pop()
             for line in ll:
-                yield line
+                yield line[:-1]
             if last_line.endswith('\n'):
-                yield last_line
+                yield last_line[:-1]
                 last_line = ''
 
         f.close()
@@ -1299,12 +1305,12 @@ class BZip2FileRDD(TextFileRDD):
                 else:
                     last_line += io.readline()
                     if last_line.endswith('\n'):
-                        yield last_line
+                        yield last_line[:-1]
                         last_line = ''
                 
                 for line in io:
                     if line.endswith('\n'): # drop last line
-                        yield line
+                        yield line[:-1]
                     else:
                         last_line = line
 
