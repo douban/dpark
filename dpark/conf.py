@@ -9,9 +9,6 @@ DPARK_WORK_DIR = '/tmp/dpark'
 if os.path.exists('/dev/shm'):
     DPARK_WORK_DIR = '/dev/shm,/tmp/dpark'
 
-# default port of web server in slaves
-DEFAULT_SERVER_PORT = 5055
-
 # uri of mesos master, host[:5050] or or zk://...
 MESOS_MASTER = 'localhost'
 
@@ -23,7 +20,7 @@ MOOSEFS_MOUNT_POINTS = {
 def load_conf(path):
     if not os.path.exists(path):
         logger.error("conf %s do not exists", path)
-        return
+        raise Exception("conf %s do not exists" % path)
 
     try:
         data = open(path).read()
