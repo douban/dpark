@@ -228,15 +228,21 @@ class SimpleJob(Job):
         index = self.tidToIndex[tid]
 
         from dpark.schedule import FetchFailed
-        if isinstance(reason, FetchFailed):
-            logger.warning("Loss was due to fetch failure from %s",
-                reason.serverUri)
+        if isinstance(reason, FetchFailed) and self.numFailures[index] >= 1:
+            logger.warning("Task %s was Lost due to fetch failure from %s",
+                tid, reason.serverUri)
             self.sched.taskEnded(self.tasks[index], reason, None, None)
-            #FIXME, handler fetch failure
-            self.finished[index] = True
-            self.tasksFinished += 1
+            # cancel tasks
+            if not self.finished[index]:
+                self.finished[index] = True
+                self.tasksFinished += 1
+            for i in range(len(self.finished)):
+                if not self.launched[i]:
+                    self.launched[i] = True
+                    self.finished[i] = True
+                    self.tasksFinished += 1
             if self.tasksFinished == self.numTasks:
-                self.sched.jobFinished(self)
+                self.sched.jobFinished(self) # cancel job
             return
        
         task = self.tasks[index]

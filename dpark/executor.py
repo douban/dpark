@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
-from dpark.schedule import Success, OtherFailure
+from dpark.schedule import Success, FetchFailed, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 
@@ -82,6 +82,8 @@ def run_task(task_data):
             flag += 2
 
         return mesos_pb2.TASK_FINISHED, cPickle.dumps((Success(), (flag, data), accUpdate), -1)
+    except FetchFailed, e:
+        return mesos_pb2.TASK_FAILED, cPickle.dumps((e, None, None), -1)
     except :
         import traceback
         msg = traceback.format_exc()
