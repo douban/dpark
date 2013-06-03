@@ -793,10 +793,6 @@ class CoGroupedRDD(RDD):
         return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
                 if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
-    def preferredLocations(self, split):
-        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
-                if isinstance(dep, NarrowCoGroupSplitDep)], [])
-
     def compute(self, split):
         m = CoGroupMerger(self.len)
         for i,dep in enumerate(split.deps):
