@@ -78,8 +78,8 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         else:
             url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
-
-        tries = 4
+        
+        tries = 2
         while True:
             try:
                 f = urllib.urlopen(url)
@@ -106,10 +106,11 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                         shuffleId, reduceId, part, url, e)
                 tries -= 1
                 if not tries:
-                    logger.error("Fetch failed for shuffle %d, reduce %d, %d, %s, %s",
+                    logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", 
                             shuffleId, reduceId, part, url, e)
-                    raise
-                time.sleep(2**(3-tries))
+                    from dpark.schedule import FetchFailed
+                    raise FetchFailed(uri, shuffleId, part, reduceId)
+                time.sleep(2**(2-tries)*0.1)
 
     def fetch(self, shuffleId, reduceId, func):
         logger.debug("Fetching outputs for shuffle %d, reduce %d", shuffleId, reduceId)
@@ -120,14 +121,19 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             d = self.fetch_one(uri, shuffleId, part, reduceId)
             func(d.iteritems())
 
+
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def __init__(self, nthreads):
         self.nthreads = nthreads
+        self.start()
+
+    def start(self):        
         self.requests = Queue.Queue()
-        self.results = Queue.Queue(1)
-        self.threads = [spawn(self._worker_thread) for i in range(nthreads)]
+        self.results = Queue.Queue(self.nthreads)
+        self.threads = [spawn(self._worker_thread) for i in range(self.nthreads)]
 
     def _worker_thread(self):
+        from dpark.schedule import FetchFailed
         while True:
             r = self.requests.get()
             if r is None:
@@ -137,7 +143,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             try:
                 d = self.fetch_one(*r)
                 self.results.put((shuffleId, reduceId, part, d))
-            except Exception, e:
+            except FetchFailed, e:
                 self.results.put(e)
 
     def fetch(self, shuffleId, reduceId, func):
@@ -150,10 +156,13 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         random.shuffle(parts)
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
-
+        
+        from dpark.schedule import FetchFailed
         for i in xrange(len(serverUris)):
             r = self.results.get()
-            if isinstance(r, Exception):
+            if isinstance(r, FetchFailed):
+                self.stop() # restart
+                self.start()
                 raise r
             
             sid, rid, part, d = r
@@ -161,6 +170,10 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
     def stop(self):
         logger.debug("stop parallel shuffle fetcher ...")
+        while not self.requests.empty():
+            self.requests.get_nowait()
+        while not self.results.empty():
+            self.results.get_nowait()
         for i in range(self.nthreads):
             self.requests.put(None)
         for t in self.threads:
@@ -432,13 +445,13 @@ class MapOutputTracker(LocalMapOutputTracker):
         logger.debug("MapOutputTracker started")
 
     def getServerUris(self, shuffleId):
-        locs = self.serverUris.get(shuffleId)
-        if locs:
-            logger.debug("got mapOutput in cache: %s", locs)
-            return locs
+        #locs = self.serverUris.get(shuffleId)
+        #if locs:
+        #    logger.debug("got mapOutput in cache: %s", locs)
+        #    return locs
         locs = self.client.call(GetMapOutputLocations(shuffleId))
         logger.debug("Fetch done: %s", locs)
-        self.serverUris[shuffleId] = locs
+        #self.serverUris[shuffleId] = locs
         return locs
 
     def stop(self):

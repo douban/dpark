@@ -78,6 +78,15 @@ class Stage:
 #        prev = self.outputLocs[partition]
 #        self.outputLocs[partition] = [h for h in prev if h != host]
 
+    def removeHost(self, host):
+        becameUnavailable = False
+        for ls in self.outputLocs:
+            if host in ls:
+                ls.remove(host)
+                becameUnavailable = True
+        if becameUnavailable:
+            logger.info("%s is now unavailable on host %s", self, host)
+
     nextId = 0
     @classmethod
     def newId(cls):
@@ -274,22 +283,22 @@ class DAGScheduler(Scheduler):
                     sys.exit(1)
 
                 if failed and time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT:
-                    logger.debug("Resubmitting failed stages")
                     self.updateCacheLocs()
                     for stage in failed:
+                        logger.info("Resubmitting failed stages: %s", stage)
                         submitStage(stage)
                     failed.clear()
                 else:
                     time.sleep(0.1)
                 continue
-
-            task = evt.task
+               
+            task, reason = evt.task, evt.reason
             stage = self.idToStage[task.stageId]
             if stage not in pendingTasks: # stage from other job
                 continue
             logger.debug("remove from pedding %s from %s", task, stage)
             pendingTasks[stage].remove(task.id)
-            if isinstance(evt.reason, Success):
+            if isinstance(reason, Success):
                 Accumulator.merge(evt.accumUpdates)
                 if isinstance(task, ResultTask):
                     finished[task.outputId] = True
@@ -309,7 +318,7 @@ class DAGScheduler(Scheduler):
                         if stage.shuffleDep != None:
                             self.mapOutputTracker.registerMapOutputs(
                                     stage.shuffleDep.shuffleId,
-                                    [l[0] for l in stage.outputLocs])
+                                    [l[-1] for l in stage.outputLocs])
                         self.updateCacheLocs()
                         newlyRunnable = set(stage for stage in waiting if not self.getMissingParentStages(stage))
                         waiting -= newlyRunnable
@@ -317,13 +326,17 @@ class DAGScheduler(Scheduler):
                         logger.debug("newly runnable: %s, %s", waiting, newlyRunnable)
                         for stage in newlyRunnable:
                             submitMissingTasks(stage)
+            elif isinstance(reason, FetchFailed):
+                if stage in running:
+                    running.remove(stage)
+                    waiting.add(stage)
+                mapStage = self.shuffleToMapStage[reason.shuffleId]
+                mapStage.removeHost(reason.serverUri)
+                failed.add(mapStage)
+                lastFetchFailureTime = time.time()
             else:
-                logger.error("task %s failed", task)
-                if isinstance(evt.reason, FetchFailed):
-                    pass #TODO 
-                else:
-                    logger.error("%s %s %s", evt.reason, type(evt.reason), evt.reason.message)
-                    raise Exception(evt.reason.message)
+                logger.error("task %s failed: %s %s %s", task, reason, type(reason), reason.message)
+                raise Exception(reason.message)
 
         assert not any(results)
         return
