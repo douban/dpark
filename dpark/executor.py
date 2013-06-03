@@ -95,23 +95,6 @@ def init_env(args):
     setproctitle('dpark worker: idle')
     env.start(False, args)
 
-basedir = None
-class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
-    def translate_path(self, path):
-        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
-        return basedir + '/' + out[len(os.getcwd()):]
-
-    def log_message(self, format, *args):
-        pass
-
-def startWebServer(path):
-    global basedir
-    basedir = path
-    ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
-    threading.Thread(target=ss.serve_forever).start()
-    return ss.server_address[1]
-
-
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
