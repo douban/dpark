@@ -1,7 +1,7 @@
-DPark is a Python clone of Spark, MapReduce(R) alike computing 
-framework supporting regression computation.
+DPark is a Python clone of Spark, MapReduce(R) alike computing
+framework supporting iterative computation.
 
-Example for word counting (wc.py):
+Example for word counting (`wc.py`):
 
 ``` python
  import dpark
@@ -11,8 +11,8 @@ Example for word counting (wc.py):
  print wc
 ```
 
-This scripts can run locally or on Mesos cluster without
-any modification, just with different command arguments:
+This script can run locally or on a Mesos cluster without
+any modification, just using different command-line arguments:
 
 ``` bash
 $ python wc.py
@@ -20,23 +20,24 @@ $ python wc.py -m process
 $ python wc.py -m host[:port]
 ```
 
-See examples/ for more examples.
+See examples/ for more use cases.
 
-Some Chinese docs: https://github.com/jackfengji/test_pro/wiki
+Some more docs (in Chinese): https://github.com/jackfengji/test_pro/wiki
 
-DPark can run with Mesos (0.9 or latest).
+DPark can run with Mesos 0.9 or higher.
 
-If $MESOS_MASTER was configured, then you can run it with mesos just typing
+If a `$MESOS_MASTER` environment variable is set, you can use a shortcut and run DPark with Mesos just by typing
 ``` bash
 $ python wc.py -m mesos
 ```
-for shutcut. $MESOS_MASTER can be any scheme of mesos master, such as 
+
+`$MESOS_MASTER` can be any scheme of Mesos master, such as
 ``` bash
-$ export MESOS_MASTER=zk://zk1:2181,zk2:2181,zk3:2181/mesos_master 
+$ export MESOS_MASTER=zk://zk1:2181,zk2:2181,zk3:2181/mesos_master
 ```
 
-In order to speed up shuffing, should deploy Nginx at port 5055 
-for accessing data in DPARK_WORK_DIR (default is /tmp/dpark), such as:
+In order to speed up shuffling, you should deploy Nginx at port 5055
+for accessing data in `DPARK_WORK_DIR` (default is `/tmp/dpark`), such as:
 
 ``` bash
         server {
