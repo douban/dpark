@@ -4,6 +4,11 @@ import marshal, new, cPickle
 import itertools
 from pickle import Pickler, whichmodule
 import logging
+import ctypes
+
+make_cell = ctypes.pythonapi.PyCell_New
+make_cell.restype = ctypes.py_object
+make_cell.argtypes = [ctypes.py_object]
 
 logger = logging.getLogger(__name__)
 
@@ -117,17 +122,7 @@ def load_closure(bytes):
     return f
 
 def reconstruct_closure(values):
-    args = ','.join("_%d" % i for i in range(len(values)))
-    src = "f = lambda %s: lambda : (%s)" % (args, args)
-    try:
-        exec src
-    except Exception:
-        raise SyntaxError(src)
-    closure = f(*reversed(values)).func_closure
-    # the cell order of closure in prebuilded Python-2.7 of Mac is different
-    if closure[0].cell_contents is not values[0]:
-        return f(*values).func_closure
-    return closure
+    return tuple([make_cell(v) for v in values])
 
 def get_global_function(module, name):
     __import__(module)
@@ -143,7 +138,7 @@ def reduce_function(obj):
     if module is None:
         module = whichmodule(obj, name)
 
-    if module == '__main__' and name != 'load_closure': # fix for test
+    if module == '__main__' and name not in ('load_closure','load_module'): # fix for test
         return load_closure, (dump_closure(obj),)
 
     try:
