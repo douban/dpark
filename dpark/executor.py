@@ -179,6 +179,13 @@ def get_task_memory(task):
     logger.error("no memory in resource: %s", task.resources)
     return 100 # 100M
 
+def safe(f):
+    def _(self, *a, **kw):
+        with self.lock:
+            r = f(self, *a, **kw)
+        return r
+    return _
+            
 def setup_cleaner_process(workdir):
     ppid = os.getpid()
     pid = os.fork()
@@ -266,6 +273,7 @@ class MyExecutor(mesos.Executor):
 
             time.sleep(1) 
 
+    @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
             global Script
@@ -309,6 +317,7 @@ class MyExecutor(mesos.Executor):
             p.done = 0
             return p 
 
+    @safe
     def launchTask(self, driver, task):
         try:
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
@@ -334,12 +343,14 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
             return
 
+    @safe
     def killTask(self, driver, taskId):
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
             reply_status(driver, task, mesos_pb2.TASK_KILLED)
             pool.terminate()
 
+    @safe
     def shutdown(self, driver=None):
         def terminate(p):
             try:
