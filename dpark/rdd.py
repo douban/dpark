@@ -1452,10 +1452,10 @@ class OutputTextFileRDD(DerivedRDD):
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
     def compute(self, split):
-        files, paths = {}, {}
+        paths = {}
         def get_file(key):
-            f = files.get(key)
-            if f is None:
+            tpath = paths.get(key)
+            if not tpath:
                 dpath = os.path.join(self.path, str(key))
                 if not os.path.exists(dpath):
                     try: os.mkdir(dpath)
@@ -1463,36 +1463,51 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 tpath = os.path.join(dpath, 
                     ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
                     socket.gethostname(), os.getpid()))
-                try:
-                    f = open(tpath,'w', 4096 * 1024 * 16)
-                except IOError:
-                    time.sleep(1) # there are dir cache in mfs for 1 sec
-                    f = open(tpath,'w', 4096 * 1024 * 16)
-                if self.compress:
-                    f = gzip.GzipFile(filename='', mode='w', fileobj=f)
-                files[key] = f
                 paths[key] = tpath
+
+            try:
+                f = open(tpath,'a+', 4096 * 1024 * 16)
+            except IOError:
+                time.sleep(1) # there are dir cache in mfs for 1 sec
+                f = open(tpath,'a+', 4096 * 1024 * 16)
+            if self.compress:
+                f = gzip.GzipFile(filename='', mode='a+', fileobj=f)
             return f
        
         sizes = {}
+        buffers = {}
         for k, v in self.prev.iterator(split):
-            f = get_file(k)
-            f.write(v)
-            if not v.endswith('\n'):
-                f.write('\n')
-            if self.compress:
-                size = sizes.get(k, 0) + len(v)
-                if size > 256 << 10: # 128k
-                    f.flush()
-                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
-                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
-                    size = 0
-                sizes[k] = size
+            b = buffers.get(k)
+            if not b:
+                b = StringIO()
+                buffers[k] = b
 
-        for k in files:
-            if self.compress:
-                files[k].flush()
-            files[k].close()
+            b.write(v)
+            if not v.endswith('\n'):
+                b.write('\n')
+
+            size = sizes.get(k, 0) + len(v)
+            if size > 256 << 10:
+                try:
+                    f = get_file(k)
+                    f.write(b.get_value())
+                    b.close()
+                    b = StringIO()
+                    buffers[k] = b
+                    size = 0
+                finally:
+                    f.close()
+
+            sizes[k] = size
+
+        for k in buffers:
+            try:
+                f = get_file(k)
+                f.write(b.get_value())
+                b.close()
+            finally:
+                f.close()
+
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):
                 os.rename(paths[k], path)
