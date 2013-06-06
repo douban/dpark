@@ -118,7 +118,7 @@ class TableRDD(DerivedRDD):
         return rs
 
     def _replace_attr(self, e):
-        es = re.split(r'([()\-+ */%,><=.]+)', e)
+        es = re.split(r'([()\-+ */%,><=.\[\]]+)', e)
         named_fields = ['%s.%s' % (self.name, f) for f in self.fields]
         for i in range(len(es)):
             if es[i] in self.fields:

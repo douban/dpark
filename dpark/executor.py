@@ -323,18 +323,15 @@ class MyExecutor(mesos.Executor):
             reply_status(driver, task, mesos_pb2.TASK_RUNNING)
             logging.debug("launch task %s", task.task_id.value)
             
-            pool = self.get_idle_worker()
-            self.busy_workers[task.task_id.value] = (task, pool)
-
             def callback((state, data)):
+                reply_status(driver, task, state, data)
                 with self.lock:
-                    if task.task_id.value not in self.busy_workers:
-                        return
                     _, pool = self.busy_workers.pop(task.task_id.value)
                     pool.done += 1
-                    reply_status(driver, task, state, data)
                     self.idle_workers.append((time.time(), pool))
         
+            pool = self.get_idle_worker()
+            self.busy_workers[task.task_id.value] = (task, pool)
             pool.apply_async(run_task, [task.data], callback=callback)
     
         except Exception, e:
