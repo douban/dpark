@@ -1474,7 +1474,6 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 f = gzip.GzipFile(filename='', mode='a+', fileobj=f)
             return f
        
-        sizes = {}
         buffers = {}
         for k, v in self.prev.iterator(split):
             b = buffers.get(k)
@@ -1486,21 +1485,18 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
             if not v.endswith('\n'):
                 b.write('\n')
 
-            size = sizes.get(k, 0) + len(v)
-            if size > 256 << 10:
+            if b.tell() > 256 << 10:
                 try:
                     f = get_file(k)
                     f.write(b.get_value())
                     b.close()
                     b = StringIO()
                     buffers[k] = b
-                    size = 0
                 finally:
                     f.close()
 
-            sizes[k] = size
 
-        for k in buffers:
+        for k, b in buffers.items():
             try:
                 f = get_file(k)
                 f.write(b.get_value())
