@@ -1488,7 +1488,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
             if b.tell() > 256 << 10:
                 try:
                     f = get_file(k)
-                    f.write(b.get_value())
+                    f.write(b.getvalue())
                     b.close()
                     b = StringIO()
                     buffers[k] = b
@@ -1499,7 +1499,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
         for k, b in buffers.items():
             try:
                 f = get_file(k)
-                f.write(b.get_value())
+                f.write(b.getvalue())
                 b.close()
             finally:
                 f.close()
