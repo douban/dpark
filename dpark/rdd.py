@@ -1453,6 +1453,7 @@ class OutputTextFileRDD(DerivedRDD):
 class MultiOutputTextFileRDD(OutputTextFileRDD):
     def compute(self, split):
         paths = {}
+        gzip_files = {}
         def get_file(key):
             tpath = paths.get(key)
             if not tpath:
@@ -1471,8 +1472,22 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 time.sleep(1) # there are dir cache in mfs for 1 sec
                 f = open(tpath,'a+', 4096 * 1024 * 16)
             if self.compress:
-                f = gzip.GzipFile(filename='', mode='a+', fileobj=f)
+                gf = gzip_files.get(key)
+                if gf:
+                    gf.fileobj = f
+                    f = gf
+                else:
+                    f = gzip.GzipFile(filename='', mode='a+', fileobj=f)
+                    gzip_files[key] = f
+
             return f
+
+        def close_file(f):
+            if self.compress:
+                f.flush()
+                f.fileobj.close()
+            else:
+                f.close()
        
         buffers = {}
         for k, v in self.prev.iterator(split):
@@ -1493,7 +1508,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                     b = StringIO()
                     buffers[k] = b
                 finally:
-                    f.close()
+                    close_file(f)
 
 
         for k, b in buffers.items():
@@ -1502,7 +1517,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
                 f.write(b.getvalue())
                 b.close()
             finally:
-                f.close()
+                f.close() #when with compression, will also close fileobj
 
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):
