@@ -239,7 +239,7 @@ class RDD(object):
         else:
             def topk(it):
                 return heapq.nlargest(n, it, key)
-        return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
+        return topk(sum(self.ctx.runJob(self, topk), []))
 
     def hot(self, n=10, numSplits=None, taskMemory=None):
         st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits, taskMemory)
