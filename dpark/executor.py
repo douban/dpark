@@ -348,9 +348,9 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def killTask(self, driver, taskId):
+        reply_status(driver, task, mesos_pb2.TASK_KILLED)
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            reply_status(driver, task, mesos_pb2.TASK_KILLED)
             pool.terminate()
 
     @safe
