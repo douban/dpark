@@ -49,13 +49,13 @@ MAX_WORKER_IDLE_TIME = 60
 MAX_EXECUTOR_IDLE_TIME = 60 * 30
 Script = ''
 
-def reply_status(driver, task, status, data=None):
-    update = mesos_pb2.TaskStatus()
-    update.task_id.value = task.task_id.value
-    update.state = status
+def reply_status(driver, task_id, state, data=None):
+    status = mesos_pb2.TaskStatus()
+    status.task_id.MergeFrom(task_id)
+    status.state = state
     if data is not None:
-        update.data = data
-    driver.sendStatusUpdate(update)
+        status.data = data
+    driver.sendStatusUpdate(status)
 
 def run_task(task_data):
     try:
@@ -233,19 +233,20 @@ class MyExecutor(mesos.Executor):
             self.lock.acquire()
             
             for tid, (task, pool) in self.busy_workers.items():
-                pid = pool._pool[0].pid
+                task_id = task.task_id
                 try:
+                    pid = pool._pool[0].pid
                     p = psutil.Process(pid)
                     rss = p.get_memory_info()[0] >> 20
-                except psutil.error.Error, e:
+                except Exception, e:
                     logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
-                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
                 
                 if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
                     logger.error("worker process %d of task %s is zombie", pid, tid)
-                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
 
@@ -255,7 +256,7 @@ class MyExecutor(mesos.Executor):
                 if rss > offered * 1.5:
                     logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
                             + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
-                    reply_status(driver, task, mesos_pb2.TASK_KILLED)
+                    reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
                     pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
@@ -325,12 +326,12 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def launchTask(self, driver, task):
+        task_id = task.task_id
+        reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
+        logging.debug("launch task %s", task.task_id.value)
         try:
-            reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-            logging.debug("launch task %s", task.task_id.value)
-            
             def callback((state, data)):
-                reply_status(driver, task, state, data)
+                reply_status(driver, task_id, state, data)
                 with self.lock:
                     _, pool = self.busy_workers.pop(task.task_id.value)
                     pool.done += 1
@@ -343,12 +344,11 @@ class MyExecutor(mesos.Executor):
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
-            reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
-            return
+            reply_status(driver, task_id, mesos_pb2.TASK_LOST, msg)
 
     @safe
     def killTask(self, driver, taskId):
-        reply_status(driver, task, mesos_pb2.TASK_KILLED)
+        reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
             pool.terminate()
