@@ -296,8 +296,8 @@ class RDD(object):
     def saveAsTextFileByKey(self, path, ext='', overwrite=True, compress=False):
         return MultiOutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsCSVFile(self, path, overwrite=True):
-        return OutputCSVFileRDD(self, path, overwrite).collect()
+    def saveAsCSVFile(self, path, dialect='excel', overwrite=True, compress=False):
+        return OutputCSVFileRDD(self, path, dialect, overwrite, compress).collect()
 
     def saveAsBinaryFile(self, path, fmt, overwrite=True):
         return OutputBinaryFileRDD(self, path, fmt, overwrite).collect()
@@ -1528,11 +1528,12 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
 
 
 class OutputCSVFileRDD(OutputTextFileRDD):
-    def __init__(self, rdd, path, overwrite):
-        OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
+    def __init__(self, rdd, path, dialect, overwrite, compress):
+        OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite, compress)
+        self.dialect = dialect
 
     def writedata(self, f, rows):
-        writer = csv.writer(f)
+        writer = csv.writer(f, self.dialect)
         empty = True
         for row in rows:
             if not isinstance(row, (tuple, list)):
@@ -1541,7 +1542,25 @@ class OutputCSVFileRDD(OutputTextFileRDD):
             empty = False
         return not empty 
 
-        
+    def write_compress_data(self, f, rows):
+        empty = True
+        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
+        writer = csv.writer(f, self.dialect)
+        last_flush = 0
+        for row in rows:
+            if not isinstance(row, (tuple, list)):
+                row = (row,)
+            writer.writerow(row)
+            empty = False
+            if f.tell() - last_flush >= 256 << 10:
+                f.flush()
+                f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                last_flush = f.tell()
+        if not empty:
+            f.flush()
+        return not empty
+
 class OutputBinaryFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, fmt, overwrite):
         OutputTextFileRDD.__init__(self, rdd, path, '.bin', overwrite)
