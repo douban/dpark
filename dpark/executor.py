@@ -130,7 +130,7 @@ def startWebServer(path):
             os.path.basename(path))
     return uri 
 
-def forword(fd, addr, prefix=''):
+def forward(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
     ctx = zmq.Context()
     out = [None]
@@ -157,12 +157,6 @@ def forword(fd, addr, prefix=''):
         out[0].close()
     f.close()
     ctx.shutdown()
-
-def start_forword(addr, prefix, oldfile):
-    rfd, wfd = os.pipe()
-    t = spawn(forword, rfd, addr, prefix)
-    newfile = os.fdopen(wfd, 'w', 0)
-    return t, newfile
 
 def get_pool_memory(pool):
     try:
@@ -218,6 +212,16 @@ class MyExecutor(mesos.Executor):
         self.idle_workers = []
         self.busy_workers = {}
         self.lock = threading.RLock()
+
+        self.stdout, wfd = os.pipe()
+        sys.stdout = os.fdopen(wfd, 'w', 0)
+        os.close(1)
+        assert os.dup(wfd) == 1, 'redirect io failed'
+        
+        self.stderr, wfd = os.pipe()
+        sys.stderr = os.fdopen(wfd, 'w', 0)
+        os.close(2)
+        assert os.dup(wfd) == 2, 'redirect io failed'
 
     def check_memory(self, driver):
         try:
@@ -286,17 +290,19 @@ class MyExecutor(mesos.Executor):
             global Script
             Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             self.init_args = args
-            try:
-                os.chdir(cwd)
-            except OSError:
-                driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
             os.environ.update(osenv)
+
             prefix = '[%s] ' % socket.gethostname()
-            self.outt, sys.stdout = start_forword(out_logger, prefix, sys.stdout)
-            self.errt, sys.stderr = start_forword(err_logger, prefix, sys.stderr)
+            self.outt = spawn(forward, self.stdout, out_logger, prefix)
+            self.errt = spawn(forward, self.stderr, err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
+            if os.path.exists(cwd):
+                os.chdir(cwd)
+            else:
+                logger.warning("cwd (%s) not exists", cwd)
+            
             self.workdir = args['WORKDIR']
             root = os.path.dirname(self.workdir[0])
             if not os.path.exists(root):
