@@ -801,8 +801,8 @@ class MesosScheduler(DAGScheduler):
         self.slaveTasks.pop(slaveId.value, None)
         self.slaveFailed.pop(slaveId.value, None)
 
-    def slaveLost(self, driver, slave):
-        logger.warning("slave %s lost", slave.value)
+    def slaveLost(self, driver, slaveId):
+        logger.warning("slave %s lost", slaveId.value)
         self.slaveTasks.pop(slaveId.value, None)
         self.slaveFailed.pop(slaveId.value, None)
 
