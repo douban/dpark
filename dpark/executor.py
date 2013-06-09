@@ -299,7 +299,10 @@ class MyExecutor(mesos.Executor):
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
             if os.path.exists(cwd):
-                os.chdir(cwd)
+                try:
+                    os.chdir(cwd)
+                except Exception, e:
+                    logger.warning("change cwd to %s failed: %s", cwd, e)
             else:
                 logger.warning("cwd (%s) not exists", cwd)
             
