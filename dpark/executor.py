@@ -46,7 +46,7 @@ logger = logging.getLogger("executor@%s" % socket.gethostname())
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_WORKER_IDLE_TIME = 60
-MAX_EXECUTOR_IDLE_TIME = 60 * 30
+MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 Script = ''
 
 def reply_status(driver, task_id, state, data=None):
@@ -275,12 +275,12 @@ class MyExecutor(mesos.Executor):
                     p.terminate()
                 self.idle_workers = self.idle_workers[n:]
 
-            self.lock.release()
-
             if self.busy_workers or self.idle_workers:
                 idle_since = now
             elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
-                self.shutdown()
+                os._exit(0) 
+            
+            self.lock.release()
             
             time.sleep(1) 
 
