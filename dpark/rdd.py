@@ -1451,48 +1451,63 @@ class OutputTextFileRDD(DerivedRDD):
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
-    def compute(self, split):
-        paths = {}
-        gzip_files = {}
-        def get_file(key):
-            tpath = paths.get(key)
-            if not tpath:
-                dpath = os.path.join(self.path, str(key))
-                if not os.path.exists(dpath):
-                    try: os.mkdir(dpath)
-                    except: pass
-                tpath = os.path.join(dpath, 
-                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext, 
-                    socket.gethostname(), os.getpid()))
-                paths[key] = tpath
+    MAX_OPEN_FILES = 512
+    BLOCK_SIZE = 256 << 10
 
+    def get_tpath(self, key):
+        tpath = self.paths.get(key)
+        if not tpath:
+            dpath = os.path.join(self.path, str(key))
+            if not os.path.exists(dpath):
+                try: os.mkdir(dpath)
+                except: pass
+            tpath = os.path.join(dpath, 
+                ".%04d%s.%s.%d.tmp" % (self.split.index, self.ext, 
+                socket.gethostname(), os.getpid()))
+            self.paths[key] = tpath
+        return tpath
+
+    def get_file(self, key):
+        f = self.files.get(key)
+        if f is None or self.compress and f.fileobj is None:
+            tpath = self.get_tpath(key)
             try:
-                f = open(tpath,'a+', 4096 * 1024 * 16)
+                nf = open(tpath,'a+', 4096 * 1024)
             except IOError:
                 time.sleep(1) # there are dir cache in mfs for 1 sec
-                f = open(tpath,'a+', 4096 * 1024 * 16)
+                nf = open(tpath,'a+', 4096 * 1024)
             if self.compress:
-                gf = gzip_files.get(key)
-                if gf:
-                    gf.fileobj = f
-                    f = gf
+                if f:
+                    f.fileobj = nf
                 else:
-                    f = gzip.GzipFile(filename='', mode='a+', fileobj=f)
-                    gzip_files[key] = f
+                    f = gzip.GzipFile(filename='', mode='a+', fileobj=nf)
+                f.myfileobj = nf # force f.myfileobj.close() in f.close()
+            else:
+                f = nf
+            self.files[key] = f
+        return f
 
-            return f
-
-        def close_file(f):
+    def flush_file(self, key, f):
+        f.flush()
+        if len(self.files) > self.MAX_OPEN_FILES:
             if self.compress:
-                f.flush()
-                f.fileobj.close()
+                open_files = sum(1 for f in self.files.values() if f.fileobj is not None)
+                if open_files > self.MAX_OPEN_FILES:
+                    f.fileobj.close()
+                    f.fileobj = None
             else:
                 f.close()
-       
+                self.files.pop(key)
+
+    def compute(self, split):
+        self.split = split
+        self.paths = {}
+        self.files = {}
+
         buffers = {}
         for k, v in self.prev.iterator(split):
             b = buffers.get(k)
-            if not b:
+            if b is None:
                 b = StringIO()
                 buffers[k] = b
 
@@ -1500,30 +1515,29 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
             if not v.endswith('\n'):
                 b.write('\n')
 
-            if b.tell() > 256 << 10:
-                try:
-                    f = get_file(k)
-                    f.write(b.getvalue())
-                    b.close()
-                    b = StringIO()
-                    buffers[k] = b
-                finally:
-                    close_file(f)
-
+            if b.tell() > self.BLOCK_SIZE:
+                f = self.get_file(k)
+                f.write(b.getvalue())
+                self.flush_file(k, f)
+                del buffers[k]
 
         for k, b in buffers.items():
-            try:
-                f = get_file(k)
-                f.write(b.getvalue())
-                b.close()
-            finally:
-                f.close() #when with compression, will also close fileobj
+            f = self.get_file(k)
+            f.write(b.getvalue())
+            f.close()
+            del self.files[k]
 
+        for k, f in self.files.items():
+            if self.compress:
+                f = self.get_file(k) # make sure fileobj is open
+            f.close()
+
+        for k, tpath in self.paths.items():
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):
-                os.rename(paths[k], path)
+                os.rename(tpath, path)
             else:
-                os.remove(paths[k])
+                os.remove(tpath)
             yield path
 
 
