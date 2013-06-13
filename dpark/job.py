@@ -239,6 +239,7 @@ class SimpleJob(Job):
             for i in range(len(self.finished)):
                 if not self.launched[i]:
                     self.launched[i] = True
+                    self.tasksLaunched += 1
                     self.finished[i] = True
                     self.tasksFinished += 1
             if self.tasksFinished == self.numTasks:
