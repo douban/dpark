@@ -45,17 +45,17 @@ logger = logging.getLogger("executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_IDLE_TIME = 60
-
+MAX_WORKER_IDLE_TIME = 60
+MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 Script = ''
 
-def reply_status(driver, task, status, data=None):
-    update = mesos_pb2.TaskStatus()
-    update.task_id.value = task.task_id.value
-    update.state = status
+def reply_status(driver, task_id, state, data=None):
+    status = mesos_pb2.TaskStatus()
+    status.task_id.MergeFrom(task_id)
+    status.state = state
     if data is not None:
-        update.data = data
-    driver.sendStatusUpdate(update)
+        status.data = data
+    driver.sendStatusUpdate(status)
 
 def run_task(task_data):
     try:
@@ -131,7 +131,7 @@ def startWebServer(path):
             os.path.basename(path))
     return uri
 
-def forword(fd, addr, prefix=''):
+def forward(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r')
     ctx = zmq.Context()
     out = [None]
@@ -158,12 +158,6 @@ def forword(fd, addr, prefix=''):
         out[0].close()
     f.close()
     ctx.shutdown()
-
-def start_forword(addr, prefix, oldfile):
-    rfd, wfd = os.pipe()
-    t = spawn(forword, rfd, addr, prefix)
-    newfile = os.fdopen(wfd, 'w', 0)
-    return t, newfile
 
 def get_pool_memory(pool):
     try:
@@ -220,6 +214,16 @@ class MyExecutor(mesos.Executor):
         self.busy_workers = {}
         self.lock = threading.RLock()
 
+        self.stdout, wfd = os.pipe()
+        sys.stdout = os.fdopen(wfd, 'w', 0)
+        os.close(1)
+        assert os.dup(wfd) == 1, 'redirect io failed'
+        
+        self.stderr, wfd = os.pipe()
+        sys.stderr = os.fdopen(wfd, 'w', 0)
+        os.close(2)
+        assert os.dup(wfd) == 2, 'redirect io failed'
+
     def check_memory(self, driver):
         try:
             import psutil
@@ -228,24 +232,26 @@ class MyExecutor(mesos.Executor):
             return
 
         mem_limit = {}
+        idle_since = time.time()
 
         while True:
             self.lock.acquire()
 
             for tid, (task, pool) in self.busy_workers.items():
-                pid = pool._pool[0].pid
+                task_id = task.task_id
                 try:
+                    pid = pool._pool[0].pid
                     p = psutil.Process(pid)
                     rss = p.get_memory_info()[0] >> 20
-                except psutil.error.Error, e:
+                except Exception, e:
                     logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
-                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
 
                 if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
                     logger.error("worker process %d of task %s is zombie", pid, tid)
-                    reply_status(driver, task, mesos_pb2.TASK_LOST)
+                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
                     self.busy_workers.pop(tid)
                     continue
 
@@ -255,7 +261,7 @@ class MyExecutor(mesos.Executor):
                 if rss > offered * 1.5:
                     logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
                             + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
-                    reply_status(driver, task, mesos_pb2.TASK_KILLED)
+                    reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
                     self.busy_workers.pop(tid)
                     pool.terminate()
                 elif rss > offered * mem_limit.get(tid, 1.0):
@@ -263,15 +269,20 @@ class MyExecutor(mesos.Executor):
                             + "use -M to request or taskMemory for more memory", tid, rss, offered)
                     mem_limit[tid] = rss / offered + 0.1
 
-            now = time.time()
-            n = len([1 for t, p in self.idle_workers if t + MAX_IDLE_TIME < now])
+            now = time.time() 
+            n = len([1 for t, p in self.idle_workers if t + MAX_WORKER_IDLE_TIME < now])
             if n:
                 for _, p in self.idle_workers[:n]:
                     p.terminate()
                 self.idle_workers = self.idle_workers[n:]
 
+            if self.busy_workers or self.idle_workers:
+                idle_since = now
+            elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
+                os._exit(0) 
+            
             self.lock.release()
-
+            
             time.sleep(1) 
 
     @safe
@@ -280,17 +291,22 @@ class MyExecutor(mesos.Executor):
             global Script
             Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
             self.init_args = args
-            try:
-                os.chdir(cwd)
-            except OSError:
-                driver.sendFrameworkMessage("switch cwd failed: %s not exists!" % cwd)
             sys.path = python_path
             os.environ.update(osenv)
+
             prefix = '[%s] ' % socket.gethostname()
-            self.outt, sys.stdout = start_forword(out_logger, prefix, sys.stdout)
-            self.errt, sys.stderr = start_forword(err_logger, prefix, sys.stderr)
+            self.outt = spawn(forward, self.stdout, out_logger, prefix)
+            self.errt = spawn(forward, self.stderr, err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
 
+            if os.path.exists(cwd):
+                try:
+                    os.chdir(cwd)
+                except Exception, e:
+                    logger.warning("change cwd to %s failed: %s", cwd, e)
+            else:
+                logger.warning("cwd (%s) not exists", cwd)
+            
             self.workdir = args['WORKDIR']
             root = os.path.dirname(self.workdir[0])
             if not os.path.exists(root):
@@ -320,35 +336,31 @@ class MyExecutor(mesos.Executor):
 
     @safe
     def launchTask(self, driver, task):
+        task_id = task.task_id
+        reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
+        logging.debug("launch task %s", task.task_id.value)
         try:
-            reply_status(driver, task, mesos_pb2.TASK_RUNNING)
-            logging.debug("launch task %s", task.task_id.value)
-
-            pool = self.get_idle_worker()
-            self.busy_workers[task.task_id.value] = (task, pool)
-
             def callback((state, data)):
+                reply_status(driver, task_id, state, data)
                 with self.lock:
-                    if task.task_id.value not in self.busy_workers:
-                        return
                     _, pool = self.busy_workers.pop(task.task_id.value)
                     pool.done += 1
-                    reply_status(driver, task, state, data)
                     self.idle_workers.append((time.time(), pool))
         
+            pool = self.get_idle_worker()
+            self.busy_workers[task.task_id.value] = (task, pool)
             pool.apply_async(run_task, [task.data], callback=callback)
 
         except Exception, e:
             import traceback
             msg = traceback.format_exc()
-            reply_status(driver, task, mesos_pb2.TASK_LOST, msg)
-            return
+            reply_status(driver, task_id, mesos_pb2.TASK_LOST, msg)
 
     @safe
     def killTask(self, driver, taskId):
+        reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            reply_status(driver, task, mesos_pb2.TASK_KILLED)
             pool.terminate()
 
     @safe

@@ -145,7 +145,7 @@ class RDD(object):
     def union(self, rdd):
         return UnionRDD(self.ctx, [self, rdd])
 
-    def sort(self, key=lambda x:x, reverse=False, numSplits=None):
+    def sort(self, key=lambda x:x, reverse=False, numSplits=None, taskMemory=None):
         if not len(self):
             return self
         if len(self) == 1:
@@ -157,7 +157,7 @@ class RDD(object):
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
-        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter).flatMap(lambda (x,y):y)
+        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter, taskMemory).flatMap(lambda (x,y):y)
         return parted.mapPartitions(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
@@ -239,7 +239,7 @@ class RDD(object):
         else:
             def topk(it):
                 return heapq.nlargest(n, it, key)
-        return heapq.nlargest(n, sum(self.ctx.runJob(self, topk), []), key)
+        return topk(sum(self.ctx.runJob(self, topk), []))
 
     def hot(self, n=10, numSplits=None, taskMemory=None):
         st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits, taskMemory)
@@ -296,8 +296,8 @@ class RDD(object):
     def saveAsTextFileByKey(self, path, ext='', overwrite=True, compress=False):
         return MultiOutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsCSVFile(self, path, overwrite=True):
-        return OutputCSVFileRDD(self, path, overwrite).collect()
+    def saveAsCSVFile(self, path, dialect='excel', overwrite=True, compress=False):
+        return OutputCSVFileRDD(self, path, dialect, overwrite, compress).collect()
 
     def saveAsBinaryFile(self, path, fmt, overwrite=True):
         return OutputBinaryFileRDD(self, path, fmt, overwrite).collect()
@@ -1452,62 +1452,103 @@ class OutputTextFileRDD(DerivedRDD):
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
+    MAX_OPEN_FILES = 512
+    BLOCK_SIZE = 256 << 10
+
+    def get_tpath(self, key):
+        tpath = self.paths.get(key)
+        if not tpath:
+            dpath = os.path.join(self.path, str(key))
+            if not os.path.exists(dpath):
+                try: os.mkdir(dpath)
+                except: pass
+            tpath = os.path.join(dpath, 
+                ".%04d%s.%s.%d.tmp" % (self.split.index, self.ext, 
+                socket.gethostname(), os.getpid()))
+            self.paths[key] = tpath
+        return tpath
+
+    def get_file(self, key):
+        f = self.files.get(key)
+        if f is None or self.compress and f.fileobj is None:
+            tpath = self.get_tpath(key)
+            try:
+                nf = open(tpath,'a+', 4096 * 1024)
+            except IOError:
+                time.sleep(1) # there are dir cache in mfs for 1 sec
+                nf = open(tpath,'a+', 4096 * 1024)
+            if self.compress:
+                if f:
+                    f.fileobj = nf
+                else:
+                    f = gzip.GzipFile(filename='', mode='a+', fileobj=nf)
+                f.myfileobj = nf # force f.myfileobj.close() in f.close()
+            else:
+                f = nf
+            self.files[key] = f
+        return f
+
+    def flush_file(self, key, f):
+        f.flush()
+        if len(self.files) > self.MAX_OPEN_FILES:
+            if self.compress:
+                open_files = sum(1 for f in self.files.values() if f.fileobj is not None)
+                if open_files > self.MAX_OPEN_FILES:
+                    f.fileobj.close()
+                    f.fileobj = None
+            else:
+                f.close()
+                self.files.pop(key)
+
     def compute(self, split):
-        files, paths = {}, {}
-        def get_file(key):
-            f = files.get(key)
-            if f is None:
-                dpath = os.path.join(self.path, str(key))
-                if not os.path.exists(dpath):
-                    try: os.mkdir(dpath)
-                    except: pass
-                tpath = os.path.join(dpath,
-                    ".%04d%s.%s.%d.tmp" % (split.index, self.ext,
-                    socket.gethostname(), os.getpid()))
-                try:
-                    f = open(tpath,'w', 4096 * 1024 * 16)
-                except IOError:
-                    time.sleep(1) # there are dir cache in mfs for 1 sec
-                    f = open(tpath,'w', 4096 * 1024 * 16)
-                if self.compress:
-                    f = gzip.GzipFile(filename='', mode='w', fileobj=f)
-                files[key] = f
-                paths[key] = tpath
-            return f
+        self.split = split
+        self.paths = {}
+        self.files = {}
 
-        sizes = {}
+        buffers = {}
         for k, v in self.prev.iterator(split):
-            f = get_file(k)
-            f.write(v)
-            if not v.endswith('\n'):
-                f.write('\n')
-            if self.compress:
-                size = sizes.get(k, 0) + len(v)
-                if size > 256 << 10: # 128k
-                    f.flush()
-                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
-                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
-                    size = 0
-                sizes[k] = size
+            b = buffers.get(k)
+            if b is None:
+                b = StringIO()
+                buffers[k] = b
 
-        for k in files:
+            b.write(v)
+            if not v.endswith('\n'):
+                b.write('\n')
+
+            if b.tell() > self.BLOCK_SIZE:
+                f = self.get_file(k)
+                f.write(b.getvalue())
+                self.flush_file(k, f)
+                del buffers[k]
+
+        for k, b in buffers.items():
+            f = self.get_file(k)
+            f.write(b.getvalue())
+            f.close()
+            del self.files[k]
+
+        for k, f in self.files.items():
             if self.compress:
-                files[k].flush()
-            files[k].close()
+                f = self.get_file(k) # make sure fileobj is open
+            f.close()
+
+        for k, tpath in self.paths.items():
             path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
             if not os.path.exists(path):
-                os.rename(paths[k], path)
+                os.rename(tpath, path)
             else:
-                os.remove(paths[k])
+                os.remove(tpath)
             yield path
 
 
 class OutputCSVFileRDD(OutputTextFileRDD):
-    def __init__(self, rdd, path, overwrite):
-        OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite)
+    def __init__(self, rdd, path, dialect, overwrite, compress):
+        OutputTextFileRDD.__init__(self, rdd, path, '.csv', overwrite, compress)
+        self.dialect = dialect
 
     def writedata(self, f, rows):
-        writer = csv.writer(f)
+        writer = csv.writer(f, self.dialect)
         empty = True
         for row in rows:
             if not isinstance(row, (tuple, list)):
@@ -1516,6 +1557,24 @@ class OutputCSVFileRDD(OutputTextFileRDD):
             empty = False
         return not empty
 
+    def write_compress_data(self, f, rows):
+        empty = True
+        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
+        writer = csv.writer(f, self.dialect)
+        last_flush = 0
+        for row in rows:
+            if not isinstance(row, (tuple, list)):
+                row = (row,)
+            writer.writerow(row)
+            empty = False
+            if f.tell() - last_flush >= 256 << 10:
+                f.flush()
+                f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                last_flush = f.tell()
+        if not empty:
+            f.flush()
+        return not empty
 
 class OutputBinaryFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, fmt, overwrite):

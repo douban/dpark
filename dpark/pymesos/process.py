@@ -216,21 +216,19 @@ class Process(UPID):
         return True
 
     def ioloop(self, sock): 
-        sock.listen(1)
+        sock.listen(64)
         sfd = sock.fileno()
         conns = {sfd: sock}
         while not self.aborted:
-            #logging.debug("select %s", conns.keys())
             rlist = select.select(conns.keys(), [], [], 1)[0]
             for fd in rlist:
-                #logging.debug("start process event %d", fd)
                 if fd == sfd:
                     conn, addr = sock.accept()
                     logger.debug("accepted conn from %s", addr)
-                    conns[conn.fileno()] = conn.makefile('r')
+                    conns[conn.fileno()] = conn
                 elif fd in conns:
                     try:
-                        f = conns[fd]
+                        f = conns[fd].makefile('r')
                         while True:
                             if not self.process_message(f):
                                 conns.pop(fd).close()
@@ -238,6 +236,7 @@ class Process(UPID):
                             # is there any data in read buffer ?
                             if not f._rbuf.tell(): 
                                 break
+                        f.close()
                     except Exception, e:
                         import traceback; traceback.print_exc()
                         conns.pop(fd).close()

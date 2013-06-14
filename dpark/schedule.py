@@ -551,10 +551,6 @@ class MesosScheduler(DAGScheduler):
         logger.debug("framework is disconnected")
 
     @safe
-    def executorlost(self, driver, executorId, slaveId, status):
-        logger.warning("executor %s is lost at %s", executorId.value, slaveId.value)
-
-    @safe
     def getExecutorInfo(self, framework_id):
         info = mesos_pb2.ExecutorInfo()
         if hasattr(info, 'framework_id'):
@@ -802,12 +798,13 @@ class MesosScheduler(DAGScheduler):
 
     def executorLost(self, driver, executorId, slaveId, status):
         logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
-        del self.slaveTasks[slaveId.value]
+        self.slaveTasks.pop(slaveId.value, None)
+        self.slaveFailed.pop(slaveId.value, None)
 
-    def slaveLost(self, driver, slave):
-        logger.warning("slave %s lost", slave.value)
-        self.slaveTasks.pop(slave.value, 0)
-        self.slaveFailed[slave.value] = MAX_FAILED
+    def slaveLost(self, driver, slaveId):
+        logger.warning("slave %s lost", slaveId.value)
+        self.slaveTasks.pop(slaveId.value, None)
+        self.slaveFailed.pop(slaveId.value, None)
 
     def killTask(self, job_id, task_id, tried):
         tid = mesos_pb2.TaskID()
