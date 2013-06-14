@@ -47,7 +47,7 @@ class DparkContext(object):
     def init(self):
         if self.initialized:
             return
-
+        
         options = parse_options()
         self.options = options
         setup_conf(options) 
@@ -101,6 +101,7 @@ class DparkContext(object):
         return self.parallelize(seq, numSlices)
     
     def textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws):
+        self.init()
         if isinstance(path, (list, tuple)):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
                 for p in path])
@@ -138,6 +139,7 @@ class DparkContext(object):
             return create_rdd(cls, path, *ka, **kws)
 
     def partialTextFile(self, path, begin, end, splitSize=None, numSplits=None):
+        self.init()
         return PartialTextFileRDD(self, path, begin, end, splitSize, numSplits)
 
     def bzip2File(self, *args, **kwargs):
@@ -167,6 +169,7 @@ class DparkContext(object):
 
     def beansdb(self, path, depth=None, filter=None, fullscan=False, raw=False, only_latest=False):
         "(Key, (Value, Version, Timestamp)) data in beansdb"
+        self.init()
         if isinstance(path, (tuple, list)):
             return self.union([self.beansdb(p, depth, filter, fullscan, raw, only_latest)
                     for p in path])
@@ -196,6 +199,7 @@ class DparkContext(object):
         return rdd
 
     def mysql(self, sql, args=None, config='shire-offline'):
+        self.init()
         from douban import sqlstore
         store = sqlstore.store_from_config(config)
         cmd, tables = store.parse_execute_sql(sql)
