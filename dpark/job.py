@@ -161,6 +161,7 @@ class SimpleJob(Job):
             self.tidToIndex[task.id] = i
             self.launched[i] = True
             self.tasksLaunched += 1
+            self.blacklist[i].append(host)
             if preferred:
                 self.lastPreferredLaunchTime = now
             return task
@@ -174,7 +175,7 @@ class SimpleJob(Job):
         i = self.tidToIndex[tid]
         if self.finished[i]:
             if status == TASK_FINISHED:
-                logger.info("Task %d is already finished, ignore it", tid)
+                logger.debug("Task %d is already finished, ignore it", tid)
             return 
 
         task = self.tasks[i]
@@ -254,7 +255,6 @@ class SimpleJob(Job):
                     t.mem = max(task.mem, t.mem)
 
         elif status == TASK_FAILED:
-            self.blacklist[index].append(task.host)
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
             if reason not in self.reasons:
@@ -264,7 +264,6 @@ class SimpleJob(Job):
                 _logger("task %s failed @ %s: %s", task.id, task.host, task)
 
         elif status == TASK_LOST:
-            self.blacklist[index].append(task.host)
             logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id, 
                     tid, tried, reason, task.host)
 
@@ -288,17 +287,16 @@ class SimpleJob(Job):
         
         n = self.launched.count(True)
         if n != self.tasksLaunched:
-            logger.error("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
+            logger.warning("bug: tasksLaunched(%d) != %d", self.tasksLaunched, n)
             self.tasksLaunched = n
 
         for i in xrange(self.numTasks):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TASK_STARTING
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.warning("task %d timeout %.1f (at %s), re-assign it", 
+                logger.debug("task %d timeout %.1f (at %s), re-assign it", 
                         task.id, now - task.start, task.host)
                 self.launched[i] = False
-                self.blacklist[i].append(task.host)
                 self.tasksLaunched -= 1
 
         if self.tasksFinished > self.numTasks * 2.0 / 3:
@@ -310,10 +308,10 @@ class SimpleJob(Job):
             for _t, idx, task in tasks:
                 used = now - task.start
                 #logger.debug("task %s used %.1f (avg = %.1f)", task.id, used, avg)
-                if used > avg * (task.tried + 1) * scale:
+                if used > avg * (2 ** task.tried) * scale:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
-                        logger.warning("re-submit task %s for timeout %.1f, try %d",
+                        logger.debug("re-submit task %s for timeout %.1f, try %d",
                             task.id, used, task.tried)
                         task.used += used
                         task.start = now
