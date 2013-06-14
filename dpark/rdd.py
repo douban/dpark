@@ -614,8 +614,8 @@ class PipedRDD(DerivedRDD):
         if self.error:
             raise self.error
         ret = p.wait()
-        if ret:
-            raise Exception('Subprocess exited with status %d' % ret)
+        #if ret:
+        #    raise Exception('Subprocess exited with status %d' % ret)
 
 class MappedValuesRDD(MappedRDD):
     @property
