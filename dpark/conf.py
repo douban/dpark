@@ -16,6 +16,8 @@ MESOS_MASTER = 'localhost'
 # for example:  '/mfs' : 'mfsmaster',
 MOOSEFS_MOUNT_POINTS = {
 }
+# consistant dir cache in client, need patched mfsmaster 
+MOOSEFS_DIR_CACHE = False
 
 def load_conf(path):
     if not os.path.exists(path):
