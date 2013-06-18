@@ -333,6 +333,7 @@ class DAGScheduler(Scheduler):
                 mapStage = self.shuffleToMapStage[reason.shuffleId]
                 mapStage.removeHost(reason.serverUri)
                 failed.add(mapStage)
+                del pendingTasks[stage]
                 lastFetchFailureTime = time.time()
             else:
                 logger.error("task %s failed: %s %s %s", task, reason, type(reason), reason.message)
