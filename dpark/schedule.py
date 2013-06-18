@@ -328,7 +328,6 @@ class DAGScheduler(Scheduler):
                             submitMissingTasks(stage)
             elif isinstance(reason, FetchFailed):
                 if stage in running:
-                    running.remove(stage)
                     waiting.add(stage)
                 mapStage = self.shuffleToMapStage[reason.shuffleId]
                 mapStage.removeHost(reason.serverUri)
