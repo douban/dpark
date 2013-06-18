@@ -55,6 +55,7 @@ class SimpleJob(Job):
         self.tasks = tasks
 
         for t in tasks:
+            t.status = None
             t.tried = 0
             t.used = 0
             t.cpus = cpus
