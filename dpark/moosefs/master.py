@@ -43,12 +43,14 @@ def lock(f):
 
 def try_again(f):
     def _(self, *a, **kw):
-        try:
-            return f(self, *a, **kw)
-        except IOError, e:
-            self.close()
-            time.sleep(1)
-            return f(self, *a, **kw)
+        for i in range(10):
+            try:
+                return f(self, *a, **kw)
+            except IOError, e:
+                self.close()
+                time.sleep(2**i*0.1)
+        else:
+            raise
     return _
 
 def spawn(target, *args, **kw):
@@ -150,6 +152,8 @@ class MasterConn:
     def recv(self, n):
         r = self.conn.recv(n)
         while len(r) < n:
+            if not self.conn:
+                raise IOError("not connected")
             rr = self.conn.recv(n - len(r))
             if not rr:
                 self.close()
@@ -185,17 +189,18 @@ class MasterConn:
             d = self.recv(12)
             cmd, size = unpack("II", d)
             data = self.recv(size-4) if size > 4 else ''
-
-        assert len(d) == 12, 'unexpected end: %s != %s' % (len(d), 12)
         return d, data
 
     def recv_thread(self):
         while True:
             if not self.is_ready:
-                time.sleep(0.1)
+                time.sleep(0.01)
                 continue
-            r = self.recv_cmd()
-            self.reply.put(r)
+            try:
+                r = self.recv_cmd()
+                self.reply.put(r)
+            except Exception, e:
+                self.reply.put(e)
 
     @try_again
     @lock
@@ -205,8 +210,11 @@ class MasterConn:
         msg = pack(cmd, self.packetid, *args)
         self.connect()
         self.send(msg)
-        r, d = self.reply.get()
-        rcmd, size, pid = unpack("III", r)
+        r = self.reply.get()
+        if isinstance(r, Exception):
+            raise r
+        h, d = r
+        rcmd, size, pid = unpack("III", h)
         if rcmd != cmd+1 or pid != self.packetid or size <= 4:
             self.close()
             raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4", 
