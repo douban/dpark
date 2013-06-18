@@ -40,10 +40,10 @@ class Chunk:
 
 def try_again(f):
     def _(self, *a, **kw):
-        for i in range(10):
+        for i in range(3):
             try:
                 return f(self, *a, **kw)
-            except Exception, e:
+            except IOError, e:
                 self.close()
                 logger.warning("mfs master connection: %s", e)
                 time.sleep(2**i*0.1)
@@ -125,14 +125,18 @@ class MasterConn:
         self.is_ready = True
 
     def close(self):
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-            self.dcache.clear()
-            self.is_ready = False
+        with self.lock:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+                self.dcache.clear()
+                self.is_ready = False
 
     def send(self, buf):
-        conn = self.conn
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
         n = conn.send(buf)
         while n < len(buf):
             sent = conn.send(buf[n:])
@@ -148,7 +152,10 @@ class MasterConn:
             self.send(msg)
 
     def recv(self, n):
-        conn = self.conn
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
         r = conn.recv(n)
         while len(r) < n:
             rr = conn.recv(n - len(r))
@@ -191,13 +198,14 @@ class MasterConn:
 
     def recv_thread(self):
         while True:
-            if not self.is_ready:
-                time.sleep(0.01)
-                continue
+            with self.lock:
+                if not self.is_ready:
+                    time.sleep(0.01)
+                    continue
             try:
                 r = self.recv_cmd()
                 self.reply.put(r)
-            except Exception, e:
+            except IOError, e:
                 self.reply.put(e)
 
     @try_again
@@ -207,6 +215,8 @@ class MasterConn:
         msg = pack(cmd, self.packetid, *args)
         with self.lock:
             self.connect()
+            while not self.reply.empty():
+                self.reply.get_nowait()
             self.send(msg)
         r = self.reply.get()
         if isinstance(r, Exception):
