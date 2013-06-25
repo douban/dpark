@@ -59,6 +59,7 @@ class MesosSchedulerDriver(Process):
     @async # called by detector
     def onNewMasterDetectedMessage(self, pid):
         self.master = UPID(pid)
+        self.connected = False
         self.register()
 
     @async # called by detector
