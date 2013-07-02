@@ -2,9 +2,14 @@ import os
 import socket
 import multiprocessing
 import logging
+import marshal
 import cPickle
 import time
+import shutil
+import struct 
+import urllib
 
+import msgpack
 import zmq
 
 from dpark.shareddict import SharedDicts
@@ -13,65 +18,113 @@ from dpark.util import spawn
 
 logger = logging.getLogger("cache")
 
-mmapCache = SharedDicts(10)
-
 class Cache:
-    map = {}
-
-    nextKeySpaceId = 0
-    @classmethod
-    def newKeySpaceId(cls):
-        cls.nextKeySpaceId += 1
-        return cls.nextKeySpaceId
-   
-    def newKeySpace(self):
-        return KeySpace(self, self.newKeySpaceId())
+    data = {}
 
     def get(self, key): 
-        return self.map.get(key)
+        return self.data.get(key)
     
     def put(self, key, value):
-        self.map[key] = value
-        return True
-    
-    def clear(self):
-        self.map.clear()
-
-class KeySpace(Cache):
-    def __init__(self, cache, id):
-        self.map = cache
-        self.id = id
-
-    def newkey(self, key):
-        return "%d:%s" % (self.id, key)
-
-    def get(self, key):
-        return self.map.get(self.newkey(key))
-
-    def put(self, key, value):
-        return self.map.put(self.newkey(key), value)
-
-class LocalCache(Cache):
-    '''cache obj in current process'''
-    def __init__(self, cache):
-        self.cache = cache
-        self.map = {}
-
-    def get(self, key):
-        r = self.map.get(key)
-        if r is None:
-            r = self.cache.get(key)
-            if r is not None:
-                self.map[key] = r
-        return r
-
-    def put(self, key, value):
-        self.map[key] = value
-        self.cache.put(key, value)
+        if value is not None:
+            v = list(value)
+            self.data[key] = v
+            return v
+        else:
+            self.data.pop(key, None)
 
     def clear(self):
-        self.cache.clear()
-        self.map.clear()
+        self.data.clear()
+
+class DiskCache(Cache):
+    def __init__(self, tracker, path):
+        if not os.path.exists(path):
+            try: os.makedirs(path)
+            except: pass
+        self.tracker = tracker
+        self.root = path
+
+    def get_path(self, key):
+        return os.path.join(self.root, '%s_%s' % key)
+
+    def get(self, key):
+        p = self.get_path(key)
+        #if os.path.exists(p):
+        #    return self.load(p)
+
+        # load from other node
+        if not env.get('SERVER_URI'):
+            return
+        rdd_id, index = key
+        locs = self.tracker.getCacheUri(rdd_id, index)
+        if not locs:
+            return
+
+        serve_uri = locs[-1]
+        uri = '%s/cache/%s' % (serve_uri, os.path.basename(p))
+        try:
+            return self.load(uri)
+        except IOError, e:
+            self.tracker.removeHost(rdd_id, index, serve_uri)
+            logger.warning('load from cache %s failed: %s', uri, e)
+
+    def put(self, key, value):
+        p = self.get_path(key)
+        if value is not None:
+            return self.save(self.get_path(key), value)
+        else:
+            os.remove(p)
+
+    def clear(self):
+        shutil.rmtree(self.root)
+
+    def load(self, path):
+        if path.startswith('http://'):
+            f = urllib.urlopen(path)
+            if f.code == 404:
+                f.close()
+                raise IOError("%s not found" % url)
+        else:
+            f = open(path, 'rb')
+        count, = struct.unpack("I", f.read(4))
+        if not count: return
+        unpacker = msgpack.Unpacker(f, use_list=False)
+        for i in xrange(count):
+            _type, data = unpacker.next()
+            if _type == 0:
+                yield marshal.loads(data)
+            else:
+                yield cPickle.loads(data)
+        f.close()
+
+    def save(self, path, items):
+        # TODO: purge old cache
+        tp = "%s.%d" % (path, os.getpid())
+        with open(tp, 'wb') as f:
+            c = 0
+            f.write(struct.pack("I", c))
+            try_marshal = True
+            for v in items:
+                if try_marshal:
+                    try:
+                        r = 0, marshal.dumps(v)
+                    except Exception:
+                        r = 1, cPickle.dumps(v, -1)
+                        try_marshal = False
+                else:
+                    r = 1, cPickle.dumps(v, -1)
+                f.write(msgpack.packb(r)) 
+                c += 1
+                yield v
+            
+            bytes = f.tell()
+            if bytes > 10<<20:
+                logger.warning("cached result is %dMB (larger than 10MB)", bytes>>20)
+            # count    
+            f.seek(0)
+            f.write(struct.pack("I", c))
+        
+        os.rename(tp, path)
+
 
 class CacheTrackerMessage:pass
 class AddedToCache(CacheTrackerMessage):
@@ -84,14 +137,14 @@ class DroppedFromCache(CacheTrackerMessage):
         self.rddId = rddId
         self.partition = partition
         self.host = host
-class MemoryCacheLost(CacheTrackerMessage):
-    def __init__(self, host):
-        self.host = host
 class RegisterRDD(CacheTrackerMessage):
     def __init__(self, rddId, numPartitions):
         self.rddId = rddId
         self.numPartitions = numPartitions
-class GetCacheLocations(CacheTrackerMessage):pass
+class GetCacheUri(CacheTrackerMessage):
+    def __init__(self, rddId, partition):
+        self.rddId = rddId
+        self.index = partition
 class StopCacheTracker(CacheTrackerMessage):pass
 
 class CacheTrackerServer(object):
@@ -129,16 +182,14 @@ class CacheTrackerServer(object):
                 locs[msg.rddId][msg.partition].append(msg.host)
                 reply('OK')
             elif isinstance(msg, DroppedFromCache):
-                if 'msg.host' in locs[msg.rddId][msg.partition]:
+                if msg.host in locs[msg.rddId][msg.partition]:
                     locs[msg.rddId][msg.partition].remove(msg.host)
                 reply('OK')
-            elif isinstance(msg, MemoryCacheLost):
-                for k,v in locs.iteritems():
-                    for l in v:
-                        l.remove(msg.host)
-                reply('OK')
-            elif isinstance(msg, GetCacheLocations):
-                reply(locs)
+            elif isinstance(msg, GetCacheUri):
+                if msg.rddId in locs:
+                    reply(locs[msg.rddId][msg.index])
+                else:
+                    reply([])
             elif isinstance(msg, StopCacheTracker):
                 reply('OK')
                 break
@@ -183,8 +234,16 @@ class LocalCacheTracker(object):
     def getLocationsSnapshot(self):
         return self.locs
 
-    def getCachedLocs(self, rdd_id):
-        return self.locs[rdd_id]
+    def getCachedLocs(self, rdd_id, index):
+        def parse_hostname(uri):
+            if uri.startswith('http://'):
+                h = uri.split(':')[1].rsplit('/', 1)[-1]
+                return h
+            return ''
+        return map(parse_hostname, self.locs[rdd_id][index])
+    
+    def getCacheUri(self, rdd_id, index):
+        return self.locs[rdd_id][index]
 
     def addHost(self, rdd_id, index, host):
         self.locs[rdd_id][index].append(host)
@@ -194,42 +253,40 @@ class LocalCacheTracker(object):
             self.locs[rdd_id][index].remove(host)
 
     def getOrCompute(self, rdd, split):
-        key = "%s:%s" % (rdd.id, split.index)
+        key = (rdd.id, split.index)
         cachedVal = self.cache.get(key)
         if cachedVal is not None:
             logger.debug("Found partition in cache! %s", key)
             return cachedVal
         
-        host = socket.gethostname()
         logger.debug("partition not in cache, %s", key)
-        self.removeHost(rdd.id, split.index, host)
-        r = list(rdd.compute(split))
-        self.cache.put(key, r)
-        
-        self.addHost(rdd.id, split.index, host)
+        r = self.cache.put(key, rdd.compute(split))
+        serve_uri = env.get('SERVER_URI')
+        if serve_uri:
+            self.addHost(rdd.id, split.index, serve_uri)
         return r
 
     def stop(self):
-        pass
+        self.clear()
 
 
 class CacheTracker(LocalCacheTracker):
     def __init__(self, isMaster):
         LocalCacheTracker.__init__(self, isMaster)
         if isMaster:
-            self.cache = Cache()
-        else:
-            self.cache = LocalCache(mmapCache).newKeySpace()
-
-        if isMaster:
             self.server = CacheTrackerServer(self.locs)
             self.server.start()
             addr = self.server.addr
             env.register('CacheTrackerAddr', addr)
         else:
+            cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
+            self.cache = DiskCache(self, cachedir)
             addr = env.get('CacheTrackerAddr')
 
         self.client = CacheTrackerClient(addr)
+
+    def getCacheUri(self, rdd_id, index):
+        return self.client.call(GetCacheUri(rdd_id, index))
 
     def addHost(self, rdd_id, index, host):
         return self.client.call(AddedToCache(rdd_id, index, host))
@@ -238,6 +295,7 @@ class CacheTracker(LocalCacheTracker):
         return self.client.call(DroppedFromCache(rdd_id, index, host)) 
 
     def stop(self):
+        self.clear()
         self.client.stop()
         if self.isMaster:
             self.server.stop()
@@ -246,34 +304,17 @@ class CacheTracker(LocalCacheTracker):
         raise Exception("!!!")
 
 
-def set_cache():
-    cache = mmapCache
-    cache.put('a','b')
-    return True
-
-def get_cache():
-    cache = mmapCache
-    return cache.get('a')
-
 def test():
     logging.basicConfig(level=logging.DEBUG)
-    cache = mmapCache
-    pool = multiprocessing.Pool(2)
-    assert pool.apply(set_cache) == True
-    assert pool.apply(get_cache) == 'b'
-    pool.close()
-    pool.join()
-    assert cache.get('a') == 'b'
-    
     from dpark.context import DparkContext
     dc = DparkContext("local")
+    dc.start()
     nums = dc.parallelize(range(100), 10)
-    cache = mmapCache
     tracker = CacheTracker(True)
     tracker.registerRDD(nums.id, len(nums))
     split = nums.splits[0]
-    print tracker.getOrCompute(nums, split)
-    print tracker.getOrCompute(nums, split)
+    print list(tracker.getOrCompute(nums, split))
+    print list(tracker.getOrCompute(nums, split))
     print tracker.getLocationsSnapshot()
     tracker.stop()
 
