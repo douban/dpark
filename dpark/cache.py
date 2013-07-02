@@ -24,11 +24,12 @@ class Cache:
     def get(self, key): 
         return self.data.get(key)
     
-    def put(self, key, value):
+    def put(self, key, value, is_iterator=False):
         if value is not None:
-            v = list(value)
-            self.data[key] = v
-            return v
+            if is_iterator:
+                value = list(value)
+            self.data[key] = value
+            return value
         else:
             self.data.pop(key, None)
 
@@ -67,7 +68,7 @@ class DiskCache(Cache):
             self.tracker.removeHost(rdd_id, index, serve_uri)
             logger.warning('load from cache %s failed: %s', uri, e)
 
-    def put(self, key, value):
+    def put(self, key, value, is_iterator=False):
         p = self.get_path(key)
         if value is not None:
             return self.save(self.get_path(key), value)
@@ -260,7 +261,7 @@ class LocalCacheTracker(object):
             return cachedVal
         
         logger.debug("partition not in cache, %s", key)
-        r = self.cache.put(key, rdd.compute(split))
+        r = self.cache.put(key, rdd.compute(split), is_iterator=True)
         serve_uri = env.get('SERVER_URI')
         if serve_uri:
             self.addHost(rdd.id, split.index, serve_uri)
