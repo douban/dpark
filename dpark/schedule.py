@@ -312,7 +312,7 @@ class DAGScheduler(Scheduler):
                 elif isinstance(task, ShuffleMapTask):
                     stage = self.idToStage[task.stageId]
                     stage.addOutputLoc(task.partition, evt.result)
-                    if not pendingTasks[stage]:
+                    if not pendingTasks[stage] and all(stage.outputLocs):
                         logger.debug("%s finished; looking for newly runnable stages", stage)
                         running.remove(stage)
                         if stage.shuffleDep != None:
@@ -328,7 +328,6 @@ class DAGScheduler(Scheduler):
                             submitMissingTasks(stage)
             elif isinstance(reason, FetchFailed):
                 if stage in running:
-                    running.remove(stage)
                     waiting.add(stage)
                 mapStage = self.shuffleToMapStage[reason.shuffleId]
                 mapStage.removeHost(reason.serverUri)

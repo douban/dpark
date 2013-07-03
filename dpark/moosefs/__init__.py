@@ -23,15 +23,10 @@ class MooseFS(object):
         self.host = host
         self.mountpoint = mountpoint
         self.mc = MasterConn(host, port)
-        self.inode_cache = {}
         self.symlink_cache = {}
 
     def _lookup(self, parent, name):
-        cache = self.inode_cache.get(parent)
-        if cache is None:
-            cache = self.mc.getdirplus(parent)
-            self.inode_cache[parent] = cache
-        return cache.get(name)
+        return self.mc.lookup(parent, name)[0]
         
     def readlink(self, inode):
         target = self.symlink_cache.get(inode)
@@ -73,11 +68,7 @@ class MooseFS(object):
         info = self.lookup(path)
         if not info:
             raise Exception("not found")
-        files = self.inode_cache.get(info.inode)
-        if files is None:
-            files = self.mc.getdirplus(info.inode)
-            self.inode_cache[info.inode] = files
-        return files
+        return self.mc.getdirplus(info.inode)
     
     def walk(self, path, followlinks=False):
         ds = [path]

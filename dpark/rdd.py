@@ -92,14 +92,15 @@ class RDD(object):
         return []
 
     def cache(self):
-        #self.shouldCache = True
+        self.shouldCache = True
+        self._pickle_cache = None # clear pickle cache
         return self
 
     def preferredLocations(self, split):
         if self.shouldCache:
-            locs = env.cacheTracker.getCachedLocs(self.id)
+            locs = env.cacheTracker.getCachedLocs(self.id, split.index)
             if locs:
-                return locs[split.index]
+                return locs
         return self._preferredLocations(split)
 
     def snapshot(self, path=None):

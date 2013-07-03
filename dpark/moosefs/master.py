@@ -1,11 +1,18 @@
 import os
 import socket
 import threading
+import Queue
 import time
 import struct
+import logging
 
 from consts import *
 from utils import *
+
+logger = logging.getLogger(__name__)
+
+# mfsmaster need to been patched with dcache
+ENABLE_DCACHE = False
 
 class StatInfo:
     def __init__(self, totalspace, availspace, trashspace,
@@ -31,21 +38,24 @@ class Chunk:
     def __repr__(self):
         return "<Chunk(%d, %d, %d)>" % (self.id, self.version, self.length)
 
-def lock(f):
-    def _(self, *a, **kw):
-        with self.lock:
-            return f(self, *a, **kw)
-    return _
-
 def try_again(f):
     def _(self, *a, **kw):
-        try:
-            return f(self, *a, **kw)
-        except IOError, e:
-            self.close()
-            time.sleep(1)
-            return f(self, *a, **kw)
+        for i in range(3):
+            try:
+                return f(self, *a, **kw)
+            except IOError, e:
+                self.close()
+                logger.warning("mfs master connection: %s", e)
+                time.sleep(2**i*0.1)
+        else:
+            raise
     return _
+
+def spawn(target, *args, **kw):
+    t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
+    t.daemon = True
+    t.start()
+    return t
 
 class MasterConn:
     def __init__(self, host='mfsmaster', port=9421):
@@ -55,12 +65,16 @@ class MasterConn:
         self.gid = os.getgid()
         self.sessionid = 0
         self.conn = None
+        self.packetid = 0
         self.fail_count = 0
+        self.dcache = {}
+        self.dstat = {}
 
         self.lock = threading.RLock()
-        t = threading.Thread(target=self.heartbeat)
-        t.daemon = True
-        t.start()
+        self.reply = Queue.Queue()
+        self.is_ready = False
+        spawn(self.heartbeat)
+        spawn(self.recv_thread)
 
     def heartbeat(self):
         while True:
@@ -70,7 +84,6 @@ class MasterConn:
                 self.close()
             time.sleep(2)
 
-    @lock
     def connect(self):
         if self.conn is not None:
             return
@@ -92,7 +105,7 @@ class MasterConn:
         regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_NOACL,
                       self.sessionid, VERSION)
         self.send(regbuf)
-        recv = self.recv_cmd(8)
+        recv = self.recv(8)
         cmd, i = unpack("II", recv)
         if cmd != MATOCU_FUSE_REGISTER:
             raise Exception("got incorrect answer from mfsmaster %s" % cmd)
@@ -109,62 +122,111 @@ class MasterConn:
         if self.sessionid == 0:
             self.sessionid, = unpack("I", data)
 
+        self.is_ready = True
+
     def close(self):
-        if self.conn:
-            self.conn.close()
-            self.conn = None
+        with self.lock:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+                self.dcache.clear()
+                self.is_ready = False
 
     def send(self, buf):
-        #print 'send', len(buf), " ".join(str(ord(c)) for c in buf)
-        n = self.conn.send(buf)
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
+        n = conn.send(buf)
         while n < len(buf):
-            sent = self.conn.send(buf[n:])
+            sent = conn.send(buf[n:])
             if not sent:
                 self.close()
                 raise IOError("write to master failed")
             n += sent 
 
-    @lock
     def nop(self):
-        self.connect()
-        msg = pack(ANTOAN_NOP, 0)
-        self.send(msg)
+        with self.lock:
+            self.connect()
+            msg = pack(ANTOAN_NOP, 0)
+            self.send(msg)
 
     def recv(self, n):
-        r = self.conn.recv(n)
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
+        r = conn.recv(n)
         while len(r) < n:
-            rr = self.conn.recv(n - len(r))
+            rr = conn.recv(n - len(r))
             if not rr:
                 self.close()
                 raise IOError("unexpected error: need %d" % (n-len(r)))
             r += rr
         return r
 
-    def recv_cmd(self, n):
-        d = self.recv(n)
-        if len(d) >= 8:
+    def recv_cmd(self):
+        d = self.recv(12)
+        cmd, size = unpack("II", d)
+        data = self.recv(size-4) if size > 4 else ''
+        while cmd in (ANTOAN_NOP, MATOCU_FUSE_NOTIFY_ATTR, MATOCU_FUSE_NOTIFY_DIR):
+            if cmd == ANTOAN_NOP:
+                pass
+            elif cmd == MATOCU_FUSE_NOTIFY_ATTR:
+                while len(data) >= 43:
+                    parent, inode = unpack("II", data)
+                    attr = data[8:43]
+                    if parent in self.dcache:
+                        cache = self.dcache[parent]
+                        for name in cache:
+                            if cache[name].inode == inode:
+                                cache[name] = attrToFileInfo(inode, attr)
+                                break
+                    data = data[43:]
+            elif cmd == MATOCU_FUSE_NOTIFY_DIR:
+                while len(data) >= 4:
+                    inode, = unpack("I", data)
+                    if inode in self.dcache:
+                        del self.dcache[inode]
+                        with self.lock:
+                            self.send(pack(CUTOMA_FUSE_DIR_REMOVED, 0, inode))
+                    data = data[4:]
+            d = self.recv(12)
             cmd, size = unpack("II", d)
-            while cmd == ANTOAN_NOP and size == 4:
-                d = d[12:] + self.recv(12)
-                cmd, size = unpack("II", d)
-        assert len(d) == n, 'unexpected end: %s != %s' % (len(d), n)
-        return d
+            data = self.recv(size-4) if size > 4 else ''
+        return d, data
+
+    def recv_thread(self):
+        while True:
+            with self.lock:
+                if not self.is_ready:
+                    time.sleep(0.01)
+                    continue
+            try:
+                r = self.recv_cmd()
+                self.reply.put(r)
+            except IOError, e:
+                self.reply.put(e)
 
     @try_again
-    @lock
     def sendAndReceive(self, cmd, *args):
         #print 'sendAndReceive', cmd, args
-        packetid = 1
-        msg = pack(cmd, packetid, *args)
-        self.connect()
-        self.send(msg)
-        r = self.recv_cmd(12)
-        rcmd, size, id = unpack("III", r)
-        if rcmd != cmd+1 or id != packetid or size <= 4:
+        self.packetid += 1
+        msg = pack(cmd, self.packetid, *args)
+        with self.lock:
+            self.connect()
+            while not self.reply.empty():
+                self.reply.get_nowait()
+            self.send(msg)
+        r = self.reply.get()
+        if isinstance(r, Exception):
+            raise r
+        h, d = r
+        rcmd, size, pid = unpack("III", h)
+        if rcmd != cmd+1 or pid != self.packetid or size <= 4:
             self.close()
             raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4", 
-                rcmd, cmd+1, id, packetid, size)
-        d = self.recv(size-4)
+                rcmd, cmd+1, pid, self.packetid, size)
         if len(d) == 1 and ord(d[0]) != 0:
             raise Error(ord(d[0]))
         return d
@@ -178,12 +240,21 @@ class MasterConn:
 #            self.uid, self.gid, uint8(modemask))
 #
     def lookup(self, parent, name):
+        if ENABLE_DCACHE:
+            cache = self.dcache.get(parent)
+            if cache is None and self.dstat.get(parent, 0) > 1:
+                cache = self.getdirplus(parent)
+            if cache is not None:
+                return cache.get(name), None
+
+            self.dstat[parent] = self.dstat.get(parent, 0) + 1
+
         ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent, 
                 uint8(len(name)), name, 0, 0)
         if len(ans) == 1:
             return None, ""
         if len(ans) != 39:
-            return None, "bad length"
+            raise Exception("bad length")
         inode, = unpack("I", ans)
         return attrToFileInfo(inode, ans[4:]), None
 
@@ -219,8 +290,16 @@ class MasterConn:
 
     def getdirplus(self, inode):
         "return {name: FileInfo()}"
+        if ENABLE_DCACHE:
+            infos = self.dcache.get(inode)
+            if infos is not None:
+                return infos
+
+        flag = GETDIR_FLAG_WITHATTR
+        if ENABLE_DCACHE:
+            flag |= GETDIR_FLAG_DIRCACHE
         ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode, 
-                self.uid, self.gid, uint8(GETDIR_FLAG_WITHATTR))
+                self.uid, self.gid, uint8(flag))
         p = 0
         infos = {}
         while p < len(ans):
@@ -232,6 +311,8 @@ class MasterConn:
             attr = ans[p+4:p+39]
             infos[name] = attrToFileInfo(i, attr, name)
             p += 39
+        if ENABLE_DCACHE:
+            self.dcache[inode] = infos
         return infos
 
     def opencheck(self, inode, flag=1):
