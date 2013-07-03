@@ -49,8 +49,8 @@ class DiskCache(Cache):
 
     def get(self, key):
         p = self.get_path(key)
-        #if os.path.exists(p):
-        #    return self.load(p)
+        if os.path.exists(p):
+            return self.load(open(p, 'rb'))
 
         # load from other node
         if not env.get('SERVER_URI'):
@@ -62,11 +62,13 @@ class DiskCache(Cache):
 
         serve_uri = locs[-1]
         uri = '%s/cache/%s' % (serve_uri, os.path.basename(p))
-        try:
-            return self.load(uri)
-        except IOError, e:
+        f = urllib.urlopen(uri)
+        if f.code == 404:
+            logger.warning('load from cache %s failed', uri)
             self.tracker.removeHost(rdd_id, index, serve_uri)
-            logger.warning('load from cache %s failed: %s', uri, e)
+            f.close()
+            return
+        return self.load(f)
 
     def put(self, key, value, is_iterator=False):
         p = self.get_path(key)
@@ -78,14 +80,7 @@ class DiskCache(Cache):
     def clear(self):
         shutil.rmtree(self.root)
 
-    def load(self, path):
-        if path.startswith('http://'):
-            f = urllib.urlopen(path)
-            if f.code == 404:
-                f.close()
-                raise IOError("%s not found" % path)
-        else:
-            f = open(path, 'rb')
+    def load(self, f):
         count, = struct.unpack("I", f.read(4))
         if not count: return
         unpacker = msgpack.Unpacker(f, use_list=False)
