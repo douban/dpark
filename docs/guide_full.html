@@ -1,0 +1,681 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<meta name="generator" content="Docutils 0.10: http://docutils.sourceforge.net/" />
+<title>Dpark 使用指南</title>
+<style type="text/css">
+
+/*
+:Author: David Goodger (goodger@python.org)
+:Id: $Id: html4css1.css 7514 2012-09-14 14:27:12Z milde $
+:Copyright: This stylesheet has been placed in the public domain.
+
+Default cascading style sheet for the HTML output of Docutils.
+
+See http://docutils.sf.net/docs/howto/html-stylesheets.html for how to
+customize this style sheet.
+*/
+
+/* used to remove borders from tables and images */
+.borderless, table.borderless td, table.borderless th {
+  border: 0 }
+
+table.borderless td, table.borderless th {
+  /* Override padding for "table.docutils td" with "! important".
+     The right padding separates the table cells. */
+  padding: 0 0.5em 0 0 ! important }
+
+.first {
+  /* Override more specific margin styles with "! important". */
+  margin-top: 0 ! important }
+
+.last, .with-subtitle {
+  margin-bottom: 0 ! important }
+
+.hidden {
+  display: none }
+
+a.toc-backref {
+  text-decoration: none ;
+  color: black }
+
+blockquote.epigraph {
+  margin: 2em 5em ; }
+
+dl.docutils dd {
+  margin-bottom: 0.5em }
+
+object[type="image/svg+xml"], object[type="application/x-shockwave-flash"] {
+  overflow: hidden;
+}
+
+/* Uncomment (and remove this text!) to get bold-faced definition list terms
+dl.docutils dt {
+  font-weight: bold }
+*/
+
+div.abstract {
+  margin: 2em 5em }
+
+div.abstract p.topic-title {
+  font-weight: bold ;
+  text-align: center }
+
+div.admonition, div.attention, div.caution, div.danger, div.error,
+div.hint, div.important, div.note, div.tip, div.warning {
+  margin: 2em ;
+  border: medium outset ;
+  padding: 1em }
+
+div.admonition p.admonition-title, div.hint p.admonition-title,
+div.important p.admonition-title, div.note p.admonition-title,
+div.tip p.admonition-title {
+  font-weight: bold ;
+  font-family: sans-serif }
+
+div.attention p.admonition-title, div.caution p.admonition-title,
+div.danger p.admonition-title, div.error p.admonition-title,
+div.warning p.admonition-title, .code .error {
+  color: red ;
+  font-weight: bold ;
+  font-family: sans-serif }
+
+/* Uncomment (and remove this text!) to get reduced vertical space in
+   compound paragraphs.
+div.compound .compound-first, div.compound .compound-middle {
+  margin-bottom: 0.5em }
+
+div.compound .compound-last, div.compound .compound-middle {
+  margin-top: 0.5em }
+*/
+
+div.dedication {
+  margin: 2em 5em ;
+  text-align: center ;
+  font-style: italic }
+
+div.dedication p.topic-title {
+  font-weight: bold ;
+  font-style: normal }
+
+div.figure {
+  margin-left: 2em ;
+  margin-right: 2em }
+
+div.footer, div.header {
+  clear: both;
+  font-size: smaller }
+
+div.line-block {
+  display: block ;
+  margin-top: 1em ;
+  margin-bottom: 1em }
+
+div.line-block div.line-block {
+  margin-top: 0 ;
+  margin-bottom: 0 ;
+  margin-left: 1.5em }
+
+div.sidebar {
+  margin: 0 0 0.5em 1em ;
+  border: medium outset ;
+  padding: 1em ;
+  background-color: #ffffee ;
+  width: 40% ;
+  float: right ;
+  clear: right }
+
+div.sidebar p.rubric {
+  font-family: sans-serif ;
+  font-size: medium }
+
+div.system-messages {
+  margin: 5em }
+
+div.system-messages h1 {
+  color: red }
+
+div.system-message {
+  border: medium outset ;
+  padding: 1em }
+
+div.system-message p.system-message-title {
+  color: red ;
+  font-weight: bold }
+
+div.topic {
+  margin: 2em }
+
+h1.section-subtitle, h2.section-subtitle, h3.section-subtitle,
+h4.section-subtitle, h5.section-subtitle, h6.section-subtitle {
+  margin-top: 0.4em }
+
+h1.title {
+  text-align: center }
+
+h2.subtitle {
+  text-align: center }
+
+hr.docutils {
+  width: 75% }
+
+img.align-left, .figure.align-left, object.align-left {
+  clear: left ;
+  float: left ;
+  margin-right: 1em }
+
+img.align-right, .figure.align-right, object.align-right {
+  clear: right ;
+  float: right ;
+  margin-left: 1em }
+
+img.align-center, .figure.align-center, object.align-center {
+  display: block;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.align-left {
+  text-align: left }
+
+.align-center {
+  clear: both ;
+  text-align: center }
+
+.align-right {
+  text-align: right }
+
+/* reset inner alignment in figures */
+div.align-right {
+  text-align: inherit }
+
+/* div.align-center * { */
+/*   text-align: left } */
+
+ol.simple, ul.simple {
+  margin-bottom: 1em }
+
+ol.arabic {
+  list-style: decimal }
+
+ol.loweralpha {
+  list-style: lower-alpha }
+
+ol.upperalpha {
+  list-style: upper-alpha }
+
+ol.lowerroman {
+  list-style: lower-roman }
+
+ol.upperroman {
+  list-style: upper-roman }
+
+p.attribution {
+  text-align: right ;
+  margin-left: 50% }
+
+p.caption {
+  font-style: italic }
+
+p.credits {
+  font-style: italic ;
+  font-size: smaller }
+
+p.label {
+  white-space: nowrap }
+
+p.rubric {
+  font-weight: bold ;
+  font-size: larger ;
+  color: maroon ;
+  text-align: center }
+
+p.sidebar-title {
+  font-family: sans-serif ;
+  font-weight: bold ;
+  font-size: larger }
+
+p.sidebar-subtitle {
+  font-family: sans-serif ;
+  font-weight: bold }
+
+p.topic-title {
+  font-weight: bold }
+
+pre.address {
+  margin-bottom: 0 ;
+  margin-top: 0 ;
+  font: inherit }
+
+pre.literal-block, pre.doctest-block, pre.math, pre.code {
+  margin-left: 2em ;
+  margin-right: 2em }
+
+pre.code .ln { color: grey; } /* line numbers */
+pre.code, code { background-color: #eeeeee }
+pre.code .comment, code .comment { color: #5C6576 }
+pre.code .keyword, code .keyword { color: #3B0D06; font-weight: bold }
+pre.code .literal.string, code .literal.string { color: #0C5404 }
+pre.code .name.builtin, code .name.builtin { color: #352B84 }
+pre.code .deleted, code .deleted { background-color: #DEB0A1}
+pre.code .inserted, code .inserted { background-color: #A3D289}
+
+span.classifier {
+  font-family: sans-serif ;
+  font-style: oblique }
+
+span.classifier-delimiter {
+  font-family: sans-serif ;
+  font-weight: bold }
+
+span.interpreted {
+  font-family: sans-serif }
+
+span.option {
+  white-space: nowrap }
+
+span.pre {
+  white-space: pre }
+
+span.problematic {
+  color: red }
+
+span.section-subtitle {
+  /* font-size relative to parent (h1..h6 element) */
+  font-size: 80% }
+
+table.citation {
+  border-left: solid 1px gray;
+  margin-left: 1px }
+
+table.docinfo {
+  margin: 2em 4em }
+
+table.docutils {
+  margin-top: 0.5em ;
+  margin-bottom: 0.5em }
+
+table.footnote {
+  border-left: solid 1px black;
+  margin-left: 1px }
+
+table.docutils td, table.docutils th,
+table.docinfo td, table.docinfo th {
+  padding-left: 0.5em ;
+  padding-right: 0.5em ;
+  vertical-align: top }
+
+table.docutils th.field-name, table.docinfo th.docinfo-name {
+  font-weight: bold ;
+  text-align: left ;
+  white-space: nowrap ;
+  padding-left: 0 }
+
+h1 tt.docutils, h2 tt.docutils, h3 tt.docutils,
+h4 tt.docutils, h5 tt.docutils, h6 tt.docutils {
+  font-size: 100% }
+
+ul.auto-toc {
+  list-style-type: none }
+
+</style>
+</head>
+<body>
+<div class="document" id="dpark">
+<h1 class="title">Dpark 使用指南</h1>
+
+<div class="section" id="id1">
+<h1>基本概念</h1>
+<div class="section" id="rdd">
+<h2>RDD</h2>
+<p>RDD(Resilient Distributed Datasets) 是 Dpark 的核心概念，是支持高容错并行计算的数据集合</p>
+<ul class="simple">
+<li>有两种方式可以产生 RDD，通过特定函数从存储设备（内存或硬盘）创建，或者由其他 RDD 生成</li>
+<li>RDD 带有它所依赖的其他 RDD 的信息，以备计算失败的时候能够重新计算</li>
+<li>RDD 是只读的，这样从拓扑中恢复这个 RDD 的工作就能简单很多</li>
+<li>RDD 可以被重复使用</li>
+<li>一个 RDD 由多个 Split 组成，Split 是执行并行计算的基本单位</li>
+<li>RDD 支持两类操作，窄依赖的 map 和 宽依赖的 reduce</li>
+</ul>
+</div>
+<div class="section" id="id2">
+<h2>窄依赖</h2>
+<ul class="simple">
+<li>窄依赖操作，会对每一行数据进行计算，类似 Python 中的 map 函数</li>
+<li>窄依赖操作是流式计算，需要的内存很少</li>
+<li>常用函数 map / flatMap / filter / mapValue</li>
+</ul>
+</div>
+<div class="section" id="id3">
+<h2>宽依赖</h2>
+<ul class="simple">
+<li>宽依赖操作需要所依赖的数据完全完成后，才能进行计算，所以对内存需求比较大</li>
+<li>常用函数 reduce / reduceByKey / uniq / groupBy / groupByKey / combineByKey</li>
+<li>reduceByKey 会把数据的 key 拆分成 M 份进行计算，对每一份进行计算时，会把所有 key 放入内存，需要的内存量会比较大</li>
+<li>reduce 相当于只有一个 key，并且只有一份的 reduceByKey, 它最后是在当前进程进行结果合并的</li>
+</ul>
+</div>
+<div class="section" id="stage-job-task">
+<h2>Stage / Job / Task</h2>
+<ul class="simple">
+<li>由多个 RDD 组成的链式计算过程会根据依赖关系被划分为多个Stage</li>
+<li>每次 Shuffle 过程（由 combineByKey 产生）都会把计算过程拆分成前后两个 Stage</li>
+<li>每个 Stage 会有多个 Job，对应一个或者多个类似的 RDD</li>
+<li>一个 Job 有多个 Task，数量由 RDD 的 Split 决定</li>
+<li>同一个Stage里面的 Job 和 Task 是可以并行执行的</li>
+<li>每个 Task 对应一个进程，如果服务器资源充足，就可以完全并行，否则就只能部分并行</li>
+</ul>
+</div>
+<div class="section" id="id4">
+<h2>共享变量</h2>
+<ul class="simple">
+<li>Dpark 在运行时，会将 RDD 以及针对它的函数序列化后发送到执行节点去，反序列化并执行。函数所依赖的全局变量，模块和闭包对象等，也都会随着函数一块发送过去。</li>
+<li>每个 Task 都会发送一次，所以当依赖很大或者依赖中等但是 Task 很多，就会影响性能。这时候需要用到广播</li>
+</ul>
+</div>
+<div class="section" id="id5">
+<h2>广播</h2>
+<ul class="simple">
+<li>广播适用于比较大的数据集，但它不能超过单机的内存限制</li>
+<li>广播之后，使用时会在集群中各台机器之间交换数据，不会像序列化一样依赖于执行脚本的机器</li>
+<li>序列化后超过 100k 的对象都需要广播，我们称手工写 dpark.broadcast(xxx) 为显式广播</li>
+<li>Dpark 可以自动的发现大对象并广播出去，代码中不需要手工写广播代码，我们称这种为隐式广播</li>
+<li>Dpark 可能不能正确发现大对象，也有可能一个大对象同时被多个函数使用的情况，所以需要有选择的使用显式广播</li>
+</ul>
+</div>
+</div>
+<div class="section" id="id6">
+<h1>命令行参数</h1>
+<dl class="docutils">
+<dt>-M xxxx</dt>
+<dd>每个 task 申请的内存</dd>
+<dt>--err 0.001</dt>
+<dd>如果有脏数据，用这个可以忽略掉</dd>
+</dl>
+</div>
+<div class="section" id="id7">
+<h1>常用函数</h1>
+<div class="section" id="union">
+<h2>union</h2>
+<pre class="literal-block">
+rdd3 = rdd1.union(rdd2)
+rdd3 = dpark.union([rdd1, rdd2])
+</pre>
+</div>
+<div class="section" id="map-flatmap">
+<h2>map / flatMap</h2>
+<pre class="literal-block">
+b = dpark.parallelize([1, 2])
+r1 = b.map(lambda x: (x, x)).collect()  # [(1, 1), (2, 2)]
+r2 = b.flatMap(lambda x: (x, x)).collect()  # [1, 1, 2, 2]
+</pre>
+</div>
+<div class="section" id="mapvalue-flatmapvalue">
+<h2>mapValue / flatMapValue</h2>
+<pre class="literal-block">
+b = dpark.parallelize([(1, 11), (2, 22)])
+r1 = b.mapValue(lambda x: (x, x)).collect()  # [(1, (11, 11)), (2, (22, 22))]
+r2 = b.flatMapValue(lambda x: (x, x)).collect()  # [(1, 11), (1, 11), (2, 22), (2, 22)]
+</pre>
+</div>
+<div class="section" id="filter">
+<h2>filter</h2>
+<pre class="literal-block">
+b = dpark.parallelize([[1, 11], 0, [2, 22]])
+r = b.filter(lambda x: x).collect()  # [[1, 11], [2, 22]]
+</pre>
+</div>
+<div class="section" id="uniq">
+<h2>uniq</h2>
+<pre class="literal-block">
+b = dpark.parallelize([(1, 11), 0, (1, 11)])
+r = b.uniq().collect()  # [0, (1, 11)]
+</pre>
+</div>
+<div class="section" id="groupby-groupbykey">
+<h2>groupBy / groupByKey</h2>
+<pre class="literal-block">
+b = dpark.parallelize([(1, 11), (1, 12), (2, 22)])
+r1 = b.map(lambda x: (x[0], x)).groupByKey().collect()  # [(1, [(1, 12), (1, 11)]), (2, [(2, 22)])]
+r2 = b.groupBy(lambda x: x[0]).collect()  # [(1, [(1, 12), (1, 11)]), (2, [(2, 22)])]
+</pre>
+</div>
+<div class="section" id="reduce-reducebykey">
+<h2>reduce / reduceByKey</h2>
+<pre class="literal-block">
+b = dpark.parallelize([(1, 11), (1, 12), (2, 22)])
+r1 = b.reduceByKey(lambda x, y: x + y).collect()  # [(1, 23), (2, 22)]
+r2 = b.reduce(lambda x, y: (x[0] + y[0], x[1] + y[1]))  # (4, 45)
+</pre>
+</div>
+<div class="section" id="join-leftouterjoin-rightouterjoin-outerjoin-groupwith">
+<h2>join / leftOuterJoin / rightOuterJoin / outerJoin / groupWith</h2>
+<pre class="literal-block">
+rdd1 = dpark.parallelize([(1, 11), (2, 12), (3, 22)])
+rdd2 = dpark.parallelize([(1, 33), (2, 44), (4, 55)])
+r1 = rdd1.join(rdd2).collect()  # [(1, (11, 33)), (2, (12, 44))]
+r2 = rdd1.leftOuterJoin(rdd2).collect()  # [(1, (11, 33)), (2, (12, 44)), (3, (22, None))]
+r3 = rdd1.rightOuterJoin(rdd2).collect()  # [(1, (11, 33)), (2, (12, 44)), (4, (None, 55))]
+r4 = rdd1.outerJoin(rdd2).collect()  # [(1, (11, 33)), (2, (12, 44)), (3, (22, None)), (4, (None, 55))]
+
+rdd3 = dpark.parallelize([(1, 100), (2, 101), (4, 201)])
+r5 = rdd1.groupWith(rdd2).collect()  # [(1, ([11], [33])), (2, ([12], [44])), (3, ([22], [])), (4, ([], [55]))]
+r6 = rdd1.groupWith([rdd2, rdd3]).collect()  # [(1, ([11], [33], [100])), (2, ([12], [44], [101])), (3, ([22], [], [])), (4, ([], [55], [201]))]
+</pre>
+</div>
+<div class="section" id="id8">
+<h2>读相关</h2>
+<pre class="literal-block">
+textFile(self, path, ext='', followLink=True, maxdepth=0, cls=TextFileRDD, *ka, **kws)
+
+# 读单个文件，每个 Split 最大 16 M
+rdd = dpark.textFile('xxxx.csv', splitSize=16 &lt;&lt; 20)
+
+# 读多个压缩文件（目前textFile支持 .bz2 和 .gz），每个文件分成 10 个 Split
+rdd = dpark.textFile(['xxxx.bz2', 'xxxxx.gz'], numSplits=10)
+
+# 递归读目录，扩展名为.csv，PS：隐藏文件会被忽略
+rdd = dpark.textFile('/xxxx/xxxx', ext='.csv')
+
+# 其他文件类型请参见 rdd.py，或使用 pydoc dpark.rdd
+</pre>
+</div>
+<div class="section" id="id9">
+<h2>写相关</h2>
+<pre class="literal-block">
+# 写文件，扩展名.csv，gz 格式压缩
+rdd.saveAsTextFile(path, ext='.csv', compress=True)
+
+# 按 key 写入多个目录，扩展名.csv，path 下如已有文件则删除
+rdd = dpark.parallelize([('1', '1'), ('2', '2')])
+rdd.saveAsTextFileByKey(path, ext='.csv', overwrite=True) # path 下会生成 1 和 2 两个目录
+
+# 其他文件类型请参见 rdd.py，或使用 pydoc dpark.rdd
+</pre>
+</div>
+</div>
+<div class="section" id="id10">
+<h1>代码风格</h1>
+<p>我们先来看个例子</p>
+<pre class="literal-block">
+data.map(
+    lambda line: line.strip().split(' ')
+).filter(
+    lambda line: len(line)&gt;=3
+).map(
+    lambda line: (line[1],line[2])
+).map(
+    lambda line: (line[0].split(':'),line[1])
+).filter(
+    lambda line: len(line[0])&gt;=2
+).map(
+    lambda line: (line[0][1],line[1]))
+</pre>
+<p>这种代码写起来方便，但是欠缺可读性。换个写法</p>
+<pre class="literal-block">
+def split_row(r):
+    return r.strip().split(' ')
+
+def cal(r):
+    if len(r) &lt; 3:
+        return
+
+    _, bus, date = r[:3]
+    t = bus.split(':')
+    if len(t) &lt; 2:
+        return
+
+    return t[1], date
+
+data.map(split_row).map(cal).filter(lambda x: x)
+</pre>
+<p>上面的代码就会好很多</p>
+</div>
+<div class="section" id="id11">
+<h1>开发注意事项</h1>
+<ul class="simple">
+<li>先用小数据将代码调通，再执行大数据</li>
+<li>执行未调优的脚本要关注 log 中的警告和错误，随时准备停掉脚本</li>
+<li>务必以低并行度访问数据库，否则员外会找你喝茶</li>
+<li>执行 collect / collectAsMap 会将数据读入当前内存，建议先 saveAsTextFile 看看大小，确保不会过大</li>
+<li>了解自己的数据，才能有针对性的做优化</li>
+</ul>
+</div>
+<div class="section" id="id12">
+<h1>性能调优</h1>
+<div class="section" id="id13">
+<h2>优化非 Dpark 部分</h2>
+<ul class="simple">
+<li>先优化 map 依赖的函数，避免效率过低的操作，比如反复对大 list 执行 in 操作，反复的 re.compile 同一个表达式</li>
+<li>组织数据时，适当压缩大小，比如纯数字的字符串先转 int</li>
+</ul>
+</div>
+<div class="section" id="id14">
+<h2>使用广播的时机</h2>
+<p>一个简单的例子</p>
+<pre class="literal-block">
+dpark = DparkContext()
+bid_data = dpark.parallelize(map(lambda x: (str(x), str(x)), range(10)))
+rdd = dpark.parallelize(map(lambda x: (str(x * 2), str(x)), range(100)))
+
+bids = bid_data.map(lambda r: r[1]).collect()
+r = rdd.filter(lambda r: r[1] in bids).collect()
+</pre>
+<p>bids 中的元素都是 string，如果条件允许而 bids 确实非常大，可以转成 int</p>
+<pre class="literal-block">
+bids = dpark.parallelize(data).map(lambda r: int(r[1])).collect()
+</pre>
+<p>bids 是一个 list，反复对 list 执行 in 操作，效率很低，转成 set 或者 dict</p>
+<pre class="literal-block">
+bids = set(bids)
+bids = dict(((u, 1) for u in bids))
+bids = bid_data.map(lambda r: int(r[1])).map(lambda x: (x, 1)).collectAsMap()
+</pre>
+<p>如果 bids 很大，就需要使用广播（Dpark 可能会在这里使用隐式广播）</p>
+<pre class="literal-block">
+bids_b = dpark.broadcast(bids)
+r = rdd.filter(lambda r: int(r[1]) in bids_b.value).collect()
+</pre>
+<p>如果 bids 特别大，到了会影响网络 IO 的程度……</p>
+<pre class="literal-block">
+bids = bid_data.map(lambda r: r[1]).map(lambda x: (x, 1))
+r = rdd.map(lambda r: (r[1], r)).join(bids).filter(lambda r: r[1][1]).map(lambda r: r[1][0]).collect()
+</pre>
+<p>视情况使用 leftOuterJoin 等，实战代码 /mfs/datasupport/xiliang_moria/agg_index_product_total_uv.py</p>
+</div>
+<div class="section" id="id15">
+<h2>尽快减小数据集</h2>
+<ul class="simple">
+<li>比如有两个独立操作 map 和 filter，先 filter 后 map 就可以减少一些不必要的计算</li>
+<li>同理，uniq 和 map 也可以如此处理</li>
+</ul>
+</div>
+<div class="section" id="id16">
+<h2>使用 groupBy / groupByKey 的注意事项</h2>
+<ul class="simple">
+<li>通常 key 小 value 大，所以不会大幅减少数据</li>
+<li>在 key 不均衡的情况下，会导致某个 task 过大而出错，极端情况脚本挂掉</li>
+<li>如果可能，优先使用 reduce 方式</li>
+</ul>
+<pre class="literal-block">
+dpark = DparkContext()
+big_data = dpark.parallelize(range(10) + range(20) + range(30))
+
+r1 = big_data.groupBy(lambda x: x).mapValue(len).collect()
+r2 = big_data.map(lambda x: (x, 1)).groupByKey().mapValue(len).collect()
+</pre>
+<p>这两种做法都可能有上述隐患，更好的做法是</p>
+<pre class="literal-block">
+r3 = big_data.map(lambda x: (x, 1)).reduceByKey(lambda x, y: x + y).collect()
+</pre>
+<p>用 reduceByKey 来加快缩小数据。对合并后的 value 没整体需求的，都可以考虑用这种方式。</p>
+</div>
+<div class="section" id="task-memory">
+<h2>合理设置 Task 和 Memory</h2>
+<ul class="simple">
+<li>大部分 reduce 函数都支持设置 Task 数量和 每个 Task 占用的内存，现在默认分别为 12 和 1000M</li>
+<li>通常，一个脚本中的各个 Job 所需要的资源是不一样的，而 -M 参数会统一设置内存，所以建议复杂脚本不要使用 -M</li>
+<li>Task 最大使用申请内存的 1.5 倍(将来会改成 1 倍)，超过会失败，会在当前申请内存上乘 2 重试，最多重试 4 次，这个过程可以从 log 中看到</li>
+<li>因为现在允许内存适当超标，所以也可能发生 Task 所在机器的内存不够而杀掉进程的情况</li>
+<li>如果 log 中发现大量的内存报错，可以适当的增加 Task 和 Memroy</li>
+<li>reduce 类的可以只增加 Task</li>
+<li>groupBy 可能导致数据不平衡，需要兼顾 Task 和 Memory</li>
+<li>调整要逐步进行，重复进行“看警告，调参数”这个过程</li>
+</ul>
+</div>
+</div>
+<div class="section" id="id17">
+<h1>一些实际的例子</h1>
+<div class="section" id="id18">
+<h2>延时计算陷阱</h2>
+<p>Dpark 是延时计算的，因此在使用结果的时候，要考虑是否已经计算过了</p>
+<pre class="literal-block">
+dpark = DparkContext()
+rdd = dpark.parallelize(range(10))
+acc = dpark.accumulator(0)
+def sum(x):
+    acc.add(x)
+    return x
+
+rdd = rdd.map(sum)  # 如去掉赋值则属于无用代码
+print acc.value  # 0
+rdd.count()
+print acc.value  # 45
+</pre>
+</div>
+<div class="section" id="id19">
+<h2>闭包陷阱</h2>
+<p>Python 本身的闭包可能会导致一些问题，开发的时候要注意一下</p>
+<pre class="literal-block">
+from copy import copy
+dpark = DparkContext()
+# expect: [(0,0), (0,1), (1,1), (0,2), (1,2), (2,2)]
+
+rdd = dpark.union([dpark.makeRDD(range(i+1)).map(lambda x: (x,i)) for i in range(3)])
+print rdd.collect()  # but failed
+
+rdd = dpark.union([dpark.makeRDD(range(i+1)).map(lambda x: (x,copy(i))) for i in range(3)])
+print rdd.collect()  # still failed
+</pre>
+<p>这个问题是因为 Python 的变量绑定是语义范围，即闭包中的对象是由某个环境 + 变量名来决定的，而不是对象本身。一个解决办法是使用两层函数，另一个更简单的办法是使用函数的默认值，比如</p>
+<pre class="literal-block">
+for i in range(10):
+   dpark.map((lambda i: lambda x: x + i)(i))  # 第一种方法，嵌套函数
+   dpark.map(lambda x,i=i: x + i)  # 第二种方法，默认值
+</pre>
+</div>
+<div class="section" id="groupby">
+<h2>合理使用 groupBy</h2>
+<ul class="simple">
+<li>也有必须使用 groupBy 的场合，比如使用 bid 计算 session</li>
+<li>还有需要利用 groupBy 来减少耗时操作的场合，比如现有 UA 库过慢，先对 UA 做 groupBy 以减少解析次数，或者对出现过多的 UA 预先进行解析，然后广播出去</li>
+<li>这种情况需要考虑数据不均衡的情况，大体思路都是拆分过大的 splits，但是仍然需要设置合适的 Memory</li>
+<li>具体例子可以看 /mfs/datasupport/xiliang_moria/fact_web_log2.py</li>
+</ul>
+</div>
+</div>
+</div>
+</body>
+</html>
