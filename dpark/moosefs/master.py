@@ -4,9 +4,12 @@ import threading
 import Queue
 import time
 import struct
+import logging
 
 from consts import *
 from utils import *
+
+logger = logging.getLogger(__name__)
 
 # mfsmaster need to been patched with dcache
 ENABLE_DCACHE = False
@@ -35,19 +38,14 @@ class Chunk:
     def __repr__(self):
         return "<Chunk(%d, %d, %d)>" % (self.id, self.version, self.length)
 
-def lock(f):
-    def _(self, *a, **kw):
-        with self.lock:
-            return f(self, *a, **kw)
-    return _
-
 def try_again(f):
     def _(self, *a, **kw):
-        for i in range(10):
+        for i in range(3):
             try:
                 return f(self, *a, **kw)
             except IOError, e:
                 self.close()
+                logger.warning("mfs master connection: %s", e)
                 time.sleep(2**i*0.1)
         else:
             raise
@@ -86,7 +84,6 @@ class MasterConn:
                 self.close()
             time.sleep(2)
 
-    @lock
     def connect(self):
         if self.conn is not None:
             return
@@ -128,33 +125,40 @@ class MasterConn:
         self.is_ready = True
 
     def close(self):
-        if self.conn:
-            self.conn.close()
-            self.conn = None
-            self.dcache.clear()
-            self.is_ready = False
+        with self.lock:
+            if self.conn:
+                self.conn.close()
+                self.conn = None
+                self.dcache.clear()
+                self.is_ready = False
 
     def send(self, buf):
-        n = self.conn.send(buf)
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
+        n = conn.send(buf)
         while n < len(buf):
-            sent = self.conn.send(buf[n:])
+            sent = conn.send(buf[n:])
             if not sent:
                 self.close()
                 raise IOError("write to master failed")
             n += sent 
 
-    @lock
     def nop(self):
-        self.connect()
-        msg = pack(ANTOAN_NOP, 0)
-        self.send(msg)
+        with self.lock:
+            self.connect()
+            msg = pack(ANTOAN_NOP, 0)
+            self.send(msg)
 
     def recv(self, n):
-        r = self.conn.recv(n)
+        with self.lock:
+            conn = self.conn
+        if not conn:
+            raise IOError("not connected")
+        r = conn.recv(n)
         while len(r) < n:
-            if not self.conn:
-                raise IOError("not connected")
-            rr = self.conn.recv(n - len(r))
+            rr = conn.recv(n - len(r))
             if not rr:
                 self.close()
                 raise IOError("unexpected error: need %d" % (n-len(r)))
@@ -184,7 +188,8 @@ class MasterConn:
                     inode, = unpack("I", data)
                     if inode in self.dcache:
                         del self.dcache[inode]
-                        self.send(pack(CUTOMA_FUSE_DIR_REMOVED, 0, inode))
+                        with self.lock:
+                            self.send(pack(CUTOMA_FUSE_DIR_REMOVED, 0, inode))
                     data = data[4:]
             d = self.recv(12)
             cmd, size = unpack("II", d)
@@ -193,23 +198,26 @@ class MasterConn:
 
     def recv_thread(self):
         while True:
-            if not self.is_ready:
-                time.sleep(0.01)
-                continue
+            with self.lock:
+                if not self.is_ready:
+                    time.sleep(0.01)
+                    continue
             try:
                 r = self.recv_cmd()
                 self.reply.put(r)
-            except Exception, e:
+            except IOError, e:
                 self.reply.put(e)
 
     @try_again
-    @lock
     def sendAndReceive(self, cmd, *args):
         #print 'sendAndReceive', cmd, args
         self.packetid += 1
         msg = pack(cmd, self.packetid, *args)
-        self.connect()
-        self.send(msg)
+        with self.lock:
+            self.connect()
+            while not self.reply.empty():
+                self.reply.get_nowait()
+            self.send(msg)
         r = self.reply.get()
         if isinstance(r, Exception):
             raise r

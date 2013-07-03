@@ -85,7 +85,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                 f = urllib.urlopen(url)
                 if f.code == 404:
                     f.close()
-                    raise IOError("%s not found", url)
+                    raise IOError("not found")
                 
                 d = f.read()
                 flag = d[:1]
