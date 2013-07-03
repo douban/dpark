@@ -83,7 +83,7 @@ class DiskCache(Cache):
             f = urllib.urlopen(path)
             if f.code == 404:
                 f.close()
-                raise IOError("%s not found" % url)
+                raise IOError("%s not found" % path)
         else:
             f = open(path, 'rb')
         count, = struct.unpack("I", f.read(4))
