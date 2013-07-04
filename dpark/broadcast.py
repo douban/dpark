@@ -451,11 +451,11 @@ class P2PBroadcast(TreeBroadcast):
         while not self.stopped:
             guide_sock.send_pyobj((self.server_addr, self.bitmap))
             source_infos = guide_sock.recv_pyobj()
+            if all(self.bitmap):
+                break
             logger.debug("received SourceInfo from master: %s", source_infos.keys()) 
             self.receive_from_local(dict((k,v) for k,v in source_infos.iteritems() if hostname in k))
             self.receive_one(source_infos)
-            if all(self.bitmap):
-                break
  
         if self.stopped:
             os._exit(0)
