@@ -30,7 +30,9 @@ class DparkEnv:
         self.isMaster = isMaster
         self.isLocal = isLocal
         if isMaster:
-            roots = conf.DPARK_WORK_DIR.split(',')
+            roots = conf.DPARK_WORK_DIR
+            if isinstance(roots, str):
+                roots = roots.split(',')
             if isLocal:
                 root = roots[0] # for local mode 
                 if not os.path.exists(root):

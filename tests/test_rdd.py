@@ -5,6 +5,7 @@ import unittest
 import pprint
 import random
 import operator
+import shutil
 from dpark.context import *
 from dpark.rdd import *
 from dpark.accumulator import *
@@ -138,6 +139,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout'),
             ['/tmp/tout/0000.csv'])
+        shutil.rmtree('/tmp/tout')
 
     def test_compressed_file(self):
         # compress
@@ -151,6 +153,7 @@ class TestRDD(unittest.TestCase):
             ['/tmp/tout/x/0000.gz'])
         rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
+        shutil.rmtree('/tmp/tout')
 
     def test_binary_file(self):
         d = self.sc.makeRDD(range(100000), 1)
@@ -158,6 +161,7 @@ class TestRDD(unittest.TestCase):
             ['/tmp/tout/0000.bin'])
         rd = self.sc.binaryFile('/tmp/tout', fmt="I", splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
+        shutil.rmtree('/tmp/tout')
 
     def test_table_file(self):
         N = 100000
@@ -170,6 +174,7 @@ class TestRDD(unittest.TestCase):
         d.asTable(['f1', 'f2']).save('/tmp/tout')
         rd = self.sc.table('/tmp/tout')
         self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(xrange(N)))
+        shutil.rmtree('/tmp/tout')
 
     def test_batch(self):
         from math import ceil
