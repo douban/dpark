@@ -366,15 +366,8 @@ class RDD(object):
         return self._join(other, (1,2), numSplits, taskMemory)
 
     def _join(self, other, keeps, numSplits=None, taskMemory=None):
-        vs = self.map(lambda (k,v): (k,(1,v)))
-        ws = other.map(lambda (k,v): (k,(2,v)))
         def dispatch((k,seq)):
-            vbuf, wbuf = [], []
-            for n,v in seq:
-                if n == 1:
-                    vbuf.append(v)
-                elif n == 2:
-                    wbuf.append(v)
+            vbuf, wbuf = seq
             if not vbuf and 2 in keeps:
                 vbuf.append(None)
             if not wbuf and 1 in keeps:
@@ -382,7 +375,7 @@ class RDD(object):
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
-        return vs.union(ws).groupByKey(numSplits, taskMemory).flatMap(dispatch)
+        return self.cogroup(other, numSplits, taskMemory).flatMap(dispatch)
     
     def collectAsMap(self):
         d = {}
