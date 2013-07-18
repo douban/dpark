@@ -198,19 +198,19 @@ class CacheTrackerServer(object):
 class CacheTrackerClient:
     def __init__(self, addr):
         self.addr = addr
-        self.sock = None
 
     def call(self, msg):
-        if self.sock is None:
-            self.sock = env.ctx.socket(zmq.REQ)
-            self.sock.connect(self.addr)
+        try:
+            sock = env.ctx.socket(zmq.REQ)
+            sock.connect(self.addr)
+            sock.send_pyobj(msg)
+        finally:
+            sock.close()
 
-        self.sock.send_pyobj(msg)
         return self.sock.recv_pyobj()
 
     def stop(self):
-        if self.sock:
-            self.sock.close()
+        pass
         #logger.debug("stop %s", self.__class__)
 
 class LocalCacheTracker(object):
