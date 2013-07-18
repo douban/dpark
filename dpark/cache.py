@@ -204,10 +204,9 @@ class CacheTrackerClient:
             sock = env.ctx.socket(zmq.REQ)
             sock.connect(self.addr)
             sock.send_pyobj(msg)
+            return self.sock.recv_pyobj()
         finally:
             sock.close()
-
-        return self.sock.recv_pyobj()
 
     def stop(self):
         pass

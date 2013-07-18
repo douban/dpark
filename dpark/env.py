@@ -82,6 +82,8 @@ class DparkEnv:
             return
         logger.debug("stop env in %s", os.getpid())
         self.shuffleFetcher.stop()
+        self.cacheTracker.stop()
+        self.mapOutputTracker.stop()
         from dpark.broadcast import TheBroadcast
         TheBroadcast.shutdown()
        
