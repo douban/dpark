@@ -12,7 +12,6 @@ import urllib
 import msgpack
 import zmq
 
-from dpark.shareddict import SharedDicts
 from dpark.env import env
 from dpark.util import spawn
 
