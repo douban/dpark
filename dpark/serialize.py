@@ -138,7 +138,8 @@ def reduce_function(obj):
     if module is None:
         module = whichmodule(obj, name)
 
-    if module == '__main__' and name not in ('load_closure','load_module'): # fix for test
+    if module == '__main__' and name not in ('load_closure','load_module',
+            'load_method', 'load_local_class'): # fix for test
         return load_closure, (dump_closure(obj),)
 
     try:
@@ -150,8 +151,105 @@ def reduce_function(obj):
             return load_closure, (dump_closure(obj),)
         return name
 
-MyPickler.register(types.LambdaType, reduce_function)
+classes_dumping = set()
+internal_fields = {
+    '__weakref__': False,
+    '__dict__': False,
+    '__doc__': True
+}
+def dump_local_class(cls):
+    name = cls.__name__
+    if cls in classes_dumping:
+        return dumps(name)
 
+    classes_dumping.add(cls)
+    internal = {}
+    external = {}
+    for k in cls.__dict__:
+        if k not in internal_fields:
+            v = getattr(cls, k)
+            if isinstance(v, property):
+                k = ('property', k)
+                v = (v.fget, v.fset, v.fdel, v.__doc__)
+
+            if isinstance(v, types.FunctionType):
+                k = ('staticmethod', k)
+
+            external[k] = v
+
+        elif internal_fields[k]:
+            internal[k] = getattr(cls, k)
+
+    result = dumps((cls.__name__, cls.__bases__, internal, dumps(external)))
+    if cls in classes_dumping:
+        classes_dumping.remove(cls)
+
+    return result
+
+classes_loaded = {}
+def load_local_class(bytes):
+    t = loads(bytes)
+    if not isinstance(t, tuple):
+        return classes_loaded[t]
+    
+    name, bases, internal, external = t
+    if name in classes_loaded:
+        return classes_loaded[name]
+
+    cls = type(name, bases, internal)
+    classes_loaded[name] = cls
+    for k, v in loads(external).items():
+        if isinstance(k, tuple):
+            t, k = k
+            if t == 'property':
+                fget, fset, fdel, doc = v
+                v = property(fget, fset, fdel, doc)
+            
+            if t == 'staticmethod':
+                v = staticmethod(v)
+
+        setattr(cls, k, v)
+
+    return cls
+
+def reduce_class(obj):
+    name = obj.__name__
+    module = getattr(obj, "__module__", None)
+    if module == '__main__' and name not in ('MyPickler', 'RecursiveFunctionPlaceholder'):
+        result = load_local_class, (dump_local_class(obj),)
+        return result
+    
+    return name
+
+CLS_TYPES = [types.TypeType, types.ClassType]
+def dump_method(method):
+    obj = method.im_self
+    cls = method.im_class
+    func = method.im_func
+    if cls in CLS_TYPES:
+        cls_name = CLS_TYPES.index(cls)
+    else:
+        cls_name = cls.__name__
+
+    return dumps((obj, cls_name, func))
+
+def load_method(bytes):
+    obj, cls_name, func = loads(bytes) # cls referred in func.func_globals
+    if isinstance(cls_name, int):
+        cls = CLS_TYPES[cls_name]
+    else:
+        cls = classes_loaded[cls_name]
+
+    return types.MethodType(func, obj, cls)
+
+def reduce_method(method):
+    module = method.im_func.__module__
+    return load_method, (dump_method(method), )
+
+MyPickler.register(types.LambdaType, reduce_function)
+MyPickler.register(types.ClassType, reduce_class)
+MyPickler.register(types.TypeType, reduce_class)
+MyPickler.register(types.MethodType, reduce_method)
 
 if __name__ == "__main__":
     assert marshalable(None)
@@ -191,3 +289,57 @@ if __name__ == "__main__":
     # Test recursive functions
     def fib(n): return n if n <= 1 else fib(n-1) + fib(n-2)
     assert fib(8) == loads(dumps(fib))(8)
+
+    class Foo1:
+        def foo(self):
+            return 1234
+
+    class Foo2(object):
+        def foo(self):
+            return 5678
+
+    class Foo3(Foo2):
+        x = 1111
+
+        def foo(self):
+            return super(Foo3, self).foo() + Foo3.x
+
+    class Foo4(object):
+        @classmethod
+        def x(cls):
+            return 1
+
+        @property
+        def y(self):
+            return 2
+
+        @staticmethod
+        def z():
+            return 3
+
+    df1 = dumps(Foo1)
+    df2 = dumps(Foo2)
+    df3 = dumps(Foo3)
+    df4 = dumps(Foo4)
+    
+    del Foo1
+    del Foo2
+    del Foo3
+    del Foo4
+
+    Foo1 = loads(df1)
+    Foo2 = loads(df2)
+    Foo3 = loads(df3)
+    Foo4 = loads(df4)
+   
+    f1 = Foo1()
+    f2 = Foo2()
+    f3 = Foo3()
+    f4 = Foo4()
+
+    print f1.foo(), f2.foo(), f3.foo(), Foo4.x(), f4.y, Foo4.z()
+
+    assert f1.foo() == 1234
+    assert f2.foo() == 5678
+    assert f3.foo() == 5678 + 1111
+    assert Foo4.x() == 1
