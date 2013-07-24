@@ -94,11 +94,18 @@ def dump_obj(f, name, obj):
         logger.warning("broadcast of %s obj too large", type(obj))
     return b
 
+def get_co_names(code):
+    co_names = code.co_names
+    for const in code.co_consts:
+        if isinstance(const, types.CodeType):
+            co_names += get_co_names(const)
+
+    return co_names
 
 def dump_closure(f):
     code = f.func_code
     glob = {}
-    for n in code.co_names:
+    for n in get_co_names(code):
         r = f.func_globals.get(n)
         if r is not None:
             glob[n] = dump_obj(f, n, r)
@@ -337,9 +344,11 @@ if __name__ == "__main__":
     f3 = Foo3()
     f4 = Foo4()
 
-    print f1.foo(), f2.foo(), f3.foo(), Foo4.x(), f4.y, Foo4.z()
-
     assert f1.foo() == 1234
     assert f2.foo() == 5678
     assert f3.foo() == 5678 + 1111
     assert Foo4.x() == 1
+
+    f = loads(dumps(lambda:(some_global for i in xrange(1))))
+    print list(f())
+    assert list(f()) == [some_global]
