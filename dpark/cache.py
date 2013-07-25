@@ -251,14 +251,17 @@ class LocalCacheTracker(object):
         cachedVal = self.cache.get(key)
         if cachedVal is not None:
             logger.debug("Found partition in cache! %s", key)
-            return cachedVal
-        
-        logger.debug("partition not in cache, %s", key)
-        r = self.cache.put(key, rdd.compute(split), is_iterator=True)
-        serve_uri = env.get('SERVER_URI')
-        if serve_uri:
-            self.addHost(rdd.id, split.index, serve_uri)
-        return r
+            for i in cachedVal:
+                yield i
+
+        else: 
+            logger.debug("partition not in cache, %s", key)
+            for i in self.cache.put(key, rdd.compute(split), is_iterator=True):
+                yield i
+
+            serve_uri = env.get('SERVER_URI')
+            if serve_uri:
+                self.addHost(rdd.id, split.index, serve_uri)
 
     def stop(self):
         self.clear()
