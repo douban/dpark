@@ -1382,7 +1382,7 @@ class OutputTextFileRDD(DerivedRDD):
         self.compress = compress
 
     def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.path)
+        return '<%s %s %s>' % (self.__class__.__name__, self.path, self.prev)
 
     def compute(self, split):
         path = os.path.join(self.path, 
@@ -1872,7 +1872,7 @@ class OutputBeansdbRDD(DerivedRDD):
         
 
     def __repr__(self):
-        return '%s(%s)' % (self.__class__.__name__, self.path)
+        return '<%s %s %s>' % (self.__class__.__name__, self.path, self.prev)
 
     def prepare(self, val):
         if self.raw:
