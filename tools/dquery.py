@@ -194,7 +194,7 @@ def shell():
                 if sql not in CMDS and not sql.endswith(';'):
                     continue
                 execute(sql)
-                if sql.split(' ')[0].lower() in ('create', 'drop'):
+                if sql.split(' ')[0].lower() in REMEMBER_CMDS:
                     remember(sql)
             elif ('\n' not in sql and not sql.endswith(':')) or ('\n' in sql and sql.endswith('\n')):
                 exec sql in globals(), _locals # python 
