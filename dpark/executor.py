@@ -68,7 +68,11 @@ def run_task(task_data):
         accUpdate = Accumulator.values()
 
         if marshalable(result):
-            flag, data = 0, marshal.dumps(result)
+            try:
+                flag, data = 0, marshal.dumps(result)
+            except Exception, e:
+                flag, data = 1, cPickle.dumps(result, -1)
+
         else:
             flag, data = 1, cPickle.dumps(result, -1)
         data = compress(data)
