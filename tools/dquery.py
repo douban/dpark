@@ -5,6 +5,7 @@ import re
 from glob import glob
 from dpark import DparkContext
 from dpark.table import TableRDD, Globals, CachedTables
+from prettytable import PrettyTable
 
 ctx = DparkContext()
 
@@ -66,14 +67,19 @@ def create_table(check, tbl_name, cols, expr):
         exprs = [gen_expr(i,c) for i,c in enumerate(cols)]
         convs = eval('lambda _v: (%s,)' % (','.join(exprs)), globals(), _locals)
         table = table.prev.map(convs).asTable(fields, tbl_name)
+        table.field_types = [c[1] if len(c) > 1 else 'undef' for c in cols]
+    else:
+        table.field_types = ['undef' for _ in range(len(table.fields))]
     table.name = tbl_name
     print 'created table', tbl_name, table
     CachedTables[tbl_name] = table
 
 def show_table(pattern):
+    pt = PrettyTable(["Tables"])
     for name in CachedTables:
         if not pattern or re.match(pattern, name):
-            print name, CachedTables[name]
+            pt.add_row([name])
+    print pt
 
 def drop_table(check, *names):
     for name in names:
@@ -87,19 +93,10 @@ def select(sql, table_expr):
     Globals.update(_locals)
     rs = table.execute(sql)
     if not rs: return
-
-    width = [0] * len(rs[0])
+    pt = PrettyTable()
     for row in rs:
-        for i, r in enumerate(row):
-            w = len(str(r))
-            if w > width[i]:
-                width[i] = w
-    print '-' * (sum(width) + len(width) * 3 + 1)
-    for row in rs:
-        for i, r in enumerate(row):
-            print ('| %% %ds' % width[i]) % r,
-        print '|'
-    print '-' * (sum(width) + len(width) * 3 + 1)
+        pt.add_row(row)
+    print pt
 
 def help(topic):
     print 'supported SQL:'
@@ -108,18 +105,30 @@ def help(topic):
     print "SHOW TABLES [LIKE 'pattern']"
     print ("SELECT expr FROM tbl_name [[INNER | LEFT OUTER] JOIN tbl_name ON ] [WHERE condition] [GROUP BY cols] " +
            "[HAVING condition] [ORDER BY cols [ASC | DESC]] [LIMIT n]")
+    print "DESCRIBE tbl_name"
 
 def quit():
     print 
     sys.exit(0)
 
+def describe_table(tbl_name):
+    table = get_table(tbl_name)
+    head = ["field", "type"]
+    pt = PrettyTable(head)
+    for row in zip(table.fields, table.field_types):
+        pt.add_row(row)
+    print pt
+    print "\nCreated as follow:"
+    print table
+
 CMDS = {
-    'create': (create_table, re.compile(r"CREATE +(?:TEMPORARY)? *TABLE +(IF +NOT +EXISTS *)? *(\w+) +(\([\w\d_, ]+\))? *(.+);?", re.I)),
-    'show':   (show_table,   re.compile(r"SHOW +TABLES(?: +LIKE +'(.+?)')?;?", re.I)),
-    'drop':   (drop_table,   re.compile(r"DROP TABLE +(IF +EXISTS *)?(\w+)(?:, +(\w+))*;?", re.I)),
-    'select': (select,       re.compile(r"(SELECT .*? FROM +(.+?)(?: (?:(?:INNER|LEFT OUTER )?JOIN|WHERE|GROUP BY|ORDER BY|LIMIT) .+)?);?$", re.I)),
-    'help':   (help,         re.compile(r'HELP( \w+)?', re.I)),
-    'quit':   (quit,         re.compile(r'QUIT', re.I)),
+    'create':   (create_table,   re.compile(r"CREATE +(?:TEMPORARY)? *TABLE +(IF +NOT +EXISTS *)? *(\w+) +(\([\w\d_, ]+\))? *(.+);?", re.I)),
+    'show':     (show_table,     re.compile(r"SHOW +TABLES(?: +LIKE +'(.+?)')?;?", re.I)),
+    'drop':     (drop_table,     re.compile(r"DROP TABLE +(IF +EXISTS *)?(\w+)(?:, +(\w+))*;?", re.I)),
+    'select':   (select,         re.compile(r"(SELECT .*? FROM +(.+?)(?: (?:(?:INNER|LEFT OUTER )?JOIN|WHERE|GROUP BY|ORDER BY|LIMIT) .+)?);?$", re.I)),
+    'help':     (help,           re.compile(r'HELP( \w+)?', re.I)),
+    'quit':     (quit,           re.compile(r'QUIT', re.I)),
+    'describe': (describe_table, re.compile(r'DESCRIBE +(\w+);?', re.I)),
 }
 
 REMEMBER_CMDS = ['create', 'drop']
@@ -141,11 +150,12 @@ def execute(sql):
 cases = [
     "help",
     "drop table if exists test",
-    "create table test (f1 int, f2 int) makeRDD(zip(range(1000), range(1000)), 2)",
+    "create table test (f1 int, f2 int) makeRDD(zip(range(10), range(10)), 2)",
     "select * from test where f1 % 2 == 0 limit 10",
     "create table test2 select * from test where f1 % 2 == 0",
     "show tables test.*",
     "select sum(f2), avg(f1) from test2",
+    "describe test2,"
 #    "drop table test, test2",
 ]
 
