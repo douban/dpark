@@ -87,12 +87,13 @@ def table_join(f):
     return _join
 
 class TableRDD(DerivedRDD):
-    def __init__(self, rdd, fields, name=''):
+    def __init__(self, rdd, fields, name='', field_types=None):
         DerivedRDD.__init__(self, rdd)
         self.name = name
         if isinstance(fields, str):
             fields = [n.strip() for n in fields.split(',')]
         self.fields = fields
+        self.field_types = field_types
 
     def __str__(self):
         return '<Table(%s) from %s>' % (','.join(self.fields), self.prev)

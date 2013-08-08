@@ -17,7 +17,7 @@ binaryFile = _ctx.binaryFile
 
 tableFile = _ctx.tableFile
 
-table = _ctx.table
+#table = _ctx.table
 
 beansdb = _ctx.beansdb
 
@@ -27,9 +27,9 @@ union = _ctx.union
 
 zip = _ctx.zip
 
-accumulator = _ctx.accumulator
+#accumulator = _ctx.accumulator
 
-broadcast = _ctx.broadcast
+#broadcast = _ctx.broadcast
 
 start = _ctx.start
 
