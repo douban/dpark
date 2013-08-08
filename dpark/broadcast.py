@@ -82,7 +82,7 @@ class Broadcast:
             return getattr(self.value, name)
 
         if self.stopped:
-            raise Exception("broadcast has been cleared")
+            raise SystemExit("broadcast has been cleared")
 
         # in the executor process, Broadcast is not initialized
         if not self.initialized:

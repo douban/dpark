@@ -197,19 +197,18 @@ class CacheTrackerServer(object):
 class CacheTrackerClient:
     def __init__(self, addr):
         self.addr = addr
-        self.sock = None
 
     def call(self, msg):
-        if self.sock is None:
-            self.sock = env.ctx.socket(zmq.REQ)
-            self.sock.connect(self.addr)
-
-        self.sock.send_pyobj(msg)
-        return self.sock.recv_pyobj()
+        try:
+            sock = env.ctx.socket(zmq.REQ)
+            sock.connect(self.addr)
+            sock.send_pyobj(msg)
+            return sock.recv_pyobj()
+        finally:
+            sock.close()
 
     def stop(self):
-        if self.sock:
-            self.sock.close()
+        pass
         #logger.debug("stop %s", self.__class__)
 
 class LocalCacheTracker(object):
@@ -252,14 +251,17 @@ class LocalCacheTracker(object):
         cachedVal = self.cache.get(key)
         if cachedVal is not None:
             logger.debug("Found partition in cache! %s", key)
-            return cachedVal
-        
-        logger.debug("partition not in cache, %s", key)
-        r = self.cache.put(key, rdd.compute(split), is_iterator=True)
-        serve_uri = env.get('SERVER_URI')
-        if serve_uri:
-            self.addHost(rdd.id, split.index, serve_uri)
-        return r
+            for i in cachedVal:
+                yield i
+
+        else: 
+            logger.debug("partition not in cache, %s", key)
+            for i in self.cache.put(key, rdd.compute(split), is_iterator=True):
+                yield i
+
+            serve_uri = env.get('SERVER_URI')
+            if serve_uri:
+                self.addHost(rdd.id, split.index, serve_uri)
 
     def stop(self):
         self.clear()
