@@ -48,13 +48,14 @@ class Broadcast:
     cache = Cache() 
     broadcastFactory = None
     BlockSize = 1024 * 1024
-        
+
     def __init__(self, value, is_local):
         assert value is not None, 'broadcast object should not been None'
         self.uuid = str(uuid.uuid4())
         self.value = value
         self.is_local = is_local
         self.bytes = 0
+        self.stopped = False
         if is_local:
             if not self.cache.put(self.uuid, value):
                 raise Exception('object %s is too big to cache', repr(value))
@@ -62,19 +63,26 @@ class Broadcast:
             self.send()
 
     def clear(self):
+        self.stopped = True
         self.cache.put(self.uuid, None)
+        if hasattr(self, 'value'):
+            delattr(self, 'value')
 
     def __getstate__(self):
         return (self.uuid, self.bytes, self.value if self.bytes < self.BlockSize/20 else None)
 
     def __setstate__(self, v):
+        self.stopped = False
         self.uuid, self.bytes, value = v
         if value is not None:
             self.value = value
-    
+
     def __getattr__(self, name):
         if name != 'value':
             return getattr(self.value, name)
+
+        if self.stopped:
+            raise SystemExit("broadcast has been cleared")
 
         # in the executor process, Broadcast is not initialized
         if not self.initialized:
@@ -84,8 +92,8 @@ class Broadcast:
         value = self.cache.get(uuid)
         if value is not None:
             self.value = value
-            return value    
-        
+            return value
+
         oldtitle = getproctitle()
         setproctitle('dpark worker: broadcasting ' + uuid)
 
@@ -97,7 +105,7 @@ class Broadcast:
 
         setproctitle(oldtitle)
         return value 
-                
+
     def send(self):
         raise NotImplementedError
 
@@ -133,7 +141,7 @@ class Broadcast:
         cls.host = socket.gethostname()
 
         logger.debug("Broadcast initialized")
-    
+
     @classmethod
     def shutdown(cls):
         pass
@@ -155,11 +163,12 @@ class TreeBroadcast(Broadcast):
         self.guide_addr = None
 
     def clear(self):
-        Broadcast.clear(self)
         if not self.is_local:
             self.stopServer(self.guide_addr)
-            self.server_thread.join()
             self.guide_thread.join()
+            self.server_thread.join()
+        else:
+            Broadcast.clear(self)
 
     def send(self):
         logger.debug("start send %s", self.uuid)
@@ -169,18 +178,18 @@ class TreeBroadcast(Broadcast):
 
         self.startServer()
         self.startGuide()
-    
+
     def startGuide(self):
         sock = env.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.guide_addr = "tcp://%s:%d" % (self.host, port)
-        
+
         self.guide_thread = spawn(self.guide, sock)
         self.guides[self.uuid] = self
 
     def guide(self, sock):
         logger.debug("guide start at %s", self.guide_addr)
-       
+   
         sources = {}
         listOfSources = [SourceInfo(self.server_addr)]
         while True:
@@ -208,13 +217,13 @@ class TreeBroadcast(Broadcast):
 
             logger.debug("sending selected sourceinfo %s", ssi.addr)
             sock.send_pyobj(ssi)
-            
+
             o = SourceInfo(addr)
             logger.debug("Adding possible new source to listOfSource: %s",
                 o)
             sources[addr] = o
             listOfSources.append(o)
-            sources[addr].parents.append(ssi)                
+            sources[addr].parents.append(ssi)
 
         sock.close()
         logger.debug("Sending stop notification to %d servers ...", len(listOfSources))
@@ -270,8 +279,7 @@ class TreeBroadcast(Broadcast):
             sock.close()
             logger.debug("stop TreeBroadcast server %s", self.server_addr)
 
-            # clear cache
-            self.cache.put(self.uuid, None)
+            Broadcast.clear(self) # release obj
 
         self.server_thread = spawn(run)
 
@@ -368,7 +376,7 @@ class TreeBroadcast(Broadcast):
             env.register('TreeBroadcastTrackerAddr', cls.tracker_addr)
         else:
             cls.tracker_addr = env.get('TreeBroadcastTrackerAddr')
-            
+
         logger.debug("TreeBroadcast initialized")
 
     @classmethod
@@ -392,23 +400,23 @@ class TreeBroadcast(Broadcast):
 
 class P2PBroadcast(TreeBroadcast):
     def guide(self, sock):
-        sources = {self.server_addr: [1] * len(self.blocks)}
+        sources = {self.server_addr: ([1] * len(self.blocks))}
+        bad_servers = []
         last_check = 0
         while True:
-            avail = sock.poll(1*1000, zmq.POLLIN)
-            if not avail:
-                now = time.time()
-                if last_check + 10 < now:
-                    for addr in sources.keys():
-                        if addr != self.server_addr and not self.check_activity(addr):
-                            del sources[addr]
-                    last_check = now
-                continue
-
             msg = sock.recv_pyobj()
             if msg == SourceInfo.Stop:
                 sock.send_pyobj(0)
                 break
+
+            now = time.time()
+            if last_check + 10 < now:
+                for addr in sources.keys():
+                    if addr != self.server_addr and not self.check_activity(addr):
+                        del sources[addr]
+                        bad_servers.append(addr)
+                last_check = now
+
             sock.send_pyobj(sources)
             addr, bitmap = msg
             if not addr or not isinstance(addr, str) or not addr.startswith('tcp://'):
@@ -416,14 +424,16 @@ class P2PBroadcast(TreeBroadcast):
                 continue
             if any(bitmap):
                 sources[addr] = bitmap
-        
+
         sock.close()
         logger.debug("Sending stop notification to %d servers ...", len(sources))
         for addr in sources:
             self.stopServer(addr)
         self.sources = {}
+        for addr in bad_servers:
+            self.stopServer(addr)
         self.guides.pop(self.uuid, None)
-            
+
     def receive(self, uuid):
         r = self.get_guide_addr(uuid)
         assert r, 'broadcast guide has shutdown'
@@ -433,18 +443,23 @@ class P2PBroadcast(TreeBroadcast):
         logger.debug("connect to guide %s", guide_addr)
 
         self.blocks = [None] * total_blocks
-        self.bitmap = [0] * total_blocks
+        self.bitmap = ([0] * total_blocks)
         start = time.time()
         hostname = socket.gethostname()
-        while True:
+        random.seed(os.getpid() + int(start*1000)%1000)
+
+        while not self.stopped:
             guide_sock.send_pyobj((self.server_addr, self.bitmap))
             source_infos = guide_sock.recv_pyobj()
+            if all(self.bitmap):
+                break
             logger.debug("received SourceInfo from master: %s", source_infos.keys()) 
             self.receive_from_local(dict((k,v) for k,v in source_infos.iteritems() if hostname in k))
             self.receive_one(source_infos)
-            if all(self.bitmap):
-                break
-        
+ 
+        if self.stopped:
+            os._exit(0)
+
         logger.debug("%s got broadcast in %.1fs", self.server_addr, time.time() - start)
         guide_sock.close()
 
@@ -484,7 +499,7 @@ class P2PBroadcast(TreeBroadcast):
                     sock.close()
 
         # rebuild bitmap 
-        self.bitmap = [int(bool(b)) for b in self.blocks]
+        self.bitmap = ([bool(b) for b in self.blocks])
         timeout_servers = [addrs.get(sock) for sock in socks]
         if timeout_servers:
             logger.debug("recv from %s timeout", timeout_servers)
@@ -504,7 +519,7 @@ class P2PBroadcast(TreeBroadcast):
             if i is None: continue
             self.bitmap[i] = 1
 
-            host = addr.split(':')[0][5:]
+            host = addr.split(':')[1][5:]
             if host in hosts: continue
             hosts.add(host)
 

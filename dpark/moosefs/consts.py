@@ -10,7 +10,9 @@ VERSION = 0x010615
 
 CHUNKSIZE = 1<<26
 
-GETDIR_FLAG_WITHATTR = 0x01
+GETDIR_FLAG_WITHATTR   = 0x01
+GETDIR_FLAG_ADDTOCACHE = 0x02
+GETDIR_FLAG_DIRCACHE   = 0x04
 
 #type for readdir command
 TYPE_FILE      = 'f'
@@ -412,6 +414,13 @@ MATOCU_FUSE_QUOTACONTROL = 477
 # msgid:32 status:8
 # msgid:32 qflags:8 sinodes:32 slength:64 ssize:64 srealsize:64 hinodes:32 hlength:64 hsize:64 hrealsize:64 curinodes:32 curlength:64 cursize:64 currealsize:64
 
+CUTOMA_FUSE_DIR_REMOVED = 490
+# msgid:32 N*[ inode:32 ]
+
+MATOCU_FUSE_NOTIFY_ATTR = 491
+# msgid:32 N*[ parent:32 inode:32 attr:35B ]
+MATOCU_FUSE_NOTIFY_DIR = 492
+# msgid:32 N*[ inode:32 ]
 # special - reserved (opened) inodes - keep opened files.
 CUTOMA_FUSE_RESERVED_INODES = 499
 # N*[inode:32]
