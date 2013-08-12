@@ -184,12 +184,30 @@ def remember(sql):
     home = os.environ.get('HOME')
     with open(os.path.join(home, CONF), 'a') as f:
         f.write(sql + '\n')
-    
+
+COMPLETE = [
+    'CREATE', 'TABLE', 'TEMPORARY', 'IF', 'NOT', 'EXISTS', 'DROP', 'TABLES', 'LIKE', 'SELECT',
+    'FROM', 'INNER', 'LEFT', 'OUTER', 'JOIN', 'ON', 'WHERE', 'GROUP', 'BY', 'HAVING', 'ORDER',
+    'ASC', 'DESC', 'LIMIT', 'DESCRIBE', 'HELP',
+]
+
+def complete(text, state):
+    options = [c for c in COMPLETE if c.lower().startswith(text.lower())]
+    if options and state < len(options):
+        return options[state]+' '
+    elif '/' in text:
+        options = glob(text+'*')
+        if options and state < len(options):
+            f = options[state]
+            return f+'/' if os.path.isdir(f) else f+' '
 
 def shell():
     print "Welcome to DQuery 0.2, enjoy SQL and DPark! type 'help' for help."
     sql = ''
     import readline
+    readline.set_completer_delims(' \t\n;')
+    readline.parse_and_bind('tab: complete')
+    readline.set_completer(complete)
     while True:
         try:
             if sql:
