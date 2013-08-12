@@ -114,9 +114,13 @@ class Broadcast:
 
     def blockifyObject(self, obj):
         try:
-            buf = marshal.dumps(obj)
+            if marshalable(obj):
+                buf = '0'+marshal.dumps(obj)
+            else:
+                buf = '1'+cPickle.dumps(obj, -1)
+
         except Exception:
-            buf = cPickle.dumps(obj, -1)
+            buf = '1'+cPickle.dumps(obj, -1)
 
         N = self.BlockSize
         blockNum = len(buf) / N + 1
@@ -126,11 +130,11 @@ class Broadcast:
 
     def unBlockifyObject(self, blocks):
         s = ''.join(decompress(b.data) for b in blocks)
-        try:
-            return marshal.loads(s)
-        except Exception :
-            return cPickle.loads(s)
-
+        if s[0] == '0':
+            return marshal.loads(s[1:])
+        else:
+            return cPickle.loads(s[1:])
+   
     @classmethod
     def initialize(cls, is_master):
         if cls.initialized:
@@ -364,8 +368,8 @@ class TreeBroadcast(Broadcast):
                     cls.tracker_addr)
             while True:
                 uuid = sock.recv_pyobj()
-                obj = cls.guides.get(uuid, '')
-                sock.send_pyobj(obj and (obj.guide_addr, len(obj.blocks)))
+                obj = cls.guides.get(uuid)
+                sock.send_pyobj((obj.guide_addr, len(obj.blocks)) if obj is not None else '')
                 if not uuid:
                     break
             sock.close()
