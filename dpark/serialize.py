@@ -114,14 +114,15 @@ def dump_closure(f):
     if f.func_closure:
         closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents) 
                 for i, c in enumerate(f.func_closure))
-    return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure))
+    return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure, f.__module__))
 
 def load_closure(bytes):
-    code, glob, name, defaults, closure = marshal.loads(bytes)
+    code, glob, name, defaults, closure, mod = marshal.loads(bytes)
     glob = dict((k, loads(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
     closure = closure and reconstruct_closure([loads(c) for c in closure]) or None
     f = new.function(code, glob, name, defaults, closure)
+    f.__module__ = mod
     # Replace the recursive function placeholders with this simulated function pointer
     for key, value in glob.items():
         if RECURSIVE_FUNCTION_PLACEHOLDER == value:
