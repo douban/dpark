@@ -1,6 +1,6 @@
 from context import DparkContext, parser as optParser
 from bagel import Bagel
-from .decorator import jit
+from .decorator import jit, autojit
 
 _ctx = DparkContext()
 
