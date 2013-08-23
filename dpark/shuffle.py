@@ -4,7 +4,6 @@ import urllib
 import logging
 import marshal
 import struct
-import socket
 import time
 import cPickle
 import gzip
@@ -12,11 +11,9 @@ import Queue
 import heapq
 import platform
 
-import zmq
-
 from dpark.util import decompress, spawn
 from dpark.env import env
-from dpark.cache import CacheTrackerServer, CacheTrackerClient
+from dpark.tracker import GetValueMessage, SetValueMessage
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
@@ -342,124 +339,44 @@ class DiskMerger(Merger):
             self.rotate()
         return heap_merged(self.archives, self.mergeCombiner)
 
-class MapOutputTrackerMessage: pass
-class GetMapOutputLocations:
-    def __init__(self, shuffleId):
-        self.shuffleId = shuffleId
-class StopMapOutputTracker: pass
+class BaseMapOutputTracker(object):
+    def registerMapOutputs(self, shuffleId, locs):
+        pass
 
-
-class MapOutputTrackerServer(CacheTrackerServer):
-    def __init__(self, locs):
-        CacheTrackerServer.__init__(self, locs)
+    def getServerUris(self):
+        pass
 
     def stop(self):
-        sock = env.ctx.socket(zmq.REQ)
-        sock.connect(self.addr)
-        sock.send_pyobj(StopMapOutputTracker())
-        sock.close()
-        self.thread.join()
+        pass
 
-    def run(self):
-        sock = env.ctx.socket(zmq.REP)
-        port = sock.bind_to_random_port("tcp://0.0.0.0")
-        self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
-        logger.debug("MapOutputTrackerServer started at %s", self.addr)
-
-        def reply(msg):
-            sock.send_pyobj(msg)
-
-        while True:
-            msg = sock.recv_pyobj()
-            #logger.debug("MapOutputTrackerServer recv %s", msg)
-            if isinstance(msg, GetMapOutputLocations):
-                reply(self.locs.get(msg.shuffleId, []))
-            elif isinstance(msg, StopMapOutputTracker):
-                reply('OK')
-                break
-            else:
-                logger.error('unexpected mapOutputTracker msg: %s %s', msg, type(msg))
-                reply('ERROR')
-        sock.close()
-        logger.debug("MapOutputTrackerServer stopped %s", self.addr)
-
-class MapOutputTrackerClient(CacheTrackerClient):
-    pass
-
-class LocalMapOutputTracker(object):
-    def __init__(self, isMaster):
-        self.isMaster = isMaster
+class LocalMapOutputTracker(BaseMapOutputTracker):
+    def __init__(self):
         self.serverUris = {}
-        self.generation = 0
 
     def clear(self):
         self.serverUris.clear()
 
-    def registerMapOutput(self, shuffleId, numMaps, mapId, serverUri):
-        self.serverUris.setdefault(shuffleId, [None] * numMaps)[mapId] = serverUri
-
     def registerMapOutputs(self, shuffleId, locs):
         self.serverUris[shuffleId] = locs
-
-    def unregisterMapOutput(self, shuffleId, mapId, serverUri):
-        locs = self.serverUris.get(shuffleId)
-        if locs is not None:
-            if locs[mapId] == serverUri:
-                locs[mapId] = None
-            self.incrementGeneration()
-        raise Exception("unregisterMapOutput called for nonexistent shuffle ID")
 
     def getServerUris(self, shuffleId):
         return self.serverUris.get(shuffleId)
 
-    def getMapOutputUri(self, serverUri, shuffleId, mapId, reduceId):
-        return "%s/shuffle/%s/%s/%s" % (serverUri, shuffleId, mapId, reduceId)
-
     def stop(self):
         self.clear()
 
-    def incrementGeneration(self):
-        self.generation += 1
-
-    def getGeneration(self):
-        return self.generation
-
-    def updateGeneration(self, newGen):
-        if newGen > self.generation:
-            logger.debug("Updating generation to %d and clearing cache", newGen)
-            self.generation = newGen
-            self.serverUris.clear()
-
-
-class MapOutputTracker(LocalMapOutputTracker):
-    def __init__(self, isMaster):
-        LocalMapOutputTracker.__init__(self, isMaster)
-        if isMaster:
-            self.server = MapOutputTrackerServer(self.serverUris)
-            self.server.start()
-            addr = self.server.addr
-            env.register('MapOutputTrackerAddr', addr)
-        else:
-            addr = env.get('MapOutputTrackerAddr')
-        self.client = MapOutputTrackerClient(addr)
+class MapOutputTracker(BaseMapOutputTracker):
+    def __init__(self):
+        self.client = env.trackerClient
         logger.debug("MapOutputTracker started")
 
+    def registerMapOutputs(self, shuffleId, locs):
+        self.client.call(SetValueMessage('shuffle:%s' % shuffleId, locs))
+
     def getServerUris(self, shuffleId):
-        #locs = self.serverUris.get(shuffleId)
-        #if locs:
-        #    logger.debug("got mapOutput in cache: %s", locs)
-        #    return locs
-        locs = self.client.call(GetMapOutputLocations(shuffleId))
+        locs = self.client.call(GetValueMessage('shuffle:%s' % shuffleId))
         logger.debug("Fetch done: %s", locs)
-        #self.serverUris[shuffleId] = locs
         return locs
-
-    def stop(self):
-        self.clear()
-        self.client.stop()
-        if self.isMaster:
-            self.server.stop()
-
 
 def test():
     l = []
@@ -482,7 +399,7 @@ def test():
     f.close()
 
     uri = LocalFileShuffle.getServerUri()
-    env.mapOutputTracker.registerMapOutput(1, 1, 0, uri)
+    env.mapOutputTracker.registerMapOutputs(1, [uri])
     fetcher = SimpleShuffleFetcher()
     def func(k,v):
         assert k=='key'
@@ -490,7 +407,7 @@ def test():
     fetcher.fetch(1, 0, func)
 
     tracker = MapOutputTracker(True)
-    tracker.registerMapOutput(2, 5, 1, uri)
+    tracker.registerMapOutputs(2, [None, uri, None, None, None])
     assert tracker.getServerUris(2) == [None, uri, None, None, None]
     ntracker = MapOutputTracker(False)
     assert ntracker.getServerUris(2) == [None, uri, None, None, None]

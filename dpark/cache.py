@@ -1,19 +1,16 @@
 import os
-import socket
 import multiprocessing
 import logging
 import marshal
 import cPickle
-import time
 import shutil
 import struct 
 import urllib
 
 import msgpack
-import zmq
 
 from dpark.env import env
-from dpark.util import spawn
+from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 
 logger = logging.getLogger("cache")
 
@@ -77,7 +74,10 @@ class DiskCache(Cache):
             os.remove(p)
 
     def clear(self):
-        shutil.rmtree(self.root)
+        try:
+            shutil.rmtree(self.root)
+        except OSError, e:
+            pass
 
     def load(self, f):
         count, = struct.unpack("I", f.read(4))
@@ -120,131 +120,29 @@ class DiskCache(Cache):
         
         os.rename(tp, path)
 
+class BaseCacheTracker(object):
+    cache = None
 
-class CacheTrackerMessage:pass
-class AddedToCache(CacheTrackerMessage):
-    def __init__(self, rddId, partition, host):
-        self.rddId = rddId
-        self.partition = partition
-        self.host = host
-class DroppedFromCache(CacheTrackerMessage):
-    def __init__(self, rddId, partition, host):
-        self.rddId = rddId
-        self.partition = partition
-        self.host = host
-class RegisterRDD(CacheTrackerMessage):
-    def __init__(self, rddId, numPartitions):
-        self.rddId = rddId
-        self.numPartitions = numPartitions
-class GetCacheUri(CacheTrackerMessage):
-    def __init__(self, rddId, partition):
-        self.rddId = rddId
-        self.index = partition
-class StopCacheTracker(CacheTrackerMessage):pass
-
-class CacheTrackerServer(object):
-    def __init__(self, locs):
-        self.addr = None
-        self.locs = locs
-        self.thread = None
-
-    def start(self):
-        self.thread = spawn(self.run)
-        while self.addr is None:
-            time.sleep(0.01)
-
-    def stop(self):
-        sock = env.ctx.socket(zmq.REQ)
-        sock.connect(self.addr)
-        sock.send_pyobj(StopCacheTracker())
-        sock.close()
-        self.thread.join()
-
-    def run(self):
-        locs = self.locs
-        sock = env.ctx.socket(zmq.REP)
-        port = sock.bind_to_random_port("tcp://0.0.0.0")
-        self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
-        logger.debug("CacheTrackerServer started at %s", self.addr)
-        def reply(msg):
-            sock.send_pyobj(msg)
-        while True:
-            msg = sock.recv_pyobj()
-            if isinstance(msg, RegisterRDD):
-                locs[msg.rddId] = [[] for i in range(msg.numPartitions)]
-                reply('OK')
-            elif isinstance(msg, AddedToCache):
-                locs[msg.rddId][msg.partition].append(msg.host)
-                reply('OK')
-            elif isinstance(msg, DroppedFromCache):
-                if msg.host in locs[msg.rddId][msg.partition]:
-                    locs[msg.rddId][msg.partition].remove(msg.host)
-                reply('OK')
-            elif isinstance(msg, GetCacheUri):
-                if msg.rddId in locs:
-                    reply(locs[msg.rddId][msg.index])
-                else:
-                    reply([])
-            elif isinstance(msg, StopCacheTracker):
-                reply('OK')
-                break
-            else:
-                logger.error("unexpected msg %s %s", msg, type(msg))
-                reply('ERROR')
-        sock.close()
-        logger.debug("stop CacheTrackerServer %s", self.addr)
-
-class CacheTrackerClient:
-    def __init__(self, addr):
-        self.addr = addr
-
-    def call(self, msg):
-        try:
-            sock = env.ctx.socket(zmq.REQ)
-            sock.connect(self.addr)
-            sock.send_pyobj(msg)
-            return sock.recv_pyobj()
-        finally:
-            sock.close()
-
-    def stop(self):
+    def registerRDD(self, rddId, numPartitions):
         pass
-        #logger.debug("stop %s", self.__class__)
 
-class LocalCacheTracker(object):
-    def __init__(self, isMaster):
-        self.isMaster = isMaster
-        self.locs = {}
-        self.cache = Cache()
+    def getLocationsSnapshot(self):
+        pass
+
+    def getCachedLocs(self, rdd_id, index):
+        pass
+
+    def getCacheUri(self, rdd_id, index):
+        pass
+
+    def addHost(self, rdd_id, index, host):
+        pass
+
+    def removeHost(self, rdd_id, index, host):
+        pass
 
     def clear(self):
         self.cache.clear()
-
-    def registerRDD(self, rddId, numPartitions):
-        if rddId not in self.locs:
-            logger.debug("Registering RDD ID %d with cache", rddId)
-            self.locs[rddId] = [[] for i in range(numPartitions)]
-
-    def getLocationsSnapshot(self):
-        return self.locs
-
-    def getCachedLocs(self, rdd_id, index):
-        def parse_hostname(uri):
-            if uri.startswith('http://'):
-                h = uri.split(':')[1].rsplit('/', 1)[-1]
-                return h
-            return ''
-        return map(parse_hostname, self.locs[rdd_id][index])
-    
-    def getCacheUri(self, rdd_id, index):
-        return self.locs[rdd_id][index]
-
-    def addHost(self, rdd_id, index, host):
-        self.locs[rdd_id][index].append(host)
-
-    def removeHost(self, rdd_id, index, host):
-        if host in self.locs[rdd_id][index]:
-            self.locs[rdd_id][index].remove(host)
 
     def getOrCompute(self, rdd, split):
         key = (rdd.id, split.index)
@@ -266,36 +164,90 @@ class LocalCacheTracker(object):
     def stop(self):
         self.clear()
 
+class LocalCacheTracker(BaseCacheTracker):
+    def __init__(self):
+        self.locs = {}
+        self.cache = Cache()
 
-class CacheTracker(LocalCacheTracker):
-    def __init__(self, isMaster):
-        LocalCacheTracker.__init__(self, isMaster)
-        if isMaster:
-            self.server = CacheTrackerServer(self.locs)
-            self.server.start()
-            addr = self.server.addr
-            env.register('CacheTrackerAddr', addr)
-        else:
-            cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
-            self.cache = DiskCache(self, cachedir)
-            addr = env.get('CacheTrackerAddr')
+    def registerRDD(self, rddId, numPartitions):
+        if rddId not in self.locs:
+            logger.debug("Registering RDD ID %d with cache", rddId)
+            self.locs[rddId] = [[] for i in range(numPartitions)]
 
-        self.client = CacheTrackerClient(addr)
+    def getLocationsSnapshot(self):
+        return self.locs
 
+    def getCachedLocs(self, rdd_id, index):
+        def parse_hostname(uri):
+            if uri.startswith('http://'):
+                h = uri.split(':')[1].rsplit('/', 1)[-1]
+                return h
+            return ''
+        return map(parse_hostname, self.getCacheUri(rdd_id, index))
+    
     def getCacheUri(self, rdd_id, index):
-        return self.client.call(GetCacheUri(rdd_id, index))
+        return self.locs[rdd_id][index]
 
     def addHost(self, rdd_id, index, host):
-        return self.client.call(AddedToCache(rdd_id, index, host))
+        self.locs[rdd_id][index].append(host)
 
     def removeHost(self, rdd_id, index, host):
-        return self.client.call(DroppedFromCache(rdd_id, index, host)) 
+        if host in self.locs[rdd_id][index]:
+            self.locs[rdd_id][index].remove(host)
 
-    def stop(self):
-        self.clear()
-        self.client.stop()
-        if self.isMaster:
-            self.server.stop()
+class CacheTracker(BaseCacheTracker):
+    def __init__(self):
+        cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
+        self.cache = DiskCache(self, cachedir)
+        self.client = env.trackerClient
+        if env.isMaster:
+            self.locs = env.trackerServer.locs
+        self.rdds = {}
+
+    def registerRDD(self, rddId, numPartitions):
+        self.rdds[rddId] = numPartitions
+
+    def getLocationsSnapshot(self):
+        result = {}
+        for rdd_id, partitions in self.rdds.items():
+            result[rdd_id] = [self.locs.get('cache:%s-%s' % (rdd_id, index), [])
+                    for index in xrange(partitions)]
+
+        return result
+            
+    def getCachedLocs(self, rdd_id, index):
+        def parse_hostname(uri):
+            if uri.startswith('http://'):
+                h = uri.split(':')[1].rsplit('/', 1)[-1]
+                return h
+            return ''
+        return map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), []))
+ 
+    def getCacheUri(self, rdd_id, index):
+        return self.client.call(GetValueMessage('cache:%s-%s' % (rdd_id, index)))
+
+    def addHost(self, rdd_id, index, host):
+        return self.client.call(AddItemMessage('cache:%s-%s' % (rdd_id, index), host))
+
+    def removeHost(self, rdd_id, index, host):
+        return self.client.call(RemoveItemMessage('cache:%s-%s' % (rdd_id, index), host)) 
+
+    def getOrCompute(self, rdd, split):
+        key = (rdd.id, split.index)
+        cachedVal = self.cache.get(key)
+        if cachedVal is not None:
+            logger.debug("Found partition in cache! %s", key)
+            for i in cachedVal:
+                yield i
+
+        else: 
+            logger.debug("partition not in cache, %s", key)
+            for i in self.cache.put(key, rdd.compute(split), is_iterator=True):
+                yield i
+
+            serve_uri = env.get('SERVER_URI')
+            if serve_uri:
+                self.addHost(rdd.id, split.index, serve_uri)
 
     def __getstate__(self):
         raise Exception("!!!")

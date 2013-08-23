@@ -55,18 +55,30 @@ class DparkEnv:
 
         self.ctx = zmq.Context()
 
+
+        from dpark.tracker import TrackerServer, TrackerClient
+        if isMaster:
+            self.trackerServer = TrackerServer()
+            self.trackerServer.start()
+            addr = self.trackerServer.addr
+            env.register('TrackerAddr', addr)
+        else:
+            addr = env.get('TrackerAddr')
+
+        self.trackerClient = TrackerClient(addr)
+
         from dpark.cache import CacheTracker, LocalCacheTracker
         if isLocal:
-            self.cacheTracker = LocalCacheTracker(isMaster)
+            self.cacheTracker = LocalCacheTracker()
         else:
-            self.cacheTracker = CacheTracker(isMaster)
+            self.cacheTracker = CacheTracker()
 
         from dpark.shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
         LocalFileShuffle.initialize(isMaster)
         if isLocal:
-            self.mapOutputTracker = LocalMapOutputTracker(isMaster)
+            self.mapOutputTracker = LocalMapOutputTracker()
         else:
-            self.mapOutputTracker = MapOutputTracker(isMaster)
+            self.mapOutputTracker = MapOutputTracker()
         from dpark.shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
@@ -84,6 +96,8 @@ class DparkEnv:
         self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
+        if self.isMaster:
+            self.trackerServer.stop()
         from dpark.broadcast import TheBroadcast
         TheBroadcast.shutdown()
        
