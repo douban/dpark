@@ -117,8 +117,8 @@ class Partitioner:
 
 class HashPartitioner(Partitioner):
     def __init__(self, partitions):
-        self.partitions = int(partitions)
-
+        self.partitions = max(1, int(partitions))
+        
     @property
     def numPartitions(self):
         return self.partitions

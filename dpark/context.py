@@ -11,6 +11,7 @@ from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.moosefs import walk
 import dpark.conf as conf
+from math import ceil
 
 logger = logging.getLogger("context")
 
@@ -193,7 +194,7 @@ class DparkContext(object):
 
         # choose only latest version
         if only_latest:
-            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, len(rdd) / 4)
+            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, int(ceil(len(rdd) / 4)))
         if not raw:
             rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
         return rdd
