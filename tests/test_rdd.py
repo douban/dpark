@@ -208,14 +208,14 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
         self.assertEqual(len(rdd), 10)
         self.assertEqual(rdd.count(), N)
-        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
         s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
         self.assertEqual(s, sum(l))
     
         rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
         self.assertEqual(len(rdd), 10)
         self.assertEqual(rdd.count(), N)
-        self.assertEqual(rdd.map(lambda (k,v):(k,v[0])).collect(), d)
+        self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
         s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
         self.assertEqual(s, sum(l))
     
