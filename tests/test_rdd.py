@@ -86,6 +86,27 @@ class TestRDD(unittest.TestCase):
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
                 (4,([],[3],[1])), (5,([],[],[2]))])
 
+        # update
+        rdd4 = self.sc.makeRDD([('foo', 1), ('wtf', 233)])
+        rdd5 = self.sc.makeRDD([('foo', 2), ('bar', 3), ('wtf', None)])
+
+        self.assertEqual(
+                rdd4.update(rdd5, replace_only=True).collectAsMap(),
+                dict([('foo', 2), ('wtf', None)])
+        )
+        self.assertEqual(
+                rdd5.update(rdd4, replace_only=True).collectAsMap(),
+                dict([('foo', 1), ('bar', 3), ('wtf', 233)])
+        )
+        self.assertEqual(
+                rdd4.update(rdd5).collectAsMap(),
+                dict([('foo', 2), ('bar', 3), ('wtf', None)])
+        )
+        self.assertEqual(
+                rdd5.update(rdd4).collectAsMap(),
+                dict([('foo', 1), ('bar', 3), ('wtf', 233)])
+        )
+
     def test_accumulater(self):
         d = range(4)
         nums = self.sc.makeRDD(d, 2)
