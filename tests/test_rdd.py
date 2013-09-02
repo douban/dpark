@@ -239,6 +239,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
         s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
         self.assertEqual(s, sum(l))
+        shutil.rmtree('/tmp/beansdb')
     
     
 #class TestRDDInProcess(TestRDD):
