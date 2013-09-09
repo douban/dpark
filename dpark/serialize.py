@@ -4,12 +4,6 @@ import marshal, new, cPickle
 import itertools
 from pickle import Pickler, whichmodule
 import logging
-import ctypes
-
-make_cell = ctypes.pythonapi.PyCell_New
-make_cell.restype = ctypes.py_object
-make_cell.argtypes = [ctypes.py_object]
-
 logger = logging.getLogger(__name__)
 
 class MyPickler(Pickler):
@@ -128,6 +122,9 @@ def load_closure(bytes):
         if RECURSIVE_FUNCTION_PLACEHOLDER == value:
             f.func_globals[key] = f
     return f
+
+def make_cell(value):
+    return (lambda: value).__closure__[0]
 
 def reconstruct_closure(values):
     return tuple([make_cell(v) for v in values])
