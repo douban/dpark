@@ -131,6 +131,7 @@ foreach / foreachPartition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 ::
+
     rdd = dpark.makeRDD(range(10))
     def foo(x): print x
     rdd.foreach(foo)
@@ -158,6 +159,7 @@ enumerate / enumeratePartition
 注意：index可能不连续！
 
 ::
+
     rdd = dpark.makeRDD(range(10), 5)
     rdd.enumerate().collect() # [((0, 0), 0), ((0, 1), 1), ((1, 0), 2), ((1, 1), 3), ((2, 0), 4), ((2, 1), 5), ((3, 0), 6), ((3, 1), 7), ((4, 0), 8), ((4, 1), 9)]
     rdd.enumeratePartition().collect() # [(0, 0), (0, 1), (1, 2), (1, 3), (2, 4), (2, 5), (3, 6), (3, 7), (4, 8), (4, 9)] 
