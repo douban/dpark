@@ -79,8 +79,12 @@ def dump_obj(f, name, obj):
         # Prevent infinite recursion when dumping a recursive function
         return dumps(RECURSIVE_FUNCTION_PLACEHOLDER)
 
-    if sys.getsizeof(obj) > OBJECT_SIZE_LIMIT:
-        obj = create_broadcast(name, obj, f.__name__)
+    try:
+        if sys.getsizeof(obj) > OBJECT_SIZE_LIMIT:
+            obj = create_broadcast(name, obj, f.__name__)
+    except TypeError:
+        pass
+
     b = dumps(obj)
     if len(b) > OBJECT_SIZE_LIMIT:
         b = dumps(create_broadcast(name, obj, f.__name__))
@@ -124,7 +128,7 @@ def load_closure(bytes):
     return f
 
 def make_cell(value):
-    return (lambda: value).__closure__[0]
+    return (lambda: value).func_closure[0]
 
 def reconstruct_closure(values):
     return tuple([make_cell(v) for v in values])

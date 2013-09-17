@@ -65,6 +65,9 @@ class MesosExecutorDriver(Process, ExecutorDriver):
         else:
             self.stop()
 
+    def onStatusUpdateAcknowledgementMessage(self, slave_id, framework_id, task_id, uuid):
+        pass
+
     def start(self):
         Process.start(self)
         msg = RegisterExecutorMessage()
