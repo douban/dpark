@@ -127,6 +127,31 @@ reduce / reduceByKey
     r1 = b.reduceByKey(lambda x, y: x + y).collect()  # [(1, 23), (2, 22)]
     r2 = b.reduce(lambda x, y: (x[0] + y[0], x[1] + y[1]))  # (4, 45)
 
+foreach / foreachPartition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+::
+    rdd = dpark.makeRDD(range(10))
+    def foo(x): print x
+    rdd.foreach(foo)
+    """
+    0
+    1
+    2
+    3
+    4
+    5
+    6
+    7
+    8
+    9
+    """
+    rdd.foreachPartition(foo)
+    """
+    [0, 1, 2, 3, 4]
+    [5, 6, 7, 8, 9]
+    """
+
 join / leftOuterJoin / rightOuterJoin / outerJoin / groupWith
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

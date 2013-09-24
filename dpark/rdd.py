@@ -193,6 +193,9 @@ class RDD(object):
                 f(i)
         list(self.ctx.runJob(self, mf))
 
+    def foreachPartition(self, f):
+        list(self.ctx.runJob(self, f))
+
     def collect(self):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
 
