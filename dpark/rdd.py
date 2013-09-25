@@ -196,6 +196,14 @@ class RDD(object):
     def foreachPartition(self, f):
         list(self.ctx.runJob(self, f))
 
+    def enumeratePartition(self):
+        return EnumeratePartitionsRDD(self, lambda x,it: itertools.imap(lambda y:(x,y), it))
+
+    def enumerate(self):
+        return EnumeratePartitionsRDD(self, lambda x,it:
+                                      itertools.imap(lambda (y,z):((x,y),z), enumerate(it)))
+
+
     def collect(self):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
 
@@ -561,6 +569,10 @@ class GlommedRDD(DerivedRDD):
 class MapPartitionsRDD(MappedRDD):
     def compute(self, split):
         return self.func(self.prev.iterator(split))
+
+class EnumeratePartitionsRDD(MappedRDD):
+    def compute(self, split):
+        return self.func(split.index, self.prev.iterator(split))
 
 class PipedRDD(DerivedRDD):
     def __init__(self, prev, command, quiet=False, shell=False):

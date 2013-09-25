@@ -4,6 +4,8 @@ import unittest
 import socket
 
 from dpark.job import *
+from dpark import pymesos as mesos
+from dpark.pymesos import mesos_pb2 as mesos_pb2
 
 class MockSchduler:
     def taskEnded(self, task, reason, result, update):

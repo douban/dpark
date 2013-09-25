@@ -240,7 +240,16 @@ class TestRDD(unittest.TestCase):
         s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
         self.assertEqual(s, sum(l))
         shutil.rmtree('/tmp/beansdb')
-    
+
+    def test_enumerations(self):
+        N = 100
+        p = 10
+        l = range(N)
+        d1 = sorted(map(lambda x: (x/p, x), l))
+        d2 = sorted(map(lambda x: ((x/p, x%p), x), l))
+        rdd = self.sc.makeRDD(l, p)
+        self.assertEqual(sorted(rdd.enumeratePartition().collect()), d1)
+        self.assertEqual(sorted(rdd.enumerate().collect()), d2)
     
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
