@@ -53,4 +53,4 @@ class TestJob(unittest.TestCase):
 if __name__ == '__main__':
     sys.path.append('../')
     logging.basicConfig(level=logging.INFO)
-    unitest.main()
+    unittest.main()
