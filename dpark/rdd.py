@@ -1781,7 +1781,7 @@ class BeansdbFileRDD(TextFileRDD):
         dataf = open(self.path)
         p = 0
         while p < len(hint):
-            pos, ver, hash = struct.unpack("IIH", hint[p:p+10])
+            pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
             p += 10
             ksz = pos & 0xff
             key = hint[p: p+ksz]
@@ -1805,7 +1805,7 @@ class BeansdbFileRDD(TextFileRDD):
         if not block: 
             return
 
-        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
         if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
             return
         rsize = 24 + ksz + vsz
@@ -1823,7 +1823,7 @@ class BeansdbFileRDD(TextFileRDD):
         if len(block) < 24: 
             return
 
-        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IIIIII", block[:24])
+        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
         if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
             logger.warning('bad key length %d %d', ksz, vsz)
             return
