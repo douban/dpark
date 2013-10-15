@@ -53,13 +53,20 @@ class MutableDict(object):
     def put(self, key, value):
         if isinstance(value, ConflictValues):
             raise TypeError('Cannot put ConflictValues into mutable_dict')
+        uri = env.get('SERVER_URI')
+        if not uri:
+            raise RuntimeError('put is supported only on executors!')
 
         self.updated[key] = value
 
     def flush(self):
         updated_keys = {}
         path = self._get_path()
-        server_uri = '%s/%s' % (env.get('SERVER_URI'), os.path.basename(path))
+        uri = env.get('SERVER_URI')
+        if not uri:
+            raise RuntimeError('flush is supported only on executors!')
+
+        server_uri = '%s/%s' % (uri, os.path.basename(path))
 
         st = os.statvfs(path)
         ratio = st.f_bfree * 1.0 / st.f_blocks
