@@ -2,6 +2,13 @@
 import types
 from zlib import compress as _compress, decompress
 import threading
+import warnings
+try:
+    from dpark.portable_hash import portable_hash as _hash
+except ImportError:
+    import pyximport
+    pyximport.install(build_dir='/tmp')
+    from dpark.portable_hash import portable_hash as _hash
 
 COMPRESS = 'zlib'
 def compress(s):
@@ -34,18 +41,7 @@ def spawn(target, *args, **kw):
 # hash(None) is id(None), different from machines
 # http://effbot.org/zone/python-hash.htm
 def portable_hash(value):
-    if value is None:
-        return 0
-    if type(value) is types.TupleType:
-        h = 0x345678
-        for i in value:
-            h = ((1000003 * h) & 0xffffffff) ^ portable_hash(i)
-        return h
-    return hash(value)
-
-# with hash_of_none.patch
-if hash(None) == 0:
-    portable_hash = hash
+    return _hash(value)
 
 # similar to itertools.chain.from_iterable, but faster in PyPy
 def chain(it):

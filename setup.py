@@ -1,4 +1,5 @@
-from setuptools import setup
+from setuptools import setup, Extension
+from Cython.Distutils import build_ext
 
 version = '0.1'
 
@@ -24,9 +25,20 @@ setup(name='DPark',
           'pyzmq',
           'msgpack-python',
           'protobuf',
+          'cython',
       ],
       tests_require=[
           'nose',
       ],
       test_suite='nose.collector',
+      cmdclass = {'build_ext': build_ext},
+      ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])],
+      scripts = [
+          'tools/drun',
+          'tools/mrun',
+          'tools/executor.py',
+          'tools/scheduler.py',
+          'tools/dquery',
+          'examples/dgrep',
+      ]
 )
