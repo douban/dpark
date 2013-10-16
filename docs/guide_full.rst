@@ -350,7 +350,7 @@ bids 是一个 list，反复对 list 执行 in 操作，效率很低，转成 se
 合理设置 Task 和 Memory
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-- 大部分 reduce 函数都支持设置 Task 数量和 每个 Task 占用的内存，现在默认分别为 12 和 1000M
+- 大部分 reduce 函数都支持设置 Task 数量[1]和 每个 Task 占用的内存，现在默认分别为 12 和 1000M
 - 通常，一个脚本中的各个 Job 所需要的资源是不一样的，而 -M 参数会统一设置内存，所以建议复杂脚本不要使用 -M
 - Task 最大使用申请内存的 1.5 倍(将来会改成 1 倍)，超过会失败，会在当前申请内存上乘 2 重试，最多重试 4 次，这个过程可以从 log 中看到
 - 因为现在允许内存适当超标，所以也可能发生 Task 所在机器的内存不够而杀掉进程的情况
@@ -358,6 +358,27 @@ bids 是一个 list，反复对 list 执行 in 操作，效率很低，转成 se
 - reduce 类的可以只增加 Task
 - groupBy 可能导致数据不平衡，需要兼顾 Task 和 Memory
 - 调整要逐步进行，重复进行“看警告，调参数”这个过程
+
+
+[1] 支持自定义Task数量(numSplits)的操作函数：
+
+    mergeSplit, sort, groupBy, uniq, hot, reduceByKey, groupByKey, partitionByKey, join, leftOuterJoin, rightOuterJoin, outerJoin, groupWith
+
+在使用这些函数时应当特别注意。例如：
+::
+
+    rdd2 = rdd1.uniq()
+    # len(rdd2) == 12
+    rdd3 = rdd2.map(func1)
+    # len(rdd3) == 12
+
+rdd2默认会分为12块，如果rdd2中元素个数(rdd2.count())比较多，并且func1是一个非常占CPU或者占内存的函数，这将导致单机资源紧张。应当指定numSplits数量：
+::
+
+    rdd2 = rdd1.uniq(numSplits=100)
+    # len(rdd2) == 100
+    rdd3 = rdd2.map(func1)
+    # len(rdd3) == 100
 
 
 一些实际的例子
