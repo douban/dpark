@@ -57,7 +57,7 @@ class Broadcast:
         self.bytes = 0
         self.stopped = False
         if is_local:
-            if not self.cache.put(self.uuid, value):
+            if self.cache.put(self.uuid, value) is None:
                 raise Exception('object %s is too big to cache', repr(value))
         else:
             self.send()
