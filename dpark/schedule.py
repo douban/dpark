@@ -375,6 +375,8 @@ class LocalScheduler(DAGScheduler):
 
 def run_task_in_process(task, tid, environ):
     from dpark.env import env
+    workdir = environ.get('WORKDIR')
+    environ['SERVER_URI'] = 'file://%s' % workdir[0]
     env.start(False, environ)
 
     logger.debug("run task in process %s %s", task, tid)

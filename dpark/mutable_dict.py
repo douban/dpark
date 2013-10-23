@@ -4,6 +4,7 @@ import cPickle
 import urllib
 import struct
 import glob
+import uuid
 from dpark.env import env
 from dpark.util import compress, decompress
 from dpark.tracker import GetValueMessage, AddItemMessage
@@ -26,7 +27,6 @@ class MutableDict(object):
         self.data = {}
         self.updated = {}
         _ctx.start()
-        self.client = env.trackerClient
         self.generation = 1
 
     def __getstate__(self):
@@ -34,7 +34,6 @@ class MutableDict(object):
 
     def __setstate__(self, v):
         self.uuid, self.partitioner, self.generation = v
-        self.client = env.trackerClient
         self.data = {}
         self.updated = {}
 
@@ -53,9 +52,6 @@ class MutableDict(object):
     def put(self, key, value):
         if isinstance(value, ConflictValues):
             raise TypeError('Cannot put ConflictValues into mutable_dict')
-        uri = env.get('SERVER_URI')
-        if not uri:
-            raise RuntimeError('put is supported only on executors!')
 
         self.updated[key] = value
 
@@ -63,8 +59,8 @@ class MutableDict(object):
         updated_keys = {}
         path = self._get_path()
         uri = env.get('SERVER_URI')
-        if not uri:
-            raise RuntimeError('flush is supported only on executors!')
+        if not uri and not _ctx.isLocal:
+            raise RuntimeError('write in local is not supported in non-local mode')
 
         server_uri = '%s/%s' % (uri, os.path.basename(path))
 
@@ -80,6 +76,7 @@ class MutableDict(object):
             else:
                 updated_keys[key] = {k:v}
 
+        uid = uuid.uuid4().get_hex()
         for key, updated in updated_keys.items():
             new = self._fetch_missing(key)
             for k,v in updated.items():
@@ -88,15 +85,18 @@ class MutableDict(object):
                 else:
                     new[k] = v
 
-            filename = '%s_%s_%s' % (key, self.generation, os.getpid())
+            filename = '%s_%s_%s' % (key, self.generation, uid)
             fn = os.path.join(path, filename)
+            if os.path.exists(fn):
+                raise RuntimeError('conflict uuid for mutable_dict')
+
             url = '%s/%s' % (server_uri, filename)
             with open(fn+'.tmp', 'wb+') as f:
                 data = compress(cPickle.dumps(new))
                 f.write(struct.pack('<I', len(data)+4) + data)
 
             os.rename(fn+'.tmp', fn)
-            self.client.call(AddItemMessage('mutable_dict_new:%s' % key, url))
+            env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
 
             files = glob.glob(os.path.join(path, '%s_*' % key))
             for f in files:
@@ -120,10 +120,10 @@ class MutableDict(object):
 
     def _fetch_missing(self, key):
         result = {}
-        urls = self.client.call(GetValueMessage('mutable_dict:%s' % key))
+        urls = env.trackerClient.call(GetValueMessage('mutable_dict:%s' % key))
         for url in urls:
             f = urllib.urlopen(url)
-            if f.code != 200:
+            if f.code is not None and f.code != 200:
                 raise IOError('Open %s failed:%s' % (url, f.code))
 
             data = f.read()
