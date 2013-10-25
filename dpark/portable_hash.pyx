@@ -60,4 +60,4 @@ cpdef int64_t portable_hash(obj) except -1:
     elif t is int or t is long or t is float:
         return hash(obj)
     else:
-        raise TypeError('unhashable by portable_hash')
+        raise TypeError('%s is unhashable by portable_hash' % t)
