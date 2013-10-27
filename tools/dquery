@@ -213,14 +213,9 @@ class Table(object):
 
 class PartialTable(Table):
     def __init__(self, table_name, alias, selectors):
-        table = tables[table_name]
         self.table_name = table_name
-        self.expr = table.expr
         self.selectors = selectors
-        self.columns = table.columns
         self.alias = alias
-        if alias:
-            self.columns = [('%s.%s' % (alias, c), t) for c,t in self.columns]
 
     def __repr__(self):
         return '%s%s%s' % (
@@ -231,12 +226,16 @@ class PartialTable(Table):
         )
 
     def get_columns(self):
-        return self.columns
+        table = tables[self.table_name]
+        columns = table.columns
+        if self.alias:
+            columns = [('%s.%s' % (self.alias, c), t) for c,t in columns]
+        return columns
 
     def gen_rdd(self, **kwargs):
         use_limit = kwargs.get('use_limit', False)
         converters = []
-        for c, t in self.columns:
+        for c, t in self.get_columns():
             if t == Type.INT:
                 converters.append(lambda x:int(x) if x else 0)
             elif t == Type.FLOAT:
@@ -244,7 +243,7 @@ class PartialTable(Table):
             else:
                 converters.append(lambda x:x)
 
-        expr = self.expr
+        expr = tables[self.table_name].expr
         if self.selectors:
             r = expr.file_path
             path = set()
@@ -1083,7 +1082,7 @@ def script_parser():
 
 ########## Runtimes ########## 
 tables = {}
-global_env = {}
+global_env = {'__builtins__': globals()['__builtins__']}
 
 def take(rdd, n):
     def take_(n, splits):
