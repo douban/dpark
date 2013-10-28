@@ -54,9 +54,6 @@ def sgd((i, j)):
     W.put(i, Wi)
     H.put(j, Hj)
 
-    W.flush()
-    H.flush()
-
 rdd = dpark.makeRDD(range(d))
 rdd = rdd.cartesian(rdd).cache()
 
@@ -74,8 +71,6 @@ while True:
     for i in xrange(d):
         dpark.makeRDD(zip(range(d), J), d).foreach(sgd)
         J = J[1:] + [J[0]]
-        W.merge()
-        H.merge()
 
     GAMMA *= STEP
     shuffle(J)

@@ -9,25 +9,23 @@ from dpark.env import env
 from dpark.util import compress, decompress
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
-from dpark import _ctx
 
 class ConflictValues(object):
-    value = []
-    def __init__(self, v):
-        self.value.append(v)
+    def __init__(self, v=[]):
+        self.value = list(v)
 
     def __repr__(self):
         return '<ConflictValues %s>' % self.value
 
 class MutableDict(object):
-    
     def __init__(self, partition_num , partitioner=HashPartitioner):
         self.uuid = str(uuid.uuid4())
         self.partitioner = partitioner(partition_num)
         self.data = {}
         self.updated = {}
-        _ctx.start()
         self.generation = 1
+        self.register(self)
+        self.is_local = True
 
     def __getstate__(self):
         return (self.uuid, self.partitioner, self.generation)
@@ -36,32 +34,38 @@ class MutableDict(object):
         self.uuid, self.partitioner, self.generation = v
         self.data = {}
         self.updated = {}
+        self.is_local = False
+        self.register(self)
 
     def get(self, key):
         values = self.updated.get(key)
         if values is not None:
-            return values
+            return values[0]
 
-        values = self.data.get(key)
+        _key = self._get_key(key)
+        if _key not in self.data:
+            self.data[_key] = self._fetch_missing(_key)
+
+        values = self.data[_key].get(key)
         if values is not None:
-            return values
-
-        self.data.update(self._fetch_missing(self._get_key(key)))
-        return self.data.get(key)
+            return values[0]
+        return None
 
     def put(self, key, value):
         if isinstance(value, ConflictValues):
             raise TypeError('Cannot put ConflictValues into mutable_dict')
+        if self.is_local:
+            raise RuntimeError('Cannot put in local mode')
 
-        self.updated[key] = value
+        self.updated[key] = (value, self.generation)
 
-    def flush(self):
+    def _flush(self):
+        if not self.updated:
+            return
+
         updated_keys = {}
         path = self._get_path()
         uri = env.get('SERVER_URI')
-        if not uri and not _ctx.isLocal:
-            raise RuntimeError('write in local is not supported in non-local mode')
-
         server_uri = '%s/%s' % (uri, os.path.basename(path))
 
         st = os.statvfs(path)
@@ -81,7 +85,7 @@ class MutableDict(object):
             new = self._fetch_missing(key)
             for k,v in updated.items():
                 if v is None:
-                    new.pop(key)
+                    new.pop(k)
                 else:
                     new[k] = v
 
@@ -106,17 +110,26 @@ class MutableDict(object):
                     except OSError, e:
                         pass
 
-    def merge(self):
-        self.generation += 1
+        self.updated.clear()
+        self.data = {}
+
+    def _merge(self):
         locs = env.trackerServer.locs
         new = []
         for k in locs:
             if k.startswith('mutable_dict_new:'):
                 new.append(k)
 
+        if not new:
+            return
+
+        self.generation += 1
         length = len('mutable_dict_new:')
         for k in new:
             locs['mutable_dict:%s' % k[length:]] = locs.pop(k)
+
+        self.updated.clear()
+        self.data = {}
 
     def _fetch_missing(self, key):
         result = {}
@@ -139,9 +152,12 @@ class MutableDict(object):
             for k,v in data.items():
                 if k in result:
                     r = result[k]
-                    r = r.value if isinstance(r, ConflictValues) else [r]
-                    r += v.value if isinstance(v, ConflictValues) else [v]
-                    result[k] = ConflictValues(r)
+                    if v[1] == r[1]:
+                        r = r.value if isinstance(r, ConflictValues) else [r]
+                        r += v.value if isinstance(v, ConflictValues) else [v]
+                        result[k] = ConflictValues(r)
+                    else:
+                        result[k] = v if v[1] > r[1] else r
                 else:
                     result[k] = v
 
@@ -164,4 +180,19 @@ class MutableDict(object):
                 pass
 
         return path
+
+    _all_mutable_dicts = {}
+    @classmethod
+    def register(cls, md):
+        cls._all_mutable_dicts[md.uuid] = md
+
+    @classmethod
+    def flush(cls):
+        for md in cls._all_mutable_dicts.values():
+            md._flush()
+
+    @classmethod
+    def merge(cls):
+        for md in cls._all_mutable_dicts.values():
+            md._merge()
 

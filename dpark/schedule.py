@@ -24,6 +24,7 @@ from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
 from dpark.job import SimpleJob
 from dpark.env import env
+from dpark.mutable_dict import MutableDict
 
 logger = logging.getLogger("scheduler")
 
@@ -298,7 +299,7 @@ class DAGScheduler(Scheduler):
             stage = self.idToStage[task.stageId]
             if stage not in pendingTasks: # stage from other job
                 continue
-            logger.debug("remove from pedding %s from %s", task, stage)
+            logger.debug("remove from pending %s from %s", task, stage)
             pendingTasks[stage].remove(task.id)
             if isinstance(reason, Success):
                 Accumulator.merge(evt.accumUpdates)
@@ -316,6 +317,7 @@ class DAGScheduler(Scheduler):
                     stage.addOutputLoc(task.partition, evt.result)
                     if not pendingTasks[stage] and all(stage.outputLocs):
                         logger.debug("%s finished; looking for newly runnable stages", stage)
+                        MutableDict.merge()
                         running.remove(stage)
                         if stage.shuffleDep != None:
                             self.mapOutputTracker.registerMapOutputs(
@@ -339,6 +341,7 @@ class DAGScheduler(Scheduler):
                 logger.error("task %s failed: %s %s %s", task, reason, type(reason), reason.message)
                 raise Exception(reason.message)
 
+        MutableDict.merge()
         assert not any(results)
         return
 
@@ -352,6 +355,7 @@ def run_task(task, aid):
         Accumulator.clear()
         result = task.run(aid)
         accumUpdates = Accumulator.values()
+        MutableDict.flush()
         return (task.id, Success(), result, accumUpdates)
     except Exception, e:
         logger.error("error in task %s", task)

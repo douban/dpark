@@ -40,6 +40,7 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
+from dpark.mutable_dict import MutableDict
 
 logger = logging.getLogger("executor@%s" % socket.gethostname())
 
@@ -66,6 +67,7 @@ def run_task(task_data):
         Accumulator.clear()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
+        MutableDict.flush()
 
         if marshalable(result):
             try:
