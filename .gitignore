@@ -31,5 +31,3 @@ nosetests.xml
 
 #Mr Developer
 .mr.developer.cfg
-
-/dpark/portable_hash.c
