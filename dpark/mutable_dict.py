@@ -68,11 +68,6 @@ class MutableDict(object):
         uri = env.get('SERVER_URI')
         server_uri = '%s/%s' % (uri, os.path.basename(path))
 
-        st = os.statvfs(path)
-        ratio = st.f_bfree * 1.0 / st.f_blocks
-        if ratio < 0.66:
-            raise Exception('Insufficient disk space')
-
         for k,v in self.updated.items():
             key = self._get_key(k)
             if key in updated_keys:
@@ -170,16 +165,34 @@ class MutableDict(object):
     def _get_path(self):
         dirs = env.get('WORKDIR')
         if not dirs:
-            raise Exception('No available workdir')
+            raise RuntimeError('No available workdir')
 
         path = os.path.join(dirs[0], 'mutable_dict')
-        if not os.path.exists(path):
+        if os.path.exists(path):
+            return path
+
+        st = os.statvfs(dirs[0])
+        ratio = st.f_bfree * 1.0 / st.f_blocks
+        if ratio >= 0.66:
+            if not os.path.exists(path):
+                try:
+                    os.makedirs(path)
+                except OSError, e:
+                    pass
+
+            return path
+
+        for d in dirs[1:]:
+            p = os.path.join(d, 'mutable_dict')
             try:
-                os.mkdir(path)
+                os.makedirs(p)
+                os.symlink(p, path)
             except OSError, e:
                 pass
 
-        return path
+            return path
+
+        raise RuntimeError('Cannot find suitable workdir')
 
     _all_mutable_dicts = {}
     @classmethod
