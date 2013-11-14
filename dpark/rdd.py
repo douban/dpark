@@ -1411,20 +1411,24 @@ class OutputTextFileRDD(DerivedRDD):
             ".%04d%s.%s.%d.tmp" % (split.index, self.ext,
             socket.gethostname(), os.getpid()))
         try:
-            f = open(tpath,'w', 4096 * 1024 * 16)
-        except IOError:
-            time.sleep(1) # there are dir cache in mfs for 1 sec
-            f = open(tpath,'w', 4096 * 1024 * 16)
-        if self.compress:
-            have_data = self.write_compress_data(f, self.prev.iterator(split))
-        else:
-            have_data = self.writedata(f, self.prev.iterator(split))
-        f.close()
-        if have_data and not os.path.exists(path):
-            os.rename(tpath, path)
-            yield path
-        else:
-            os.remove(tpath)
+            try:
+                f = open(tpath,'w', 4096 * 1024 * 16)
+            except IOError:
+                time.sleep(1) # there are dir cache in mfs for 1 sec
+                f = open(tpath,'w', 4096 * 1024 * 16)
+            if self.compress:
+                have_data = self.write_compress_data(f, self.prev.iterator(split))
+            else:    
+                have_data = self.writedata(f, self.prev.iterator(split))
+            f.close()
+            if have_data and not os.path.exists(path):
+                os.rename(tpath, path)
+                yield path
+        finally:
+            try:
+                os.remove(tpath)
+            except:
+                pass
 
     def writedata(self, f, lines):
         it = iter(lines)
@@ -1517,40 +1521,45 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
         self.files = {}
 
         buffers = {}
-        for k, v in self.prev.iterator(split):
-            b = buffers.get(k)
-            if b is None:
-                b = StringIO()
-                buffers[k] = b
+        try:
+            for k, v in self.prev.iterator(split):
+                b = buffers.get(k)
+                if b is None:
+                    b = StringIO()
+                    buffers[k] = b
 
-            b.write(v)
-            if not v.endswith('\n'):
-                b.write('\n')
+                b.write(v)
+                if not v.endswith('\n'):
+                    b.write('\n')
 
-            if b.tell() > self.BLOCK_SIZE:
+                if b.tell() > self.BLOCK_SIZE:
+                    f = self.get_file(k)
+                    f.write(b.getvalue())
+                    self.flush_file(k, f)
+                    del buffers[k]
+
+            for k, b in buffers.items():
                 f = self.get_file(k)
                 f.write(b.getvalue())
-                self.flush_file(k, f)
-                del buffers[k]
+                f.close()
+                del self.files[k]
 
-        for k, b in buffers.items():
-            f = self.get_file(k)
-            f.write(b.getvalue())
-            f.close()
-            del self.files[k]
+            for k, f in self.files.items():
+                if self.compress:
+                    f = self.get_file(k) # make sure fileobj is open
+                f.close()
 
-        for k, f in self.files.items():
-            if self.compress:
-                f = self.get_file(k) # make sure fileobj is open
-            f.close()
-
-        for k, tpath in self.paths.items():
-            path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
-            if not os.path.exists(path):
-                os.rename(tpath, path)
-            else:
-                os.remove(tpath)
-            yield path
+            for k, tpath in self.paths.items():
+                path = os.path.join(self.path, str(k), "%04d%s" % (split.index, self.ext))
+                if not os.path.exists(path):
+                    os.rename(tpath, path)
+                    yield path
+        finally:
+            for k, tpath in self.paths.items():
+                try:
+                    os.remove(tpath)
+                except:
+                    pass
 
 
 class OutputCSVFileRDD(OutputTextFileRDD):
