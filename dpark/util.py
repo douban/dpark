@@ -7,7 +7,7 @@ try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
     import pyximport
-    pyximport.install(build_dir='/tmp')
+    pyximport.install(inplace=True)
     from dpark.portable_hash import portable_hash as _hash
 
 COMPRESS = 'zlib'
