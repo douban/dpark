@@ -213,6 +213,23 @@ join / leftOuterJoin / rightOuterJoin / outerJoin / groupWith
 
     # 其他文件类型请参见 rdd.py，或使用 pydoc dpark.rdd
 
+Tabular文件格式
+~~~~~~~~~~~~~~~~~~~~
+
+带索引和列名，默认压缩，按列存储的文件格式。类似于Hive的orc文件格式，便于快速利用索引查找数据。
+
+::
+
+    #写tabular文件
+    rdd.saveAsTabular(path, field_names, indices = fields_to_index)
+
+    #读文件
+    rdd = dpark.tabular(path, fields = fields_to_read)
+
+    #使用索引过滤，注意使用的索引必须在fields_to_read列表中
+    rdd = rdd.filterByIndex(field_1 = ['1', '2', '3'], field_2 = lambda x: x.startswith('x'))
+    #注意list各个参数是‘或’的关系，各个过滤器之间是‘与’的关系
+
 
 代码风格
 --------------------

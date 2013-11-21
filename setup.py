@@ -37,6 +37,8 @@ setup(name='DPark',
           'pyzmq',
           'msgpack-python',
           'protobuf',
+          'cython',
+          'lz4',
       ],
       tests_require=[
           'nose',

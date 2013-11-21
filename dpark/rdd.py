@@ -323,6 +323,10 @@ class RDD(object):
             self = self.mergeSplit(len(self) / 256 + 1)
         return OutputBeansdbRDD(self, path, depth, overwrite, compress, raw).collect()
 
+    def saveAsTabular(self, path, field_names, **kw):
+        from dpark.tabular import OutputTabularRDD
+        return OutputTabularRDD(self, path, field_names, **kw).collect()
+
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):

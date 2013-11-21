@@ -250,6 +250,35 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.makeRDD(l, p)
         self.assertEqual(sorted(rdd.enumeratePartition().collect()), d1)
         self.assertEqual(sorted(rdd.enumerate().collect()), d2)
+
+    def test_tabular(self):
+        d = range(10000)
+        d = zip(d, map(str, d), map(float, d))
+        path = '/tmp/tabular-%s' % os.getpid()
+        try:
+            self.sc.makeRDD(d).saveAsTabular(path, 'f_int, f_str, f_float', indices=['f_str', 'f_float'])
+            r = self.sc.tabular(path, fields=['f_float', 'f_str']).collect()
+            for f, s in r:
+                self.assertEqual(type(f), float)
+                self.assertEqual(type(s), str)
+                self.assertEqual(str(int(f)), s)
+            self.assertEqual(sorted(x.f_float for x in r), sorted(x[2] for x in d))
+
+            r = self.sc.tabular(path, fields='f_int f_float').filterByIndex(f_float=lambda x:hash(x) % 2).collect()
+            for i, f in r:
+                self.assertEqual(type(i), int)
+                self.assertEqual(type(f), float)
+                self.assertEqual(i, int(f))
+                self.assertTrue(hash(f) % 2)
+
+            self.assertEqual(sorted(x.f_int for x in r), sorted(x[0] for x in d if hash(x[2]) %2))
+        finally:
+            try:
+                shutil.rmtree(path)
+            except OSError:
+                pass
+
+
     
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

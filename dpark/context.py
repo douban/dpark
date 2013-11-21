@@ -10,6 +10,7 @@ from dpark.accumulator import Accumulator
 from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.moosefs import walk
+from dpark.tabular import TabularRDD
 import dpark.conf as conf
 from math import ceil
 
@@ -156,6 +157,10 @@ class DparkContext(object):
 
     def tableFile(self, path, *args, **kwargs):
         return self.textFile(path, cls=TableFileRDD, *args, **kwargs)
+
+    def tabular(self, path, **kw):
+        self.init()
+        return TabularRDD(self, path, **kw)
 
     def table(self, path, **kwargs):
         dpath = path[0] if isinstance(path, (list, tuple)) else path
