@@ -280,6 +280,12 @@ class ReadableFile(File):
         self.reader = None
         self.generator = None
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, tb):
+        self.close()
+
 _mfs = {}
 
 MFS_PREFIX = {
