@@ -97,7 +97,7 @@ class MutableDict(object):
             os.rename(fn+'.tmp', fn)
             env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
 
-            files = glob.glob(os.path.join(path, '%s_*' % key))
+            files = glob.glob(os.path.join(path, '%s-*' % self.uuid ))
             for f in files:
                 if int(f.split('_')[-2]) < self.generation -1:
                     try:
@@ -112,7 +112,7 @@ class MutableDict(object):
         locs = env.trackerServer.locs
         new = []
         for k in locs:
-            if k.startswith('mutable_dict_new:'):
+            if k.startswith('mutable_dict_new:%s-' % self.uuid):
                 new.append(k)
 
         if not new:
@@ -148,9 +148,11 @@ class MutableDict(object):
                 if k in result:
                     r = result[k]
                     if v[1] == r[1]:
-                        r = r.value if isinstance(r, ConflictValues) else [r]
-                        r += v.value if isinstance(v, ConflictValues) else [v]
-                        result[k] = ConflictValues(r)
+                        r0 = r[0]
+                        v0 = v[0]
+                        merged = r0.value if isinstance(r0, ConflictValues) else [r0]
+                        merged += v0.value if isinstance(v0, ConflictValues) else [v0]
+                        result[k] = (ConflictValues(merged), r[1])
                     else:
                         result[k] = v if v[1] > r[1] else r
                 else:
@@ -197,7 +199,13 @@ class MutableDict(object):
     _all_mutable_dicts = {}
     @classmethod
     def register(cls, md):
-        cls._all_mutable_dicts[md.uuid] = md
+        uuid = md.uuid
+        _md = cls._all_mutable_dicts.get(uuid)
+        if not _md or _md.generation != md.generation:
+            cls._all_mutable_dicts[md.uuid] = md
+        else:
+            md.data = _md.data
+            md.updated = _md.updated
 
     @classmethod
     def flush(cls):
