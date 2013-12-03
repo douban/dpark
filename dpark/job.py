@@ -278,6 +278,8 @@ class SimpleJob(Job):
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:    
             self.sched.requestMoreResources()
+	    for i in xrange(len(self.blacklist)):
+	    	self.blacklist[i] = []
         self.tasksLaunched -= 1
 
     def check_task_timeout(self):
