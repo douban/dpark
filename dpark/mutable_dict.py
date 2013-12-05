@@ -9,6 +9,26 @@ from dpark.env import env
 from dpark.util import compress, decompress
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
+from collections import OrderedDict
+
+class LRUDict(object):
+    def __init__(self, limit=None):
+        self.limit = limit
+        self.value = OrderedDict()
+
+    def get(self, key, default=None):
+        result = self.value.pop(key, None)
+        if result is not None:
+            self.value[key] = result
+            return result
+
+        return default
+
+    def put(self, key, value):
+        self.value[key] = value
+        if self.limit is not None and len(self.value) > self.limit:
+            self.value.popitem(last=False)
+
 
 class ConflictValues(object):
     def __init__(self, v=[]):
@@ -18,21 +38,22 @@ class ConflictValues(object):
         return '<ConflictValues %s>' % self.value
 
 class MutableDict(object):
-    def __init__(self, partition_num , partitioner=HashPartitioner):
+    def __init__(self, partition_num , cacheLimit=None):
         self.uuid = str(uuid.uuid4())
-        self.partitioner = partitioner(partition_num)
-        self.data = {}
+        self.partitioner = HashPartitioner(partition_num)
+        self.data = LRUDict(cacheLimit)
+        self.cacheLimit = cacheLimit
         self.updated = {}
         self.generation = 1
         self.register(self)
         self.is_local = True
 
     def __getstate__(self):
-        return (self.uuid, self.partitioner, self.generation)
+        return (self.uuid, self.partitioner, self.generation, self.cacheLimit)
 
     def __setstate__(self, v):
-        self.uuid, self.partitioner, self.generation = v
-        self.data = {}
+        self.uuid, self.partitioner, self.generation, self.cacheLimit = v
+        self.data = LRUDict(self.cacheLimit)
         self.updated = {}
         self.is_local = False
         self.register(self)
@@ -43,13 +64,14 @@ class MutableDict(object):
             return values[0]
 
         _key = self._get_key(key)
-        if _key not in self.data:
-            self.data[_key] = self._fetch_missing(_key)
+        values = self.data.get((_key, key))
+        if values is None:
+            for k, v in self._fetch_missing(_key).iteritems():
+                self.data.put((_key, k), v)
+            
+            values = self.data.get((_key, key))
 
-        values = self.data[_key].get(key)
-        if values is not None:
-            return values[0]
-        return None
+        return values[0] if values is not None else None
 
     def put(self, key, value):
         if isinstance(value, ConflictValues):
@@ -106,7 +128,7 @@ class MutableDict(object):
                         pass
 
         self.updated.clear()
-        self.data = {}
+        self.data = LRUDict(self.cacheLimit)
 
     def _merge(self):
         locs = env.trackerServer.locs
@@ -124,7 +146,7 @@ class MutableDict(object):
             locs['mutable_dict:%s' % k[length:]] = locs.pop(k)
 
         self.updated.clear()
-        self.data = {}
+        self.data = LRUDict(self.cacheLimit)
 
     def _fetch_missing(self, key):
         result = {}
