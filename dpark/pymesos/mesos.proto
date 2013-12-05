@@ -91,12 +91,20 @@ message ExecutorID {
  * performing failover). The amount of time that the master will wait
  * for the scheduler to failover before removing the framework is
  * specified by failover_timeout.
+ * If checkpoint is set, framework pid, executor pids and status updates
+ * are checkpointed to disk by the slaves.
+ * Checkpointing allows a restarted slave to reconnect with old executors
+ * and recover status updates, at the cost of disk I/O.
+ * The role field is used to group frameworks for allocation decisions,
+ * depending on the allocation policy being used.
  */
 message FrameworkInfo {
   required string user = 1;
   required string name = 2;
   optional FrameworkID id = 3;
   optional double failover_timeout = 4 [default = 0.0];
+  optional bool checkpoint = 5 [default = false];
+  optional string role = 6 [default = "*"];
 }
 
 
@@ -122,14 +130,23 @@ message CommandInfo {
 
 
 /**
- * Describes information about an executor. The 'params' field can be
- * used to set environment variables for the executor. The 'data'
- * field can be used to pass arbitrary bytes to an executor.
+ * Describes information about an executor. The 'data' field can be
+ * used to pass arbitrary bytes to an executor.
  */
 message ExecutorInfo {
   required ExecutorID executor_id = 1;
+  optional FrameworkID framework_id = 8; // TODO(benh): Make this required.
   required CommandInfo command = 7;
   repeated Resource resources = 5;
+  optional string name = 9;
+
+  // Source is an identifier style string used by frameworks to track
+  // the source of an executor. This is useful when it's possible for
+  // different executor ids to be related semantically.
+  // NOTE: Source is exposed alongside the resource usage of the
+  // executor via JSON on the slave. This allows users to import
+  // usage information into a time series database for monitoring.
+  optional string source = 10;
   optional bytes data = 4;
 }
 
@@ -142,25 +159,28 @@ message ExecutorInfo {
 message MasterInfo {
   required string id = 1;
   required uint32 ip = 2;
-  required uint32 port = 3;
+  required uint32 port = 3 [default = 5050];
 }
 
 
 /**
- * Describes a slave. The 'webui_hostname' and 'webui_port' are
- * provided in the event a host has different private and public
- * hostnames (e.g., Amazon EC2). Note that the 'id' field is only
- * available after a slave is registered with the master, and is made
- * available here to facilitate re-registration.
+ * Describes a slave. Note that the 'id' field is only available after
+ * a slave is registered with the master, and is made available here
+ * to facilitate re-registration.  If checkpoint is set, the slave is
+ * checkpointing its own information and potentially frameworks'
+ * information (if a framework has checkpointing enabled).
  */
 message SlaveInfo {
   required string hostname = 1;
-  // TODO(benh,andyk): Send bound ports, not just hostname.
-  required string webui_hostname = 2;
-  optional int32 webui_port = 4 [default = 8081];
+  optional int32 port = 8 [default = 5051];
   repeated Resource resources = 3;
   repeated Attribute attributes = 5;
   optional SlaveID id = 6;
+  optional bool checkpoint = 7 [default = false];
+
+  // Deprecated!
+  optional string webui_hostname = 2;
+  optional int32 webui_port = 4 [default = 8081];
 }
 
 
@@ -235,6 +255,70 @@ message Resource {
   optional Value.Scalar scalar = 3;
   optional Value.Ranges ranges = 4;
   optional Value.Set set = 5;
+  optional string role = 6 [default = "*"];
+}
+
+
+/*
+ * A snapshot of resource usage statistics.
+ */
+message ResourceStatistics {
+  required double timestamp = 1; // Snapshot time, in seconds since the Epoch.
+
+  // CPU Usage Information:
+  // Total CPU time spent in user mode, and kernel mode.
+  optional double cpus_user_time_secs = 2;
+  optional double cpus_system_time_secs = 3;
+
+  // Number of CPUs allocated.
+  required double cpus_limit = 4;
+
+  // cpu.stat on process throttling (for contention issues).
+  optional uint32 cpus_nr_periods = 7;
+  optional uint32 cpus_nr_throttled = 8;
+  optional double cpus_throttled_time_secs = 9;
+
+  // Memory Usage Information:
+  optional uint64 mem_rss_bytes = 5; // Resident Set Size.
+
+  // Amount of memory resources allocated.
+  optional uint64 mem_limit_bytes = 6;
+
+  // Broken out memory usage information (files, anonymous, and mmaped files)
+  optional uint64 mem_file_bytes = 10;
+  optional uint64 mem_anon_bytes = 11;
+  optional uint64 mem_mapped_file_bytes = 12;
+
+  // TODO(bmahler): Add disk usage.
+  // TODO(bmahler): Add network usage?
+}
+
+
+/**
+ * Describes a snapshot of the resource usage for an executor.
+ *
+ * TODO(bmahler): Note that we want to be sending this information
+ * to the master, and subsequently to the relevant scheduler. So
+ * this proto is designed to be easy for the scheduler to use, this
+ * is why we provide the slave id, executor info / task info.
+ */
+message ResourceUsage {
+  required SlaveID slave_id = 1;
+  required FrameworkID framework_id = 2;
+
+  // Resource usage is for an executor. For tasks launched with
+  // an explicit executor, the executor id is provided. For tasks
+  // launched without an executor, our internal executor will be
+  // used. In this case, we provide the task id here instead, in
+  // order to make this message easier for schedulers to work with.
+
+  optional ExecutorID executor_id = 3; // If present, this executor was
+  optional string executor_name = 4;   // explicitly specified.
+
+  optional TaskID task_id = 5; // If present, the task did not have an executor.
+
+  // If missing, the isolation module cannot provide resource usage.
+  optional ResourceStatistics statistics = 6;
 }
 
 
@@ -291,13 +375,13 @@ message TaskInfo {
  * another task).
  */
 enum TaskState {
-  TASK_STAGING = 6; // Initial state. Framework status updates should not use.
+  TASK_STAGING = 6;  // Initial state. Framework status updates should not use.
   TASK_STARTING = 0;
   TASK_RUNNING = 1;
   TASK_FINISHED = 2; // TERMINAL.
-  TASK_FAILED = 3; // TERMINAL.
-  TASK_KILLED = 4; // TERMINAL.
-  TASK_LOST = 5; // TERMINAL.
+  TASK_FAILED = 3;   // TERMINAL.
+  TASK_KILLED = 4;   // TERMINAL.
+  TASK_LOST = 5;     // TERMINAL.
 }
 
 
@@ -309,6 +393,8 @@ message TaskStatus {
   required TaskState state = 2;
   optional string message = 4; // Possible message explaining state.
   optional bytes data = 3;
+  optional SlaveID slave_id = 5;
+  optional double timestamp = 6;
 }
 
 
@@ -317,8 +403,13 @@ message TaskStatus {
  * (see SchedulerDriver::launchTasks) to influence the allocator.
  */
 message Filters {
-  // Time to consider unused resources refused.
-  optional double refuse_seconds = 1;
+  // Time to consider unused resources refused. Note that all unused
+  // resources will be considered refused and use the default value
+  // (below) regardless of whether Filters was passed to
+  // SchedulerDriver::launchTasks. You MUST pass Filters with this
+  // field set to change this behavior (i.e., get another offer which
+  // includes unused resources sooner or later than the default).
+  optional double refuse_seconds = 1 [default = 5.0];
 }
 
 
@@ -351,4 +442,18 @@ message Parameter {
  */
 message Parameters {
   repeated Parameter parameter = 1;
+}
+
+
+/**
+ * Credential used for authentication.
+ *
+ * NOTE: The 'principal' is used for authenticating the framework with
+ * the master. This is different from 'FrameworkInfo.user'
+ * which is used to determine the user under which the framework's
+ * executors/tasks are run.
+ */
+message Credential {
+  required string principal = 1;
+  optional bytes secret = 2;
 }

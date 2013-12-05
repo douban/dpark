@@ -105,6 +105,7 @@ class Framework(object):
         else:
             id = fmt % (task.task_id.value, task.command.value)
         info.executor_id.value = id
+        info.framework_id.value = self.id
         info.command.value = task.command.value
         return info
 
