@@ -579,7 +579,11 @@ class MesosScheduler(DAGScheduler):
         mem.name = 'mem'
         mem.type = 0 #mesos_pb2.Value.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
-        info.data = marshal.dumps((os.path.realpath(sys.argv[0]), os.getcwd(), sys.path, dict(os.environ),
+        Script = os.path.realpath(sys.argv[0])
+        if hasattr(info, 'name'):
+            info.name = Script
+
+        info.data = marshal.dumps((Script, os.getcwd(), sys.path, dict(os.environ),
             self.task_per_node, self.out_logger, self.err_logger, self.logLevel, env.environ))
         return info
 
