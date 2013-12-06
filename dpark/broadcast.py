@@ -9,7 +9,7 @@ import random
 
 import zmq
 
-from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
+from dpark.util import compress, decompress, spawn
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
@@ -94,16 +94,12 @@ class Broadcast:
             self.value = value
             return value
 
-        oldtitle = getproctitle()
-        setproctitle('dpark worker: broadcasting ' + uuid)
-
         value = self.recv()
         if value is None:
             raise Exception("recv broadcast failed")
         self.value = value
         self.cache.put(uuid, value)
 
-        setproctitle(oldtitle)
         return value 
 
     def send(self):

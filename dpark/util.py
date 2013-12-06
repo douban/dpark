@@ -24,14 +24,6 @@ except ImportError:
     except ImportError:
         pass
 
-try:
-    from setproctitle import getproctitle, setproctitle
-except ImportError:
-    def getproctitle():
-        return ''
-    def setproctitle(x):
-        pass
-
 def spawn(target, *args, **kw):
     t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
     t.daemon = True

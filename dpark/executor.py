@@ -34,7 +34,7 @@ import pymesos as mesos
 import pymesos.mesos_pb2 as mesos_pb2
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, getproctitle, setproctitle, spawn
+from dpark.util import compress, decompress, spawn
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
@@ -62,8 +62,6 @@ def run_task(task_data):
     try:
         gc.disable()
         task, ntry = cPickle.loads(decompress(task_data))
-        setproctitle('dpark worker %s: run task %s' % (Script, task))
-
         Accumulator.clear()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
@@ -95,12 +93,10 @@ def run_task(task_data):
         msg = traceback.format_exc()
         return mesos_pb2.TASK_FAILED, cPickle.dumps((OtherFailure(msg), None, None), -1)
     finally:
-        setproctitle('dpark worker: idle')
         gc.collect()
         gc.enable()
 
 def init_env(args):
-    setproctitle('dpark worker: idle')
     env.start(False, args)
 
 
@@ -199,13 +195,11 @@ def setup_cleaner_process(workdir):
             except ImportError:
                 os._exit(1)
             try: 
-                setproctitle('dpark cleaner %s wait(%d)' % (workdir, ppid))
                 psutil.Process(ppid).wait()
                 os.killpg(ppid, signal.SIGKILL) # kill workers
             except Exception, e:
                 pass # make sure to exit
             finally:
-                setproctitle('dpark cleaning %s ' % workdir)
                 for d in workdir:
                     while os.path.exists(d):
                         try: shutil.rmtree(d, True)
