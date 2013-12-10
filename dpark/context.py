@@ -215,8 +215,8 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        from dpark.broadcast import TheBroadcast
-        return TheBroadcast(v, self.isLocal)
+        from dpark.broadcast import Broadcast
+        return Broadcast(v)
 
     def start(self):
         if self.started:
