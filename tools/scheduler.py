@@ -189,7 +189,7 @@ class SubmitScheduler(object):
         mem = task.resources.add()
         mem.name = "mem"
         mem.type = 0 # mesos_pb2.Value.SCALAR
-        mem.scalar.value = min(self.mem, mem)
+        mem.scalar.value = self.mem
         return task
 
     @safe
