@@ -174,7 +174,7 @@ class P2PBroadcastManager(BroadcastManager):
                             blocks[id] = block
                             bitmap[id] = 1
                     else:
-                        raise RuntimeError('Unknown server response: %s %s' % (type, msg))
+                        raise RuntimeError('Unknown server response: %s %s' % (result, msg))
 
             finally:
                 sock.close()
@@ -303,7 +303,7 @@ class Broadcast:
         self.block_num = _manager.register(self.uuid, self.value)
         logger.info("broadcast %s in %d blocks", self.uuid, self.block_num)
 
-    def clear():
+    def clear(self):
         _manager.clear(self.uuid)
 
     def __getstate__(self):
