@@ -33,7 +33,6 @@ EXECUTOR_MEMORY = 64 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
-PLATFORM = platform.python_implementation()
 
 class TaskEndReason: pass
 class Success(TaskEndReason): pass
@@ -566,13 +565,11 @@ class MesosScheduler(DAGScheduler):
         if self.use_self_as_exec:
             info.command.value = os.path.abspath(sys.argv[0])
             info.executor_id.value = sys.argv[0]
-        elif PLATFORM == 'PyPy':
-            dir = os.path.dirname(__file__)
-            info.command.value = os.path.abspath(os.path.join(dir, 'bin/executor-pypy.py'))
-            info.executor_id.value = "default"
         else:
-            dir = os.path.dirname(__file__)
-            info.command.value = os.path.abspath(os.path.join(dir, 'bin/executor%d%d.py' % sys.version_info[:2]))
+            info.command.value = '%s %s' % (
+                sys.executable,
+                os.path.abspath(os.path.join(os.path.dirname(__file__), 'executor.py'))
+            )
             info.executor_id.value = "default"
 
         mem = info.resources.add()
