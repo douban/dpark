@@ -1210,6 +1210,7 @@ class GZipFileRDD(TextFileRDD):
                 io = StringIO(dz.decompress(d))
             except Exception, e:
                 if self.err < 1e-6:
+                    logger.error("failed to decompress file: %s", self.path)
                     raise
                 old = start
                 start = self.find_block(f, start)
