@@ -11,14 +11,13 @@ import subprocess
 from operator import itemgetter
 import logging
 import signal
-import getpass
 
 import zmq
 ctx = zmq.Context()
 
 import dpark.pymesos as mesos
 import dpark.pymesos.mesos_pb2 as mesos_pb2
-
+from dpark.util import getuser
 
 class Task:
     def __init__(self, id):
@@ -53,7 +52,7 @@ class SubmitScheduler(object):
     def __init__(self, options, command):
         self.framework_id = None
         self.framework = mesos_pb2.FrameworkInfo()
-        self.framework.user = getpass.getuser()
+        self.framework.user = getuser()
         if self.framework.user == 'root':
             raise Exception("drun is not allowed to run as 'root'")
         name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])

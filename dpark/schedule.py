@@ -6,7 +6,6 @@ import cPickle
 import threading, Queue
 import time
 import random
-import getpass
 import urllib
 import warnings
 import weakref
@@ -18,7 +17,7 @@ import zmq
 import pymesos as mesos
 import pymesos.mesos_pb2 as mesos_pb2
 
-from dpark.util import compress, decompress, spawn
+from dpark.util import compress, decompress, spawn, getuser
 from dpark.dependency import NarrowDependency, ShuffleDependency 
 from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
@@ -499,7 +498,7 @@ class MesosScheduler(DAGScheduler):
         if len(name) > 512:
             name = name[:512] + '...'
         framework = mesos_pb2.FrameworkInfo()
-        framework.user = getpass.getuser()
+        framework.user = getuser()
         if framework.user == 'root':
             raise Exception("dpark is not allowed to run as 'root'")
         framework.name = name

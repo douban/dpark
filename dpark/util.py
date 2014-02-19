@@ -10,6 +10,16 @@ except ImportError:
     pyximport.install(inplace=True)
     from dpark.portable_hash import portable_hash as _hash
 
+try:
+    import os
+    import pwd
+    def getuser():
+        return pwd.getpwuid(os.getuid()).pw_name
+except:
+    import getpass
+    def getuser():
+        return getpass.getuser()
+
 COMPRESS = 'zlib'
 def compress(s):
     return _compress(s, 1)
