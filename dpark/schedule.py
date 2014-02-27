@@ -527,9 +527,10 @@ class MesosScheduler(DAGScheduler):
         port = sock.bind_to_random_port("tcp://0.0.0.0")
 
         def collect_log():
-            while True:
-                line = sock.recv()
-                output.write(line)
+            while not self._shutdown:
+                if sock.poll(1000, zmq.POLLIN):
+                    line = sock.recv()
+                    output.write(line)
 
         spawn(collect_log)
 
