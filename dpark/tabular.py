@@ -123,7 +123,8 @@ class AdaptiveIndex(object):
             return chain(v.positions() for k, v in self.index.items() if fun(k))
 
 class TabularSplit(Split):
-    def __init__(self, rdd, sp):
+    def __init__(self, index, rdd, sp):
+        self.index = index
         self.rdd = rdd
         self.split = sp
 
@@ -139,7 +140,12 @@ class TabularRDD(RDD):
             files = chain(self._get_files(p) for p in path)
 
         self.rdds = [TabularFileRDD(ctx, f, fields) for f in files]
-        self._splits = [TabularSplit(rdd, sp) for rdd in self.rdds for sp in rdd.splits]
+        self._splits = []
+        i = 0
+        for rdd in self.rdds:
+            for sp in rdd.splits:
+                self._splits.append(TabularSplit(i, rdd, sp))
+                i += 1
         self.dependencies = [OneToOneDependency(rdd) for rdd in self.rdds]
 
     def _get_files(self, path):
