@@ -1510,6 +1510,10 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
 
     def flush_file(self, key, f):
         f.flush()
+        if self.compress:
+            f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+
         if len(self.files) > self.MAX_OPEN_FILES:
             if self.compress:
                 open_files = sum(1 for f in self.files.values() if f.fileobj is not None)
