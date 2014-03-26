@@ -1665,8 +1665,11 @@ except ImportError:
 
 try:
     from fnv1a import get_hash
+    from fnv1a import get_hash_beansdb
     def fnv1a(d):
         return get_hash(d) & 0xffffffff
+    def fnv1a_beansdb(d):
+        return get_hash_beansdb(d) & 0xffffffff
 except ImportError:
     FNV_32_PRIME = 0x01000193
     FNV_32_INIT = 0x811c9dc5
@@ -1677,6 +1680,8 @@ except ImportError:
             h *= FNV_32_PRIME
             h &= 0xffffffff
         return h
+    fnv1a_beansdb = fnv1a
+
 
 
 FLAG_PICKLE   = 0x00000001
@@ -1920,11 +1925,11 @@ class OutputBeansdbRDD(DerivedRDD):
         # used in beansdb
         h = len(d) * 97
         if len(d) <= 1024:
-            h += fnv1a(d)
+            h += fnv1a_beansdb(d)
         else:
-            h += fnv1a(d[:512])
+            h += fnv1a_beansdb(d[:512])
             h *= 97
-            h += fnv1a(d[-512:])
+            h += fnv1a_beansdb(d[-512:])
         return h & 0xffff
 
     def write_record(self, f, key, flag, value, now=None):
