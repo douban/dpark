@@ -1,18 +1,23 @@
-from kazoo.client import KazooClient, KazooState
-from kazoo.recipe.watchers import ChildrenWatch, DataWatch
-from kazoo.exceptions import ZookeeperError 
-
-def adjust_kazoo_logging_level():
-    import logging
-    import kazoo
-    kazoo.client.log.setLevel(logging.WARNING)
-    kazoo.protocol.connection.log.setLevel(logging.WARNING)
+try:
+    from zookeeper import ZooKeeperException as ZookeeperError
+    from zkpython import ZKClient, ChildrenWatch, DataWatch 
+    def adjust_zk_logging_level():
+        pass
+except ImportError:
+    from kazoo.client import KazooClient as ZKClient
+    from kazoo.recipe.watchers import ChildrenWatch, DataWatch
+    from kazoo.exceptions import ZookeeperError 
+    def adjust_zk_logging_level():
+        import logging
+        import kazoo
+        kazoo.client.log.setLevel(logging.WARNING)
+        kazoo.protocol.connection.log.setLevel(logging.WARNING)
 
 class MasterDetector(object):
     def __init__(self, uri, agent):
         self.uri = uri
         self.agent = agent
-        self.zk = KazooClient(uri, 10)
+        self.zk = ZKClient(uri, 10)
         self.masterSeq = None
 
     def choose(self, children):
@@ -31,7 +36,7 @@ class MasterDetector(object):
         return False
 
     def start(self):
-        adjust_kazoo_logging_level()
+        adjust_zk_logging_level()
         self.zk.start()
         try:
             ChildrenWatch(self.zk, '', self.choose)
@@ -46,7 +51,6 @@ class MasterDetector(object):
 
 def test():
     import logging
-    import time
     logging.basicConfig()
     class Agent:
         def onNewMasterDetectedMessage(self, addr):
@@ -55,7 +59,7 @@ def test():
             print 'no master'
     d = MasterDetector('zk1:2181/mesos_master2', Agent())
     d.start()
-    time.sleep(2)
+    raw_input("press any key to exit:\n")
 
 if __name__ == '__main__':
     test()
