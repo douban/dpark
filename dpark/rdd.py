@@ -362,13 +362,32 @@ class RDD(object):
         r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
         return r
 
-    def update(self, other, replace_only=False):
-        
-        def merge_value((key,(old, new))):
-            if not (replace_only and len(old) == 0):
-                yield (key, new[0]) if len(new) > 0 else (key, old[0])
-
-        return self.cogroup(other).flatMap(merge_value)
+    def update(self, other, replace_only=False, numSplits=None,
+               taskMemory=None):
+        rdd = self.mapValue(
+            lambda val: (val, 1)
+        ).union(
+            other.mapValue(
+                lambda val: (val, 2)
+            )
+        ).reduceByKey(
+            lambda (val_a, rev_a), (val_b, rev_b): (
+                (val_b if rev_b > rev_a else val_a), (rev_a + rev_b)
+            ),
+            numSplits,
+            taskMemory
+        )
+        # rev:
+        #   1: old value
+        #   2: new added value
+        #   3: new updated value
+        if replace_only:
+            rdd = rdd.filter(
+                lambda (key, (val, rev)): rev != 2
+            )
+        return rdd.mapValue(
+            lambda (val, rev): val
+        )
 
     def join(self, other, numSplits=None, taskMemory=None):
         return self._join(other, (), numSplits, taskMemory)
