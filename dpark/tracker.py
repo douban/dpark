@@ -48,8 +48,10 @@ class TrackerServer(object):
         sock = env.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopTrackerMessage())
+        confirm_msg = sock.recv_pyobj()
         sock.close()
         self.thread.join()
+        return confirm_msg
 
     def get(self, key):
         return self.locs.get(key, [])
