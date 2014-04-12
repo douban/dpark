@@ -1,3 +1,7 @@
+# DPark
+
+![travis-ci status](https://travis-ci.org/douban/dpark.svg)
+
 DPark is a Python clone of Spark, MapReduce(R) alike computing
 framework supporting iterative computation.
 
