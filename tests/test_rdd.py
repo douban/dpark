@@ -91,23 +91,37 @@ class TestRDD(unittest.TestCase):
         # update
         rdd4 = self.sc.makeRDD([('foo', 1), ('wtf', 233)])
         rdd5 = self.sc.makeRDD([('foo', 2), ('bar', 3), ('wtf', None)])
+        rdd6 = self.sc.makeRDD([('dup', 1), ('dup', 2), ('duq', 3), ('duq', 4),
+                                ('foo', 5)])
+        rdd7 = self.sc.makeRDD([('duq', 6), ('duq', 7), ('duq', 8), ('dup', 9),
+                                ('bar', 10)])
+        dct = rdd6.update(rdd7).collectAsMap()
+        dct2 = rdd7.update(rdd6).collectAsMap()
 
         self.assertEqual(
-                rdd4.update(rdd5, replace_only=True).collectAsMap(),
-                dict([('foo', 2), ('wtf', None)])
+            rdd4.update(rdd5, replace_only=True).collectAsMap(),
+            dict([('foo', 2), ('wtf', None)])
         )
         self.assertEqual(
-                rdd5.update(rdd4, replace_only=True).collectAsMap(),
-                dict([('foo', 1), ('bar', 3), ('wtf', 233)])
+            rdd5.update(rdd4, replace_only=True).collectAsMap(),
+            dict([('foo', 1), ('bar', 3), ('wtf', 233)])
         )
         self.assertEqual(
-                rdd4.update(rdd5).collectAsMap(),
-                dict([('foo', 2), ('bar', 3), ('wtf', None)])
+            rdd4.update(rdd5).collectAsMap(),
+            dict([('foo', 2), ('bar', 3), ('wtf', None)])
         )
         self.assertEqual(
-                rdd5.update(rdd4).collectAsMap(),
-                dict([('foo', 1), ('bar', 3), ('wtf', 233)])
+            rdd5.update(rdd4).collectAsMap(),
+            dict([('foo', 1), ('bar', 3), ('wtf', 233)])
         )
+        self.assertEqual(dct.get('dup'), 9)
+        self.assertEqual(dct.get('foo'), 5)
+        self.assertTrue(dct.get('duq') in {6, 7, 8})
+        self.assertEqual(dct.get('bar'), 10)
+        self.assertTrue(dct2.get('dup') in {1, 2})
+        self.assertEqual(dct2.get('foo'), 5)
+        self.assertTrue(dct2.get('duq') in {3, 4})
+        self.assertEqual(dct2.get('bar'), 10)
 
     def test_accumulater(self):
         d = range(4)
