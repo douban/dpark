@@ -365,22 +365,22 @@ class RDD(object):
     def update(self, other, replace_only=False, numSplits=None,
                taskMemory=None):
         rdd = self.mapValue(
-            lambda val: (val, 1)
+            lambda val: (val, 1)  # bin('01') for old rdd
         ).union(
             other.mapValue(
-                lambda val: (val, 2)
+                lambda val: (val, 2)  # bin('10') for new rdd
             )
         ).reduceByKey(
             lambda (val_a, rev_a), (val_b, rev_b): (
-                (val_b if rev_b > rev_a else val_a), (rev_a + rev_b)
+                (val_b if rev_b > rev_a else val_a), (rev_a | rev_b)
             ),
             numSplits,
             taskMemory
         )
         # rev:
-        #   1: old value
-        #   2: new added value
-        #   3: new updated value
+        #   1(01): old value
+        #   2(10): new added value
+        #   3(11): new updated value
         if replace_only:
             rdd = rdd.filter(
                 lambda (key, (val, rev)): rev != 2
