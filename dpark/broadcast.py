@@ -301,6 +301,7 @@ class Broadcast:
         self.uuid = str(uuid.uuid4())
         self.value = value
         self.block_num = _manager.register(self.uuid, self.value)
+        self.bytes = self.block_num * BLOCK_SIZE
         logger.info("broadcast %s in %d blocks", self.uuid, self.block_num)
 
     def clear(self):

@@ -72,6 +72,8 @@ class TestRDD(unittest.TestCase):
                 [(1, (4,None)), (2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
         self.assertEqual(sorted(nums.rightOuterJoin(nums2).collect()),
                 [(2, (5,1)), (3, (6,2)), (3, (7,2)), (4,(None,3))])
+        self.assertEqual(nums.innerJoin(nums2).collect(), 
+                [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
         self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
