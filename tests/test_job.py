@@ -1,5 +1,4 @@
 import sys
-import dpark.pymesos.mesos_pb2 as mesos_pb2
 import unittest
 import socket
 
