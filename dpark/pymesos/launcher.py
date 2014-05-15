@@ -16,7 +16,7 @@ class Launcher(object):
         2) The executor is fetched off HDFS if necessary by fetchExecutor().
         3) Environment variables are set by setupEnvironment().
         4) We switch to the framework's user in switchUser().
-        
+
         Isolation modules that wish to override the default behaviour can subclass
         Launcher and override some of the methods to perform extra actions.
     """
@@ -34,11 +34,11 @@ class Launcher(object):
             sys.stderr = open('stderr', 'w')
         command = self.commandInfo.value
         env = self.setupEnvironment()
-        p = subprocess.Popen(['/bin/sh', '-c', command], stdout=sys.stdout, 
+        p = subprocess.Popen(['/bin/sh', '-c', command], stdout=sys.stdout,
                 stderr=sys.stderr, env=env)
         p.wait()
 
-    def setupEnvironment(self):        
+    def setupEnvironment(self):
         env = {}
         for en in self.commandInfo.environment.variables:
             env[en.name] = en.value

@@ -24,7 +24,7 @@ class LocalFileShuffle:
     shuffleDir = None
     @classmethod
     def initialize(cls, isMaster):
-        cls.shuffleDir = [p for p in env.get('WORKDIR') 
+        cls.shuffleDir = [p for p in env.get('WORKDIR')
                 if os.path.exists(os.path.dirname(p))]
         if not cls.shuffleDir:
             return
@@ -75,7 +75,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         else:
             url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
-        
+
         tries = 2
         while True:
             try:
@@ -83,7 +83,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                 if f.code == 404:
                     f.close()
                     raise IOError("not found")
-                
+
                 d = f.read()
                 flag = d[:1]
                 length, = struct.unpack("I", d[1:5])
@@ -103,7 +103,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                         shuffleId, reduceId, part, url, e)
                 tries -= 1
                 if not tries:
-                    logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s", 
+                    logger.warning("Fetch failed for shuffle %d, reduce %d, %d, %s, %s",
                             shuffleId, reduceId, part, url, e)
                     from dpark.schedule import FetchFailed
                     raise FetchFailed(uri, shuffleId, part, reduceId)
@@ -124,7 +124,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self.nthreads = nthreads
         self.start()
 
-    def start(self):        
+    def start(self):
         self.requests = Queue.Queue()
         self.results = Queue.Queue(self.nthreads)
         self.threads = [spawn(self._worker_thread) for i in range(self.nthreads)]
@@ -153,7 +153,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         random.shuffle(parts)
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
-        
+
         from dpark.schedule import FetchFailed
         for i in xrange(len(serverUris)):
             r = self.results.get()
@@ -161,7 +161,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
                 self.stop() # restart
                 self.start()
                 raise r
-            
+
             sid, rid, part, d = r
             func(d.iteritems())
 

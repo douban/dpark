@@ -34,7 +34,7 @@ class DparkEnv:
             if isinstance(roots, str):
                 roots = roots.split(',')
             if isLocal:
-                root = roots[0] # for local mode 
+                root = roots[0] # for local mode
                 if not os.path.exists(root):
                     os.mkdir(root, 0777)
                     os.chmod(root, 0777) # because of umask
@@ -100,7 +100,7 @@ class DparkEnv:
             self.trackerServer.stop()
         from dpark.broadcast import stop_manager
         stop_manager()
-       
+
         logger.debug("cleaning workdir ...")
         for d in self.workdir:
             shutil.rmtree(d, True)

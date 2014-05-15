@@ -45,11 +45,11 @@ class Executor(object):
         self.framework_id = framework_id
         self.info = info
         self.directory = directory
-        
+
         self.id = info.executor_id
         self.resources = Resources.new(info.resources)
         self.uuid = os.urandom(16)
-        
+
         self.pid = None
         self.shutdown = False
         self.launchedTasks = {}
@@ -123,7 +123,7 @@ class Framework(object):
             for executor in self.executors.values():
                 if tid in executor.queuedTasks or tid in executor.launchedTasks:
                     return executor
-            return 
+            return
         return self.executors.get(exec_id.value)
     getExecutor = get_executor
 
@@ -150,7 +150,7 @@ class IsolationModule(object):
     def launchExecutor(self, framework_id, info, executor_info, directory, resources):
         fid = framework_id.value
         eid = executor_info.executor_id.value
-        logger.info("Launching %s (%s) in %s with resources %s for framework %s", 
+        logger.info("Launching %s (%s) in %s with resources %s for framework %s",
                 eid, executor_info.command.value, directory, resources, fid)
         pid = os.fork()
         assert pid >= 0
@@ -163,7 +163,7 @@ class IsolationModule(object):
         else:
             #pid = os.setsid()
             # copy UPID of slave
-            launcher = Launcher(framework_id, executor_info.executor_id, executor_info.command, 
+            launcher = Launcher(framework_id, executor_info.executor_id, executor_info.command,
                     info.user, directory, self.slave)
             launcher.run()
 
@@ -175,7 +175,7 @@ class IsolationModule(object):
         pid = pinfo.pid
         os.kill(pid, signal.SIGKILL)
         # remove when waitpid()
-        #self._removeExecutor(pinfo) 
+        #self._removeExecutor(pinfo)
 
     def removeExecutor(self, e):
         logger.info("remove executor: %s", e)
@@ -223,12 +223,12 @@ class Slave(Process):
 
         self.id = None
         self.isolation = IsolationModule()
-        self.info = self.getSlaveInfo() 
+        self.info = self.getSlaveInfo()
         self.master = UPID('master', options.master)
         self.frameworks = {}
         self.startTime = time.time()
         self.connected = False
-   
+
     def getSlaveInfo(self):
         info = SlaveInfo()
         info.hostname = socket.gethostname()
@@ -253,7 +253,7 @@ class Slave(Process):
 
     def getFramework(self, framework_id):
         return self.frameworks.get(framework_id.value)
-    
+
     def onNewMasterDetectedMessage(self, pid):
         self.master = UPID(pid)
         self.register()
@@ -287,7 +287,7 @@ class Slave(Process):
         self.connected = True
 
     def onRunTaskMessage(self, framework_id, framework_info, pid, task):
-        logger.info("Got assigned task %s for framework %s", 
+        logger.info("Got assigned task %s for framework %s",
                 task.task_id.value, framework_id.value)
         fid = framework_id.value
         if fid not in self.frameworks:
@@ -333,7 +333,7 @@ class Slave(Process):
             update.timestamp = time.time()
             update.uuid = os.urandom(16)
             return self.send(self.master, msg)
-        
+
         executor = framework.getExecutor(task_id)
         if not executor.pid:
             executor.removeTask(task_id)
@@ -392,12 +392,12 @@ class Slave(Process):
         for task in executor.launchedTasks.values():
             if not isTerminalTaskState(task.state):
                 isCommandExecutor = not task.HasField('executor_id')
-                self.transitionLiveTask(task.task_id, executor_id, 
+                self.transitionLiveTask(task.task_id, executor_id,
                     framework_id, isCommandExecutor, status)
 
         for task in executor.queuedTasks.values():
             isCommandExecutor = task.HasField('command')
-            self.transitionLiveTask(task.task_id, executor_id, 
+            self.transitionLiveTask(task.task_id, executor_id,
                     framework_id, isCommandExecutor, status)
 
         if not isCommandExecutor:
@@ -413,7 +413,7 @@ class Slave(Process):
         framework = self.getFramework(framework_id)
         if not framework:
             # TODO shutdown executor
-            return 
+            return
         executor = framework.getExecutor(executor_id)
         if not executor or executor.pid or executor.shutdown:
             # TODO shutdown executor
@@ -458,7 +458,7 @@ class Slave(Process):
         self.send(self.master, msg)
 
         framework.updates[update.uuid] = update
-    
+
     def onStatusUpdateAcknowledgementMessage(self, slave_id, framework_id, task_id, uuid):
         framework = self.getFramework(framework_id)
         if framework and uuid in framework.updates:
@@ -481,7 +481,7 @@ class Slave(Process):
         msg.executor_id.MergeFrom(executor_id)
         msg.data = data
         self.send(executor.pid, msg)
-    
+
     def onExecutorToFrameworkMessage(self, slave_id, framework_id, executor_id, data):
         framework = self.getFramework(framework_id)
         if not framework:
@@ -539,20 +539,20 @@ class Slave(Process):
         # check
         framework.updates[update.uuid] = update
 
-    def transitionLiveTask(self, task_id, executor_id, framework_id, 
+    def transitionLiveTask(self, task_id, executor_id, framework_id,
             isCommandExecutor, status):
         if isCommandExecutor:
-            update = self.createStatusUpdate(task_id, executor_id, 
+            update = self.createStatusUpdate(task_id, executor_id,
                     framework_id, TASK_FAILED, "Executor running the task's command failed")
         else:
-            update = self.createStatusUpdate(task_id, executor_id, 
+            update = self.createStatusUpdate(task_id, executor_id,
                     framework_id, TASK_LOST, "Executor exited")
         self.statusUpdate(update)
 
     def createUniqueWorkDirectory(self, framework_id, executor_id):
         root = self.options.work_dir
-        path = os.path.join(root, 'slaves', self.id.value, 
-                'frameworks', framework_id.value, 
+        path = os.path.join(root, 'slaves', self.id.value,
+                'frameworks', framework_id.value,
                 'executors', executor_id.value, 'runs')
         for i in range(10000):
             p = os.path.join(path, str(i))
@@ -582,7 +582,7 @@ def main():
                     level=options.quiet and logging.ERROR
                         or options.verbose and logging.DEBUG
                         or logging.WARNING)
-    
+
     slave = Slave(options)
     slave.run()
 

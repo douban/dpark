@@ -1,12 +1,12 @@
 try:
     from zookeeper import ZooKeeperException as ZookeeperError
-    from zkpython import ZKClient, ChildrenWatch, DataWatch 
+    from zkpython import ZKClient, ChildrenWatch, DataWatch
     def adjust_zk_logging_level():
         pass
 except ImportError:
     from kazoo.client import KazooClient as ZKClient
     from kazoo.recipe.watchers import ChildrenWatch, DataWatch
-    from kazoo.exceptions import ZookeeperError 
+    from kazoo.exceptions import ZookeeperError
     def adjust_zk_logging_level():
         import logging
         import kazoo

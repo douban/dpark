@@ -8,9 +8,9 @@ import socket
 from process import UPID, Process, async
 
 from mesos_pb2 import TASK_LOST, MasterInfo
-from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage, 
-        DeactivateFrameworkMessage, UnregisterFrameworkMessage, 
-        ResourceRequestMessage, ReviveOffersMessage, LaunchTasksMessage, KillTaskMessage, 
+from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage,
+        DeactivateFrameworkMessage, UnregisterFrameworkMessage,
+        ResourceRequestMessage, ReviveOffersMessage, LaunchTasksMessage, KillTaskMessage,
         StatusUpdate, StatusUpdateAcknowledgementMessage, FrameworkToExecutorMessage)
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ class MesosSchedulerDriver(Process):
             self.master = UPID('master@%s:%s' % (ip, info.port))
         except:
             self.master = UPID(data)
-            
+
         self.connected = False
         self.register()
 
@@ -79,7 +79,7 @@ class MesosSchedulerDriver(Process):
     def register(self):
         if self.connected or self.aborted:
             return
-        
+
         if self.master:
             if not self.framework_id.value:
                 msg = RegisterFrameworkMessage()
@@ -89,7 +89,7 @@ class MesosSchedulerDriver(Process):
                 msg.framework.MergeFrom(self.framework)
                 msg.failover = True
             self.send(self.master, msg)
-            
+
         self.delay(2, self.register)
 
     def onFrameworkRegisteredMessage(self, framework_id, master_info):
@@ -121,7 +121,7 @@ class MesosSchedulerDriver(Process):
 
     def onStatusUpdateMessage(self, update, pid=''):
         assert self.framework_id == update.framework_id
-        
+
         if pid and not pid.endswith('0.0.0.0:0'):
             reply = StatusUpdateAcknowledgementMessage()
             reply.framework_id.MergeFrom(self.framework_id)
@@ -200,7 +200,7 @@ class MesosSchedulerDriver(Process):
                 update.uuid = ''
                 self.onStatusUpdateMessage(update)
             return
-        
+
         msg = LaunchTasksMessage()
         msg.framework_id.MergeFrom(self.framework_id)
         msg.offer_id.MergeFrom(offer_id)

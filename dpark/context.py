@@ -50,10 +50,10 @@ class DparkContext(object):
     def init(self):
         if self.initialized:
             return
-        
+
         options = parse_options()
         self.options = options
-        setup_conf(options) 
+        setup_conf(options)
 
         master = self.master or options.master
         if master == 'local':
@@ -73,7 +73,7 @@ class DparkContext(object):
                     master = master[master.rfind('//')+2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
-        
+
             if ':' not in master:
                 master += ':5050'
             self.scheduler = MesosScheduler(master, options)
@@ -164,7 +164,7 @@ class DparkContext(object):
 
     def table(self, path, **kwargs):
         dpath = path[0] if isinstance(path, (list, tuple)) else path
-        for root, dirs, names in walk(dpath): 
+        for root, dirs, names in walk(dpath):
             if '.field_names' in names:
                 p = os.path.join(root, '.field_names')
                 fields = open(p).read().split('\t')

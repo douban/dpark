@@ -86,17 +86,17 @@ class TestBasic(TestDStream):
 
     def test_filter(self):
         d = [range(i*4, i*4+4) for i in range(4)]
-        self._testOperation(d, None, lambda x: x.filter(lambda y: y%2==0), 
+        self._testOperation(d, None, lambda x: x.filter(lambda y: y%2==0),
             [[i for i in row if i%2 ==0] for row in d])
 
     def test_glom(self):
         d = [range(i*4, i*4+4) for i in range(4)]
-        r = [[row[:2], row[2:]] for row in d] 
+        r = [[row[:2], row[2:]] for row in d]
         self._testOperation(d, None, lambda s: s.glom().map(lambda x:list(x)), r)
 
     def test_mapPartitions(self):
         d = [range(i*4, i*4+4) for i in range(4)]
-        r = [[sum(row[:2]), sum(row[2:])] for row in d] 
+        r = [[sum(row[:2]), sum(row[2:])] for row in d]
         self._testOperation(d, None, lambda s: s.mapPartitions(lambda l: [reduce(lambda x,y:x+y, l)]), r)
 
     def test_groupByKey(self):
@@ -127,7 +127,7 @@ class TestBasic(TestDStream):
 
     def test_updateStateByKey(self):
         d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
-        r = [[("a", 1)], 
+        r = [[("a", 1)],
              [("a", 2), ("b", 1)],
              [("a", 3), ("b", 2), ("c", 1)],
              [("a", 4), ("b", 3), ("c", 1)],
@@ -152,12 +152,12 @@ class TestBasic(TestDStream):
 
 class TestWindow(TestDStream):
     largerSlideInput = [
-        [("a", 1)], 
-        [("a", 2)], 
-        [("a", 3)], 
-        [("a", 4)], 
-        [("a", 5)], 
-        [("a", 6)], 
+        [("a", 1)],
+        [("a", 2)],
+        [("a", 3)],
+        [("a", 4)],
+        [("a", 5)],
+        [("a", 6)],
         [],
         [],
     ]
@@ -224,11 +224,11 @@ class TestWindow(TestDStream):
         [("a", 1), ("b", 0), ("c", 0)],
     ]
     def _testWindow(self, input, expectedOutput, window=4, slide=2):
-        self._testOperation(input, None, lambda s: s.window(window, slide), expectedOutput, 
-            len(expectedOutput) * slide / 2, useSet=True) 
-    
+        self._testOperation(input, None, lambda s: s.window(window, slide), expectedOutput,
+            len(expectedOutput) * slide / 2, useSet=True)
+
     def _testReduceByKeyAndWindow(self, input, expectedOutput, window=4, slide=2):
-        self._testOperation(input, None, lambda s: s.reduceByKeyAndWindow(lambda x,y:x+y, None, window, slide), 
+        self._testOperation(input, None, lambda s: s.reduceByKeyAndWindow(lambda x,y:x+y, None, window, slide),
             expectedOutput, len(expectedOutput) * slide / 2, useSet=True)
 
     def _testReduceByKeyAndWindowInv(self, input, expectedOutput, window=4, slide=2):
@@ -238,16 +238,16 @@ class TestWindow(TestDStream):
 
     def test_window(self):
         # basic window
-        self._testWindow([[i] for i in range(6)], 
+        self._testWindow([[i] for i in range(6)],
             [range(max(i-1, 0), i+1) for i in range(6)])
         # tumbling window
-        self._testWindow([[i] for i in range(6)], 
+        self._testWindow([[i] for i in range(6)],
             [range(i*2, i*2+2) for i in range(3)], 4, 4)
         # large window
-        self._testWindow([[i] for i in range(6)], 
+        self._testWindow([[i] for i in range(6)],
             [[0, 1], range(4), range(2, 6), range(4, 6)], 8, 4)
         # non-overlapping window
-        self._testWindow([[i] for i in range(6)], 
+        self._testWindow([[i] for i in range(6)],
             [range(1, 3), range(4, 6)], 4, 6)
 
     def test_reduceByKeyAndWindow(self):
@@ -260,17 +260,17 @@ class TestWindow(TestDStream):
         self._testReduceByKeyAndWindow(
             [[("a", 1)], [("a", 1)]],
             [[("a", 1)], [("a", 2)]],
-        ) 
+        )
         # new key added to window
         self._testReduceByKeyAndWindow(
             [[("a", 1)], [("a", 1), ("b", 1)]],
             [[("a", 1)], [("a", 2), ("b", 1)]],
-        ) 
+        )
         # new removed from window
         self._testReduceByKeyAndWindow(
             [[("a", 1)], [("a", 1)], [], []],
             [[("a", 1)], [("a", 2)], [("a", 1)], []],
-        ) 
+        )
         # larger slide time
         self._testReduceByKeyAndWindow(
             self.largerSlideInput, self.largerSlideReduceOutput, 8, 4)
@@ -287,12 +287,12 @@ class TestWindow(TestDStream):
         self._testReduceByKeyAndWindowInv(
             [[("a", 1)], [("a", 1)]],
             [[("a", 1)], [("a", 2)]],
-        ) 
+        )
         # new key added to window
         self._testReduceByKeyAndWindowInv(
             [[("a", 1)], [("a", 1), ("b", 1)]],
             [[("a", 1)], [("a", 2), ("b", 1)]],
-        ) 
+        )
         # new removed from window
         self._testReduceByKeyAndWindowInv(
             [[], []],
@@ -303,7 +303,7 @@ class TestWindow(TestDStream):
             [[("a", 1)], [("a", 2)], [("a", 1)], [("a", 0)]],
         )
         # large slide time
-        self._testReduceByKeyAndWindowInv(self.largerSlideInput, 
+        self._testReduceByKeyAndWindowInv(self.largerSlideInput,
             self.largerSlideReduceOutput, 8, 4)
         # big test
         self._testReduceByKeyAndWindowInv(self.bigInput, self.bigReduceInvOutput)

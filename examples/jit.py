@@ -1,5 +1,5 @@
 '''
-    Notice: 
+    Notice:
     1. The function for jit should locate in mfs
     2. For the usage of jit types and signatures, please refer Numba documentation <http://numba.github.com/numba-doc/0.10/index.html>
 '''

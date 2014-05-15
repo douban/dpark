@@ -11,7 +11,7 @@ from dpark.dependency import Aggregator, OneToOneDependency
 
 try:
     from pyhll import HyperLogLog
-except ImportError:    
+except ImportError:
     from dpark.hyperloglog import HyperLogLog
 
 from hotcounter import HotCounter
@@ -25,8 +25,8 @@ SimpleAggs = {
 
 FullAggs = {
         'avg': (
-            lambda v:(v, 1), 
-            lambda (s,c), v: (s+v, c+1), 
+            lambda v:(v, 1),
+            lambda (s,c), v: (s+v, c+1),
             lambda (s1,c1), (s2,c2):(s1+s2, c1+c2),
             lambda (s,c): float(s)/c,
          ),
@@ -126,7 +126,7 @@ class TableRDD(DerivedRDD):
                 es[i] = '_v[%d]' % self.fields.index(es[i])
             elif es[i] in named_fields:
                 es[i] = '_v[%d]' % named_fields.index(es[i])
-        return ''.join(es) 
+        return ''.join(es)
 
     def _create_expression(self, e):
         if callable(e):
@@ -149,7 +149,7 @@ class TableRDD(DerivedRDD):
 
         selector = [self._create_expression(e) for e in fields] + \
             [self._create_expression(named_fields[n]) for n in new_fields[len(fields):]]
-        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector))) 
+        _select = eval('lambda _v:(%s,)' % (','.join(e for e in selector)))
 
         need_attr = any(callable(f) for f in named_fields.values())
         return (need_attr and self or self.prev).map(_select).asTable(new_fields, self.name)
@@ -173,10 +173,10 @@ class TableRDD(DerivedRDD):
                     '%s[1](%s, %s)' % (func_name, ag, args),
                     '%s[2](_x[%d], _y[%d])' % (func_name, index, index),
                     '%s[3](_x[%d])' % (func_name, index),)
-        elif func_name:    
+        elif func_name:
             raise Exception("invalid aggregator function: %s" % func_name)
         else: # group by
-            return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index), 
+            return ('[%s]' % args, '_x[%d].append(%s) or _x[%d]' % (index, args, index),
                     '_x[%d] + _y[%d]' % (index, index), ag)
 
     def selectOne(self, *fields, **named_fields):
@@ -216,10 +216,10 @@ class TableRDD(DerivedRDD):
 
     def groupBy(self, keys, *fields, **kw):
         numSplits = kw.pop('numSplits', None)
-       
+
         if not isinstance(keys, (list, tuple)):
             keys = [keys]
-        key_names = [self._create_field_name(e) for e in keys] 
+        key_names = [self._create_field_name(e) for e in keys]
         expr = ','.join(self._create_expression(e) for e in keys)
         gen_key = eval('lambda _v:(%s,)' % expr)
 
@@ -280,7 +280,7 @@ class TableRDD(DerivedRDD):
         def key(v):
             return tuple(v[i] for i in keys)
 
-        if len(self) <= 16: # maybe grouped 
+        if len(self) <= 16: # maybe grouped
             data = sorted(self.prev.collect(), key=key, reverse=reverse)
             return self.ctx.makeRDD(data).asTable(self.fields, self.name)
 
@@ -306,7 +306,7 @@ class TableRDD(DerivedRDD):
         for type in kw:
             if 'join' not in type:
                 continue
-            
+
             table, cond = re.split(r' on ', kw[type], re.I)
             if '(' in table:
                 last_index = table.rindex(')')
@@ -339,7 +339,7 @@ class TableRDD(DerivedRDD):
         else:
             r = self
 
-        # select needed cols 
+        # select needed cols
         #r = self.select(*[n for n in self.fields if n in sql])
         cols = [n.strip() for n in self._split_expr(kw['select'])]
 
@@ -352,7 +352,7 @@ class TableRDD(DerivedRDD):
             if asTable:
                 rs = self.ctx.makeRDD(rs).asTable([field, 'count'], self.name)
             return rs
-            
+
         elif 'group by' in kw:
             keys = [n.strip() for n in kw['group by'].split(',')]
             values = dict([(r._create_field_name(n), n) for n in cols if n not in keys])
@@ -405,9 +405,9 @@ def create_table(ctx, name, expr):
         t.name = name
         CachedTables[name] = t
         return t
-    
+
     # TODO: try to find .fields
-    
+
     # guess format
     row = t.first()
     if isinstance(row, str):

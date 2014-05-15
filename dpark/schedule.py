@@ -18,7 +18,7 @@ import pymesos as mesos
 import pymesos.mesos_pb2 as mesos_pb2
 
 from dpark.util import compress, decompress, spawn, getuser
-from dpark.dependency import NarrowDependency, ShuffleDependency 
+from dpark.dependency import NarrowDependency, ShuffleDependency
 from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
 from dpark.job import SimpleJob
@@ -292,7 +292,7 @@ class DAGScheduler(Scheduler):
                 else:
                     time.sleep(0.1)
                 continue
-               
+
             task, reason = evt.task, evt.reason
             stage = self.idToStage[task.stageId]
             if stage not in pendingTasks: # stage from other job
@@ -396,10 +396,10 @@ class MultiProcessScheduler(LocalScheduler):
 
     def submitTasks(self, tasks):
         if not tasks:
-            return 
+            return
 
         logger.info("Got a job with %d tasks: %s", len(tasks), tasks[0].rdd)
-        
+
         total, self.finished, start = len(tasks), 0, time.time()
         def callback(args):
             logger.debug("got answer: %s", args)
@@ -488,7 +488,7 @@ class MesosScheduler(DAGScheduler):
 
     def start(self):
         if not self.out_logger:
-            self.out_logger = self.start_logger(sys.stdout) 
+            self.out_logger = self.start_logger(sys.stdout)
         if not self.err_logger:
             self.err_logger = self.start_logger(sys.stderr)
 
@@ -514,12 +514,12 @@ class MesosScheduler(DAGScheduler):
             while self.started:
                 now = time.time()
                 if not self.activeJobs and now - self.last_finish_time > MAX_IDLE_TIME:
-                    logger.info("stop mesos scheduler after %d seconds idle", 
+                    logger.info("stop mesos scheduler after %d seconds idle",
                             now - self.last_finish_time)
                     self.stop()
                     break
                 time.sleep(1)
-        
+
         spawn(check)
 
     def start_logger(self, output):
@@ -549,7 +549,7 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def reregistered(self, driver, masterInfo):
-        logger.warning("re-connect to mesos master %s:%s(%s)", 
+        logger.warning("re-connect to mesos master %s:%s(%s)",
             int2ip(masterInfo.ip), masterInfo.port, masterInfo.id)
 
     @safe
@@ -594,7 +594,7 @@ class MesosScheduler(DAGScheduler):
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
         logger.info("Got job %d with %d tasks: %s", job.id, len(tasks), tasks[0].rdd)
-      
+
         need_revive = self.started
         if not self.started:
             self.start_driver()
@@ -602,7 +602,7 @@ class MesosScheduler(DAGScheduler):
             self.lock.release()
             time.sleep(0.01)
             self.lock.acquire()
-        
+
         if need_revive:
             self.requestMoreResources()
 
@@ -654,7 +654,7 @@ class MesosScheduler(DAGScheduler):
                     self.jobTasks[job.id].add(tid)
                     self.taskIdToJobId[tid] = job.id
                     self.taskIdToSlaveId[tid] = sid
-                    self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1 
+                    self.slaveTasks[sid] = self.slaveTasks.get(sid, 0)  + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
                     launchedTask = True
@@ -670,9 +670,9 @@ class MesosScheduler(DAGScheduler):
         for o in offers:
             driver.launchTasks(o.id, tasks.get(o.id.value, []), rf)
 
-        logger.debug("reply with %d tasks, %s cpus %s mem left", 
+        logger.debug("reply with %d tasks, %s cpus %s mem left",
             sum(len(ts) for ts in tasks.values()), sum(cpus), sum(mems))
-   
+
     @safe
     def offerRescinded(self, driver, offer_id):
         logger.debug("rescinded offer: %s", offer_id)
@@ -757,7 +757,7 @@ class MesosScheduler(DAGScheduler):
                 state = mesos_pb2.TASK_FAILED
                 return job.statusUpdate(task_id, tried, mesos_pb2.TASK_FAILED, 'load failed: %s' % e)
             else:
-                return job.statusUpdate(task_id, tried, state, 
+                return job.statusUpdate(task_id, tried, state,
                     reason, result, accUpdate)
 
         # killed, lost, load failed

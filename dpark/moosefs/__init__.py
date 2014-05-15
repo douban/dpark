@@ -27,7 +27,7 @@ class MooseFS(object):
 
     def _lookup(self, parent, name):
         return self.mc.lookup(parent, name)[0]
-        
+
     def readlink(self, inode):
         target = self.symlink_cache.get(inode)
         if target is None:
@@ -69,7 +69,7 @@ class MooseFS(object):
         if not info:
             raise Exception("not found")
         return self.mc.getdirplus(info.inode)
-    
+
     def walk(self, path, followlinks=False):
         ds = [path]
         while ds:
@@ -97,7 +97,7 @@ class MooseFS(object):
                         name = target
                         target = os.path.join(root, target)
                     info = self.lookup(target)
-                
+
                 if info:
                     if info.type == TYPE_DIRECTORY:
                         if name not in dirs:

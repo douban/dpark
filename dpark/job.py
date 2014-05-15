@@ -177,7 +177,7 @@ class SimpleJob(Job):
         if self.finished[i]:
             if status == TASK_FINISHED:
                 logger.debug("Task %d is already finished, ignore it", tid)
-            return 
+            return
 
         task = self.tasks[i]
         task.status = status
@@ -223,7 +223,7 @@ class SimpleJob(Job):
             if rb > 0:
                 logger.info("read %s (%d%% localized)",
                     readable(lb+rb), lb*100/(rb+lb))
-            
+
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
@@ -265,7 +265,7 @@ class SimpleJob(Job):
                 _logger("task %s failed @ %s: %s", task.id, task.host, task)
 
         elif status == TASK_LOST:
-            logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id, 
+            logger.warning("Lost Task %d (task %d:%d:%s) %s at %s", index, self.id,
                     tid, tried, reason, task.host)
 
         self.numFailures[index] += 1
@@ -274,9 +274,9 @@ class SimpleJob(Job):
                 index, MAX_TASK_FAILURES)
             self.abort("Task %d failed more than %d times"
                 % (index, MAX_TASK_FAILURES))
-        
+
         self.launched[index] = False
-        if self.tasksLaunched == self.numTasks:    
+        if self.tasksLaunched == self.numTasks:
             self.sched.requestMoreResources()
 	    for i in xrange(len(self.blacklist)):
 	    	self.blacklist[i] = []
@@ -297,7 +297,7 @@ class SimpleJob(Job):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TASK_STARTING
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.debug("task %d timeout %.1f (at %s), re-assign it", 
+                logger.debug("task %d timeout %.1f (at %s), re-assign it",
                         task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
@@ -305,8 +305,8 @@ class SimpleJob(Job):
         if self.tasksFinished > self.numTasks * 2.0 / 3:
             scale = 1.0 * self.numTasks / self.tasksFinished
             avg = max(self.taskEverageTime, 10)
-            tasks = sorted((task.start, i, task) 
-                for i,task in enumerate(self.tasks) 
+            tasks = sorted((task.start, i, task)
+                for i,task in enumerate(self.tasks)
                 if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 used = now - task.start

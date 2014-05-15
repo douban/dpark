@@ -74,7 +74,7 @@ class BroadcastManager:
             _uuid, value = cPickle.loads(buf)
         else:
             raise RuntimeError('Unknown serialization type: %s' % type)
-   
+
         if uuid != _uuid:
             raise RuntimeError('Wrong blocks: uuid: %s, expected: %s' % (_uuid, uuid))
 
@@ -86,7 +86,7 @@ SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK = range(4)
 class P2PBroadcastManager(BroadcastManager):
     def __init__(self):
         self.published = {}
-        self.cache = Cache() 
+        self.cache = Cache()
         self.host = socket.gethostname()
         self.server_thread = None
         random.seed(os.getpid() + int(time.time()*1000)%1000)
@@ -182,7 +182,7 @@ class P2PBroadcastManager(BroadcastManager):
         while not all(bitmap):
             guide_sock.send_pyobj((GUIDE_SOURCES, (uuid, self.server_addr, bitmap)))
             sources = guide_sock.recv_pyobj()
-            logger.debug("received SourceInfo from master: %s", sources.keys()) 
+            logger.debug("received SourceInfo from master: %s", sources.keys())
             local = []
             remote = []
             for addr, _bitmap in sources.iteritems():
@@ -195,7 +195,7 @@ class P2PBroadcastManager(BroadcastManager):
                 indices = [i for i in xrange(block_num) if not bitmap[i] and _bitmap[i]]
                 if indices:
                     _fetch(addr, indices)
-            
+
             random.shuffle(remote)
             for addr, _bitmap in remote:
                 indices = [i for i in xrange(block_num) if not bitmap[i] and _bitmap[i]]
@@ -275,7 +275,7 @@ class P2PBroadcastManager(BroadcastManager):
                 self.clear(uuid)
 
         return server_addr, spawn(run)
- 
+
     def stop_server(self, addr):
         req = env.ctx.socket(zmq.REQ)
         req.setsockopt(zmq.LINGER, 0)
@@ -321,5 +321,5 @@ class Broadcast:
         if value is None:
             raise RuntimeError("fetch broadcast failed")
         self.value = value
-        return value 
+        return value
 

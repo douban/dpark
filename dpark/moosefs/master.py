@@ -225,7 +225,7 @@ class MasterConn:
         rcmd, size, pid = unpack("III", h)
         if rcmd != cmd+1 or pid != self.packetid or size <= 4:
             self.close()
-            raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4", 
+            raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4",
                 rcmd, cmd+1, pid, self.packetid, size)
         if len(d) == 1 and ord(d[0]) != 0:
             raise Error(ord(d[0]))
@@ -249,7 +249,7 @@ class MasterConn:
 
             self.dstat[parent] = self.dstat.get(parent, 0) + 1
 
-        ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent,
                 uint8(len(name)), name, 0, 0)
         if len(ans) == 1:
             return None, ""
@@ -298,7 +298,7 @@ class MasterConn:
         flag = GETDIR_FLAG_WITHATTR
         if ENABLE_DCACHE:
             flag |= GETDIR_FLAG_DIRCACHE
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode, 
+        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
                 self.uid, self.gid, uint8(flag))
         p = 0
         infos = {}

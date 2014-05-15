@@ -128,7 +128,7 @@ class Bloomfilter(object):
     k: Number of hash functions
     m = ceil((n * log(p)) / log(1.0 / (pow(2.0, log(2.0)))))
     k = round(log(2.0) * m / n)
-    """ 
+    """
     @staticmethod
     def calculate_parameters(n, p):
         m = int(math.ceil(n * math.log(p) * -2.0813689810056073))
@@ -138,7 +138,7 @@ class Bloomfilter(object):
 
     '''
     we're using only two hash functions with different settings, as described
-    by Kirsch & Mitzenmacher: http://www.eecs.harvard.edu/~kirsch/pubs/bbbf/esa06.pdf 
+    by Kirsch & Mitzenmacher: http://www.eecs.harvard.edu/~kirsch/pubs/bbbf/esa06.pdf
     '''
     def _get_offsets(self, obj):
         hash_1 = portable_hash(obj)

@@ -30,7 +30,7 @@ class HyperLogLog(object):
         self.big = 1L << (HASH_LEN - b - 1)
         self.big2 = 1L << (HASH_LEN - b - 2)
         self.bitcount_arr = [1L << i for i in range(HASH_LEN - b + 1)]
-    
+
     @staticmethod
     def _get_alpha(b):
         assert 4 <= b <= 16, 'b=%d should be in range [4,16]' % b
@@ -38,7 +38,7 @@ class HyperLogLog(object):
         if b <= 6:
             return alpha[b-4]
         return 0.7213 / (1.0 + 1.079 / (1 << b))
-    
+
     def _get_rho(self, w):
         # fast path
         if w > self.big:
@@ -66,7 +66,7 @@ class HyperLogLog(object):
         h = self._get_rho(w)
         if h > self.M[j]:
             self.M[j] = h
-        
+
     def update(self, other):
         if other.M is None:
             if self.M is None:

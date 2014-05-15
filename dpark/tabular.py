@@ -107,7 +107,7 @@ class AdaptiveIndex(object):
                 self.index[value] = BitIndex()
             index = self.index[value]
             index.set(position)
-        
+
         if self.index_type == BLOOMFILTER_INDEX:
             self.index.add([(value, position)])
             assert (value, position) in self.index
@@ -155,7 +155,7 @@ class TabularRDD(RDD):
                 for n in sorted(names):
                     if not n.startswith('.'):
                         yield os.path.join(root, n)
-                        
+
         else:
             yield path
 
@@ -249,7 +249,7 @@ class FilteredByIndexRDD(RDD):
 
         rdd = ParallelCollection(self.ctx, sp_dict.items(), len(sp_dict))
         return rdd.flatMap(_filter).collect()
-        
+
     def compute(self, split):
         for t in self.rdd.iterator(split):
             for k, v in self.filters.iteritems():
@@ -289,7 +289,7 @@ class TabularFileRDD(TextFileRDD):
             stripe_id = start / STRIPE_SIZE
             f.seek(footer_fields_offset)
             _fields = marshal.loads(decompress(f.read(footer_fields_size)))
-            
+
             if self.fields is None:
                 field_ids = range(len(_fields))
                 field_names = _fields
@@ -333,7 +333,7 @@ class OutputTabularRDD(RDD):
 
         if len(set(field_names)) != len(field_names):
             raise ValueError('duplicated field names')
-        
+
         self.fields = map(str, field_names)
         if isinstance(indices, types.StringTypes):
             indices = indices.replace(',', ' ').split()
@@ -346,7 +346,7 @@ class OutputTabularRDD(RDD):
                     raise ValueError('index field %s not in field list' % i)
 
                 self.indices.add(i)
-                
+
         prev_splits = len(rdd)
         numSplits = min(numSplits or prev_splits, prev_splits)
         self.numSplits = min(numSplits, prev_splits)
@@ -411,7 +411,7 @@ class OutputTabularRDD(RDD):
                     compressed = [compress(marshal.dumps(tuple(b))) for b in buffers]
                     _sizes = tuple(map(len, compressed))
                     write_stripe(f, compressed, _sizes, False)
-                    
+
                 footer_indices = zlib.compress(cPickle.dumps(indices, -1))
                 footer_fields = compress(marshal.dumps(self.fields))
                 f.write(footer_indices)

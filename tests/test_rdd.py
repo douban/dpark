@@ -72,7 +72,7 @@ class TestRDD(unittest.TestCase):
                 [(1, (4,None)), (2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
         self.assertEqual(sorted(nums.rightOuterJoin(nums2).collect()),
                 [(2, (5,1)), (3, (6,2)), (3, (7,2)), (4,(None,3))])
-        self.assertEqual(nums.innerJoin(nums2).collect(), 
+        self.assertEqual(nums.innerJoin(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
         self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
@@ -85,7 +85,7 @@ class TestRDD(unittest.TestCase):
                 [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
         nums3 = self.sc.makeRDD(zip([4,5,1], [1,2,3]), 1).groupByKey(2).flatMapValue(lambda x:x)
         self.assertEqual(sorted(nums.groupWith([nums2, nums3]).collect()),
-                [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])), 
+                [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
                 (4,([],[3],[1])), (5,([],[],[2]))])
 
         # update
@@ -221,7 +221,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
 
     def test_partial_file(self):
-        p = 'tests/test_rdd.py' 
+        p = 'tests/test_rdd.py'
         l = 300
         d = open(p).read(l+50)
         start = 100
@@ -229,7 +229,7 @@ class TestRDD(unittest.TestCase):
             start += 1
         while d[l-1] != '\n':
             l += 1
-        d = d[start:l-1] 
+        d = d[start:l-1]
         rdd = self.sc.partialTextFile(p, start, l, l)
         self.assertEqual('\n'.join(rdd.collect()), d)
         rdd = self.sc.partialTextFile(p, start, l, (l-start)/5)
@@ -240,7 +240,7 @@ class TestRDD(unittest.TestCase):
         l = range(N)
         d = zip(map(str, l), l)
         rdd = self.sc.makeRDD(d, 10)
-        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'), 
+        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'),
                        ['/tmp/beansdb/%03d.data' % i for i in range(10)])
         rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
         self.assertEqual(len(rdd), 10)
@@ -248,7 +248,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
         s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
         self.assertEqual(s, sum(l))
-    
+
         rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
         self.assertEqual(len(rdd), 10)
         self.assertEqual(rdd.count(), N)
@@ -295,7 +295,7 @@ class TestRDD(unittest.TestCase):
                 pass
 
 
-    
+
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")

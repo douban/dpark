@@ -306,7 +306,7 @@ class MPIScheduler(SubmitScheduler):
         logging.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task], REFUSE_FILTER)
-    
+
     @safe
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
@@ -406,7 +406,7 @@ class MPIScheduler(SubmitScheduler):
         env = dict(os.environ)
         task.data = pickle.dumps([os.getcwd(), None, env, self.options.shell, self.std_port, self.err_port, self.publisher_port])
 
-        cpus, mem = self.getResource(offer) 
+        cpus, mem = self.getResource(offer)
         cpu = task.resources.add()
         cpu.name = "cpus"
         cpu.type = 0 #mesos_pb2.Value.SCALAR

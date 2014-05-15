@@ -4,7 +4,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # workdir used in slaves for internal files
-# 
+#
 DPARK_WORK_DIR = '/tmp/dpark'
 if os.path.exists('/dev/shm'):
     DPARK_WORK_DIR = '/dev/shm,/tmp/dpark'
@@ -16,7 +16,7 @@ MESOS_MASTER = 'localhost'
 # for example:  '/mfs' : 'mfsmaster',
 MOOSEFS_MOUNT_POINTS = {
 }
-# consistant dir cache in client, need patched mfsmaster 
+# consistant dir cache in client, need patched mfsmaster
 MOOSEFS_DIR_CACHE = False
 
 def load_conf(path):
@@ -29,4 +29,4 @@ def load_conf(path):
         exec data in globals(), globals()
     except Exception, e:
         logger.error("error while load conf from %s: %s", path, e)
-        raise 
+        raise

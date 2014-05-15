@@ -64,7 +64,7 @@ class Process(UPID):
                 self.jobs.put(job)
                 time.sleep(min(t-now, 0.1))
                 continue
-            
+
             try:
                 #logger.debug("run job %s", func.__name__)
                 func(*args, **kw)
@@ -88,7 +88,7 @@ class Process(UPID):
             self.conn_pool[addr] = s
         return self.conn_pool[addr]
 
-    def _encode(self, upid, msg):        
+    def _encode(self, upid, msg):
         if isinstance(msg, str):
             body = ''
             uri = '/%s/%s' % (upid.name, msg)
@@ -180,21 +180,21 @@ class Process(UPID):
             headers.append(line)
         if not headers:
             return False # EoF
-       
+
         method, uri, _ = headers[0].split(' ')
         _, process, mname = uri.split('/')
         assert process == self.name, 'unexpected messages'
         agent = headers[1].split(' ')[1].strip()
         logger.debug("incoming request: %s from %s", uri, agent)
-        
+
         sender_name, addr = agent.split('@')
         self.sender = UPID(sender_name.split('/')[1], addr)
-        
+
         if mname == 'PING':
             self.onPing()
             return True
 
-        size = rf.readline() 
+        size = rf.readline()
         if size:
             size = int(size, 16)
             body = rf.read(size+2)[:-2]
@@ -215,7 +215,7 @@ class Process(UPID):
             import traceback; traceback.print_exc()
         return True
 
-    def ioloop(self, sock): 
+    def ioloop(self, sock):
         sock.listen(64)
         sfd = sock.fileno()
         conns = {sfd: sock}
@@ -234,7 +234,7 @@ class Process(UPID):
                                 conns.pop(fd).close()
                                 break
                             # is there any data in read buffer ?
-                            if not f._rbuf.tell(): 
+                            if not f._rbuf.tell():
                                 break
                         f.close()
                     except Exception, e:
@@ -264,5 +264,5 @@ class Process(UPID):
             spawn(self.communicate, conn)
 
         for c in conns:
-            c.close()        
+            c.close()
     """

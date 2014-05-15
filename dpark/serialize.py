@@ -70,7 +70,7 @@ OBJECT_SIZE_LIMIT = 100 << 10
 
 def create_broadcast(name, obj, func_name):
     import dpark
-    logger.info("use broadcast for object %s %s (used in function %s)", 
+    logger.info("use broadcast for object %s %s (used in function %s)",
         name, type(obj), func_name)
     return dpark._ctx.broadcast(obj)
 
@@ -110,7 +110,7 @@ def dump_closure(f):
 
     closure = None
     if f.func_closure:
-        closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents) 
+        closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents)
                 for i, c in enumerate(f.func_closure))
     return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure, f.__module__))
 
@@ -200,7 +200,7 @@ def load_local_class(bytes):
     t = loads(bytes)
     if not isinstance(t, tuple):
         return classes_loaded[t]
-    
+
     name, bases, internal, external = t
     if name in classes_loaded:
         return classes_loaded[name]
@@ -213,7 +213,7 @@ def load_local_class(bytes):
             if t == 'property':
                 fget, fset, fdel, doc = v
                 v = property(fget, fset, fdel, doc)
-            
+
             if t == 'staticmethod':
                 v = staticmethod(v)
 
@@ -227,7 +227,7 @@ def reduce_class(obj):
     if module == '__main__' and name not in ('MyPickler', 'RecursiveFunctionPlaceholder'):
         result = load_local_class, (dump_local_class(obj),)
         return result
-    
+
     return name
 
 CLS_TYPES = [types.TypeType, types.ClassType]
@@ -330,7 +330,7 @@ if __name__ == "__main__":
     df2 = dumps(Foo2)
     df3 = dumps(Foo3)
     df4 = dumps(Foo4)
-    
+
     del Foo1
     del Foo2
     del Foo3
@@ -340,7 +340,7 @@ if __name__ == "__main__":
     Foo2 = loads(df2)
     Foo3 = loads(df3)
     Foo4 = loads(df4)
-   
+
     f1 = Foo1()
     f2 = Foo2()
     f3 = Foo3()

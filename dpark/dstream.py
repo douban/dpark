@@ -16,7 +16,7 @@ class Interval(object):
     def __init__(self, beginTime, endTime):
         self.begin = beginTime
         self.end = endTime
-    @property    
+    @property
     def duration(self):
         return self.end - self.begin
     def __add__(self, d):
@@ -161,9 +161,9 @@ class StreamingContext(object):
     def start(self, t=None):
         if not self.checkpointDuration:
             self.checkpointDuration = self.batchDuration
-        
+
         # TODO
-        #nis = [ds for ds in self.graph.inputStreams 
+        #nis = [ds for ds in self.graph.inputStreams
         #            if isinstance(ds, NetworkInputDStream)]
         #if nis:
         #    self.networkInputTracker = NetworkInputTracker(self, nis)
@@ -235,7 +235,7 @@ class RecurringTimer(object):
         self.callback = callback
         self.thread = None
         self.stopped = False
-        
+
     def start(self, start):
         self.nextTime = (int(start / self.period) + 1) * self.period
         self.stopped = False
@@ -251,7 +251,7 @@ class RecurringTimer(object):
         while not self.stopped:
             now = time.time()
             if now >= self.nextTime:
-                logger.debug("start call %s with %d (delayed %f)", self.callback, 
+                logger.debug("start call %s with %d (delayed %f)", self.callback,
                         self.nextTime, now - self.nextTime)
                 self.callback(self.nextTime)
                 self.nextTime += self.period
@@ -410,7 +410,7 @@ class DStream(object):
             self.generatedRDDs[t] = self.ssc.sc.checkpointFile(path)
         for dep in self.dependencies:
             dep.restoreCheckpointData()
-        logger.info("restoreCheckpointData")    
+        logger.info("restoreCheckpointData")
 
     def slice(self, beginTime, endTime):
         rdds = []
@@ -481,12 +481,12 @@ class DStream(object):
 
     def reduceByWindow(self, func, window, slideDuration=None, invFunc=None):
         if invFunc is not None:
-            return self.map(lambda x:(1, x)).reduceByKeyAndWindow(func, invFunc, 
+            return self.map(lambda x:(1, x)).reduceByKeyAndWindow(func, invFunc,
                 window, slideDuration, 1).map(lambda (x,y): y)
         return self.window(window, slideDuration).reduce(func)
 
     def countByWindow(self, windowDuration, slideDuration=None):
-        return self.map(lambda x:1).reduceByWindow(lambda x,y:x+y, 
+        return self.map(lambda x:1).reduceByWindow(lambda x,y:x+y,
             windowDuration, slideDuration, lambda x,y:x-y)
 
     def defaultPartitioner(self, part=None):
@@ -590,7 +590,7 @@ class GlommedDStream(DerivedDStream):
     def compute(self, t):
         rdd = self.parent.getOrCompute(t)
         if rdd:
-            return rdd.glom() 
+            return rdd.glom()
 
 class MapPartitionedDStream(DerivedDStream):
     def __init__(self, parent, func, preserve=True):
@@ -649,7 +649,7 @@ class UnionDStream(DStream):
         self.parents = parents
         self.dependencies = parents
         self.slideDuration = parents[0].slideDuration
-    
+
     def compute(self, t):
         rdds = filter(None, [p.getOrCompute(t) for p in self.parents])
         if rdds:
@@ -663,7 +663,7 @@ class WindowedDStream(DStream):
         self.slideDuration = slideDuration
         self.dependencies = [parent]
 
-    @property        
+    @property
     def parentRememberDuration(self):
         if self.rememberDuration:
             return self.rememberDuration + self.windowDuration
@@ -703,7 +703,7 @@ class ShuffledDStream(DerivedDStream):
             return rdd.combineByKey(self.agg, self.partitioner)
 
 class ReducedWindowedDStream(DerivedDStream):
-    def __init__(self, parent, func, invReduceFunc, 
+    def __init__(self, parent, func, invReduceFunc,
             windowDuration, slideDuration, partitioner):
         DerivedDStream.__init__(self, parent, func)
         self.invfunc = invReduceFunc
@@ -714,8 +714,8 @@ class ReducedWindowedDStream(DerivedDStream):
         self.dependencies = [self.reducedStream]
         self.mustCheckpoint = True
 
-    @property    
-    def parentRememberDuration(self):   
+    @property
+    def parentRememberDuration(self):
         if self.rememberDuration:
             return self.windowDuration + self.rememberDuration
         # persist
@@ -752,7 +752,7 @@ class ReducedWindowedDStream(DerivedDStream):
                     tmp = reduceF(tmp, reduce(reduceF, newValues))
                 return tmp
         return cogroupedRDD.mapValue(mergeValues)
-                    
+
 
 class InputDStream(DStream):
     def __init__(self, ssc):
@@ -789,7 +789,7 @@ class ModTimeAndRangeFilter(object):
     def __call__(self, path):
         if not self.filter(path):
             return
-        
+
         if path in self.oldFiles:
             return
         mtime = os.path.getmtime(path)

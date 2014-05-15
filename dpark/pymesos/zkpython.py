@@ -1,6 +1,6 @@
 import zookeeper
 import threading
-import logging 
+import logging
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.WARNING)
@@ -24,7 +24,7 @@ TYPE_NAME_MAPPING = {
     zookeeper.CREATED_EVENT: "created",
     zookeeper.DELETED_EVENT: "deleted",
     zookeeper.CHANGED_EVENT: "changed",
-    zookeeper.CHILD_EVENT: "child", 
+    zookeeper.CHILD_EVENT: "child",
 }
 class TimeoutException( zookeeper.ZooKeeperException):
     pass
@@ -38,8 +38,8 @@ class ZKClient:
         self.connected = False
         self.handle = -1
         self.servers = servers
-        self.timeout= timeout 
-        self.watchers  = set() 
+        self.timeout= timeout
+        self.watchers  = set()
         self._lock = threading.Lock()
         self.conn_cv = threading.Condition( )
 
@@ -64,7 +64,7 @@ class ZKClient:
                 self.handle = h
                 with self._lock:
                     self.connected = True
-                    watchers = list(self.watchers) 
+                    watchers = list(self.watchers)
                 for watcher in watchers:
                     watcher.watch()
 
@@ -84,17 +84,17 @@ class ZKClient:
 
 class DataWatch:
     def __init__(self, client, path, func):
-        self._client = client 
+        self._client = client
         self._path = path
         self._func = func
-        self._stopped = False 
+        self._stopped = False
         client.add_watcher(self)
 
     def watcher(self, h, typ, state, path):
         logevent(h, typ, state, path)
         self.watch()
 
-    def _do(self): 
+    def _do(self):
         data, stat = zookeeper.get(self._client.handle, self._path, self.watcher)
         return self._func(data, stat)
 
@@ -112,8 +112,8 @@ class DataWatch:
 
 
 class ChildrenWatch(DataWatch):
-    def _do(self): 
+    def _do(self):
         children = zookeeper.get_children(self._client.handle, self._path, self.watcher)
         return self._func(children)
 
- 
+

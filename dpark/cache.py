@@ -4,7 +4,7 @@ import logging
 import marshal
 import cPickle
 import shutil
-import struct 
+import struct
 import urllib
 
 import msgpack
@@ -17,9 +17,9 @@ logger = logging.getLogger("cache")
 class Cache:
     data = {}
 
-    def get(self, key): 
+    def get(self, key):
         return self.data.get(key)
-    
+
     def put(self, key, value, is_iterator=False):
         if value is not None:
             if is_iterator:
@@ -107,17 +107,17 @@ class DiskCache(Cache):
                         try_marshal = False
                 else:
                     r = 1, cPickle.dumps(v, -1)
-                f.write(msgpack.packb(r)) 
+                f.write(msgpack.packb(r))
                 c += 1
                 yield v
-            
+
             bytes = f.tell()
             if bytes > 10<<20:
                 logger.warning("cached result is %dMB (larger than 10MB)", bytes>>20)
-            # count    
+            # count
             f.seek(0)
             f.write(struct.pack("I", c))
-        
+
         os.rename(tp, path)
 
 class BaseCacheTracker(object):
@@ -152,7 +152,7 @@ class BaseCacheTracker(object):
             for i in cachedVal:
                 yield i
 
-        else: 
+        else:
             logger.debug("partition not in cache, %s", key)
             for i in self.cache.put(key, rdd.compute(split), is_iterator=True):
                 yield i
@@ -184,7 +184,7 @@ class LocalCacheTracker(BaseCacheTracker):
                 return h
             return ''
         return map(parse_hostname, self.getCacheUri(rdd_id, index))
-    
+
     def getCacheUri(self, rdd_id, index):
         return self.locs[rdd_id][index]
 
@@ -214,7 +214,7 @@ class CacheTracker(BaseCacheTracker):
                     for index in xrange(partitions)]
 
         return result
-            
+
     def getCachedLocs(self, rdd_id, index):
         def parse_hostname(uri):
             if uri.startswith('http://'):
@@ -222,7 +222,7 @@ class CacheTracker(BaseCacheTracker):
                 return h
             return ''
         return map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), []))
- 
+
     def getCacheUri(self, rdd_id, index):
         return self.client.call(GetValueMessage('cache:%s-%s' % (rdd_id, index)))
 
@@ -230,7 +230,7 @@ class CacheTracker(BaseCacheTracker):
         return self.client.call(AddItemMessage('cache:%s-%s' % (rdd_id, index), host))
 
     def removeHost(self, rdd_id, index, host):
-        return self.client.call(RemoveItemMessage('cache:%s-%s' % (rdd_id, index), host)) 
+        return self.client.call(RemoveItemMessage('cache:%s-%s' % (rdd_id, index), host))
 
     def getOrCompute(self, rdd, split):
         key = (rdd.id, split.index)
@@ -240,7 +240,7 @@ class CacheTracker(BaseCacheTracker):
             for i in cachedVal:
                 yield i
 
-        else: 
+        else:
             logger.debug("partition not in cache, %s", key)
             for i in self.cache.put(key, rdd.compute(split), is_iterator=True):
                 yield i

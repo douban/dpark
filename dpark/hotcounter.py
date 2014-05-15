@@ -27,7 +27,7 @@ class HotCounter(object):
 
         if len(self.total) > self.limit * 5:
             self.total = dict(self.top(self.limit*3))
-    
+
     def update(self, o):
         self._merge()
         if isinstance(o, HotCounter):
