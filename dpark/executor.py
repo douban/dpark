@@ -13,6 +13,7 @@ import socket
 import urllib2
 import platform
 import gc
+import time
 
 import zmq
 
@@ -47,6 +48,7 @@ def reply_status(driver, task_id, state, data=None):
     status = mesos_pb2.TaskStatus()
     status.task_id.MergeFrom(task_id)
     status.state = state
+    status.timestamp = time.time()
     if data is not None:
         status.data = data
     driver.sendStatusUpdate(status)

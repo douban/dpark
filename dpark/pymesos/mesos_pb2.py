@@ -11,7 +11,7 @@ from google.protobuf import descriptor_pb2
 DESCRIPTOR = descriptor.FileDescriptor(
   name='mesos.proto',
   package='mesos',
-  serialized_pb='\n\x0bmesos.proto\x12\x05mesos\"\x1c\n\x0b\x46rameworkID\x12\r\n\x05value\x18\x01 \x02(\t\"\x18\n\x07OfferID\x12\r\n\x05value\x18\x01 \x02(\t\"\x18\n\x07SlaveID\x12\r\n\x05value\x18\x01 \x02(\t\"\x17\n\x06TaskID\x12\r\n\x05value\x18\x01 \x02(\t\"\x1b\n\nExecutorID\x12\r\n\x05value\x18\x01 \x02(\t\"\x94\x01\n\rFrameworkInfo\x12\x0c\n\x04user\x18\x01 \x02(\t\x12\x0c\n\x04name\x18\x02 \x02(\t\x12\x1e\n\x02id\x18\x03 \x01(\x0b\x32\x12.mesos.FrameworkID\x12\x1b\n\x10\x66\x61ilover_timeout\x18\x04 \x01(\x01:\x01\x30\x12\x19\n\ncheckpoint\x18\x05 \x01(\x08:\x05\x66\x61lse\x12\x0f\n\x04role\x18\x06 \x01(\t:\x01*\"\x95\x01\n\x0b\x43ommandInfo\x12$\n\x04uris\x18\x01 \x03(\x0b\x32\x16.mesos.CommandInfo.URI\x12\'\n\x0b\x65nvironment\x18\x02 \x01(\x0b\x32\x12.mesos.Environment\x12\r\n\x05value\x18\x03 \x02(\t\x1a(\n\x03URI\x12\r\n\x05value\x18\x01 \x02(\t\x12\x12\n\nexecutable\x18\x02 \x01(\x08\"\xd5\x01\n\x0c\x45xecutorInfo\x12&\n\x0b\x65xecutor_id\x18\x01 \x02(\x0b\x32\x11.mesos.ExecutorID\x12(\n\x0c\x66ramework_id\x18\x08 \x01(\x0b\x32\x12.mesos.FrameworkID\x12#\n\x07\x63ommand\x18\x07 \x02(\x0b\x32\x12.mesos.CommandInfo\x12\"\n\tresources\x18\x05 \x03(\x0b\x32\x0f.mesos.Resource\x12\x0c\n\x04name\x18\t \x01(\t\x12\x0e\n\x06source\x18\n \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\"8\n\nMasterInfo\x12\n\n\x02id\x18\x01 \x02(\t\x12\n\n\x02ip\x18\x02 \x02(\r\x12\x12\n\x04port\x18\x03 \x02(\r:\x04\x35\x30\x35\x30\"\xe4\x01\n\tSlaveInfo\x12\x10\n\x08hostname\x18\x01 \x02(\t\x12\x12\n\x04port\x18\x08 \x01(\x05:\x04\x35\x30\x35\x31\x12\"\n\tresources\x18\x03 \x03(\x0b\x32\x0f.mesos.Resource\x12$\n\nattributes\x18\x05 \x03(\x0b\x32\x10.mesos.Attribute\x12\x1a\n\x02id\x18\x06 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\x19\n\ncheckpoint\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x16\n\x0ewebui_hostname\x18\x02 \x01(\t\x12\x18\n\nwebui_port\x18\x04 \x01(\x05:\x04\x38\x30\x38\x31\"\xfc\x02\n\x05Value\x12\x1f\n\x04type\x18\x01 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x02 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x04 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x1f\n\x04text\x18\x05 \x01(\x0b\x32\x11.mesos.Value.Text\x1a\x17\n\x06Scalar\x12\r\n\x05value\x18\x01 \x02(\x01\x1a#\n\x05Range\x12\r\n\x05\x62\x65gin\x18\x01 \x02(\x04\x12\x0b\n\x03\x65nd\x18\x02 \x02(\x04\x1a+\n\x06Ranges\x12!\n\x05range\x18\x01 \x03(\x0b\x32\x12.mesos.Value.Range\x1a\x13\n\x03Set\x12\x0c\n\x04item\x18\x01 \x03(\t\x1a\x15\n\x04Text\x12\r\n\x05value\x18\x01 \x02(\t\"1\n\x04Type\x12\n\n\x06SCALAR\x10\x00\x12\n\n\x06RANGES\x10\x01\x12\x07\n\x03SET\x10\x02\x12\x08\n\x04TEXT\x10\x03\"\xc4\x01\n\tAttribute\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x04type\x18\x02 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x04 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x06 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x1f\n\x04text\x18\x05 \x01(\x0b\x32\x11.mesos.Value.Text\"\xb3\x01\n\x08Resource\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x04type\x18\x02 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x04 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x05 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x0f\n\x04role\x18\x06 \x01(\t:\x01*\"\xcc\x02\n\x12ResourceStatistics\x12\x11\n\ttimestamp\x18\x01 \x02(\x01\x12\x1b\n\x13\x63pus_user_time_secs\x18\x02 \x01(\x01\x12\x1d\n\x15\x63pus_system_time_secs\x18\x03 \x01(\x01\x12\x12\n\ncpus_limit\x18\x04 \x02(\x01\x12\x17\n\x0f\x63pus_nr_periods\x18\x07 \x01(\r\x12\x19\n\x11\x63pus_nr_throttled\x18\x08 \x01(\r\x12 \n\x18\x63pus_throttled_time_secs\x18\t \x01(\x01\x12\x15\n\rmem_rss_bytes\x18\x05 \x01(\x04\x12\x17\n\x0fmem_limit_bytes\x18\x06 \x01(\x04\x12\x16\n\x0emem_file_bytes\x18\n \x01(\x04\x12\x16\n\x0emem_anon_bytes\x18\x0b \x01(\x04\x12\x1d\n\x15mem_mapped_file_bytes\x18\x0c \x01(\x04\"\xe9\x01\n\rResourceUsage\x12 \n\x08slave_id\x18\x01 \x02(\x0b\x32\x0e.mesos.SlaveID\x12(\n\x0c\x66ramework_id\x18\x02 \x02(\x0b\x32\x12.mesos.FrameworkID\x12&\n\x0b\x65xecutor_id\x18\x03 \x01(\x0b\x32\x11.mesos.ExecutorID\x12\x15\n\rexecutor_name\x18\x04 \x01(\t\x12\x1e\n\x07task_id\x18\x05 \x01(\x0b\x32\r.mesos.TaskID\x12-\n\nstatistics\x18\x06 \x01(\x0b\x32\x19.mesos.ResourceStatistics\"O\n\x07Request\x12 \n\x08slave_id\x18\x01 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\"\n\tresources\x18\x02 \x03(\x0b\x32\x0f.mesos.Resource\"\xf4\x01\n\x05Offer\x12\x1a\n\x02id\x18\x01 \x02(\x0b\x32\x0e.mesos.OfferID\x12(\n\x0c\x66ramework_id\x18\x02 \x02(\x0b\x32\x12.mesos.FrameworkID\x12 \n\x08slave_id\x18\x03 \x02(\x0b\x32\x0e.mesos.SlaveID\x12\x10\n\x08hostname\x18\x04 \x02(\t\x12\"\n\tresources\x18\x05 \x03(\x0b\x32\x0f.mesos.Resource\x12$\n\nattributes\x18\x07 \x03(\x0b\x32\x10.mesos.Attribute\x12\'\n\x0c\x65xecutor_ids\x18\x06 \x03(\x0b\x32\x11.mesos.ExecutorID\"\xd8\x01\n\x08TaskInfo\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1e\n\x07task_id\x18\x02 \x02(\x0b\x32\r.mesos.TaskID\x12 \n\x08slave_id\x18\x03 \x02(\x0b\x32\x0e.mesos.SlaveID\x12\"\n\tresources\x18\x04 \x03(\x0b\x32\x0f.mesos.Resource\x12%\n\x08\x65xecutor\x18\x05 \x01(\x0b\x32\x13.mesos.ExecutorInfo\x12#\n\x07\x63ommand\x18\x07 \x01(\x0b\x32\x12.mesos.CommandInfo\x12\x0c\n\x04\x64\x61ta\x18\x06 \x01(\x0c\"\xa1\x01\n\nTaskStatus\x12\x1e\n\x07task_id\x18\x01 \x02(\x0b\x32\r.mesos.TaskID\x12\x1f\n\x05state\x18\x02 \x02(\x0e\x32\x10.mesos.TaskState\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\x12 \n\x08slave_id\x18\x05 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\x11\n\ttimestamp\x18\x06 \x01(\x01\"$\n\x07\x46ilters\x12\x19\n\x0erefuse_seconds\x18\x01 \x01(\x01:\x01\x35\"f\n\x0b\x45nvironment\x12.\n\tvariables\x18\x01 \x03(\x0b\x32\x1b.mesos.Environment.Variable\x1a\'\n\x08Variable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\r\n\x05value\x18\x02 \x02(\t\"\'\n\tParameter\x12\x0b\n\x03key\x18\x01 \x02(\t\x12\r\n\x05value\x18\x02 \x02(\t\"1\n\nParameters\x12#\n\tparameter\x18\x01 \x03(\x0b\x32\x10.mesos.Parameter\"/\n\nCredential\x12\x11\n\tprincipal\x18\x01 \x02(\t\x12\x0e\n\x06secret\x18\x02 \x01(\x0c*\\\n\x06Status\x12\x16\n\x12\x44RIVER_NOT_STARTED\x10\x01\x12\x12\n\x0e\x44RIVER_RUNNING\x10\x02\x12\x12\n\x0e\x44RIVER_ABORTED\x10\x03\x12\x12\n\x0e\x44RIVER_STOPPED\x10\x04*\x86\x01\n\tTaskState\x12\x10\n\x0cTASK_STAGING\x10\x06\x12\x11\n\rTASK_STARTING\x10\x00\x12\x10\n\x0cTASK_RUNNING\x10\x01\x12\x11\n\rTASK_FINISHED\x10\x02\x12\x0f\n\x0bTASK_FAILED\x10\x03\x12\x0f\n\x0bTASK_KILLED\x10\x04\x12\r\n\tTASK_LOST\x10\x05\x42\x1a\n\x10org.apache.mesosB\x06Protos')
+  serialized_pb='\n\x0bmesos.proto\x12\x05mesos\"\x1c\n\x0b\x46rameworkID\x12\r\n\x05value\x18\x01 \x02(\t\"\x18\n\x07OfferID\x12\r\n\x05value\x18\x01 \x02(\t\"\x18\n\x07SlaveID\x12\r\n\x05value\x18\x01 \x02(\t\"\x17\n\x06TaskID\x12\r\n\x05value\x18\x01 \x02(\t\"\x1b\n\nExecutorID\x12\r\n\x05value\x18\x01 \x02(\t\"\x1c\n\x0b\x43ontainerID\x12\r\n\x05value\x18\x01 \x02(\t\"\xa6\x01\n\rFrameworkInfo\x12\x0c\n\x04user\x18\x01 \x02(\t\x12\x0c\n\x04name\x18\x02 \x02(\t\x12\x1e\n\x02id\x18\x03 \x01(\x0b\x32\x12.mesos.FrameworkID\x12\x1b\n\x10\x66\x61ilover_timeout\x18\x04 \x01(\x01:\x01\x30\x12\x19\n\ncheckpoint\x18\x05 \x01(\x08:\x05\x66\x61lse\x12\x0f\n\x04role\x18\x06 \x01(\t:\x01*\x12\x10\n\x08hostname\x18\x07 \x01(\t\"\xd8\x01\n\x0bHealthCheck\x12%\n\x04http\x18\x01 \x01(\x0b\x32\x17.mesos.HealthCheck.HTTP\x12\x19\n\rdelay_seconds\x18\x02 \x01(\x01:\x02\x31\x35\x12\x1c\n\x10interval_seconds\x18\x03 \x01(\x01:\x02\x31\x30\x12\x1b\n\x0ftimeout_seconds\x18\x04 \x01(\x01:\x02\x32\x30\x12\x13\n\x08\x66\x61ilures\x18\x05 \x01(\r:\x01\x33\x1a\x37\n\x04HTTP\x12\x0c\n\x04port\x18\x01 \x02(\r\x12\x0f\n\x04path\x18\x02 \x01(\t:\x01/\x12\x10\n\x08statuses\x18\x04 \x03(\r\"\xca\x02\n\x0b\x43ommandInfo\x12\x33\n\tcontainer\x18\x04 \x01(\x0b\x32 .mesos.CommandInfo.ContainerInfo\x12$\n\x04uris\x18\x01 \x03(\x0b\x32\x16.mesos.CommandInfo.URI\x12\'\n\x0b\x65nvironment\x18\x02 \x01(\x0b\x32\x12.mesos.Environment\x12\r\n\x05value\x18\x03 \x02(\t\x12\x0c\n\x04user\x18\x05 \x01(\t\x12(\n\x0chealth_check\x18\x06 \x01(\x0b\x32\x12.mesos.HealthCheck\x1a?\n\x03URI\x12\r\n\x05value\x18\x01 \x02(\t\x12\x12\n\nexecutable\x18\x02 \x01(\x08\x12\x15\n\x07\x65xtract\x18\x03 \x01(\x08:\x04true\x1a/\n\rContainerInfo\x12\r\n\x05image\x18\x01 \x02(\t\x12\x0f\n\x07options\x18\x02 \x03(\t\"\xd5\x01\n\x0c\x45xecutorInfo\x12&\n\x0b\x65xecutor_id\x18\x01 \x02(\x0b\x32\x11.mesos.ExecutorID\x12(\n\x0c\x66ramework_id\x18\x08 \x01(\x0b\x32\x12.mesos.FrameworkID\x12#\n\x07\x63ommand\x18\x07 \x02(\x0b\x32\x12.mesos.CommandInfo\x12\"\n\tresources\x18\x05 \x03(\x0b\x32\x0f.mesos.Resource\x12\x0c\n\x04name\x18\t \x01(\t\x12\x0e\n\x06source\x18\n \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x04 \x01(\x0c\"W\n\nMasterInfo\x12\n\n\x02id\x18\x01 \x02(\t\x12\n\n\x02ip\x18\x02 \x02(\r\x12\x12\n\x04port\x18\x03 \x02(\r:\x04\x35\x30\x35\x30\x12\x0b\n\x03pid\x18\x04 \x01(\t\x12\x10\n\x08hostname\x18\x05 \x01(\t\"\xe4\x01\n\tSlaveInfo\x12\x10\n\x08hostname\x18\x01 \x02(\t\x12\x12\n\x04port\x18\x08 \x01(\x05:\x04\x35\x30\x35\x31\x12\"\n\tresources\x18\x03 \x03(\x0b\x32\x0f.mesos.Resource\x12$\n\nattributes\x18\x05 \x03(\x0b\x32\x10.mesos.Attribute\x12\x1a\n\x02id\x18\x06 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\x19\n\ncheckpoint\x18\x07 \x01(\x08:\x05\x66\x61lse\x12\x16\n\x0ewebui_hostname\x18\x02 \x01(\t\x12\x18\n\nwebui_port\x18\x04 \x01(\x05:\x04\x38\x30\x38\x31\"\xfc\x02\n\x05Value\x12\x1f\n\x04type\x18\x01 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x02 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x04 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x1f\n\x04text\x18\x05 \x01(\x0b\x32\x11.mesos.Value.Text\x1a\x17\n\x06Scalar\x12\r\n\x05value\x18\x01 \x02(\x01\x1a#\n\x05Range\x12\r\n\x05\x62\x65gin\x18\x01 \x02(\x04\x12\x0b\n\x03\x65nd\x18\x02 \x02(\x04\x1a+\n\x06Ranges\x12!\n\x05range\x18\x01 \x03(\x0b\x32\x12.mesos.Value.Range\x1a\x13\n\x03Set\x12\x0c\n\x04item\x18\x01 \x03(\t\x1a\x15\n\x04Text\x12\r\n\x05value\x18\x01 \x02(\t\"1\n\x04Type\x12\n\n\x06SCALAR\x10\x00\x12\n\n\x06RANGES\x10\x01\x12\x07\n\x03SET\x10\x02\x12\x08\n\x04TEXT\x10\x03\"\xc4\x01\n\tAttribute\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x04type\x18\x02 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x04 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x06 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x1f\n\x04text\x18\x05 \x01(\x0b\x32\x11.mesos.Value.Text\"\xb3\x01\n\x08Resource\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1f\n\x04type\x18\x02 \x02(\x0e\x32\x11.mesos.Value.Type\x12#\n\x06scalar\x18\x03 \x01(\x0b\x32\x13.mesos.Value.Scalar\x12#\n\x06ranges\x18\x04 \x01(\x0b\x32\x13.mesos.Value.Ranges\x12\x1d\n\x03set\x18\x05 \x01(\x0b\x32\x10.mesos.Value.Set\x12\x0f\n\x04role\x18\x06 \x01(\t:\x01*\"\xcc\x02\n\x12ResourceStatistics\x12\x11\n\ttimestamp\x18\x01 \x02(\x01\x12\x1b\n\x13\x63pus_user_time_secs\x18\x02 \x01(\x01\x12\x1d\n\x15\x63pus_system_time_secs\x18\x03 \x01(\x01\x12\x12\n\ncpus_limit\x18\x04 \x01(\x01\x12\x17\n\x0f\x63pus_nr_periods\x18\x07 \x01(\r\x12\x19\n\x11\x63pus_nr_throttled\x18\x08 \x01(\r\x12 \n\x18\x63pus_throttled_time_secs\x18\t \x01(\x01\x12\x15\n\rmem_rss_bytes\x18\x05 \x01(\x04\x12\x17\n\x0fmem_limit_bytes\x18\x06 \x01(\x04\x12\x16\n\x0emem_file_bytes\x18\n \x01(\x04\x12\x16\n\x0emem_anon_bytes\x18\x0b \x01(\x04\x12\x1d\n\x15mem_mapped_file_bytes\x18\x0c \x01(\x04\"\xe9\x01\n\rResourceUsage\x12 \n\x08slave_id\x18\x01 \x02(\x0b\x32\x0e.mesos.SlaveID\x12(\n\x0c\x66ramework_id\x18\x02 \x02(\x0b\x32\x12.mesos.FrameworkID\x12&\n\x0b\x65xecutor_id\x18\x03 \x01(\x0b\x32\x11.mesos.ExecutorID\x12\x15\n\rexecutor_name\x18\x04 \x01(\t\x12\x1e\n\x07task_id\x18\x05 \x01(\x0b\x32\r.mesos.TaskID\x12-\n\nstatistics\x18\x06 \x01(\x0b\x32\x19.mesos.ResourceStatistics\"O\n\x07Request\x12 \n\x08slave_id\x18\x01 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\"\n\tresources\x18\x02 \x03(\x0b\x32\x0f.mesos.Resource\"\xf4\x01\n\x05Offer\x12\x1a\n\x02id\x18\x01 \x02(\x0b\x32\x0e.mesos.OfferID\x12(\n\x0c\x66ramework_id\x18\x02 \x02(\x0b\x32\x12.mesos.FrameworkID\x12 \n\x08slave_id\x18\x03 \x02(\x0b\x32\x0e.mesos.SlaveID\x12\x10\n\x08hostname\x18\x04 \x02(\t\x12\"\n\tresources\x18\x05 \x03(\x0b\x32\x0f.mesos.Resource\x12$\n\nattributes\x18\x07 \x03(\x0b\x32\x10.mesos.Attribute\x12\'\n\x0c\x65xecutor_ids\x18\x06 \x03(\x0b\x32\x11.mesos.ExecutorID\"\xd8\x01\n\x08TaskInfo\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\x1e\n\x07task_id\x18\x02 \x02(\x0b\x32\r.mesos.TaskID\x12 \n\x08slave_id\x18\x03 \x02(\x0b\x32\x0e.mesos.SlaveID\x12\"\n\tresources\x18\x04 \x03(\x0b\x32\x0f.mesos.Resource\x12%\n\x08\x65xecutor\x18\x05 \x01(\x0b\x32\x13.mesos.ExecutorInfo\x12#\n\x07\x63ommand\x18\x07 \x01(\x0b\x32\x12.mesos.CommandInfo\x12\x0c\n\x04\x64\x61ta\x18\x06 \x01(\x0c\"\xa1\x01\n\nTaskStatus\x12\x1e\n\x07task_id\x18\x01 \x02(\x0b\x32\r.mesos.TaskID\x12\x1f\n\x05state\x18\x02 \x02(\x0e\x32\x10.mesos.TaskState\x12\x0f\n\x07message\x18\x04 \x01(\t\x12\x0c\n\x04\x64\x61ta\x18\x03 \x01(\x0c\x12 \n\x08slave_id\x18\x05 \x01(\x0b\x32\x0e.mesos.SlaveID\x12\x11\n\ttimestamp\x18\x06 \x01(\x01\"$\n\x07\x46ilters\x12\x19\n\x0erefuse_seconds\x18\x01 \x01(\x01:\x01\x35\"f\n\x0b\x45nvironment\x12.\n\tvariables\x18\x01 \x03(\x0b\x32\x1b.mesos.Environment.Variable\x1a\'\n\x08Variable\x12\x0c\n\x04name\x18\x01 \x02(\t\x12\r\n\x05value\x18\x02 \x02(\t\"\'\n\tParameter\x12\x0b\n\x03key\x18\x01 \x02(\t\x12\r\n\x05value\x18\x02 \x02(\t\"1\n\nParameters\x12#\n\tparameter\x18\x01 \x03(\x0b\x32\x10.mesos.Parameter\"/\n\nCredential\x12\x11\n\tprincipal\x18\x01 \x02(\t\x12\x0e\n\x06secret\x18\x02 \x01(\x0c\"\xd1\x04\n\x03\x41\x43L\x1ai\n\x06\x45ntity\x12*\n\x04type\x18\x01 \x01(\x0e\x32\x16.mesos.ACL.Entity.Type:\x04SOME\x12\x0e\n\x06values\x18\x02 \x03(\t\"#\n\x04Type\x12\x08\n\x04SOME\x10\x00\x12\x07\n\x03\x41NY\x10\x01\x12\x08\n\x04NONE\x10\x02\x1aS\n\x08RunTasks\x12%\n\nprincipals\x18\x01 \x02(\x0b\x32\x11.mesos.ACL.Entity\x12 \n\x05users\x18\x02 \x02(\x0b\x32\x11.mesos.ACL.Entity\x1aX\n\rReceiveOffers\x12%\n\nprincipals\x18\x01 \x02(\x0b\x32\x11.mesos.ACL.Entity\x12 \n\x05roles\x18\x02 \x02(\x0b\x32\x11.mesos.ACL.Entity\x1a\x96\x01\n\x07HTTPGet\x12$\n\tusernames\x18\x01 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12\x1e\n\x03ips\x18\x02 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12$\n\thostnames\x18\x03 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12\x1f\n\x04urls\x18\x04 \x02(\x0b\x32\x11.mesos.ACL.Entity\x1a\x96\x01\n\x07HTTPPut\x12$\n\tusernames\x18\x01 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12\x1e\n\x03ips\x18\x02 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12$\n\thostnames\x18\x03 \x01(\x0b\x32\x11.mesos.ACL.Entity\x12\x1f\n\x04urls\x18\x04 \x02(\x0b\x32\x11.mesos.ACL.Entity\"\xc6\x01\n\x04\x41\x43Ls\x12\x18\n\npermissive\x18\x01 \x02(\x08:\x04true\x12&\n\trun_tasks\x18\x02 \x03(\x0b\x32\x13.mesos.ACL.RunTasks\x12\x30\n\x0ereceive_offers\x18\x03 \x03(\x0b\x32\x18.mesos.ACL.ReceiveOffers\x12$\n\x08http_get\x18\x04 \x03(\x0b\x32\x12.mesos.ACL.HTTPGet\x12$\n\x08http_put\x18\x05 \x03(\x0b\x32\x12.mesos.ACL.HTTPPut*\\\n\x06Status\x12\x16\n\x12\x44RIVER_NOT_STARTED\x10\x01\x12\x12\n\x0e\x44RIVER_RUNNING\x10\x02\x12\x12\n\x0e\x44RIVER_ABORTED\x10\x03\x12\x12\n\x0e\x44RIVER_STOPPED\x10\x04*\x86\x01\n\tTaskState\x12\x10\n\x0cTASK_STAGING\x10\x06\x12\x11\n\rTASK_STARTING\x10\x00\x12\x10\n\x0cTASK_RUNNING\x10\x01\x12\x11\n\rTASK_FINISHED\x10\x02\x12\x0f\n\x0bTASK_FAILED\x10\x03\x12\x0f\n\x0bTASK_KILLED\x10\x04\x12\r\n\tTASK_LOST\x10\x05\x42\x1a\n\x10org.apache.mesosB\x06Protos')
 
 _STATUS = descriptor.EnumDescriptor(
   name='Status',
@@ -38,8 +38,8 @@ _STATUS = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3295,
-  serialized_end=3387,
+  serialized_start=4571,
+  serialized_end=4663,
 )
 
 
@@ -80,8 +80,8 @@ _TASKSTATE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=3390,
-  serialized_end=3524,
+  serialized_start=4666,
+  serialized_end=4800,
 )
 
 
@@ -123,8 +123,33 @@ _VALUE_TYPE = descriptor.EnumDescriptor(
   ],
   containing_type=None,
   options=None,
-  serialized_start=1298,
-  serialized_end=1347,
+  serialized_start=1777,
+  serialized_end=1826,
+)
+
+_ACL_ENTITY_TYPE = descriptor.EnumDescriptor(
+  name='Type',
+  full_name='mesos.ACL.Entity.Type',
+  filename=None,
+  file=DESCRIPTOR,
+  values=[
+    descriptor.EnumValueDescriptor(
+      name='SOME', index=0, number=0,
+      options=None,
+      type=None),
+    descriptor.EnumValueDescriptor(
+      name='ANY', index=1, number=1,
+      options=None,
+      type=None),
+    descriptor.EnumValueDescriptor(
+      name='NONE', index=2, number=2,
+      options=None,
+      type=None),
+  ],
+  containing_type=None,
+  options=None,
+  serialized_start=3852,
+  serialized_end=3887,
 )
 
 
@@ -268,6 +293,34 @@ _EXECUTORID = descriptor.Descriptor(
 )
 
 
+_CONTAINERID = descriptor.Descriptor(
+  name='ContainerID',
+  full_name='mesos.ContainerID',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='value', full_name='mesos.ContainerID.value', index=0,
+      number=1, type=9, cpp_type=9, label=2,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=158,
+  serialized_end=186,
+)
+
+
 _FRAMEWORKINFO = descriptor.Descriptor(
   name='FrameworkInfo',
   full_name='mesos.FrameworkInfo',
@@ -317,6 +370,13 @@ _FRAMEWORKINFO = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='hostname', full_name='mesos.FrameworkInfo.hostname', index=6,
+      number=7, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -326,8 +386,105 @@ _FRAMEWORKINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=159,
-  serialized_end=307,
+  serialized_start=189,
+  serialized_end=355,
+)
+
+
+_HEALTHCHECK_HTTP = descriptor.Descriptor(
+  name='HTTP',
+  full_name='mesos.HealthCheck.HTTP',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='port', full_name='mesos.HealthCheck.HTTP.port', index=0,
+      number=1, type=13, cpp_type=3, label=2,
+      has_default_value=False, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='path', full_name='mesos.HealthCheck.HTTP.path', index=1,
+      number=2, type=9, cpp_type=9, label=1,
+      has_default_value=True, default_value=unicode("/", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='statuses', full_name='mesos.HealthCheck.HTTP.statuses', index=2,
+      number=4, type=13, cpp_type=3, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=519,
+  serialized_end=574,
+)
+
+_HEALTHCHECK = descriptor.Descriptor(
+  name='HealthCheck',
+  full_name='mesos.HealthCheck',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='http', full_name='mesos.HealthCheck.http', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='delay_seconds', full_name='mesos.HealthCheck.delay_seconds', index=1,
+      number=2, type=1, cpp_type=5, label=1,
+      has_default_value=True, default_value=15,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='interval_seconds', full_name='mesos.HealthCheck.interval_seconds', index=2,
+      number=3, type=1, cpp_type=5, label=1,
+      has_default_value=True, default_value=10,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='timeout_seconds', full_name='mesos.HealthCheck.timeout_seconds', index=3,
+      number=4, type=1, cpp_type=5, label=1,
+      has_default_value=True, default_value=20,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='failures', full_name='mesos.HealthCheck.failures', index=4,
+      number=5, type=13, cpp_type=3, label=1,
+      has_default_value=True, default_value=3,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[_HEALTHCHECK_HTTP, ],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=358,
+  serialized_end=574,
 )
 
 
@@ -352,6 +509,13 @@ _COMMANDINFO_URI = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='extract', full_name='mesos.CommandInfo.URI.extract', index=2,
+      number=3, type=8, cpp_type=7, label=1,
+      has_default_value=True, default_value=True,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -361,8 +525,42 @@ _COMMANDINFO_URI = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=419,
-  serialized_end=459,
+  serialized_start=795,
+  serialized_end=858,
+)
+
+_COMMANDINFO_CONTAINERINFO = descriptor.Descriptor(
+  name='ContainerInfo',
+  full_name='mesos.CommandInfo.ContainerInfo',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='image', full_name='mesos.CommandInfo.ContainerInfo.image', index=0,
+      number=1, type=9, cpp_type=9, label=2,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='options', full_name='mesos.CommandInfo.ContainerInfo.options', index=1,
+      number=2, type=9, cpp_type=9, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=860,
+  serialized_end=907,
 )
 
 _COMMANDINFO = descriptor.Descriptor(
@@ -373,37 +571,58 @@ _COMMANDINFO = descriptor.Descriptor(
   containing_type=None,
   fields=[
     descriptor.FieldDescriptor(
-      name='uris', full_name='mesos.CommandInfo.uris', index=0,
+      name='container', full_name='mesos.CommandInfo.container', index=0,
+      number=4, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='uris', full_name='mesos.CommandInfo.uris', index=1,
       number=1, type=11, cpp_type=10, label=3,
       has_default_value=False, default_value=[],
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='environment', full_name='mesos.CommandInfo.environment', index=1,
+      name='environment', full_name='mesos.CommandInfo.environment', index=2,
       number=2, type=11, cpp_type=10, label=1,
       has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
     descriptor.FieldDescriptor(
-      name='value', full_name='mesos.CommandInfo.value', index=2,
+      name='value', full_name='mesos.CommandInfo.value', index=3,
       number=3, type=9, cpp_type=9, label=2,
       has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='user', full_name='mesos.CommandInfo.user', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='health_check', full_name='mesos.CommandInfo.health_check', index=5,
+      number=6, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
   ],
   extensions=[
   ],
-  nested_types=[_COMMANDINFO_URI, ],
+  nested_types=[_COMMANDINFO_URI, _COMMANDINFO_CONTAINERINFO, ],
   enum_types=[
   ],
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=310,
-  serialized_end=459,
+  serialized_start=577,
+  serialized_end=907,
 )
 
 
@@ -472,8 +691,8 @@ _EXECUTORINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=462,
-  serialized_end=675,
+  serialized_start=910,
+  serialized_end=1123,
 )
 
 
@@ -505,6 +724,20 @@ _MASTERINFO = descriptor.Descriptor(
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       options=None),
+    descriptor.FieldDescriptor(
+      name='pid', full_name='mesos.MasterInfo.pid', index=3,
+      number=4, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='hostname', full_name='mesos.MasterInfo.hostname', index=4,
+      number=5, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=unicode("", "utf-8"),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
   ],
   extensions=[
   ],
@@ -514,8 +747,8 @@ _MASTERINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=677,
-  serialized_end=733,
+  serialized_start=1125,
+  serialized_end=1212,
 )
 
 
@@ -591,8 +824,8 @@ _SLAVEINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=736,
-  serialized_end=964,
+  serialized_start=1215,
+  serialized_end=1443,
 )
 
 
@@ -619,8 +852,8 @@ _VALUE_SCALAR = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1147,
-  serialized_end=1170,
+  serialized_start=1626,
+  serialized_end=1649,
 )
 
 _VALUE_RANGE = descriptor.Descriptor(
@@ -653,8 +886,8 @@ _VALUE_RANGE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1172,
-  serialized_end=1207,
+  serialized_start=1651,
+  serialized_end=1686,
 )
 
 _VALUE_RANGES = descriptor.Descriptor(
@@ -680,8 +913,8 @@ _VALUE_RANGES = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1209,
-  serialized_end=1252,
+  serialized_start=1688,
+  serialized_end=1731,
 )
 
 _VALUE_SET = descriptor.Descriptor(
@@ -707,8 +940,8 @@ _VALUE_SET = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1254,
-  serialized_end=1273,
+  serialized_start=1733,
+  serialized_end=1752,
 )
 
 _VALUE_TEXT = descriptor.Descriptor(
@@ -734,8 +967,8 @@ _VALUE_TEXT = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1275,
-  serialized_end=1296,
+  serialized_start=1754,
+  serialized_end=1775,
 )
 
 _VALUE = descriptor.Descriptor(
@@ -790,8 +1023,8 @@ _VALUE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=967,
-  serialized_end=1347,
+  serialized_start=1446,
+  serialized_end=1826,
 )
 
 
@@ -853,8 +1086,8 @@ _ATTRIBUTE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1350,
-  serialized_end=1546,
+  serialized_start=1829,
+  serialized_end=2025,
 )
 
 
@@ -916,8 +1149,8 @@ _RESOURCE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1549,
-  serialized_end=1728,
+  serialized_start=2028,
+  serialized_end=2207,
 )
 
 
@@ -951,7 +1184,7 @@ _RESOURCESTATISTICS = descriptor.Descriptor(
       options=None),
     descriptor.FieldDescriptor(
       name='cpus_limit', full_name='mesos.ResourceStatistics.cpus_limit', index=3,
-      number=4, type=1, cpp_type=5, label=2,
+      number=4, type=1, cpp_type=5, label=1,
       has_default_value=False, default_value=0,
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -1021,8 +1254,8 @@ _RESOURCESTATISTICS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=1731,
-  serialized_end=2063,
+  serialized_start=2210,
+  serialized_end=2542,
 )
 
 
@@ -1084,8 +1317,8 @@ _RESOURCEUSAGE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2066,
-  serialized_end=2299,
+  serialized_start=2545,
+  serialized_end=2778,
 )
 
 
@@ -1119,8 +1352,8 @@ _REQUEST = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2301,
-  serialized_end=2380,
+  serialized_start=2780,
+  serialized_end=2859,
 )
 
 
@@ -1189,8 +1422,8 @@ _OFFER = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2383,
-  serialized_end=2627,
+  serialized_start=2862,
+  serialized_end=3106,
 )
 
 
@@ -1259,8 +1492,8 @@ _TASKINFO = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2630,
-  serialized_end=2846,
+  serialized_start=3109,
+  serialized_end=3325,
 )
 
 
@@ -1322,8 +1555,8 @@ _TASKSTATUS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=2849,
-  serialized_end=3010,
+  serialized_start=3328,
+  serialized_end=3489,
 )
 
 
@@ -1350,8 +1583,8 @@ _FILTERS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3012,
-  serialized_end=3048,
+  serialized_start=3491,
+  serialized_end=3527,
 )
 
 
@@ -1385,8 +1618,8 @@ _ENVIRONMENT_VARIABLE = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3113,
-  serialized_end=3152,
+  serialized_start=3592,
+  serialized_end=3631,
 )
 
 _ENVIRONMENT = descriptor.Descriptor(
@@ -1412,8 +1645,8 @@ _ENVIRONMENT = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3050,
-  serialized_end=3152,
+  serialized_start=3529,
+  serialized_end=3631,
 )
 
 
@@ -1447,8 +1680,8 @@ _PARAMETER = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3154,
-  serialized_end=3193,
+  serialized_start=3633,
+  serialized_end=3672,
 )
 
 
@@ -1475,8 +1708,8 @@ _PARAMETERS = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3195,
-  serialized_end=3244,
+  serialized_start=3674,
+  serialized_end=3723,
 )
 
 
@@ -1510,14 +1743,295 @@ _CREDENTIAL = descriptor.Descriptor(
   options=None,
   is_extendable=False,
   extension_ranges=[],
-  serialized_start=3246,
-  serialized_end=3293,
+  serialized_start=3725,
+  serialized_end=3772,
+)
+
+
+_ACL_ENTITY = descriptor.Descriptor(
+  name='Entity',
+  full_name='mesos.ACL.Entity',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='type', full_name='mesos.ACL.Entity.type', index=0,
+      number=1, type=14, cpp_type=8, label=1,
+      has_default_value=True, default_value=0,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='values', full_name='mesos.ACL.Entity.values', index=1,
+      number=2, type=9, cpp_type=9, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+    _ACL_ENTITY_TYPE,
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=3782,
+  serialized_end=3887,
+)
+
+_ACL_RUNTASKS = descriptor.Descriptor(
+  name='RunTasks',
+  full_name='mesos.ACL.RunTasks',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='principals', full_name='mesos.ACL.RunTasks.principals', index=0,
+      number=1, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='users', full_name='mesos.ACL.RunTasks.users', index=1,
+      number=2, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=3889,
+  serialized_end=3972,
+)
+
+_ACL_RECEIVEOFFERS = descriptor.Descriptor(
+  name='ReceiveOffers',
+  full_name='mesos.ACL.ReceiveOffers',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='principals', full_name='mesos.ACL.ReceiveOffers.principals', index=0,
+      number=1, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='roles', full_name='mesos.ACL.ReceiveOffers.roles', index=1,
+      number=2, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=3974,
+  serialized_end=4062,
+)
+
+_ACL_HTTPGET = descriptor.Descriptor(
+  name='HTTPGet',
+  full_name='mesos.ACL.HTTPGet',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='usernames', full_name='mesos.ACL.HTTPGet.usernames', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='ips', full_name='mesos.ACL.HTTPGet.ips', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='hostnames', full_name='mesos.ACL.HTTPGet.hostnames', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='urls', full_name='mesos.ACL.HTTPGet.urls', index=3,
+      number=4, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=4065,
+  serialized_end=4215,
+)
+
+_ACL_HTTPPUT = descriptor.Descriptor(
+  name='HTTPPut',
+  full_name='mesos.ACL.HTTPPut',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='usernames', full_name='mesos.ACL.HTTPPut.usernames', index=0,
+      number=1, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='ips', full_name='mesos.ACL.HTTPPut.ips', index=1,
+      number=2, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='hostnames', full_name='mesos.ACL.HTTPPut.hostnames', index=2,
+      number=3, type=11, cpp_type=10, label=1,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='urls', full_name='mesos.ACL.HTTPPut.urls', index=3,
+      number=4, type=11, cpp_type=10, label=2,
+      has_default_value=False, default_value=None,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=4218,
+  serialized_end=4368,
+)
+
+_ACL = descriptor.Descriptor(
+  name='ACL',
+  full_name='mesos.ACL',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+  ],
+  extensions=[
+  ],
+  nested_types=[_ACL_ENTITY, _ACL_RUNTASKS, _ACL_RECEIVEOFFERS, _ACL_HTTPGET, _ACL_HTTPPUT, ],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=3775,
+  serialized_end=4368,
+)
+
+
+_ACLS = descriptor.Descriptor(
+  name='ACLs',
+  full_name='mesos.ACLs',
+  filename=None,
+  file=DESCRIPTOR,
+  containing_type=None,
+  fields=[
+    descriptor.FieldDescriptor(
+      name='permissive', full_name='mesos.ACLs.permissive', index=0,
+      number=1, type=8, cpp_type=7, label=2,
+      has_default_value=True, default_value=True,
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='run_tasks', full_name='mesos.ACLs.run_tasks', index=1,
+      number=2, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='receive_offers', full_name='mesos.ACLs.receive_offers', index=2,
+      number=3, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='http_get', full_name='mesos.ACLs.http_get', index=3,
+      number=4, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+    descriptor.FieldDescriptor(
+      name='http_put', full_name='mesos.ACLs.http_put', index=4,
+      number=5, type=11, cpp_type=10, label=3,
+      has_default_value=False, default_value=[],
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      options=None),
+  ],
+  extensions=[
+  ],
+  nested_types=[],
+  enum_types=[
+  ],
+  options=None,
+  is_extendable=False,
+  extension_ranges=[],
+  serialized_start=4371,
+  serialized_end=4569,
 )
 
 _FRAMEWORKINFO.fields_by_name['id'].message_type = _FRAMEWORKID
+_HEALTHCHECK_HTTP.containing_type = _HEALTHCHECK;
+_HEALTHCHECK.fields_by_name['http'].message_type = _HEALTHCHECK_HTTP
 _COMMANDINFO_URI.containing_type = _COMMANDINFO;
+_COMMANDINFO_CONTAINERINFO.containing_type = _COMMANDINFO;
+_COMMANDINFO.fields_by_name['container'].message_type = _COMMANDINFO_CONTAINERINFO
 _COMMANDINFO.fields_by_name['uris'].message_type = _COMMANDINFO_URI
 _COMMANDINFO.fields_by_name['environment'].message_type = _ENVIRONMENT
+_COMMANDINFO.fields_by_name['health_check'].message_type = _HEALTHCHECK
 _EXECUTORINFO.fields_by_name['executor_id'].message_type = _EXECUTORID
 _EXECUTORINFO.fields_by_name['framework_id'].message_type = _FRAMEWORKID
 _EXECUTORINFO.fields_by_name['command'].message_type = _COMMANDINFO
@@ -1570,12 +2084,37 @@ _TASKSTATUS.fields_by_name['slave_id'].message_type = _SLAVEID
 _ENVIRONMENT_VARIABLE.containing_type = _ENVIRONMENT;
 _ENVIRONMENT.fields_by_name['variables'].message_type = _ENVIRONMENT_VARIABLE
 _PARAMETERS.fields_by_name['parameter'].message_type = _PARAMETER
+_ACL_ENTITY.fields_by_name['type'].enum_type = _ACL_ENTITY_TYPE
+_ACL_ENTITY.containing_type = _ACL;
+_ACL_ENTITY_TYPE.containing_type = _ACL_ENTITY;
+_ACL_RUNTASKS.fields_by_name['principals'].message_type = _ACL_ENTITY
+_ACL_RUNTASKS.fields_by_name['users'].message_type = _ACL_ENTITY
+_ACL_RUNTASKS.containing_type = _ACL;
+_ACL_RECEIVEOFFERS.fields_by_name['principals'].message_type = _ACL_ENTITY
+_ACL_RECEIVEOFFERS.fields_by_name['roles'].message_type = _ACL_ENTITY
+_ACL_RECEIVEOFFERS.containing_type = _ACL;
+_ACL_HTTPGET.fields_by_name['usernames'].message_type = _ACL_ENTITY
+_ACL_HTTPGET.fields_by_name['ips'].message_type = _ACL_ENTITY
+_ACL_HTTPGET.fields_by_name['hostnames'].message_type = _ACL_ENTITY
+_ACL_HTTPGET.fields_by_name['urls'].message_type = _ACL_ENTITY
+_ACL_HTTPGET.containing_type = _ACL;
+_ACL_HTTPPUT.fields_by_name['usernames'].message_type = _ACL_ENTITY
+_ACL_HTTPPUT.fields_by_name['ips'].message_type = _ACL_ENTITY
+_ACL_HTTPPUT.fields_by_name['hostnames'].message_type = _ACL_ENTITY
+_ACL_HTTPPUT.fields_by_name['urls'].message_type = _ACL_ENTITY
+_ACL_HTTPPUT.containing_type = _ACL;
+_ACLS.fields_by_name['run_tasks'].message_type = _ACL_RUNTASKS
+_ACLS.fields_by_name['receive_offers'].message_type = _ACL_RECEIVEOFFERS
+_ACLS.fields_by_name['http_get'].message_type = _ACL_HTTPGET
+_ACLS.fields_by_name['http_put'].message_type = _ACL_HTTPPUT
 DESCRIPTOR.message_types_by_name['FrameworkID'] = _FRAMEWORKID
 DESCRIPTOR.message_types_by_name['OfferID'] = _OFFERID
 DESCRIPTOR.message_types_by_name['SlaveID'] = _SLAVEID
 DESCRIPTOR.message_types_by_name['TaskID'] = _TASKID
 DESCRIPTOR.message_types_by_name['ExecutorID'] = _EXECUTORID
+DESCRIPTOR.message_types_by_name['ContainerID'] = _CONTAINERID
 DESCRIPTOR.message_types_by_name['FrameworkInfo'] = _FRAMEWORKINFO
+DESCRIPTOR.message_types_by_name['HealthCheck'] = _HEALTHCHECK
 DESCRIPTOR.message_types_by_name['CommandInfo'] = _COMMANDINFO
 DESCRIPTOR.message_types_by_name['ExecutorInfo'] = _EXECUTORINFO
 DESCRIPTOR.message_types_by_name['MasterInfo'] = _MASTERINFO
@@ -1594,119 +2133,145 @@ DESCRIPTOR.message_types_by_name['Environment'] = _ENVIRONMENT
 DESCRIPTOR.message_types_by_name['Parameter'] = _PARAMETER
 DESCRIPTOR.message_types_by_name['Parameters'] = _PARAMETERS
 DESCRIPTOR.message_types_by_name['Credential'] = _CREDENTIAL
+DESCRIPTOR.message_types_by_name['ACL'] = _ACL
+DESCRIPTOR.message_types_by_name['ACLs'] = _ACLS
 
 class FrameworkID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKID
-
+  
   # @@protoc_insertion_point(class_scope:mesos.FrameworkID)
 
 class OfferID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _OFFERID
-
+  
   # @@protoc_insertion_point(class_scope:mesos.OfferID)
 
 class SlaveID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEID
-
+  
   # @@protoc_insertion_point(class_scope:mesos.SlaveID)
 
 class TaskID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKID
-
+  
   # @@protoc_insertion_point(class_scope:mesos.TaskID)
 
 class ExecutorID(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORID
-
+  
   # @@protoc_insertion_point(class_scope:mesos.ExecutorID)
+
+class ContainerID(message.Message):
+  __metaclass__ = reflection.GeneratedProtocolMessageType
+  DESCRIPTOR = _CONTAINERID
+  
+  # @@protoc_insertion_point(class_scope:mesos.ContainerID)
 
 class FrameworkInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FRAMEWORKINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.FrameworkInfo)
+
+class HealthCheck(message.Message):
+  __metaclass__ = reflection.GeneratedProtocolMessageType
+  
+  class HTTP(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _HEALTHCHECK_HTTP
+    
+    # @@protoc_insertion_point(class_scope:mesos.HealthCheck.HTTP)
+  DESCRIPTOR = _HEALTHCHECK
+  
+  # @@protoc_insertion_point(class_scope:mesos.HealthCheck)
 
 class CommandInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-
+  
   class URI(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _COMMANDINFO_URI
-
+    
     # @@protoc_insertion_point(class_scope:mesos.CommandInfo.URI)
+  
+  class ContainerInfo(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _COMMANDINFO_CONTAINERINFO
+    
+    # @@protoc_insertion_point(class_scope:mesos.CommandInfo.ContainerInfo)
   DESCRIPTOR = _COMMANDINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.CommandInfo)
 
 class ExecutorInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _EXECUTORINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.ExecutorInfo)
 
 class MasterInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _MASTERINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.MasterInfo)
 
 class SlaveInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _SLAVEINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.SlaveInfo)
 
 class Value(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-
+  
   class Scalar(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_SCALAR
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Value.Scalar)
-
+  
   class Range(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_RANGE
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Value.Range)
-
+  
   class Ranges(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_RANGES
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Value.Ranges)
-
+  
   class Set(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_SET
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Value.Set)
-
+  
   class Text(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _VALUE_TEXT
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Value.Text)
   DESCRIPTOR = _VALUE
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Value)
 
 class Attribute(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _ATTRIBUTE
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Attribute)
 
 class Resource(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _RESOURCE
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Resource)
 
 class ResourceStatistics(message.Message):
@@ -1724,55 +2289,55 @@ class ResourceUsage(message.Message):
 class Request(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _REQUEST
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Request)
 
 class Offer(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _OFFER
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Offer)
 
 class TaskInfo(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKINFO
-
+  
   # @@protoc_insertion_point(class_scope:mesos.TaskInfo)
 
 class TaskStatus(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _TASKSTATUS
-
+  
   # @@protoc_insertion_point(class_scope:mesos.TaskStatus)
 
 class Filters(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _FILTERS
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Filters)
 
 class Environment(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
-
+  
   class Variable(message.Message):
     __metaclass__ = reflection.GeneratedProtocolMessageType
     DESCRIPTOR = _ENVIRONMENT_VARIABLE
-
+    
     # @@protoc_insertion_point(class_scope:mesos.Environment.Variable)
   DESCRIPTOR = _ENVIRONMENT
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Environment)
 
 class Parameter(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PARAMETER
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Parameter)
 
 class Parameters(message.Message):
   __metaclass__ = reflection.GeneratedProtocolMessageType
   DESCRIPTOR = _PARAMETERS
-
+  
   # @@protoc_insertion_point(class_scope:mesos.Parameters)
 
 class Credential(message.Message):
@@ -1780,5 +2345,47 @@ class Credential(message.Message):
   DESCRIPTOR = _CREDENTIAL
   
   # @@protoc_insertion_point(class_scope:mesos.Credential)
+
+class ACL(message.Message):
+  __metaclass__ = reflection.GeneratedProtocolMessageType
+  
+  class Entity(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _ACL_ENTITY
+    
+    # @@protoc_insertion_point(class_scope:mesos.ACL.Entity)
+  
+  class RunTasks(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _ACL_RUNTASKS
+    
+    # @@protoc_insertion_point(class_scope:mesos.ACL.RunTasks)
+  
+  class ReceiveOffers(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _ACL_RECEIVEOFFERS
+    
+    # @@protoc_insertion_point(class_scope:mesos.ACL.ReceiveOffers)
+  
+  class HTTPGet(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _ACL_HTTPGET
+    
+    # @@protoc_insertion_point(class_scope:mesos.ACL.HTTPGet)
+  
+  class HTTPPut(message.Message):
+    __metaclass__ = reflection.GeneratedProtocolMessageType
+    DESCRIPTOR = _ACL_HTTPPUT
+    
+    # @@protoc_insertion_point(class_scope:mesos.ACL.HTTPPut)
+  DESCRIPTOR = _ACL
+  
+  # @@protoc_insertion_point(class_scope:mesos.ACL)
+
+class ACLs(message.Message):
+  __metaclass__ = reflection.GeneratedProtocolMessageType
+  DESCRIPTOR = _ACLS
+  
+  # @@protoc_insertion_point(class_scope:mesos.ACLs)
 
 # @@protoc_insertion_point(module_scope)

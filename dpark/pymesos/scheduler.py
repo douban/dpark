@@ -2,10 +2,12 @@ import os, sys
 import time
 import getpass
 import logging
+import struct
+import socket
 
 from process import UPID, Process, async
 
-from mesos_pb2 import TASK_LOST
+from mesos_pb2 import TASK_LOST, MasterInfo
 from messages_pb2 import (RegisterFrameworkMessage, ReregisterFrameworkMessage, 
         DeactivateFrameworkMessage, UnregisterFrameworkMessage, 
         ResourceRequestMessage, ReviveOffersMessage, LaunchTasksMessage, KillTaskMessage, 
@@ -57,8 +59,15 @@ class MesosSchedulerDriver(Process):
         self.savedSlavePids = {}
 
     @async # called by detector
-    def onNewMasterDetectedMessage(self, pid):
-        self.master = UPID(pid)
+    def onNewMasterDetectedMessage(self, data):
+        try:
+            info = MasterInfo()
+            info.ParseFromString(data)
+            ip = socket.inet_ntoa(struct.pack('<I', info.ip))
+            self.master = UPID('master@%s:%s' % (ip, info.port))
+        except:
+            self.master = UPID(data)
+            
         self.connected = False
         self.register()
 

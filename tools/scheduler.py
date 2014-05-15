@@ -51,15 +51,16 @@ def safe(f):
 class SubmitScheduler(object):
     def __init__(self, options, command):
         self.framework_id = None
+        self.executor = None
         self.framework = mesos_pb2.FrameworkInfo()
         self.framework.user = getuser()
         if self.framework.user == 'root':
             raise Exception("drun is not allowed to run as 'root'")
-        name = '[drun@%s] ' % socket.gethostname() + ' '.join(sys.argv[1:])
-        if len(name) > 512:
-            name = name[:512] + '...'
+        name = '[drun] ' + ' '.join(sys.argv[1:])
+        if len(name) > 256:
+            name = name[:256] + '...'
         self.framework.name = name
-        self.executor = self.getExecutorInfo()
+        self.framework.hostname = socket.gethostname()
         self.cpus = options.cpus
         self.mem = parse_mem(options.mem)
         self.options = options
@@ -111,6 +112,7 @@ class SubmitScheduler(object):
     def registered(self, driver, fid, masterInfo):
         logging.debug("Registered with Mesos, FID = %s" % fid.value)
         self.framework_id = fid.value
+        self.executor = self.getExecutorInfo()
         self.std_t, self.std_port = self.create_port(sys.stdout)
         self.err_t, self.err_port = self.create_port(sys.stderr)
 

@@ -83,20 +83,34 @@ message ExecutorID {
 
 
 /**
- * Describes a framework. If the user field is set to an empty string
- * Mesos will automagically set it to the current user. Note that the
- * ID is only available after a framework has registered, however, it
- * is included here in order to facilitate scheduler failover (i.e.,
- * if it is set then the MesosSchedulerDriver expects the scheduler is
- * performing failover). The amount of time that the master will wait
- * for the scheduler to failover before removing the framework is
- * specified by failover_timeout.
- * If checkpoint is set, framework pid, executor pids and status updates
- * are checkpointed to disk by the slaves.
- * Checkpointing allows a restarted slave to reconnect with old executors
- * and recover status updates, at the cost of disk I/O.
- * The role field is used to group frameworks for allocation decisions,
- * depending on the allocation policy being used.
+ * A slave generated ID to distinguish a container. The ID must be unique
+ * between any active or completed containers on the slave. In particular,
+ * containers for different runs of the same (framework, executor) pair must be
+ * unique.
+ */
+message ContainerID {
+  required string value = 1;
+}
+
+
+/**
+ * Describes a framework. The user field is used to determine the
+ * Unix user that an executor/task should be launched as. If the user
+ * field is set to an empty string Mesos will automagically set it
+ * to the current user. Note that the ID is only available after a
+ * framework has registered, however, it is included here in order to
+ * facilitate scheduler failover (i.e., if it is set then the
+ * MesosSchedulerDriver expects the scheduler is performing failover).
+ * The amount of time that the master will wait for the scheduler to
+ * failover before removing the framework is specified by
+ * failover_timeout. If checkpoint is set, framework pid, executor
+ * pids and status updates are checkpointed to disk by the slaves.
+ * Checkpointing allows a restarted slave to reconnect with old
+ * executors and recover status updates, at the cost of disk I/O.
+ * The role field is used to group frameworks for allocation
+ * decisions, depending on the allocation policy being used.
+ * If the hostname field is set to an empty string Mesos will
+ * automagically set it to the current hostname.
  */
 message FrameworkInfo {
   required string user = 1;
@@ -105,27 +119,118 @@ message FrameworkInfo {
   optional double failover_timeout = 4 [default = 0.0];
   optional bool checkpoint = 5 [default = false];
   optional string role = 6 [default = "*"];
+  optional string hostname = 7;
 }
 
 
 /**
- * Describes a command, executed via: '/bin/sh -c value'. Any uri's
- * specified are fetched before executing the command.
- * If executable field for an uri is set, executable file permission
- * is set on the downloaded file. Also, if the downloaded file has ".tgz"
- * extension it is extracted into the executor's working directory.
- * In addition, any environment variables are set before executing
+ * Describes a health check for a task or executor (or any arbitrary
+ * process/command). A "strategy" is picked by specifying one of the
+ * optional fields, currently only 'http' is supported. Specifying
+ * more than one strategy is an error.
+ */
+message HealthCheck {
+  // Describes an HTTP health check.
+  message HTTP {
+    // Port to send the HTTP request.
+    required uint32 port = 1;
+
+    // HTTP request path.
+    optional string path = 2 [default = "/"];
+
+    // TODO(benh): Implement:
+    // Whether or not to use HTTPS.
+    // optional bool ssl = 3 [default = false];
+
+    // Expected response statuses. Not specifying any statuses implies
+    // that any returned status is acceptable.
+    repeated uint32 statuses = 4;
+
+    // TODO(benh): Include an 'optional bytes data' field for checking
+    // for specific data in the response.
+  }
+
+  optional HTTP http = 1;
+
+  // TODO(benh): Consider adding a URL health check strategy which
+  // allows doing something similar to the HTTP strategy but
+  // encapsulates all the details in a single string field.
+
+  // TODO(benh): Other possible health check strategies could include
+  // one for TCP/UDP or a "command". A "command" could be running a
+  // (shell) command to check the healthiness. We'd need to determine
+  // what arguments (or environment variables) we'd want to set so
+  // that the command could do it's job (i.e., do we want to expose
+  // the stdout/stderr and/or the pid to make checking for healthiness
+  // easier).
+
+  // Amount of time to wait until starting the health checks.
+  optional double delay_seconds = 2 [default = 15.0];
+
+  // Interval between health checks.
+  optional double interval_seconds = 3 [default = 10.0];
+
+  // Amount of time to wait for the health check to complete.
+  optional double timeout_seconds = 4 [default = 20.0];
+
+  // Number of consecutive failures until considered unhealthy.
+  optional uint32 failures = 5 [default = 3];
+}
+
+
+/**
+ * Describes a command, executed via: '/bin/sh -c value'. Any URIs specified
+ * are fetched before executing the command.  If the executable field for an
+ * uri is set, executable file permission is set on the downloaded file.
+ * Otherwise, if the downloaded file has a recognized archive extension
+ * (currently [compressed] tar and zip) it is extracted into the executor's
+ * working directory. This extraction can be disabled by setting `extract` to
+ * false. In addition, any environment variables are set before executing
  * the command (so they can be used to "parameterize" your command).
  */
 message CommandInfo {
   message URI {
     required string value = 1;
     optional bool executable = 2;
+    optional bool extract = 3 [default = true];
   }
 
+  // Describes a container.
+  // Not all containerizers currently implement ContainerInfo, so it
+  // is possible that a launched task will fail due to supplying this
+  // attribute.
+  // NOTE: The containerizer API is currently in an early beta or
+  // even alpha state. Some details, like the exact semantics of an
+  // "image" or "options" are not yet hardened.
+  // TODO(tillt): Describe the exact scheme and semantics of "image"
+  // and "options".
+  message ContainerInfo {
+    // URI describing the container image name.
+    required string image = 1;
+
+    // Describes additional options passed to the containerizer.
+    repeated string options = 2;
+  }
+
+  // NOTE: MesosContainerizer does currently not support this
+  // attribute and tasks supplying a 'container' will fail.
+  optional ContainerInfo container = 4;
+
   repeated URI uris = 1;
+
   optional Environment environment = 2;
+
+  // Actual command (i.e., 'echo hello world').
   required string value = 3;
+
+  // Enables executor and tasks to run as a specific user. If the user
+  // field is present both in FrameworkInfo and here, the CommandInfo
+  // user value takes precedence.
+  optional string user = 5;
+
+  // A health check for the command (currently in *alpha* and initial
+  // support will only be for TaskInfo's that have a CommandInfo).
+  optional HealthCheck health_check = 6;
 }
 
 
@@ -160,6 +265,8 @@ message MasterInfo {
   required string id = 1;
   required uint32 ip = 2;
   required uint32 port = 3 [default = 5050];
+  optional string pid = 4;
+  optional string hostname = 5;
 }
 
 
@@ -271,7 +378,7 @@ message ResourceStatistics {
   optional double cpus_system_time_secs = 3;
 
   // Number of CPUs allocated.
-  required double cpus_limit = 4;
+  optional double cpus_limit = 4;
 
   // cpu.stat on process throttling (for contention issues).
   optional uint32 cpus_nr_periods = 7;
@@ -448,12 +555,98 @@ message Parameters {
 /**
  * Credential used for authentication.
  *
- * NOTE: The 'principal' is used for authenticating the framework with
- * the master. This is different from 'FrameworkInfo.user'
+ * NOTE: The 'principal' is used for authenticating the framework or slave
+ * with the master. This is different from 'FrameworkInfo.user'
  * which is used to determine the user under which the framework's
  * executors/tasks are run.
  */
 message Credential {
   required string principal = 1;
   optional bytes secret = 2;
+}
+
+
+/**
+ * ACLs used for authorization.
+ */
+message ACL {
+
+  // Entity is used to describe a subject(s) or an object(s) of an ACL.
+  // NOTE:
+  // To allow everyone access to an Entity set its type to 'ANY'.
+  // To deny access to an Entity set its type to 'NONE'.
+  message Entity {
+    enum Type {
+      SOME = 0;
+      ANY = 1;
+      NONE = 2;
+    }
+    optional Type type = 1 [default = SOME];
+    repeated string values = 2; // Ignored for ANY/NONE.
+  }
+
+  // ACLs.
+  message RunTasks {
+    // Subjects.
+    required Entity principals = 1; // Framework principals.
+
+    // Objects.
+    required Entity users = 2; // Users to run the tasks/executors as.
+  }
+
+  message ReceiveOffers {
+    // Subjects.
+    required Entity principals = 1; // Framework principals.
+
+    // Objects.
+    required Entity roles = 2; // Resource roles that can be offered.
+  }
+
+  message HTTPGet {
+    // Subjects (At least one of these should be set).
+    optional Entity usernames = 1; // HTTP authentication based usernames.
+    optional Entity ips = 2;
+    optional Entity hostnames = 3;
+
+    // Objects.
+    required Entity urls = 4;
+  }
+
+  message HTTPPut {
+    // Subjects (At least one of these should be set).
+    optional Entity usernames = 1; // HTTP authentication based usernames.
+    optional Entity ips = 2;
+    optional Entity hostnames = 3;
+
+    // Objects.
+    required Entity urls = 4;
+  }
+}
+
+
+/*
+ * Collection of ACL.
+ *
+ * Each authorization request is evaluated against the ACLs in the order
+ * they are defined.
+ *
+ * For simplicity, the ACLs for a given action are not aggregated even
+ * when they have the same subjects or objects. The first ACL that
+ * matches the request determines whether that request should be
+ * permitted or not. An ACL matches iff both the subjects
+ * (e.g., clients, principals) and the objects (e.g., urls, users,
+ * roles) of the ACL match the request.
+ *
+ * If none of the ACLs match the request, the 'permissive' field
+ * determines whether the request should be permitted or not.
+ *
+ * TODO(vinod): Do aggregation of ACLs when possible.
+ *
+ */
+message ACLs {
+  required bool permissive = 1 [default = true];
+  repeated ACL.RunTasks run_tasks = 2;
+  repeated ACL.ReceiveOffers receive_offers = 3;
+  repeated ACL.HTTPGet http_get = 4;
+  repeated ACL.HTTPPut http_put = 5;
 }

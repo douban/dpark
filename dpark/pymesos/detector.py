@@ -24,7 +24,7 @@ class MasterDetector(object):
         if not children:
             self.agent.onNoMasterDetectedMessage()
             return True
-        masterSeq = max(children)
+        masterSeq = min(children)
         if masterSeq == self.masterSeq:
             return True
         self.masterSeq = masterSeq

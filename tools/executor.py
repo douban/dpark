@@ -46,6 +46,7 @@ def reply_status(driver, task_id, status):
     update = mesos_pb2.TaskStatus()
     update.task_id.MergeFrom(task_id)
     update.state = status
+    update.timestamp = time.time()
     driver.sendStatusUpdate(update)
 
 def launch_task(self, driver, task):

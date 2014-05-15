@@ -493,15 +493,15 @@ class MesosScheduler(DAGScheduler):
             self.err_logger = self.start_logger(sys.stderr)
 
     def start_driver(self):
-        name = '[dpark@%s] ' % socket.gethostname()
-        name += os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
-        if len(name) > 512:
-            name = name[:512] + '...'
+        name = '[dpark] ' + os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
+        if len(name) > 256:
+            name = name[:256] + '...'
         framework = mesos_pb2.FrameworkInfo()
         framework.user = getuser()
         if framework.user == 'root':
             raise Exception("dpark is not allowed to run as 'root'")
         framework.name = name
+        framework.hostname = socket.gethostname()
 
         self.driver = mesos.MesosSchedulerDriver(self, framework,
                                                  self.master)
