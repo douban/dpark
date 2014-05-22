@@ -38,11 +38,9 @@ class ZKClient:
         self.connected = False
         self.handle = -1
         self.servers = servers
-        self.timeout= timeout
         self.watchers  = set()
         self._lock = threading.Lock()
-        self.conn_cv = threading.Condition( )
-
+        self.conn_cv = threading.Condition()
 
     def start(self):
         self.handle = zookeeper.init(self.servers, self.connection_watcher, self.timeout * 1000)
@@ -51,8 +49,6 @@ class ZKClient:
         self.conn_cv.release()
         if not self.connected:
             raise TimeoutException
-
-
 
     def stop(self):
         return zookeeper.close(self.handle)
