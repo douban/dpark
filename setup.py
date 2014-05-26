@@ -39,6 +39,7 @@ setup(name='DPark',
           'protobuf',
           'cython',
           'lz4',
+          'psutil',
       ],
       tests_require=[
           'nose',
