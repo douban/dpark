@@ -17,7 +17,9 @@ ctx = zmq.Context()
 
 import dpark.pymesos as mesos
 import dpark.pymesos.mesos_pb2 as mesos_pb2
+import dpark.conf as conf
 from dpark.util import getuser
+from dpark import moosefs
 
 class Task:
     def __init__(self, id):
@@ -489,8 +491,8 @@ if __name__ == "__main__":
     parser = OptionParser(usage="Usage: drun [options] <command>")
     parser.allow_interspersed_args=False
     parser.add_option("-s", "--master", type="string",
-                default="zk://zk1:2181,zk2:2181,zk3:2181,zk4:2181,zk5:2181/mesos_master2",
-                        help="url of master (default: zookeeper")
+                default="mesos",
+                        help="url of master (default: mesos)")
     parser.add_option("-i", "--mpi", action="store_true",
                         help="run MPI tasks")
 
@@ -527,7 +529,18 @@ if __name__ == "__main__":
 
     (options, command) = parser.parse_args()
 
-    if options.master.startswith('mesos://'):
+    if 'DPARK_CONF' in os.environ:
+        conf.load_conf(os.environ['DPARK_CONF'])
+    elif os.path.exists('/etc/dpark.conf'):
+        conf.load_conf('/etc/dpark.conf')
+
+    conf.__dict__.update(os.environ)
+    moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
+    moosefs.master.ENABLE_DCACHE = conf.MOOSEFS_DIR_CACHE
+
+    if options.master == 'mesos':
+        options.master = conf.MESOS_MASTER
+    elif options.master.startswith('mesos://'):
         if '@' in options.master:
             options.master = options.master[options.master.rfind('@')+1:]
         else:
