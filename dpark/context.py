@@ -327,6 +327,11 @@ def parse_options():
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
 
+    root = logging.getLogger()
+    if root.handlers:
+        for handler in root.handlers:
+            root.removeHandler(handler)
+
     logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
         level=options.logLevel)
 
