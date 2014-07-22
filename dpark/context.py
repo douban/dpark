@@ -33,6 +33,9 @@ def setup_conf(options):
     elif os.path.exists('/etc/dpark.conf'):
         conf.load_conf('/etc/dpark.conf')
 
+    if options.mem is None:
+        options.mem = conf.MEM_PER_TASK
+
     conf.__dict__.update(os.environ)
     import moosefs
     moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
@@ -53,7 +56,6 @@ class DparkContext(object):
 
         options = parse_options()
         self.options = options
-        setup_conf(options)
 
         master = self.master or options.master
         if master == 'local':
@@ -293,7 +295,7 @@ def add_default_options():
 
     group.add_option("-c", "--cpus", type="float", default=1.0,
             help="cpus used per task")
-    group.add_option("-M", "--mem", type="float", default=1000.0,
+    group.add_option("-M", "--mem", type="float",
             help="memory used per task")
     group.add_option("-g", "--group", type="string", default="",
             help="which group of machines")
@@ -320,6 +322,8 @@ add_default_options()
 
 def parse_options():
     options, args = parser.parse_args()
+    setup_conf(options)
+
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
 

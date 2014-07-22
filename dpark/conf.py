@@ -19,6 +19,9 @@ MOOSEFS_MOUNT_POINTS = {
 # consistant dir cache in client, need patched mfsmaster
 MOOSEFS_DIR_CACHE = False
 
+# memory used per task, like -M (--m) option in context.
+MEM_PER_TASK = 200.0
+
 def load_conf(path):
     if not os.path.exists(path):
         logger.error("conf %s do not exists", path)
