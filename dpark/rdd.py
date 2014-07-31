@@ -1184,7 +1184,8 @@ class GZipFileRDD(TextFileRDD):
                 if not block:
                     return pos # EOF
             try:
-                if zlib.decompressobj(-zlib.MAX_WBITS).decompress(block):
+                dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                if dz.decompress(block) and len(dz.unused_data) <= 8:
                     return pos # FOUND
             except Exception, e:
                 pass
@@ -1238,6 +1239,13 @@ class GZipFileRDD(TextFileRDD):
                         start - old + len(d), self.path)
                 skip_first = True
                 continue
+
+            if len(dz.unused_data) > 8 :
+                f.seek(-len(dz.unused_data)+8, 1)
+                zf = gzip.GzipFile(fileobj=f)
+                zf._read_gzip_header()
+                dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                start -= f.tell()
 
             last_line += io.readline()
             if skip_first:
