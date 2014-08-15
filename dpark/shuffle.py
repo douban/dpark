@@ -28,7 +28,7 @@ class LocalFileShuffle:
                 if os.path.exists(os.path.dirname(p))]
         if not cls.shuffleDir:
             return
-        cls.serverUri = env.get('SERVER_URI', 'file://' + cls.shuffleDir[0])
+        cls.serverUri = env.get('SERVER_URI')
         logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
@@ -348,22 +348,6 @@ class BaseMapOutputTracker(object):
 
     def stop(self):
         pass
-
-class LocalMapOutputTracker(BaseMapOutputTracker):
-    def __init__(self):
-        self.serverUris = {}
-
-    def clear(self):
-        self.serverUris.clear()
-
-    def registerMapOutputs(self, shuffleId, locs):
-        self.serverUris[shuffleId] = locs
-
-    def getServerUris(self, shuffleId):
-        return self.serverUris.get(shuffleId)
-
-    def stop(self):
-        self.clear()
 
 class MapOutputTracker(BaseMapOutputTracker):
     def __init__(self):

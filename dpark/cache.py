@@ -164,37 +164,6 @@ class BaseCacheTracker(object):
     def stop(self):
         self.clear()
 
-class LocalCacheTracker(BaseCacheTracker):
-    def __init__(self):
-        self.locs = {}
-        self.cache = Cache()
-
-    def registerRDD(self, rddId, numPartitions):
-        if rddId not in self.locs:
-            logger.debug("Registering RDD ID %d with cache", rddId)
-            self.locs[rddId] = [[] for i in range(numPartitions)]
-
-    def getLocationsSnapshot(self):
-        return self.locs
-
-    def getCachedLocs(self, rdd_id, index):
-        def parse_hostname(uri):
-            if uri.startswith('http://'):
-                h = uri.split(':')[1].rsplit('/', 1)[-1]
-                return h
-            return ''
-        return map(parse_hostname, self.getCacheUri(rdd_id, index))
-
-    def getCacheUri(self, rdd_id, index):
-        return self.locs[rdd_id][index]
-
-    def addHost(self, rdd_id, index, host):
-        self.locs[rdd_id][index].append(host)
-
-    def removeHost(self, rdd_id, index, host):
-        if host in self.locs[rdd_id][index]:
-            self.locs[rdd_id][index].remove(host)
-
 class CacheTracker(BaseCacheTracker):
     def __init__(self):
         cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')

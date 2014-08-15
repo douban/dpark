@@ -22,23 +22,16 @@ class DparkEnv:
     def __init__(self):
         self.started = False
 
-    def start(self, isMaster, environ={}, isLocal=False):
+    def start(self, isMaster, environ={}):
         if self.started:
             return
         logger.debug("start env in %s: %s %s", os.getpid(),
                 isMaster, environ)
         self.isMaster = isMaster
-        self.isLocal = isLocal
         if isMaster:
             roots = conf.DPARK_WORK_DIR
             if isinstance(roots, str):
                 roots = roots.split(',')
-            if isLocal:
-                root = roots[0] # for local mode
-                if not os.path.exists(root):
-                    os.mkdir(root, 0777)
-                    os.chmod(root, 0777) # because of umask
-
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
                 socket.gethostname(), os.getpid())
             self.workdir = [os.path.join(root, name) for root in roots]
@@ -46,6 +39,7 @@ class DparkEnv:
                 if not os.path.exists(d):
                     try: os.makedirs(d)
                     except OSError: pass
+            self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
             self.environ['WORKDIR'] = self.workdir
             self.environ['COMPRESS'] = util.COMPRESS
         else:
@@ -67,18 +61,12 @@ class DparkEnv:
 
         self.trackerClient = TrackerClient(addr)
 
-        from dpark.cache import CacheTracker, LocalCacheTracker
-        if isLocal:
-            self.cacheTracker = LocalCacheTracker()
-        else:
-            self.cacheTracker = CacheTracker()
+        from dpark.cache import CacheTracker
+        self.cacheTracker = CacheTracker()
 
-        from dpark.shuffle import LocalFileShuffle, MapOutputTracker, LocalMapOutputTracker
+        from dpark.shuffle import LocalFileShuffle, MapOutputTracker
         LocalFileShuffle.initialize(isMaster)
-        if isLocal:
-            self.mapOutputTracker = LocalMapOutputTracker()
-        else:
-            self.mapOutputTracker = MapOutputTracker()
+        self.mapOutputTracker = MapOutputTracker()
         from dpark.shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
         #self.shuffleFetcher = SimpleShuffleFetcher()
         self.shuffleFetcher = ParallelShuffleFetcher(2)
