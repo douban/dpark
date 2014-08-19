@@ -6,7 +6,7 @@ import time
 from dpark.env import env
 from dpark.util import spawn
 
-logger = logging.getLogger("tracker")
+logger = logging.getLogger(__name__)
 
 class TrackerMessage(object):
     pass

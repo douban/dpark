@@ -70,7 +70,7 @@ class Process(UPID):
                 func(*args, **kw)
                 #logger.debug("run job %s comeplete", func.__name__)
             except Exception, e:
-                logging.error("error while call %s (tried %d times)", func, tried)
+                logger.error("error while call %s (tried %d times)", func, tried)
                 import traceback; traceback.print_exc()
                 if tried < 4:
                     self.jobs.put((t + 3 ** tried, tried + 1, func, args, kw))
@@ -240,7 +240,7 @@ class Process(UPID):
                     except Exception, e:
                         import traceback; traceback.print_exc()
                         conns.pop(fd).close()
-                #logging.debug("stop process event %d", fd)
+
         sock.close()
     """
     def communicate(self, conn):

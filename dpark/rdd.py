@@ -25,7 +25,7 @@ from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
 
-logger = logging.getLogger("rdd")
+logger = logging.getLogger(__name__)
 
 class Split(object):
     def __init__(self, idx):
@@ -228,7 +228,7 @@ class RDD(object):
                     else:
                         s = f(s, v)
                 except Exception, e:
-                    logging.warning("skip bad record %s: %s", v, e)
+                    logger.warning("skip bad record %s: %s", v, e)
                     err += 1
                     if total > 100 and err > total * self.err * 10:
                         raise Exception("too many error occured: %s" % (float(err)/total))

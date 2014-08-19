@@ -25,7 +25,7 @@ from dpark.job import SimpleJob
 from dpark.env import env
 from dpark.mutable_dict import MutableDict
 
-logger = logging.getLogger("scheduler")
+logger = logging.getLogger(__name__)
 
 MAX_FAILED = 3
 EXECUTOR_MEMORY = 64 # cache

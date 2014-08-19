@@ -6,9 +6,12 @@ import pprint
 import random
 import operator
 import shutil
+import logging
 from dpark.context import *
 from dpark.rdd import *
 from dpark.accumulator import *
+
+logging.getLogger('dpark').setLevel(logging.ERROR)
 
 class TestRDD(unittest.TestCase):
     def setUp(self):

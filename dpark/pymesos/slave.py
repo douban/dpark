@@ -11,7 +11,7 @@ from launcher import Launcher
 from mesos_pb2 import *
 from messages_pb2 import *
 
-logger = logging.getLogger("slave")
+logger = logging.getLogger(__name__)
 
 class Resources(object):
     def __init__(self, cpus, mem):

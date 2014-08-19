@@ -12,7 +12,7 @@ import msgpack
 from dpark.env import env
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 
-logger = logging.getLogger("cache")
+logger = logging.getLogger(__name__)
 
 class Cache:
     data = {}

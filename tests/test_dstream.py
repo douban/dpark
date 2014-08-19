@@ -1,8 +1,10 @@
-import os, sys
+import os, sys, logging
 import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark.dstream import *
+
+logging.getLogger('dpark').setLevel(logging.ERROR)
 
 class TestInputStream(InputDStream):
     def __init__(self, ssc, input, numPart=2):

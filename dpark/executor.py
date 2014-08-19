@@ -29,7 +29,7 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 
-logger = logging.getLogger("executor@%s" % socket.gethostname())
+logger = logging.getLogger("dpark.executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
@@ -334,7 +334,7 @@ class MyExecutor(mesos.Executor):
     def launchTask(self, driver, task):
         task_id = task.task_id
         reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
-        logging.debug("launch task %s", task.task_id.value)
+        logger.debug("launch task %s", task.task_id.value)
         try:
             def callback((state, data)):
                 reply_status(driver, task_id, state, data)

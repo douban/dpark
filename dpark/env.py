@@ -8,7 +8,7 @@ import zmq
 from dpark import util
 import dpark.conf as conf
 
-logger = logging.getLogger("env")
+logger = logging.getLogger(__name__)
 
 class DparkEnv:
     environ = {}

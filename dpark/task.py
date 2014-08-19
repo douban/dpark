@@ -9,7 +9,7 @@ from dpark.util import compress, decompress
 from dpark.serialize import marshalable, load_func, dump_func
 from dpark.shuffle import LocalFileShuffle
 
-logger = logging.getLogger("dpark")
+logger = logging.getLogger(__name__)
 
 class Task:
     def __init__(self):
@@ -121,7 +121,7 @@ class ShuffleMapTask(DAGTask):
                     os.rename(tpath, path)
                     break
                 except IOError, e:
-                    logging.warning("write %s failed: %s, try again (%d)", path, e, tried)
+                    logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
                     try: os.remove(tpath)
                     except OSError: pass
             else:

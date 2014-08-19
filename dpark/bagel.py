@@ -5,7 +5,7 @@ import logging
 import shutil
 import operator
 
-logger = logging.getLogger("bagel")
+logger = logging.getLogger(__name__)
 
 class Vertex:
     def __init__(self, id, value, outEdges, active):

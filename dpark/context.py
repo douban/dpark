@@ -14,7 +14,7 @@ from dpark.tabular import TabularRDD
 import dpark.conf as conf
 from math import ceil
 
-logger = logging.getLogger("context")
+logger = logging.getLogger(__name__)
 
 def singleton(cls):
     instances = {}
@@ -90,6 +90,10 @@ class DparkContext(object):
         self.defaultMinSplits = max(self.defaultParallelism, 2)
 
         self.initialized = True
+
+    @staticmethod
+    def setLogLevel(level):
+        logging.getLogger('dpark').setLevel(level)
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -320,6 +324,7 @@ def add_default_options():
 
 add_default_options()
 
+
 def parse_options():
     options, args = parser.parse_args()
     setup_conf(options)
@@ -327,12 +332,16 @@ def parse_options():
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
 
-    root = logging.getLogger()
-    if root.handlers:
-        for handler in root.handlers:
-            root.removeHandler(handler)
+    log_format = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
+    logging.basicConfig(format=log_format, level=options.logLevel)
 
-    logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
-        level=options.logLevel)
+    logger = logging.getLogger('dpark')
+    logger.propagate=False
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(log_format))
+
+    logger.addHandler(handler)
+    logger.setLevel(max(options.logLevel, logger.level))
 
     return options

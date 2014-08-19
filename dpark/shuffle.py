@@ -17,7 +17,7 @@ from dpark.tracker import GetValueMessage, SetValueMessage
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
-logger = logging.getLogger("shuffle")
+logger = logging.getLogger(__name__)
 
 class LocalFileShuffle:
     serverUri = None

@@ -21,6 +21,8 @@ import dpark.conf as conf
 from dpark.util import getuser
 from dpark import moosefs
 
+logger = logging.getLogger('dpark.scheduler')
+
 class Task:
     def __init__(self, id):
         self.id = id
@@ -112,7 +114,7 @@ class SubmitScheduler(object):
 
     @safe
     def registered(self, driver, fid, masterInfo):
-        logging.debug("Registered with Mesos, FID = %s" % fid.value)
+        logger.debug("Registered with Mesos, FID = %s" % fid.value)
         self.framework_id = fid.value
         self.executor = self.getExecutorInfo()
         self.std_t, self.std_port = self.create_port(sys.stdout)
@@ -145,13 +147,13 @@ class SubmitScheduler(object):
                 continue
 
             cpus, mem = self.getResource(offer)
-            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s",
+            logger.debug("got resource offer %s: cpus:%s, mem:%s at %s",
                 offer.id.value, cpus, mem, offer.hostname)
             sid = offer.slave_id.value
             tasks = []
             while (self.total_tasks and cpus+1e-4 >= self.cpus and mem >= self.mem
                     and (tpn ==0 or tpn > 0 and len(self.slaveTasks.get(sid,set())) < tpn)):
-                logging.debug("Accepting slot on slave %s (%s)",
+                logger.debug("Accepting slot on slave %s (%s)",
                     offer.slave_id.value, offer.hostname)
                 t = self.total_tasks.pop()
                 task = self.create_task(offer, t, cpus)
@@ -165,7 +167,7 @@ class SubmitScheduler(object):
                 if not self.total_tasks:
                     break
 
-            logging.debug("dispatch %d tasks to slave %s", len(tasks), offer.hostname)
+            logger.debug("dispatch %d tasks to slave %s", len(tasks), offer.hostname)
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
     def create_task(self, offer, t, cpus):
@@ -197,7 +199,7 @@ class SubmitScheduler(object):
 
     @safe
     def statusUpdate(self, driver, update):
-        logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
+        logger.debug("Task %s in state %d" % (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
             # check failed after launched
@@ -207,7 +209,7 @@ class SubmitScheduler(object):
                     self.total_tasks.remove(t)
                     break
             else:
-                logging.debug("Task %d is finished, ignore it", tid)
+                logger.debug("Task %d is finished, ignore it", tid)
                 return
 
         t = self.task_launched[tid]
@@ -218,7 +220,7 @@ class SubmitScheduler(object):
             self.started = True
 
         elif update.state == mesos_pb2.TASK_LOST:
-            logging.warning("Task %s was lost, try again", tid)
+            logger.warning("Task %s was lost, try again", tid)
             if not self.total_tasks:
                 driver.reviveOffers() # request more offers again
             t.tried += 1
@@ -238,12 +240,12 @@ class SubmitScheduler(object):
             if update.state >= mesos_pb2.TASK_FAILED:
                 if t.tried < self.options.retry:
                     t.tried += 1
-                    logging.warning("task %d failed with %d, retry %d", t.id, update.state, t.tried)
+                    logger.warning("task %d failed with %d, retry %d", t.id, update.state, t.tried)
                     if not self.total_tasks:
                         driver.reviveOffers() # request more offers again
                     self.total_tasks.append(t) # try again
                 else:
-                    logging.error("task %d failed with %d on %s", t.id, update.state, slave)
+                    logger.error("task %d failed with %d on %s", t.id, update.state, slave)
                     self.stop(1)
 
             if not self.task_launched and not self.total_tasks:
@@ -254,7 +256,7 @@ class SubmitScheduler(object):
         now = time.time()
         for tid, t in self.task_launched.items():
             if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
-                logging.warning("task %d lauched failed, assign again", tid)
+                logger.warning("task %d lauched failed, assign again", tid)
                 if not self.total_tasks:
                     driver.reviveOffers() # request more offers again
                 t.tried += 1
@@ -265,16 +267,16 @@ class SubmitScheduler(object):
 
     @safe
     def offerRescinded(self, driver, offer):
-        logging.debug("resource rescinded: %s", offer)
+        logger.debug("resource rescinded: %s", offer)
         # task will retry by checking
 
     @safe
     def slaveLost(self, driver, slave):
-        logging.warning("slave %s lost", slave.value)
+        logger.warning("slave %s lost", slave.value)
 
     @safe
     def error(self, driver, code, message):
-        logging.error("Error from Mesos: %s (error code: %d)" % (message, code))
+        logger.error("Error from Mesos: %s (error code: %d)" % (message, code))
 
     @safe
     def stop(self, status):
@@ -284,7 +286,7 @@ class SubmitScheduler(object):
         self.status = status
         self.std_t.join()
         self.err_t.join()
-        logging.debug("scheduler stopped")
+        logger.debug("scheduler stopped")
 
 
 class MPIScheduler(SubmitScheduler):
@@ -305,7 +307,7 @@ class MPIScheduler(SubmitScheduler):
         self.task_launched[t.id] = t
         self.used_tasks[t.id] = (offer.hostname, k)
         task = self.create_task(offer, t, k)
-        logging.debug("lauching %s task with offer %s on %s, slots %d", t.id,
+        logger.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
         driver.launchTasks(offer.id, [task], REFUSE_FILTER)
 
@@ -317,7 +319,7 @@ class MPIScheduler(SubmitScheduler):
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
-            logging.debug("got resource offer %s: cpus:%s, mem:%s at %s",
+            logger.debug("got resource offer %s: cpus:%s, mem:%s at %s",
                 offer.id.value, cpus, mem, offer.hostname)
             if launched >= self.options.tasks or offer.hostname in self.used_hosts:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
@@ -340,15 +342,15 @@ class MPIScheduler(SubmitScheduler):
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
 
         if launched < self.options.tasks:
-            logging.warning('not enough offers: need %d offer %d, waiting more resources',
+            logger.warning('not enough offers: need %d offer %d, waiting more resources',
                             self.options.tasks, launched)
 
     @safe
     def statusUpdate(self, driver, update):
-        logging.debug("Task %s in state %d" % (update.task_id.value, update.state))
+        logger.debug("Task %s in state %d" % (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
-            logging.error("Task %d not in task_launched", tid)
+            logger.error("Task %d not in task_launched", tid)
             return
 
         t = self.task_launched[tid]
@@ -360,12 +362,12 @@ class MPIScheduler(SubmitScheduler):
             launched = sum(self.used_hosts.values())
             ready = all(t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
             if launched == self.options.tasks and ready:
-                logging.debug("all tasks are ready, start to run")
+                logger.debug("all tasks are ready, start to run")
                 self.start_mpi()
 
         elif update.state in (mesos_pb2.TASK_LOST, mesos_pb2.TASK_FAILED):
             if not self.started:
-                logging.warning("Task %s was lost, try again", tid)
+                logger.warning("Task %s was lost, try again", tid)
                 driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
@@ -373,12 +375,12 @@ class MPIScheduler(SubmitScheduler):
                 self.used_tasks.pop(tid)
                 self.task_launched.pop(tid)
             else:
-                logging.error("Task %s failed, cancel all tasks", tid)
+                logger.error("Task %s failed, cancel all tasks", tid)
                 self.stop(1)
 
         elif update.state == mesos_pb2.TASK_FINISHED:
             if not self.started:
-                logging.warning("Task %s has not started, ignore it %s", tid, update.state)
+                logger.warning("Task %s has not started, ignore it %s", tid, update.state)
                 return
 
             t = self.task_launched.pop(tid)
@@ -390,7 +392,7 @@ class MPIScheduler(SubmitScheduler):
         now = time.time()
         for tid, t in self.task_launched.items():
             if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
-                logging.warning("task %d lauched failed, assign again", tid)
+                logger.warning("task %d lauched failed, assign again", tid)
                 driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
@@ -450,7 +452,7 @@ class MPIScheduler(SubmitScheduler):
             try: self.p.kill()
             except: pass
         hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
-        logging.debug("choosed hosts: %s", hosts)
+        logger.debug("choosed hosts: %s", hosts)
         cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         slaves = []
@@ -463,7 +465,7 @@ class MPIScheduler(SubmitScheduler):
             if line == 'HYDRA_LAUNCH_END\n':
                 break
         if len(slaves) != len(items):
-            logging.error("hosts: %s, slaves: %s", items, slaves)
+            logger.error("hosts: %s, slaves: %s", items, slaves)
             raise Exception("slaves not match with hosts")
         def output(f):
             while True:
@@ -572,19 +574,19 @@ if __name__ == "__main__":
 
     if options.mpi:
         if options.retry > 0:
-            logging.error("MPI application can not retry")
+            logger.error("MPI application can not retry")
             options.retry = 0
         sched = MPIScheduler(options, command)
     else:
         sched = SubmitScheduler(options, command)
 
-    logging.debug("Connecting to mesos master %s", options.master)
+    logger.debug("Connecting to mesos master %s", options.master)
     driver = mesos.MesosSchedulerDriver(sched, sched.framework,
         options.master)
 
     driver.start()
     def handler(signm, frame):
-        logging.warning("got signal %d, exit now", signm)
+        logger.warning("got signal %d, exit now", signm)
         sched.stop(3)
     signal.signal(signal.SIGTERM, handler)
     signal.signal(signal.SIGHUP, handler)
@@ -609,17 +611,17 @@ if __name__ == "__main__":
                 driver.reviveOffers()
 
             if not sched.started and now > sched.last_offer_time + 60 + random.randint(0,5):
-                logging.warning("too long to get offer, reviving...")
+                logger.warning("too long to get offer, reviving...")
                 sched.last_offer_time = now
                 driver.reviveOffers()
 
             if now - start > options.timeout:
-                logging.warning("job timeout in %d seconds", options.timeout)
+                logger.warning("job timeout in %d seconds", options.timeout)
                 sched.stop(2)
                 break
 
     except KeyboardInterrupt:
-        logging.warning('stopped by KeyboardInterrupt')
+        logger.warning('stopped by KeyboardInterrupt')
         sched.stop(4)
 
     driver.stop(False)

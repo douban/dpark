@@ -4,7 +4,7 @@ import logging
 import socket
 from operator import itemgetter
 
-logger = logging.getLogger("job")
+logger = logging.getLogger(__name__)
 
 TASK_STARTING = 0
 TASK_RUNNING  = 1
