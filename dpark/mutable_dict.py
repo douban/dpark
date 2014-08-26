@@ -76,8 +76,6 @@ class MutableDict(object):
     def put(self, key, value):
         if isinstance(value, ConflictValues):
             raise TypeError('Cannot put ConflictValues into mutable_dict')
-        if self.is_local:
-            raise RuntimeError('Cannot put in local mode')
 
         self.updated[key] = (value, self.generation)
 

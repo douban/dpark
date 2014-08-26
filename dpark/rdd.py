@@ -1117,7 +1117,10 @@ class TextFileRDD(RDD):
 
     def read(self, f, start, end):
         for line in f:
-            yield line[:-1]
+            if line.endswith('\n'):
+                yield line[:-1]
+            else:
+                yield line
             start += len(line)
             if start >= end: break
         f.close()
