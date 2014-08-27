@@ -212,6 +212,7 @@ class RDD(object):
 
     def reduce(self, f):
         def reducePartition(it):
+            logger = logging.getLogger(__name__)
             if self.err < 1e-8:
                 try:
                     return [reduce(f, it)]
