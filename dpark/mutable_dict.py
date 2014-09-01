@@ -70,8 +70,8 @@ class MutableDict(object):
         if values is None:
             for k, v in six.iteritems(self._fetch_missing(_key)):
                 self.data.put((_key, k), v)
-
-            values = self.data.get((_key, key))
+                if k == key:
+                    values = v
 
         return values[0] if values is not None else None
 
