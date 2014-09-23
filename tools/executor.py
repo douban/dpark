@@ -23,8 +23,9 @@ import time
 
 import zmq
 
-import dpark.pymesos as mesos
-from dpark.pymesos import mesos_pb2
+import pymesos as mesos
+from mesos.interface import mesos_pb2
+from mesos.interface import Executor
 
 ctx = zmq.Context()
 
@@ -157,7 +158,7 @@ def launch_task(self, driver, task):
     self.ps.pop(tid, None)
     self.ts.pop(tid, None)
 
-class MyExecutor(mesos.Executor):
+class MyExecutor(Executor):
     def __init__(self):
         self.ps = {}
         self.ts = {}

@@ -15,7 +15,7 @@ import platform
 import zmq
 
 import pymesos as mesos
-import pymesos.mesos_pb2 as mesos_pb2
+from mesos.interface import mesos_pb2
 
 from dpark.util import compress, decompress, spawn, getuser
 from dpark.dependency import NarrowDependency, ShuffleDependency

@@ -18,7 +18,8 @@ import time
 import zmq
 
 import pymesos as mesos
-import pymesos.mesos_pb2 as mesos_pb2
+from mesos.interface import mesos_pb2
+from mesos.interface import Executor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, spawn
@@ -202,7 +203,7 @@ def setup_cleaner_process(workdir):
         os._exit(0)
     os.wait()
 
-class MyExecutor(mesos.Executor):
+class MyExecutor(Executor):
     def __init__(self):
         self.workdir = []
         self.idle_workers = []

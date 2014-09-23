@@ -15,8 +15,8 @@ import signal
 import zmq
 ctx = zmq.Context()
 
-import dpark.pymesos as mesos
-import dpark.pymesos.mesos_pb2 as mesos_pb2
+import pymesos as mesos
+from mesos.interface import mesos_pb2
 import dpark.conf as conf
 from dpark.util import getuser
 from dpark import moosefs
