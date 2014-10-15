@@ -18,18 +18,11 @@ class LazyJIT(object):
         return getattr(self.this, '__call__')(*args, **kwargs)
 
 
-def jit(signature, **kwargs):
-    if not isinstance(signature, (str, unicode)):
-        raise ValueError('First argument should be signature')
-    def _(f):
-        return LazyJIT('jit', f, signature, **kwargs)
-    return _
-
-def autojit(*args, **kwargs):
+def jit(*args, **kwargs):
     if len(args) ==1 and not kwargs and callable(args[0]):
         f = args[0]
-        return LazyJIT('autojit', f)
+        return LazyJIT('jit', f)
     else:
         def _(f):
-            return LazyJIT('autojit', f, *args, **kwargs)
+            return LazyJIT('jit', f, *args, **kwargs)
         return _
