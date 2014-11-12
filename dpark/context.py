@@ -317,6 +317,11 @@ def add_default_options():
     group.add_option("--keep-order", action="store_true",
             help="deprecated, always keep order")
 
+    group.add_option("-I","--image", type="string",
+                     help="image name for Docker")
+    group.add_option("-V","--volumes", type="string",
+                     help="volumes to mount into Docker")
+
     parser.add_option_group(group)
 
     parser.add_option("-q", "--quiet", action="store_true")

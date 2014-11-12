@@ -184,5 +184,10 @@ class MyExecutor(Executor):
             t.join()
 
 if __name__ == "__main__":
+    if os.getuid() == 0:
+        gid = os.environ['GID']
+        uid = os.environ['UID']
+        os.setgid(int(gid))
+        os.setuid(int(uid))
     executor = MyExecutor()
     mesos.MesosExecutorDriver(executor).run()

@@ -386,6 +386,12 @@ class MyExecutor(Executor):
         self.errt.join()
 
 def run():
+    if os.getuid() == 0:
+        gid = os.environ['GID']
+        uid = os.environ['UID']
+        os.setgid(int(gid))
+        os.setuid(int(uid))
+
     executor = MyExecutor()
     driver = mesos.MesosExecutorDriver(executor)
     driver.run()

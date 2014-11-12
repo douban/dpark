@@ -24,6 +24,7 @@ from dpark.task import ResultTask, ShuffleMapTask
 from dpark.job import SimpleJob
 from dpark.env import env
 from dpark.mutable_dict import MutableDict
+import dpark.conf as conf
 
 logger = logging.getLogger(__name__)
 
@@ -571,6 +572,60 @@ class MesosScheduler(DAGScheduler):
                 os.path.abspath(os.path.join(os.path.dirname(__file__), 'executor.py'))
             )
             info.executor_id.value = "default"
+
+        v = info.command.environment.variables.add()
+        v.name = 'UID'
+        v.value = str(os.getuid())
+        v = info.command.environment.variables.add()
+        v.name = 'GID'
+        v.value = str(os.getgid())
+
+
+        if self.options.image and hasattr(info, 'container'):
+            info.container.type = mesos_pb2.ContainerInfo.DOCKER
+            info.container.docker.image = self.options.image
+
+            for path in ['/etc/passwd', '/etc/group']:
+                v = info.container.volumes.add()
+                v.host_path = v.container_path = path
+                v.mode = mesos_pb2.Volume.RO
+
+            for path in conf.MOOSEFS_MOUNT_POINTS:
+                v = info.container.volumes.add()
+                v.host_path = v.container_path = path
+                v.mode = mesos_pb2.Volume.RW
+
+            for path in conf.DPARK_WORK_DIR.split(','):
+                v = info.container.volumes.add()
+                v.host_path = v.container_path = path
+                v.mode = mesos_pb2.Volume.RW
+
+            if self.options.volumes:
+                for volume in self.options.volumes.split(','):
+                    fields = volume.split(':')
+                    if len(fields) == 3:
+                        host_path, container_path, mode = fields
+                        mode = mesos_pb2.Volume.RO if mode.lower() == 'ro' else mesos_pb2.Volume.RW
+                    elif len(fields) == 2:
+                        host_path, container_path = fields
+                        mode = mesos_pb2.Volume.RW
+                    elif len(fields) == 1:
+                        container_path, = fields
+                        host_path = ''
+                        mode = mesos_pb2.Volume.RW
+                    else:
+                        raise Exception("cannot parse volume %s", volume)
+
+                    try:
+                        os.makedirs(host_path)
+                    except OSError as e:
+                        pass
+
+                v = info.container.volumes.add()
+                v.container_path = container_path
+                v.mode = mode
+                if host_path:
+                    v.host_path = host_path
 
         mem = info.resources.add()
         mem.name = 'mem'
