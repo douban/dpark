@@ -860,7 +860,7 @@ class MesosScheduler(DAGScheduler):
     def defaultParallelism(self):
         return 16
 
-    def frameworkMessage(self, driver, slave, executor, data):
+    def frameworkMessage(self, driver, executor, slave, data):
         logger.warning("[slave %s] %s", slave.value, data)
 
     def executorLost(self, driver, executorId, slaveId, status):
