@@ -216,8 +216,12 @@ class RDD(object):
             if self.err < 1e-8:
                 try:
                     return [reduce(f, it)]
-                except TypeError:
-                    return []
+                except TypeError as e:
+                    empty_msg = 'reduce() of empty sequence with no initial value'
+                    if e.message == empty_msg:
+                        return []
+                    else:
+                        raise e
 
             s = None
             total, err = 0, 0
