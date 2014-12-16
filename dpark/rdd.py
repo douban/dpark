@@ -208,7 +208,7 @@ class RDD(object):
         return sum(self.ctx.runJob(self, lambda x:list(x)), [])
 
     def __iter__(self):
-        return self.collect()
+        return chain(self.ctx.runJob(self, lambda x:x))
 
     def reduce(self, f):
         def reducePartition(it):

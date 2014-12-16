@@ -297,6 +297,10 @@ class TestRDD(unittest.TestCase):
             except OSError:
                 pass
 
+    def test_iter(self):
+        d = range(1000)
+        rdd = self.sc.makeRDD(d, 10)
+        assert d == [i for i in rdd]
 
 
 #class TestRDDInProcess(TestRDD):
