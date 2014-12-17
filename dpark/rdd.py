@@ -2009,7 +2009,7 @@ class OutputBeansdbRDD(DerivedRDD):
         for key, value in self.prev.iterator(split):
             key = str(key)
             if not self.is_valid_key(key):
-                logger.warning("ignored invalid key: %s" % key)
+                logger.warning("ignored invalid key: %s" % [key])
                 continue
 
             i = fnv1a(key) >> bits
