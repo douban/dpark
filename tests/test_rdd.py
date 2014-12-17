@@ -260,6 +260,20 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(s, sum(l))
         shutil.rmtree('/tmp/beansdb')
 
+    def test_beansdb_invalid_key(self):
+        func = OutputBeansdbRDD.is_valid_key
+        input_expect = [
+            ('/test/aaa/12321', True),
+            ('a' * 251, False),
+            ('/a/b\n/c', False),
+            ('/a/b/\r/d', False),
+            ('/a/b/\0/e', False),
+            ('/a/b /c', False),
+            ('/a/b \n/d', False),
+        ]
+        for key, expect in input_expect:
+            self.assertEqual(func(key), expect)
+
     def test_enumerations(self):
         N = 100
         p = 10

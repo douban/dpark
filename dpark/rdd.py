@@ -1718,7 +1718,6 @@ except ImportError:
     fnv1a_beansdb = fnv1a
 
 
-
 FLAG_PICKLE   = 0x00000001
 FLAG_INTEGER  = 0x00000002
 FLAG_LONG     = 0x00000004
@@ -1728,6 +1727,8 @@ FLAG_MARSHAL  = 0x00000020
 FLAG_COMPRESS = 0x00010000 # by beansdb
 
 PADDING = 256
+BEANSDB_MAX_KEY_LENGTH = 250
+
 
 def restore_value(flag, val):
     if flag & FLAG_COMPRESS:
@@ -1946,7 +1947,6 @@ class OutputBeansdbRDD(DerivedRDD):
             else:
                 os.makedirs(p)
 
-
     def __repr__(self):
         return '<%s %s %s>' % (self.__class__.__name__, self.path, self.prev)
 
@@ -1966,6 +1966,13 @@ class OutputBeansdbRDD(DerivedRDD):
             h *= 97
             h += fnv1a_beansdb(d[-512:])
         return h & 0xffff
+
+    @staticmethod
+    def is_valid_key(key):
+        if len(key) > BEANSDB_MAX_KEY_LENGTH:
+            return False
+        invalid_chars = ' \r\n\0'
+        return not any(c in key for c in invalid_chars)
 
     def write_record(self, f, key, flag, value, now=None):
         header = struct.pack('IIIII', now, flag, 1, len(key), len(value))
@@ -2001,6 +2008,10 @@ class OutputBeansdbRDD(DerivedRDD):
         bits = 32 - self.depth * 4
         for key, value in self.prev.iterator(split):
             key = str(key)
+            if not self.is_valid_key(key):
+                logger.warning("ignored invalid key: %s" % key)
+                continue
+
             i = fnv1a(key) >> bits
             flag, value = self.prepare(value)
             h = self.gen_hash(value)
