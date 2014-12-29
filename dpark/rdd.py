@@ -1844,7 +1844,11 @@ class BeansdbFileRDD(TextFileRDD):
     def restore(self, flag, val):
         if self.raw:
             return (flag, val)
-        return restore_value(flag, val)
+        try:
+            return restore_value(flag, val)
+        except:
+            logger.warning("read value failed: %s, %d", repr(val), flag)
+            return ''
 
     def try_read_record(self, f):
         block = f.read(PADDING)
