@@ -245,7 +245,7 @@ class ReadableFile(File):
                     #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
                     nerror += 1
 
-        raise Exception("unexpected error: %d %d %s < %s" % (roff, index, offset, length))
+        raise Exception("unexpected error[%s]: %d %d %s < %s" % (self.path, roff, index, offset, length))
 
     def __iter__(self):
         # TODO: speedup
