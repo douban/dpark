@@ -18,7 +18,7 @@ FAQ
 3. 为什么我在集群上的任务都会卡住或者失败？
 --------------------------------------------------
 
-因为你在计算集群上没有帐号，所以无法以自己的身份来提交计算任务，所以请用公共帐号mesos来提交。具体使用方式是sudo -u mesos 后面加上你的计算脚本命令行
+因为你在计算集群上没有帐号，所以无法以自己的身份来提交计算任务，所以请用公共帐号mesos来提交，具体使用方式是sudo -u mesos 后面加上你的计算脚本命令行。 另一种解决方法是在 `helpdesk <http://sysadmin.douban.com/helpdesk/>`_ 上申请 dpark_members 机群的权限。
 
 4. saveAsTextFile会在目录中产生许许多多的小文件，能让文件变少点么？
 ------------------------------------------------------------------------
@@ -27,5 +27,11 @@ FAQ
 
 5. parallelize 使用陷阱
 --------------------------
+
 ``parallelize(list_foo, num_split)`` 方式对 ``list_foo`` 进行分块时，会先将其传输到master节点，当 ``list_foo`` 非常大(say 100 MB)时，过长的网络传输时间可能会引发如下ERROR或WARNING:
 ``Lost Task`` ,  ``use too much time in slaveOffer`` , ``Connection dropped`` , ``Session has expired`` ，这时不管怎么调节 ``num_split`` 都是没有用的。一种可能的解决办法是将list_foo写入文本文件，最后以 ``textFile`` 读出进行分块。
+
+6. 很多 “[WARNING] [dpark.job] Lost Task”
+-----------------------------------------------
+
+原因可能因为你在计算集群上没有账号，解决方法参考问题 3。
