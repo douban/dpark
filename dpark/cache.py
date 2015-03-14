@@ -10,6 +10,7 @@ import urllib
 import msgpack
 
 from dpark.env import env
+from dpark.util import mkdir_p
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 
 logger = logging.getLogger(__name__)
@@ -34,9 +35,7 @@ class Cache:
 
 class DiskCache(Cache):
     def __init__(self, tracker, path):
-        if not os.path.exists(path):
-            try: os.makedirs(path)
-            except: pass
+        mkdir_p(path)
         self.tracker = tracker
         self.root = path
 

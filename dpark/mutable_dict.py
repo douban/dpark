@@ -6,7 +6,7 @@ import struct
 import glob
 import uuid
 from dpark.env import env
-from dpark.util import compress, decompress
+from dpark.util import compress, decompress, mkdir_p
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
 from collections import OrderedDict
@@ -196,12 +196,7 @@ class MutableDict(object):
         st = os.statvfs(dirs[0])
         ratio = st.f_bfree * 1.0 / st.f_blocks
         if ratio >= 0.66:
-            if not os.path.exists(path):
-                try:
-                    os.makedirs(path)
-                except OSError, e:
-                    pass
-
+            mkdir_p(path)
             return path
 
         for d in dirs[1:]:

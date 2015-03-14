@@ -20,7 +20,7 @@ import struct
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
-from dpark.util import spawn, chain
+from dpark.util import spawn, chain, mkdir_p
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
@@ -109,9 +109,7 @@ class RDD(object):
         if path:
             ident = '%d_%x' % (self.id, hash(str(self)))
             path = os.path.join(path, ident)
-            if not os.path.exists(path):
-                try: os.makedirs(path)
-                except OSError: pass
+            mkdir_p(path)
             self.snapshot_path = path
         return self
 

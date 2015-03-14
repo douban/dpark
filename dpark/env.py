@@ -36,9 +36,7 @@ class DparkEnv:
                 socket.gethostname(), os.getpid())
             self.workdir = [os.path.join(root, name) for root in roots]
             for d in self.workdir:
-                if not os.path.exists(d):
-                    try: os.makedirs(d)
-                    except OSError: pass
+                util.mkdir_p(d)
             self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
             self.environ['WORKDIR'] = self.workdir
             self.environ['COMPRESS'] = util.COMPRESS

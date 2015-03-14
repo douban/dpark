@@ -17,7 +17,7 @@ import zmq
 import pymesos as mesos
 from mesos.interface import mesos_pb2
 
-from dpark.util import compress, decompress, spawn, getuser
+from dpark.util import compress, decompress, spawn, getuser, mkdir_p
 from dpark.dependency import NarrowDependency, ShuffleDependency
 from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
@@ -615,11 +615,8 @@ class MesosScheduler(DAGScheduler):
                         mode = mesos_pb2.Volume.RW
                     else:
                         raise Exception("cannot parse volume %s", volume)
-
-                    try:
-                        os.makedirs(host_path)
-                    except OSError as e:
-                        pass
+                    
+                    mkdir_p(host_path)
 
                 v = info.container.volumes.add()
                 v.container_path = container_path

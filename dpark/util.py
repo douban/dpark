@@ -3,6 +3,7 @@ import types
 from zlib import compress as _compress, decompress
 import threading
 import warnings
+import errno
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
@@ -58,3 +59,13 @@ def izip(*its):
             yield tuple([it.next() for it in its])
     except StopIteration:
         pass
+
+def mkdir_p(path):
+    "like `mkdir -p`"
+    try:
+        os.makedirs(path)
+    except OSError as exc:
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise

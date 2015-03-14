@@ -11,7 +11,7 @@ import Queue
 import heapq
 import platform
 
-from dpark.util import decompress, spawn
+from dpark.util import decompress, spawn, mkdir_p
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 
@@ -34,9 +34,7 @@ class LocalFileShuffle:
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
         path = os.path.join(cls.shuffleDir[0], str(shuffleId), str(inputId))
-        if not os.path.exists(path):
-            try: os.makedirs(path)
-            except OSError: pass
+        mkdir_p(path)
         p = os.path.join(path, str(outputId))
 
         if datasize > 0 and len(cls.shuffleDir) > 1:
@@ -45,10 +43,7 @@ class LocalFileShuffle:
             ratio = st.f_bfree * 1.0 / st.f_blocks
             if free < max(datasize, 1<<30) or ratio < 0.66:
                 d2 = os.path.join(random.choice(cls.shuffleDir[1:]), str(shuffleId), str(inputId))
-                if not os.path.exists(d2):
-                    try: os.makedirs(d2)
-                    except IOError: pass
-                assert os.path.exists(d2), 'create %s failed' % d2
+                mkdir_p(d2)
                 p2 = os.path.join(d2, str(outputId))
                 os.symlink(p2, p)
                 if os.path.islink(p2):
