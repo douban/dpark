@@ -129,7 +129,6 @@ class DAGScheduler(Scheduler):
         self.shuffleToMapStage.clear()
         self.cacheLocs.clear()
         self.cacheTracker.clear()
-        self.mapOutputTracker.clear()
 
     def shutdown(self):
         self._shutdown = True
