@@ -35,7 +35,10 @@ class Cache:
 
 class DiskCache(Cache):
     def __init__(self, tracker, path):
-        mkdir_p(path)
+        try:
+            mkdir_p(path)
+        except:
+            pass
         self.tracker = tracker
         self.root = path
 

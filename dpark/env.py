@@ -1,4 +1,5 @@
-import os, logging
+import os
+import logging
 import time
 import socket
 import shutil
@@ -10,11 +11,14 @@ import dpark.conf as conf
 
 logger = logging.getLogger(__name__)
 
+
 class DparkEnv:
     environ = {}
+
     @classmethod
     def register(cls, name, value):
         cls.environ[name] = value
+
     @classmethod
     def get(cls, name, default=None):
         return cls.environ.get(name, default)
@@ -25,18 +29,22 @@ class DparkEnv:
     def start(self, isMaster, environ={}):
         if self.started:
             return
-        logger.debug("start env in %s: %s %s", os.getpid(),
-                isMaster, environ)
+        logger.debug("start env in %s: %s %s", os.getpid(), isMaster, environ)
         self.isMaster = isMaster
         if isMaster:
             roots = conf.DPARK_WORK_DIR
             if isinstance(roots, str):
                 roots = roots.split(',')
             name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
-                socket.gethostname(), os.getpid())
+                                 socket.gethostname(), os.getpid())
             self.workdir = [os.path.join(root, name) for root in roots]
-            for d in self.workdir:
-                util.mkdir_p(d)
+            try:
+                for d in self.workdir:
+                    util.mkdir_p(d)
+            except OSError as e:
+                if environ.get('is_local', False):
+                    raise e
+
             self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
             self.environ['WORKDIR'] = self.workdir
             self.environ['COMPRESS'] = util.COMPRESS
@@ -46,7 +54,6 @@ class DparkEnv:
                 raise Exception("no %s available" % self.environ['COMPRESS'])
 
         self.ctx = zmq.Context()
-
 
         from dpark.tracker import TrackerServer, TrackerClient
         if isMaster:
@@ -65,8 +72,7 @@ class DparkEnv:
         from dpark.shuffle import LocalFileShuffle, MapOutputTracker
         LocalFileShuffle.initialize(isMaster)
         self.mapOutputTracker = MapOutputTracker()
-        from dpark.shuffle import SimpleShuffleFetcher, ParallelShuffleFetcher
-        #self.shuffleFetcher = SimpleShuffleFetcher()
+        from dpark.shuffle import ParallelShuffleFetcher
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
         from dpark.broadcast import start_manager
