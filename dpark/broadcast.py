@@ -2,7 +2,7 @@ import os
 import zmq
 import time
 import uuid
-import zlib
+import binascii
 import random
 import socket
 import struct
@@ -53,7 +53,7 @@ class BroadcastManager:
             buf = cPickle.dumps((uuid, obj), -1)
             type = PICKLE_TYPE
 
-        checksum = zlib.crc32(buf) & 0xFFFF
+        checksum = binascii.crc32(buf) & 0xFFFF
         stream = struct.pack(self.header_fmt, type, checksum) + buf
         blockNum = (len(stream) + (BLOCK_SIZE - 1)) >> BLOCK_SHIFT
         blocks = [compress(stream[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE]) for i in range(blockNum)]
@@ -63,7 +63,7 @@ class BroadcastManager:
         stream = ''.join(map(decompress,  blocks))
         type, checksum = struct.unpack(self.header_fmt, stream[:self.header_len])
         buf = stream[self.header_len:]
-        _checksum = zlib.crc32(buf) & 0xFFFF
+        _checksum = binascii.crc32(buf) & 0xFFFF
         if _checksum != checksum:
             raise RuntimeError('Wrong blocks: checksum: %s, expected: %s' % (
                 _checksum, checksum))
