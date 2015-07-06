@@ -7,10 +7,8 @@ import threading, Queue
 import time
 import random
 import urllib
-import warnings
 import weakref
 import multiprocessing
-import platform
 
 import zmq
 
@@ -614,7 +612,7 @@ class MesosScheduler(DAGScheduler):
                         mode = mesos_pb2.Volume.RW
                     else:
                         raise Exception("cannot parse volume %s", volume)
-                    
+
                     mkdir_p(host_path)
 
                 v = info.container.volumes.add()
@@ -838,10 +836,8 @@ class MesosScheduler(DAGScheduler):
                 self.requestMoreResources()
 
     @safe
-    def error(self, driver, code, message):
-        logger.warning("Mesos error message: %s (code: %s)", message, code)
-        #if self.activeJobs:
-        #    self.requestMoreResources()
+    def error(self, driver, message):
+        logger.warning("Mesos error message: %s", message)
 
     #@safe
     def stop(self):
