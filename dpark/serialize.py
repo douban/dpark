@@ -101,6 +101,13 @@ def get_co_names(code):
     return co_names
 
 def dump_closure(f):
+    def _do_dump(f):
+        for i, c in enumerate(f.func_closure):
+            if hasattr(c, 'cell_contents'):
+                yield dump_obj(f, 'cell%d' % i, c.cell_contents)
+            else:
+                yield None
+        
     code = f.func_code
     glob = {}
     for n in get_co_names(code):
@@ -110,15 +117,14 @@ def dump_closure(f):
 
     closure = None
     if f.func_closure:
-        closure = tuple(dump_obj(f, 'cell%d' % i, c.cell_contents)
-                for i, c in enumerate(f.func_closure))
+        closure = tuple(_do_dump(f))
     return marshal.dumps((code, glob, f.func_name, f.func_defaults, closure, f.__module__))
 
 def load_closure(bytes):
     code, glob, name, defaults, closure, mod = marshal.loads(bytes)
     glob = dict((k, loads(v)) for k,v in glob.items())
     glob['__builtins__'] = __builtins__
-    closure = closure and reconstruct_closure([loads(c) for c in closure]) or None
+    closure = closure and reconstruct_closure(closure) or None
     f = new.function(code, glob, name, defaults, closure)
     f.__module__ = mod
     # Replace the recursive function placeholders with this simulated function pointer
@@ -130,8 +136,13 @@ def load_closure(bytes):
 def make_cell(value):
     return (lambda: value).func_closure[0]
 
-def reconstruct_closure(values):
-    return tuple([make_cell(v) for v in values])
+def make_empty_cell():
+    if False:
+        unreachable = None
+    return (lambda: unreachable).func_closure[0]
+
+def reconstruct_closure(closure):
+    return tuple([make_cell(loads(v)) if v is not None else make_empty_cell() for v in closure])
 
 def get_global_function(module, name):
     __import__(module)
