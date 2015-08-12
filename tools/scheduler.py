@@ -18,7 +18,7 @@ ctx = zmq.Context()
 import pymesos as mesos
 from mesos.interface import mesos_pb2
 import dpark.conf as conf
-from dpark.util import getuser
+from dpark.util import getuser, memory_str_to_mb
 from dpark import moosefs
 
 logger = logging.getLogger('dpark.scheduler')
@@ -33,16 +33,6 @@ class Task:
 REFUSE_FILTER = mesos_pb2.Filters()
 REFUSE_FILTER.refuse_seconds = 10*60 # 10 mins
 
-def parse_mem(m):
-    try:
-        return float(m)
-    except ValueError:
-        number, unit = float(m[:-1]), m[-1].lower()
-        if unit == 'g':
-            number *= 1024
-        elif unit == 'k':
-            number /= 1024
-        return number
 
 def safe(f):
     def _(self, *a, **kw):
@@ -66,7 +56,7 @@ class SubmitScheduler(object):
         self.framework.name = name
         self.framework.hostname = socket.gethostname()
         self.cpus = options.cpus
-        self.mem = parse_mem(options.mem)
+        self.mem = memory_str_to_mb(options.mem)
         self.options = options
         self.command = command
         self.total_tasks = list(reversed([Task(i)

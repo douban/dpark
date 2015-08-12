@@ -69,3 +69,17 @@ def mkdir_p(path):
             pass
         else:
             raise
+
+def memory_str_to_mb(str):
+    lower = str.lower()
+    if lower[-1].isalpha():
+        number, unit = float(lower[:-1]), lower[-1]
+    else:
+        number, unit = float(lower), 'm'
+    scale_factors = {
+        'k': 1. / 1024,
+        'm': 1,
+        'g': 1024,
+        't': 1024 * 1024,
+    }
+    return number * scale_factors[unit]

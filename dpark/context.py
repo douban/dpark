@@ -1,4 +1,4 @@
-import os, sys
+import os
 import atexit
 import optparse
 import signal
@@ -11,6 +11,7 @@ from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.moosefs import walk
 from dpark.tabular import TabularRDD
+from dpark.util import memory_str_to_mb
 import dpark.conf as conf
 from math import ceil
 
@@ -35,6 +36,8 @@ def setup_conf(options):
 
     if options.mem is None:
         options.mem = conf.MEM_PER_TASK
+    else:
+        options.mem = memory_str_to_mb(options.mem)
 
     conf.__dict__.update(os.environ)
     import moosefs
@@ -299,8 +302,8 @@ def add_default_options():
 
     group.add_option("-c", "--cpus", type="float", default=1.0,
             help="cpus used per task")
-    group.add_option("-M", "--mem", type="float",
-            help="memory used per task")
+    group.add_option("-M", "--mem", type="string",
+            help="memory used per task (e.g. 300m, 1g), default unit is 'm'")
     group.add_option("-g", "--group", type="string", default="",
             help="which group of machines")
     group.add_option("--err", type="float", default=0.0,
@@ -341,7 +344,7 @@ def parse_options():
     logging.basicConfig(format=log_format, level=options.logLevel)
 
     logger = logging.getLogger('dpark')
-    logger.propagate=False
+    logger.propagate = False
 
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(log_format))
