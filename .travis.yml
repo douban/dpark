@@ -3,10 +3,12 @@ language: python
 python:
   - 2.7
 
-install:
-  - sudo apt-get update -qq
-  - sudo apt-get remove libzmq3
-  - sudo apt-get install -qq cython libzmq-dev
+sudo: false
+
+addons:
+  apt:
+    packages:
+    - libzmq3-dev
 
 script:
   - python setup.py test
