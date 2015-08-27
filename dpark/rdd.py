@@ -151,7 +151,7 @@ class RDD(object):
             return self.mapPartitions(lambda it: sorted(it, key=key, reverse=reverse))
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
-        n = numSplits * 10 / len(self)
+        n = max(numSplits * 10 / len(self), 1)
         samples = self.mapPartitions(lambda x:itertools.islice(x, n)).map(key).collect()
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
