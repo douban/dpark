@@ -35,3 +35,22 @@ FAQ
 -----------------------------------------------
 
 原因可能因为你在计算集群上没有账号，解决方法参考问题 3。
+
+7. 一些奇怪的模块依赖错误
+--------------------------------
+
+原因可能是因为你的 DPark 脚本所在的文件夹或者你的 PYTHONPATH 路径上，有一些你自己编写的模块和标准库里的模块重名了 (e.g. email.py)。下面是个演示的例子，把它们放在同一文件夹下，然后执行 `python wc.py -m mesos`
+
+::
+
+     # email.py
+     import traceback
+     traceback.print_stack()
+
+
+     # wc.py
+     import dpark
+     import random
+
+     rdd = dpark.parallelize([random.randint(0, 10) for _ in range(100)], 5)
+     print rdd.map(lambda x: (x, 1)).reduceByKey(lambda x, y: x + y).collect()
