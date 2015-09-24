@@ -21,9 +21,13 @@ def _scan():
             continue
         f = open(conf)
         for line in f:
-            path = line.strip('#* \n')
-            if os.path.exists(path):
-                mfsdirs.append(path)
+            if line.startswith('#') or line.startswith('*'):
+                continue
+            fields = line.split()
+            if fields:
+                path = fields[0]
+                if os.path.exists(path):
+                    mfsdirs.append(path)
         f.close()
 _scan()
 
