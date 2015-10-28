@@ -14,16 +14,20 @@ logger = logging.getLogger(__name__)
 # mfsmaster need to been patched with dcache
 ENABLE_DCACHE = False
 
+
 class StatInfo:
+
     def __init__(self, totalspace, availspace, trashspace,
-                reservedspace, inodes):
-        self.totalspace    = totalspace
-        self.availspace    = availspace
-        self.trashspace    = trashspace
+                 reservedspace, inodes):
+        self.totalspace = totalspace
+        self.availspace = availspace
+        self.trashspace = trashspace
         self.reservedspace = reservedspace
-        self.inodes        = inodes
+        self.inodes = inodes
+
 
 class Chunk:
+
     def __init__(self, id, length, version, csdata):
         self.id = id
         self.length = length
@@ -31,33 +35,41 @@ class Chunk:
         self.addrs = self._parse(csdata)
 
     def _parse(self, csdata):
-        return [(socket.inet_ntoa(csdata[i:i+4]),
-                    unpack("H", csdata[i+4:i+6])[0])
+        return [(socket.inet_ntoa(csdata[i:i + 4]),
+                 unpack("H", csdata[i + 4:i + 6])[0])
                 for i in range(len(csdata))[::6]]
 
     def __repr__(self):
         return "<Chunk(%d, %d, %d)>" % (self.id, self.version, self.length)
+
 
 def try_again(f):
     def _(self, *a, **kw):
         for i in range(3):
             try:
                 return f(self, *a, **kw)
-            except IOError, e:
+            except IOError as e:
                 self.close()
                 logger.warning("mfs master connection: %s", e)
-                time.sleep(2**i*0.1)
+                time.sleep(2**i * 0.1)
         else:
             raise
     return _
 
+
 def spawn(target, *args, **kw):
-    t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
+    t = threading.Thread(
+        target=target,
+        name=target.__name__,
+        args=args,
+        kwargs=kw)
     t.daemon = True
     t.start()
     return t
 
+
 class MasterConn:
+
     def __init__(self, host='mfsmaster', port=9421):
         self.host = host
         self.port = port
@@ -80,7 +92,7 @@ class MasterConn:
         while True:
             try:
                 self.nop()
-            except Exception, e:
+            except Exception as e:
                 self.close()
             time.sleep(2)
 
@@ -93,7 +105,7 @@ class MasterConn:
                 self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.conn.connect((self.host, self.port))
                 break
-            except socket.error, e:
+            except socket.error as e:
                 self.conn = None
                 #self.next_try = time.time() + 1.5 ** self.fail_count
                 self.fail_count += 1
@@ -118,7 +130,7 @@ class MasterConn:
             code, = unpack("B", data)
             if code != 0:
                 raise Exception("mfsmaster register error: "
-                        + mfs_strerror(code))
+                                + mfs_strerror(code))
         if self.sessionid == 0:
             self.sessionid, = unpack("I", data)
 
@@ -161,15 +173,16 @@ class MasterConn:
             rr = conn.recv(n - len(r))
             if not rr:
                 self.close()
-                raise IOError("unexpected error: need %d" % (n-len(r)))
+                raise IOError("unexpected error: need %d" % (n - len(r)))
             r += rr
         return r
 
     def recv_cmd(self):
         d = self.recv(12)
         cmd, size = unpack("II", d)
-        data = self.recv(size-4) if size > 4 else ''
-        while cmd in (ANTOAN_NOP, MATOCU_FUSE_NOTIFY_ATTR, MATOCU_FUSE_NOTIFY_DIR):
+        data = self.recv(size - 4) if size > 4 else ''
+        while cmd in (ANTOAN_NOP, MATOCU_FUSE_NOTIFY_ATTR,
+                      MATOCU_FUSE_NOTIFY_DIR):
             if cmd == ANTOAN_NOP:
                 pass
             elif cmd == MATOCU_FUSE_NOTIFY_ATTR:
@@ -193,7 +206,7 @@ class MasterConn:
                     data = data[4:]
             d = self.recv(12)
             cmd, size = unpack("II", d)
-            data = self.recv(size-4) if size > 4 else ''
+            data = self.recv(size - 4) if size > 4 else ''
         return d, data
 
     def recv_thread(self):
@@ -205,12 +218,12 @@ class MasterConn:
             try:
                 r = self.recv_cmd()
                 self.reply.put(r)
-            except IOError, e:
+            except IOError as e:
                 self.reply.put(e)
 
     @try_again
     def sendAndReceive(self, cmd, *args):
-        #print 'sendAndReceive', cmd, args
+        # print 'sendAndReceive', cmd, args
         self.packetid += 1
         msg = pack(cmd, self.packetid, *args)
         with self.lock:
@@ -223,10 +236,10 @@ class MasterConn:
             raise r
         h, d = r
         rcmd, size, pid = unpack("III", h)
-        if rcmd != cmd+1 or pid != self.packetid or size <= 4:
+        if rcmd != cmd + 1 or pid != self.packetid or size <= 4:
             self.close()
             raise Exception("incorrect answer (%s!=%s, %s!=%s, %d<=4",
-                rcmd, cmd+1, pid, self.packetid, size)
+                            rcmd, cmd + 1, pid, self.packetid, size)
         if len(d) == 1 and ord(d[0]) != 0:
             raise Error(ord(d[0]))
         return d
@@ -250,7 +263,7 @@ class MasterConn:
             self.dstat[parent] = self.dstat.get(parent, 0) + 1
 
         ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent,
-                uint8(len(name)), name, 0, 0)
+                                  uint8(len(name)), name, 0, 0)
         if len(ans) == 1:
             return None, ""
         if len(ans) != 39:
@@ -260,28 +273,28 @@ class MasterConn:
 
     def getattr(self, inode):
         ans = self.sendAndReceive(CUTOMA_FUSE_GETATTR, inode,
-                self.uid, self.gid)
+                                  self.uid, self.gid)
         return attrToFileInfo(inode, ans)
 
     def readlink(self, inode):
         ans = self.sendAndReceive(CUTOMA_FUSE_READLINK, inode)
         length, = unpack("I", ans)
-        if length+4 != len(ans):
+        if length + 4 != len(ans):
             raise Exception("invalid length")
         return ans[4:-1]
 
     def getdir(self, inode):
         "return: {name: (inode,type)}"
         ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
-                self.uid, self.gid)
+                                  self.uid, self.gid)
         p = 0
         names = {}
         while p < len(ans):
-            length, = unpack("B", ans[p:p+1])
+            length, = unpack("B", ans[p:p + 1])
             p += 1
             if length + p + 5 > len(ans):
                 break
-            name = ans[p:p+length]
+            name = ans[p:p + length]
             p += length
             inode, type = unpack("IB", ans)
             names[name] = (inode, type)
@@ -299,16 +312,16 @@ class MasterConn:
         if ENABLE_DCACHE:
             flag |= GETDIR_FLAG_DIRCACHE
         ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
-                self.uid, self.gid, uint8(flag))
+                                  self.uid, self.gid, uint8(flag))
         p = 0
         infos = {}
         while p < len(ans):
-            length, = unpack("B", ans[p:p+1])
+            length, = unpack("B", ans[p:p + 1])
             p += 1
-            name = ans[p:p+length]
+            name = ans[p:p + length]
             p += length
-            i, = unpack("I", ans[p:p+4])
-            attr = ans[p+4:p+39]
+            i, = unpack("I", ans[p:p + 4])
+            attr = ans[p + 4:p + 39]
             infos[name] = attrToFileInfo(i, attr, name)
             p += 39
         if ENABLE_DCACHE:
@@ -317,37 +330,41 @@ class MasterConn:
 
     def opencheck(self, inode, flag=1):
         ans = self.sendAndReceive(CUTOMA_FUSE_OPEN, inode,
-                self.uid, self.gid, uint8(flag))
+                                  self.uid, self.gid, uint8(flag))
         return ans
 
     def readchunk(self, inode, index):
         ans = self.sendAndReceive(CUTOMA_FUSE_READ_CHUNK, inode, index)
         n = len(ans)
-        if n < 20 or (n-20)%6 != 0:
+        if n < 20 or (n - 20) % 6 != 0:
             raise Exception("read chunk: invalid length: %s" % n)
         length, id, version = unpack("QQI", ans)
         return Chunk(id, length, version, ans[20:])
+
+    def append(self, inode_dst, inode_src):
+        self.sendAndReceive(CUTOMA_FUSE_APPEND, inode_dst, inode_src,
+                            self.uid, self.gid)
 
 
 def test():
     m = MasterConn("mfsmaster")
     m.connect()
     m.close()
-    #print m.get_attr(1)
+    # print m.get_attr(1)
     while True:
         print m.getdir(1)
         print m.getdirplus(1)
         time.sleep(60)
     info, err = m.lookup(1, "test.csv")
     print info, err
-    #print m.opencheck(info.inode)
+    # print m.opencheck(info.inode)
     chunks = m.readchunk(info.inode, 0)
     print chunks, chunks.addrs
 
     for i in range(1000):
         info, err = m.lookup(1, "test.csv")
         chunks = m.readchunk(info.inode, 0)
-        print i,err, chunks
+        print i, err, chunks
         time.sleep(10)
 
     m.close()
