@@ -443,9 +443,12 @@ class RDD(object):
                 for k,v in it:
                     if k == key:
                         return v
-            return list(self.ctx.runJob(self, process, [index], False))[0]
+            result = list(self.ctx.runJob(self, process, [index], False))
+            return result[0] if result else None
         else:
-            raise Exception("lookup() called on an RDD without a partitioner")
+            logger.warning("Too much time may be taken to lookup in a RDD without a partitioner!")
+            result = self.flatMap(lambda (k, v):[v] if k==key else []).take(1)
+            return result[0] if result else None
 
     def asTable(self, fields, name=''):
         from dpark.table import TableRDD

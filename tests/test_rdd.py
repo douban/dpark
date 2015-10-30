@@ -82,6 +82,10 @@ class TestRDD(unittest.TestCase):
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
         self.assertEqual(nums.flatMapValue(lambda x:range(x)).count(), 22)
         self.assertEqual(nums.groupByKey().lookup(3), [6,7])
+        self.assertEqual(nums.partitionByKey().lookup(2), 5)
+        self.assertEqual(nums.partitionByKey().lookup(4), None)
+        self.assertEqual(nums.lookup(2), 5)
+        self.assertEqual(nums.lookup(4), None)
 
         # group with
         self.assertEqual(sorted(nums.groupWith(nums2).collect()),
