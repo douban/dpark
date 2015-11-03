@@ -1,18 +1,13 @@
+import sys
 from setuptools import setup, Extension
-try:
-    from Cython.Distutils import build_ext
-except:
-    use_cython = False
-else:
-    use_cython = True
 
-if use_cython:
-    ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
-    cmdclass = {'build_ext': build_ext}
-else:
-    ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.c'])]
-    cmdclass = {}
+# setuptools DWIM monkey-patch madness: http://dou.bz/37m3XL
+if 'setuptools.extension' in sys.modules:
+    m = sys.modules['setuptools.extension']
+    m.Extension.__dict__ = m._Extension.__dict__
 
+
+ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
 version = '0.1'
 
 setup(name='DPark',
@@ -32,6 +27,7 @@ setup(name='DPark',
       packages=['dpark', 'dpark.moosefs'],
       include_package_data=True,
       zip_safe=False,
+      setup_requires=['setuptools_cython', 'Cython >= 0.20'],
       install_requires=[
           'pymesos',
           'setuptools',
@@ -45,7 +41,6 @@ setup(name='DPark',
           'nose',
       ],
       test_suite='nose.collector',
-      cmdclass = cmdclass,
       ext_modules = ext_modules,
       scripts = [
           'tools/drun',

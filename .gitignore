@@ -1,6 +1,7 @@
 *.py[cod]
 
 # C extensions
+/dpark/portable_hash.c
 *.so
 
 # Packages

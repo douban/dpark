@@ -60,4 +60,10 @@ cpdef int64_t portable_hash(obj) except -1:
     elif t is int or t is long or t is float:
         return hash(obj)
     else:
+        try:
+            import numpy as np
+            if isinstance(obj, np.number):
+                return hash(obj)
+        except ImportError:
+            pass
         raise TypeError('%s is unhashable by portable_hash' % t)
