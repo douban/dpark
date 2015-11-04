@@ -86,29 +86,14 @@ class ShuffleMapTask(DAGTask):
 
     def run(self, attempId):
         logger.debug("shuffling %d of %s", self.partition, self.rdd)
-        numOutputSplits = self.partitioner.numPartitions
-        getPartition = self.partitioner.getPartition
-        mergeValue = self.aggregator.mergeValue
-        createCombiner = self.aggregator.createCombiner
-
-        buckets = [{} for i in range(numOutputSplits)]
-        for k,v in self.rdd.iterator(self.split):
-            bucketId = getPartition(k)
-            bucket = buckets[bucketId]
-            r = bucket.get(k, None)
-            if r is not None:
-                bucket[k] = mergeValue(r, v)
-            else:
-                bucket[k] = createCombiner(v)
-
-        for i in range(numOutputSplits):
+        for i, bucket in self.rdd._prepare_shuffle(self.split, self.partitioner, self.aggregator):
             try:
-                if marshalable(buckets[i]):
-                    flag, d = 'm', marshal.dumps(buckets[i])
+                if marshalable(bucket):
+                    flag, d = 'm', marshal.dumps(bucket)
                 else:
-                    flag, d = 'p', cPickle.dumps(buckets[i], -1)
+                    flag, d = 'p', cPickle.dumps(bucket, -1)
             except ValueError:
-                flag, d = 'p', cPickle.dumps(buckets[i], -1)
+                flag, d = 'p', cPickle.dumps(bucket, -1)
             cd = compress(d)
             for tried in range(1, 4):
                 try:

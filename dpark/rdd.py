@@ -129,6 +129,24 @@ class RDD(object):
         else:
             return self.compute(split)
 
+    def _prepare_shuffle(self, split, partitioner, aggregator):
+        numOutputSplits = partitioner.numPartitions
+        getPartition = partitioner.getPartition
+        mergeValue = aggregator.mergeValue
+        createCombiner = aggregator.createCombiner
+
+        buckets = [{} for i in range(numOutputSplits)]
+        for k,v in self.iterator(split):
+            bucketId = getPartition(k)
+            bucket = buckets[bucketId]
+            r = bucket.get(k, None)
+            if r is not None:
+                bucket[k] = mergeValue(r, v)
+            else:
+                bucket[k] = createCombiner(v)
+
+        return enumerate(buckets)
+
     def map(self, f):
         return MappedRDD(self, f)
 
