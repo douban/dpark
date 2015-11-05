@@ -1,0 +1,16 @@
+Cython==0.23.4
+argparse==1.2.1
+google-apputils==0.4.2
+lz4==0.7.0
+mesos.interface==0.22.0
+msgpack-python==0.4.6
+numpy==1.10.1
+protobuf==2.6.1
+psutil==3.2.2
+pymesos==0.0.8
+python-dateutil==2.4.2
+python-gflags==2.0
+pytz==2015.7
+pyzmq==15.0.0
+six==1.10.0
+wsgiref==0.1.2
