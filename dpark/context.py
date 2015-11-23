@@ -376,7 +376,7 @@ def parse_options():
     logger.addHandler(handler)
     logger.setLevel(max(options.logLevel, logger.level))
 
-    if args:
+    if any(arg.startswith('-') for arg in args):
         logger.warning('unknown args found in command-line: %s', ' '.join(args))
 
     return options
