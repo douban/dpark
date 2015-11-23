@@ -286,11 +286,35 @@ class DparkContext(object):
         raise ValueError("should not pickle ctx")
 
 
-parser = optparse.OptionParser(usage="Usage: %prog [options] [args]")
+class Parser(optparse.OptionParser):
+    def _process_args(self, largs, rargs, values):
+        while rargs:
+            arg = rargs[0]
+            if arg == "--":
+                del rargs[0]
+                return
+            elif arg[0:2] == "--":
+                try:
+                    self._process_long_opt(rargs, values)
+                except optparse.AmbiguousOptionError:
+                    raise
+                except optparse.BadOptionError:
+                    largs.append(arg)
+                    return
+            elif arg[:1] == "-" and len(arg) > 1:
+                try:
+                    self._process_short_opts(rargs, values)
+                except optparse.AmbiguousOptionError:
+                    raise
+                except optparse.BadOptionError:
+                    largs.append(arg)
+                    return
+            else:
+                return
+
+parser = Parser(usage="Usage: %prog [options] [args]")
 
 def add_default_options():
-    parser.disable_interspersed_args()
-
     group = optparse.OptionGroup(parser, "Dpark Options")
 
     group.add_option("-m", "--master", type="string", default="local",
@@ -351,5 +375,8 @@ def parse_options():
 
     logger.addHandler(handler)
     logger.setLevel(max(options.logLevel, logger.level))
+
+    if args:
+        logger.warning('unknown args found in command-line: %s', ' '.join(args))
 
     return options
