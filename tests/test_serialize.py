@@ -1,5 +1,5 @@
 import unittest
-from dpark.serialize import dump_closure, load_closure
+from dpark.serialize import dump_closure, load_closure, dumps
 
 class TestSerialize(unittest.TestCase):
     def testNameError(self):
@@ -23,4 +23,8 @@ class TestSerialize(unittest.TestCase):
         func = load_closure(dumped_func)
 
         self.assertEqual(func(), (x, y))
+
+    def testRandomSample(self):
+        from random import sample
+        assert dumps(sample)
         

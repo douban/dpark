@@ -112,7 +112,10 @@ def dump_closure(f):
     glob = {}
     for n in get_co_names(code):
         r = f.func_globals.get(n)
-        if r is not None:
+        # Actrually we are not sure which scope `n` is in, we need to play safe.
+        # instancemethod have lazy bound scope, so we choose not to add this in
+        # closure
+        if r is not None and not isinstance(r, types.MethodType):
             glob[n] = dump_obj(f, n, r)
 
     closure = None
