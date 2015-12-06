@@ -1,8 +1,10 @@
+import sys
 import unittest
 from dpark.serialize import dump_closure, load_closure, dumps, loads
 from contextlib import contextmanager
 
 MAIN = sys.modules['__main__']
+
 
 @contextmanager
 def main_environ(exec_str):
@@ -13,7 +15,9 @@ def main_environ(exec_str):
         if k not in org:
             del MAIN.__dict__[k]
 
+
 class TestSerialize(unittest.TestCase):
+
     def testNameError(self):
         def foo():
             print x
@@ -45,7 +49,7 @@ class TestSerialize(unittest.TestCase):
         assert isinstance(sample.im_self, Random)
 
     def testLocalMethod(self):
-         exec_str = """
+        exec_str = """
 x = 1
 class Foo(object):
     def func1(self):
@@ -63,18 +67,17 @@ func1 = foo.func1
 func2 = foo.func2
 func3 = foo.func3
 """
-         with main_environ(exec_str):
-             _func1 = loads(dumps(MAIN.func1))
-             _func2 = loads(dumps(MAIN.func2))
-             _func3 = loads(dumps(MAIN.func3))
+        with main_environ(exec_str):
+            _func1 = loads(dumps(MAIN.func1))
+            _func2 = loads(dumps(MAIN.func2))
+            _func3 = loads(dumps(MAIN.func3))
 
-             assert _func1() == MAIN.x
-             assert _func2() == MAIN.x + 1
-             assert _func3() == MAIN.x + 2
-
+            assert _func1() == MAIN.x
+            assert _func2() == MAIN.x + 1
+            assert _func3() == MAIN.x + 2
 
     def testLocalMethodCallChain(self):
-         exec_str = """
+        exec_str = """
 x = 1
 class Bar(object):
     @classmethod
@@ -92,19 +95,19 @@ func1 = foo.func1
 func2 = foo.func2
 func3 = foo.func3
 """
-         with main_environ(exec_str):
-             _func1 = loads(dumps(MAIN.func1))
-             _func2 = loads(dumps(MAIN.func2))
-             _func3 = loads(dumps(MAIN.func3))
+        with main_environ(exec_str):
+            _func1 = loads(dumps(MAIN.func1))
+            _func2 = loads(dumps(MAIN.func2))
+            _func3 = loads(dumps(MAIN.func3))
 
-             assert _func1() == MAIN.x
-             assert _func2() == MAIN.x + 1
-             assert _func3() == MAIN.x + 2
+            assert _func1() == MAIN.x
+            assert _func2() == MAIN.x + 1
+            assert _func3() == MAIN.x + 2
 
     def testLocalMethodCallChain2(self):
-         exec_str = """
+        exec_str = """
 x = 1
-class Bar(object):
+class FooBar(object):
     @classmethod
     def func1(self):
         return x
@@ -115,16 +118,26 @@ class Bar(object):
             return x+2
         except:
             return self.func3()
-foo = Bar()
+foo = FooBar()
 func1 = foo.func1
 func2 = foo.func2
 func3 = foo.func3
 """
-         with main_environ(exec_str):
-             _func1 = loads(dumps(MAIN.func1))
-             _func2 = loads(dumps(MAIN.func2))
-             _func3 = loads(dumps(MAIN.func3))
+        with main_environ(exec_str):
+            _func1 = loads(dumps(MAIN.func1))
+            _func2 = loads(dumps(MAIN.func2))
+            _func3 = loads(dumps(MAIN.func3))
 
-             assert _func1() == MAIN.x
-             assert _func2() == MAIN.x + 1
-             assert _func3() == MAIN.x + 2
+            assert _func1() == MAIN.x
+            assert _func2() == MAIN.x + 1
+            assert _func3() == MAIN.x + 2
+
+    def testMemberDescriptor(self):
+        exec_str = """
+class _ClsWithSlots(object):
+    __slots__=['x', 'y']
+"""
+        with main_environ(exec_str):
+            f = MAIN._ClsWithSlots()
+            _f = loads(dumps(f))
+            assert _f.__slots__ == f.__slots__
