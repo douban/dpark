@@ -1,7 +1,9 @@
 import os
 import time
 import math
+import socket
 import itertools
+import threading
 import logging
 import random
 
@@ -100,9 +102,7 @@ class StreamingContext(object):
         self.graph = DStreamGraph(batchDuration)
         self.checkpointDir = None
         self.checkpointDuration = None
-        self.networkInputTracker = None
         self.scheduler = None
-        self.receiverJobThread = None
 
    # def load(self, cp):
    #     if isinstance(cp, str):
@@ -162,24 +162,18 @@ class StreamingContext(object):
         if not self.checkpointDuration:
             self.checkpointDuration = self.batchDuration
 
-        # TODO
-        #nis = [ds for ds in self.graph.inputStreams
-        #            if isinstance(ds, NetworkInputDStream)]
-        #if nis:
-        #    self.networkInputTracker = NetworkInputTracker(self, nis)
-        #    self.networkInputTracker.start()
-
         self.sc.start()
+        nis = [ds for ds in self.graph.inputStreams
+                    if isinstance(ds, NetworkInputDStream)]
+        for stream in nis:
+            stream.startReceiver()
+
         self.scheduler = Scheduler(self)
         self.scheduler.start(t or time.time())
 
     def stop(self):
         if self.scheduler:
             self.scheduler.stop()
-        if self.networkInputTracker:
-            self.networkInputTracker.stop()
-        if self.receiverJobThread:
-            self.receiverJobThread.stop()
         self.sc.stop()
         logger.info("StreamingContext stopped successfully")
 
@@ -854,42 +848,54 @@ class QueueInputDStream(InputDStream):
         elif self.defaultRDD:
             return self.defaultRDD
 
-class NetworkReceiverMessage: pass
-class StopReceiver(NetworkReceiverMessage):
-    def __init__(self, msg):
-        self.msg = msg
-class ReportBlock(NetworkReceiverMessage):
-    def __init__(self, blockId, metadata):
-        self.blockId = blockId
-        self.metadata = metadata
-class ReportError(NetworkReceiverMessage):
-    def __init__(self, msg):
-        self.msg = msg
-
-class NetworkReceiver(object):
-    "TODO"
-
 class NetworkInputDStream(InputDStream):
-    def __init__(self, ssc):
+    def __init__(self, ssc, func):
         InputDStream.__init__(self, ssc)
-        self.id = ssc.getNewNetworkStreamId()
-    def createReceiver(self):
-        return NetworkReceiver()
+        self.func = func
+        self._lock = threading.RLock()
+        self._messages = []
+
+    def startReceiver(self):
+        def _run():
+            while True:
+                generator = self.func()
+                try:
+                    for message in generator:
+                        if not self.ssc.sc.started:
+                            return
+                        with self._lock:
+                            self._messages.append(message)
+                except:
+                    logger.exception('fail to receive')
+
+        spawn(_run)
+
     def compute(self, t):
-        blockIds = self.ssc.networkInputTracker.getBlockIds(self.id, t)
-        #return [BlockRDD(self.ssc.sc, blockIds)]
-
-
-class SocketReceiver(NetworkReceiver):
-    pass
+        with self._lock:
+            if self._messages:
+                rdd =  self.ssc.sc.makeRDD(self._messages)
+                self._messages = []
+                return rdd
 
 class SocketInputDStream(NetworkInputDStream):
-    pass
+    def __init__(self, ssc, hostname, port):
+        NetworkInputDStream.__init__(self, ssc, self._receive)
+        self.hostname = hostname
+        self.port = port
 
-
-class RawNetworkReceiver:
-    "TODO"
-
-class RawInputDStream(NetworkInputDStream):
-    def createReceiver(self):
-        return RawNetworkReceiver()
+    def _receive(self):
+        client, f = None, None
+        try:
+            client = socket.socket()
+            client.connect((self.hostname, self.port))
+            f = client.makefile()
+            for line in f:
+                yield line
+        except:
+            time.sleep(0.5 + random.random())
+            raise
+        finally:
+            if f:
+                f.close()
+            if client:
+                client.close()
