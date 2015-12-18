@@ -139,6 +139,11 @@ class StreamingContext(object):
         self.registerInputStream(ds)
         return ds
 
+    def customStream(self, func):
+        ds = NetworkInputDStream(self, func)
+        self.registerInputStream(ds)
+        return ds
+
     def fileStream(self, directory, filter=None, newFilesOnly=True):
         ds = FileInputDStream(self, directory, filter, newFilesOnly)
         self.registerInputStream(ds)
