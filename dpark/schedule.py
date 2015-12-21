@@ -732,6 +732,7 @@ class MesosScheduler(DAGScheduler):
         for r in res:
             if r.name == name:
                 return r.scalar.value
+        return 0.0
 
     def getAttribute(self, attrs, name):
         for r in attrs:
