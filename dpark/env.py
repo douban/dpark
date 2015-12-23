@@ -3,6 +3,7 @@ import logging
 import time
 import socket
 import shutil
+import uuid
 
 import zmq
 
@@ -35,8 +36,7 @@ class DparkEnv:
             roots = conf.DPARK_WORK_DIR
             if isinstance(roots, str):
                 roots = roots.split(',')
-            name = '%s-%s-%d' % (time.strftime("%Y%m%d-%H%M%S"),
-                                 socket.gethostname(), os.getpid())
+            name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
             self.workdir = [os.path.join(root, name) for root in roots]
             try:
                 for d in self.workdir:
