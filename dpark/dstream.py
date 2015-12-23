@@ -636,7 +636,7 @@ class StateDStream(DerivedDStream):
                 cogroupedRDD = parentRDD.cogroup(prevRDD)
                 return cogroupedRDD.mapValue(lambda (vs, rs):(vs, rs and rs[0] or None)).mapPartitions(updateFuncLocal) # preserve TODO
             else:
-                return prevRDD
+                return prevRDD.mapValue(lambda rs: ([], rs and rs[0] or None)).mapPartitions(updateFuncLocal)
         else:
             if parentRDD:
                 groupedRDD = parentRDD.groupByKey(self.partitioner)

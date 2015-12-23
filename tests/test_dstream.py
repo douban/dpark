@@ -143,6 +143,25 @@ class TestBasic(TestDStream):
             return s.map(lambda x: (x,1)).updateStateByKey(updatef)
         self._testOperation(d, None, op, r, useSet=True)
 
+    def test_updateStateByKey_empty_input(self):
+        d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
+        r = [[("a", 1)],
+             [("a", 2), ("b", 1)],
+             [("a", 3), ("b", 2), ("c", 1)],
+             [("a", 4), ("b", 3), ("c", 0)],
+             [("a", 5), ("b", 2), ("c", -1)],
+             [("a", 4), ("b", 1), ("c", -2)],
+        ]
+        def op(s):
+            def updatef(vs, state):
+                state = state or 0
+                if vs:
+                    return sum(vs) + state
+                else:
+                    return state - 1
+            return s.map(lambda x: (x,1)).updateStateByKey(updatef)
+        self._testOperation(d, None, op, r, useSet=True)
+
     #def test_window(self):
     #    d = [range(i, i+1) for i in range(10)]
     #    def op(s):
