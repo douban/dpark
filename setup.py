@@ -14,11 +14,11 @@ setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "
             +"computing framework supporting iterative algorithms.",
-      long_description=open("README.md").read(),
-      # Get more strings from
-      # http://pypi.python.org/pypi?%3Aaction=list_classifiers
       classifiers=[
         "Programming Language :: Python",
+        'Intended Audience :: Developers',
+        'License :: OSI Approved :: BSD License',
+        'Operating System :: POSIX',
       ],
       keywords='dpark python mapreduce spark',
       author='Davies Liu',
@@ -28,6 +28,8 @@ setup(name='DPark',
       include_package_data=True,
       zip_safe=False,
       setup_requires=['setuptools_cython', 'Cython >= 0.20'],
+      url="https://github.com/douban/dpark",
+      download_url = 'https://github.com/douban/dpark/archive/%s.tar.gz' % version,
       install_requires=[
           'pymesos',
           'setuptools',
@@ -41,8 +43,8 @@ setup(name='DPark',
           'nose',
       ],
       test_suite='nose.collector',
-      ext_modules = ext_modules,
-      scripts = [
+      ext_modules=ext_modules,
+      scripts=[
           'tools/drun',
           'tools/mrun',
           'tools/executor.py',
