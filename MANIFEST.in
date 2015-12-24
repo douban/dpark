@@ -1,3 +1,2 @@
 include dpark/porable_hash.pyx
-include dpark/porable_hash.c
 include README.md
