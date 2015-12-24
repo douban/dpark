@@ -18,7 +18,10 @@ class TestInputStream(InputDStream):
         index = (t - self.zeroTime) / self.slideDuration - 1
         if 0 <= index < len(self.input):
             d = self.input[index]
-            return self.ssc.sc.makeRDD(d, self.numPart)
+            if d is None:
+                return None
+            else:
+                return self.ssc.sc.makeRDD(d, self.numPart)
 
 class TestOutputStream(ForEachDStream):
     def __init__(self, parent, output):
@@ -144,7 +147,7 @@ class TestBasic(TestDStream):
         self._testOperation(d, None, op, r, useSet=True)
 
     def test_updateStateByKey_empty_input(self):
-        d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
+        d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], None]
         r = [[("a", 1)],
              [("a", 2), ("b", 1)],
              [("a", 3), ("b", 2), ("c", 1)],
