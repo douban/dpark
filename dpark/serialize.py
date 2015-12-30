@@ -5,12 +5,62 @@ import marshal
 import new
 import cPickle
 import itertools
-from pickle import Pickler, whichmodule
+from pickle import Pickler, whichmodule, PROTO, STOP
 import logging
+from collections import deque
 logger = logging.getLogger(__name__)
 
 
+class LazySave(object):
+    '''Out of band marker for lazy saves among lazy writes.'''
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __repr__(self):
+        return '<LazySave %s>' % repr(self.obj)
+
+
 class MyPickler(Pickler):
+
+    def __init__(self, file, protocol=None):
+        Pickler.__init__(self, file, protocol)
+        self.lazywrites = deque()
+        self.realwrite = file.write
+
+        # Pickler.__init__ overwrites self.write, we do not want that
+        del self.write
+
+    def write(self, *args):
+        if self.lazywrites:
+            self.lazywrites.append(args)
+        else:
+            self.realwrite(*args)
+
+    def save(self, obj):
+        self.lazywrites.append(LazySave(obj))
+
+    realsave = Pickler.save
+
+    def dump(self, obj):
+        """Write a pickled representation of obj to the open file."""
+        if self.proto >= 2:
+            self.write(PROTO + chr(self.proto))
+        self.realsave(obj)
+        while self.lazywrites:
+            lws = self.lazywrites
+            self.lazywrites = deque()
+            while lws:
+                lw = lws.popleft()
+                if isinstance(lw, LazySave):
+                    self.realsave(lw.obj)
+                    if self.lazywrites:
+                        self.lazywrites.extend(lws)
+                        break
+                else:
+                    self.realwrite(*lw)
+        self.realwrite(STOP)
+
     dispatch = Pickler.dispatch.copy()
 
     @classmethod

@@ -11,6 +11,7 @@ from dpark.context import *
 from dpark.rdd import *
 from dpark.accumulator import *
 from tempfile import mkdtemp
+from dpark.serialize import loads, dumps
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
 
@@ -371,6 +372,7 @@ class TestRDD(unittest.TestCase):
         for i in xrange(1000):
             rdd = rdd.map(lambda x: x+1)
 
+        loads(dumps(rdd))
         self.assertEqual(rdd.collect(), map(lambda x:x+1000, d))
 
 #class TestRDDInProcess(TestRDD):
