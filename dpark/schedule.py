@@ -22,6 +22,7 @@ from dpark.task import ResultTask, ShuffleMapTask
 from dpark.job import SimpleJob
 from dpark.env import env
 from dpark.mutable_dict import MutableDict
+from dpark.serialize import dumps
 import dpark.conf as conf
 
 logger = logging.getLogger(__name__)
@@ -756,7 +757,7 @@ class MesosScheduler(DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = compress(cPickle.dumps((t, t.tried), -1))
+        task.data = compress(dumps((t, t.tried)))
         task.executor.MergeFrom(self.executor)
         if len(task.data) > 1000*1024:
             logger.warning("task too large: %s %d",
