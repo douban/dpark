@@ -186,6 +186,24 @@ class RDD(object):
     def zipWith(self, other):
         return ZippedRDD(self.ctx, [self, other])
 
+    def zipWithIndex(self):
+        """
+        Zips this RDD with its element indices.
+
+        >>> dpark.parallelize(["a", "b", "c", "d"], 3).zipWithIndex().collect()
+        [('a', 0), ('b', 1), ('c', 2), ('d', 3)]
+        """
+        starts = [0]
+        if len(self) > 1:
+            nums = self.mapPartitions(lambda it: [sum(1 for i in it)]).collect()
+            for i in range(len(nums) - 1):
+                starts.append(starts[-1] + nums[i])
+
+        def func(k, it):
+            for i, v in enumerate(it, starts[k]):
+                yield v, i
+        return MapPartitionWithIndexRDD(self, func)
+
     def groupBy(self, f, numSplits=None):
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
@@ -616,6 +634,10 @@ class GlommedRDD(DerivedRDD):
 class MapPartitionsRDD(MappedRDD):
     def compute(self, split):
         return self.func(self.prev.iterator(split))
+
+class MapPartitionWithIndexRDD(MappedRDD):
+    def compute(self, split):
+        return self.func(split.index, self.prev.iterator(split))
 
 class EnumeratePartitionsRDD(MappedRDD):
     def compute(self, split):
