@@ -146,7 +146,7 @@ class TabularRDD(RDD):
             for sp in rdd.splits:
                 self._splits.append(TabularSplit(i, rdd, sp))
                 i += 1
-        self.dependencies = [OneToOneDependency(rdd) for rdd in self.rdds]
+        self._dependencies = [OneToOneDependency(rdd) for rdd in self.rdds]
 
     def _get_files(self, path):
         path = os.path.realpath(path)
@@ -178,7 +178,7 @@ class FilteredByIndexRDD(RDD):
         self.rdd = rdd
         self.filters = filters
         self.mem = max(self.mem, rdd.mem)
-        self.dependencies = [OneToOneDependency(rdd)]
+        self._dependencies = [OneToOneDependency(rdd)]
         self._splits = self._get_splits()
 
     def __repr__(self):
@@ -352,7 +352,7 @@ class OutputTabularRDD(RDD):
         self.numSplits = min(numSplits, prev_splits)
         s = [int(round(1.0*prev_splits/numSplits*i)) for i in xrange(numSplits + 1)]
         self._splits = [MultiSplit(i, rdd.splits[s[i]:s[i+1]]) for i in xrange(numSplits)]
-        self.dependencies = [OneToRangeDependency(rdd, int(prev_splits/numSplits),
+        self._dependencies = [OneToRangeDependency(rdd, int(prev_splits/numSplits),
                                                   prev_splits)]
 
     def __repr__(self):

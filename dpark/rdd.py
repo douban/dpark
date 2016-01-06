@@ -45,7 +45,7 @@ class RDD(object):
         self.ctx = ctx
         self.id = RDD.newId()
         self._splits = []
-        self.dependencies = []
+        self._dependencies = []
         self.aggregator = None
         self._partitioner = None
         self.shouldCache = False
@@ -63,7 +63,7 @@ class RDD(object):
     @cached
     def __getstate__(self):
         d = dict(self.__dict__)
-        d.pop('dependencies', None)
+        d.pop('_dependencies', None)
         d.pop('_splits', None)
         d.pop('ctx', None)
         return d
@@ -80,6 +80,10 @@ class RDD(object):
     @property
     def splits(self):
         return self._splits
+
+    @property
+    def dependencies(self):
+        return self._dependencies
 
     def compute(self, split):
         raise NotImplementedError
@@ -527,7 +531,7 @@ class DerivedRDD(RDD):
         RDD.__init__(self, rdd.ctx)
         self.prev = rdd
         self.mem = max(self.mem, rdd.mem)
-        self.dependencies = [OneToOneDependency(rdd)]
+        self._dependencies = [OneToOneDependency(rdd)]
 
     def __len__(self):
         return len(self.prev)
@@ -756,7 +760,7 @@ class ShuffledRDD(RDD):
             self.mem = taskMemory
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
         self.shuffleId = self.ctx.newShuffleId()
-        self.dependencies = [ShuffleDependency(self.shuffleId,
+        self._dependencies = [ShuffleDependency(self.shuffleId,
                 parent, aggregator, part)]
         self.name = '<ShuffledRDD %s>' % self.parent
 
@@ -794,7 +798,7 @@ class CartesianRDD(RDD):
         self.numSplitsInRdd2 = n = len(rdd2)
         self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
-        self.dependencies = [CartesianDependency(rdd1, True, n),
+        self._dependencies = [CartesianDependency(rdd1, True, n),
                              CartesianDependency(rdd2, False, n)]
 
     def __len__(self):
@@ -850,7 +854,7 @@ class CoGroupedRDD(RDD):
             self.mem = taskMemory
         self.aggregator = CoGroupAggregator()
         self._partitioner = partitioner
-        self.dependencies = dep = [rdd.partitioner == partitioner
+        self._dependencies = dep = [rdd.partitioner == partitioner
                 and OneToOneDependency(rdd)
                 or ShuffleDependency(self.ctx.newShuffleId(),
                     rdd, self.aggregator, partitioner)
@@ -921,7 +925,7 @@ class UnionRDD(RDD):
         pos = 0
         for rdd in rdds:
             self._splits.extend([UnionSplit(pos + i, rdd, sp) for i, sp in enumerate(rdd.splits)])
-            self.dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
+            self._dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
         self.name = '<UnionRDD %d %s ...>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:1]))
 
@@ -944,7 +948,7 @@ class SliceRDD(RDD):
         self.i = i
         self.j = j
         self._splits = rdd.splits[i:j]
-        self.dependencies = [RangeDependency(rdd, i, 0, j-i)]
+        self._dependencies = [RangeDependency(rdd, i, 0, j-i)]
 
     def __len__(self):
         return self.j - self.i
@@ -978,7 +982,7 @@ class MergedRDD(RDD):
         splits = rdd.splits
         self._splits = [MultiSplit(i, splits[i*splitSize:(i+1)*splitSize])
                for i in range(numSplits)]
-        self.dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
+        self._dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
 
     def __len__(self):
         return self.numSplits
@@ -1001,7 +1005,7 @@ class ZippedRDD(RDD):
         self.mem = max(r.mem for r in rdds)
         self._splits = [MultiSplit(i, splits)
                 for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
-        self.dependencies = [OneToOneDependency(rdd) for rdd in rdds]
+        self._dependencies = [OneToOneDependency(rdd) for rdd in rdds]
 
     def __len__(self):
         return len(self.rdds[0])
@@ -1044,7 +1048,7 @@ class ParallelCollection(RDD):
         slices = self.slice(data, max(1, min(self.size, numSlices)))
         self._splits = [ParallelCollectionSplit(i, slices[i])
                 for i in range(len(slices))]
-        self.dependencies = []
+        self._dependencies = []
 
     def __repr__(self):
         return '<ParallelCollection %d>' % self.size
