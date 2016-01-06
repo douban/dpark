@@ -222,10 +222,14 @@ class DAGScheduler(Scheduler):
         logger.debug("Final stage: %s, %d", finalStage, numOutputParts)
         logger.debug("Parents of final stage: %s", finalStage.parents)
         logger.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
+        def onStageFinished(stage):
+            MutableDict.merge()
+            stage.rdd._do_checkpoint()
 
         if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]
             yield func(finalRdd.iterator(split))
+            onStageFinished(finalStage)
             return
 
         def submitStage(stage):
@@ -313,7 +317,7 @@ class DAGScheduler(Scheduler):
                     stage.addOutputLoc(task.partition, evt.result)
                     if not pendingTasks[stage] and all(stage.outputLocs):
                         logger.debug("%s finished; looking for newly runnable stages", stage)
-                        MutableDict.merge()
+                        onStageFinished(stage)
                         running.remove(stage)
                         if stage.shuffleDep != None:
                             self.mapOutputTracker.registerMapOutputs(
@@ -337,7 +341,7 @@ class DAGScheduler(Scheduler):
                 logger.error("task %s failed: %s %s %s", task, reason, type(reason), reason.message)
                 raise Exception(reason.message)
 
-        MutableDict.merge()
+        onStageFinished(finalStage)
         assert not any(results)
         return
 

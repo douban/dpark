@@ -10,6 +10,7 @@ import logging
 from dpark.context import *
 from dpark.rdd import *
 from dpark.accumulator import *
+from tempfile import mkdtemp
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
 
@@ -322,6 +323,47 @@ class TestRDD(unittest.TestCase):
         rdd = self.sc.makeRDD(d, 10)
         assert d == [i for i in rdd]
 
+    def test_checkpoint(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = range(1000)
+            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
+            assert rdd._dependencies
+            r = rdd.collect()
+            assert not rdd._dependencies
+            self.assertEqual(len(rdd), 15)
+            self.assertEqual(rdd.collect(), r)
+        finally:
+            shutil.rmtree(checkpoint_path)
+
+    def test_checkpoint_partial(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = range(1000)
+            r = range(1, 1001)
+            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
+            assert rdd._dependencies
+            sum(self.sc.runJob(rdd, lambda x: list(x), [0]), [])
+            assert not rdd._dependencies
+            self.assertEqual(len(rdd), 15)
+            self.assertEqual(rdd.collect(), r)
+        finally:
+            shutil.rmtree(checkpoint_path)
+
+    def test_long_lineage(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = range(1000)
+            rdd = self.sc.makeRDD(d, 15)
+            for i in xrange(10):
+                for j in xrange(100):
+                    rdd = rdd.map(lambda x: x+1)
+                rdd.checkpoint(checkpoint_path)
+                r = rdd.collect()
+                self.assertEqual(r, map(lambda x:x + 100, d))
+                d = r
+        finally:
+            shutil.rmtree(checkpoint_path)
 
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):

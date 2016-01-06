@@ -64,19 +64,19 @@ class Bagel(object):
     @classmethod
     def run(cls, ctx, verts, msgs, compute,
             combiner=DefaultValueCombiner, aggregator=None,
-            max_superstep=sys.maxint, numSplits=None, snapshot_dir=None):
+            maxSuperstep=sys.maxint, numSplits=None, checkpointDir=None):
 
         superstep = 0
-        snapshot_dir = snapshot_dir or ctx.options.snapshot_dir
+        checkpointDir = checkpointDir or ctx.options.checkpoint_dir
 
-        while superstep < max_superstep:
+        while superstep < maxSuperstep:
             logger.info("Starting superstep %d", superstep)
             start = time.time()
             aggregated = cls.agg(verts, aggregator) if aggregator else None
             combinedMsgs = msgs.combineByKey(combiner, numSplits)
             grouped = verts.groupWith(combinedMsgs, numSplits=numSplits)
             verts, msgs, numMsgs, numActiveVerts = cls.comp(ctx, grouped,
-                lambda v, ms: compute(v, ms, aggregated, superstep), snapshot_dir)
+                lambda v, ms: compute(v, ms, aggregated, superstep), checkpointDir)
             logger.info("superstep %d took %.1f s %d messages, %d active nodes",
                     superstep, time.time()-start, numMsgs, numActiveVerts)
 
@@ -91,7 +91,7 @@ class Bagel(object):
         return r.reduce(aggregator.mergeAggregators)
 
     @classmethod
-    def comp(cls, ctx, grouped, compute, snapshot_dir=None):
+    def comp(cls, ctx, grouped, compute, checkpointDir=None):
         numMsgs = ctx.accumulator(0)
         numActiveVerts = ctx.accumulator(0)
         def proc((vs, cs)):
@@ -105,8 +105,8 @@ class Bagel(object):
         processed = grouped.flatMapValue(proc)
         verts = processed.mapValue(lambda (vert, msgs): vert)
         msgs = processed.flatMap(lambda (id, (vert, msgs)): msgs)
-        if snapshot_dir:
-            verts = verts.snapshot(snapshot_dir)
+        if checkpointDir:
+            verts = verts.checkpoint(checkpointDir)
         #else:
         #    processed = processed.cache()
         # force evaluation of processed RDD for accurate performance measurements

@@ -860,6 +860,18 @@ class NetworkInputDStream(InputDStream):
         self._lock = threading.RLock()
         self._messages = []
 
+    def __getstate__(self):
+        d = InputDStream.__getstate__(self)
+        del d['func']
+        del d['_lock']
+        d['_func'] = dump_func(self.func)
+        return d
+
+    def __setstate__(self, state):
+        self.func = load_func(state.pop('_func'))
+        self._lock = threading.RLock()
+        InputDStream.__setstate__(self, state)
+
     def startReceiver(self):
         def _run():
             while True:
@@ -887,6 +899,17 @@ class SocketInputDStream(NetworkInputDStream):
         NetworkInputDStream.__init__(self, ssc, self._receive)
         self.hostname = hostname
         self.port = port
+
+    def __getstate__(self):
+        d = InputDStream.__getstate__(self)
+        del d['func']
+        del d['_lock']
+        return d
+
+    def __setstate__(self, state):
+        self.func = self._receive
+        self._lock = threading.RLock()
+        InputDStream.__setstate__(self, state)
 
     def _receive(self):
         client, f = None, None

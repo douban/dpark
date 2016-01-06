@@ -139,14 +139,16 @@ class TabularRDD(RDD):
         else:
             files = chain(self._get_files(p) for p in path)
 
-        self.rdds = [TabularFileRDD(ctx, f, fields) for f in files]
+        rdds = [TabularFileRDD(ctx, f, fields) for f in files]
         self._splits = []
         i = 0
-        for rdd in self.rdds:
+        for rdd in rdds:
             for sp in rdd.splits:
                 self._splits.append(TabularSplit(i, rdd, sp))
                 i += 1
-        self._dependencies = [OneToOneDependency(rdd) for rdd in self.rdds]
+        self._dependencies = [OneToOneDependency(rdd) for rdd in rdds]
+        self.repr_name = '<%s %d %s...>' % (self.__class__.__name__, len(rdds),
+                                            ','.join(str(rdd) for rdd in rdds[:1]))
 
     def _get_files(self, path):
         path = os.path.realpath(path)
@@ -158,10 +160,6 @@ class TabularRDD(RDD):
 
         else:
             yield path
-
-    def __repr__(self):
-        return '<%s %d %s...>' % (self.__class__.__name__, len(self.rdds),
-                                  ','.join(str(rdd) for rdd in self.rdds[:1]))
 
     def _preferredLocations(self, split):
         return split.rdd.preferredLocations(split.split)
@@ -180,9 +178,11 @@ class FilteredByIndexRDD(RDD):
         self.mem = max(self.mem, rdd.mem)
         self._dependencies = [OneToOneDependency(rdd)]
         self._splits = self._get_splits()
+        self.repr_name = '<%s %s>' % (self.__class__.__name__, self.rdd)
 
-    def __repr__(self):
-        return '<%s %s>' % (self.__class__.__name__, self.rdd)
+    def _clear_dependencies(self):
+        RDD._clear_dependencies(self)
+        self.rdd = None
 
     def _preferredLocations(self, split):
         return self.rdd.preferredLocations(split)
@@ -354,9 +354,11 @@ class OutputTabularRDD(RDD):
         self._splits = [MultiSplit(i, rdd.splits[s[i]:s[i+1]]) for i in xrange(numSplits)]
         self._dependencies = [OneToRangeDependency(rdd, int(prev_splits/numSplits),
                                                   prev_splits)]
+        self.repr_name = '<OutputTabularRDD %s %s>' % (self.path, self.prev)
 
-    def __repr__(self):
-        return '<OutputTabularRDD %s %s>' % (self.path, self.prev)
+    def _clear_dependencies(self):
+        RDD._clear_dependencies(self)
+        self.rdd = None
 
     def compute(self, split):
         buffers = [list() for i in self.fields]

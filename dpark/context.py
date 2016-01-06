@@ -332,8 +332,8 @@ def add_default_options():
             help="which group of machines")
     group.add_option("--err", type="float", default=0.0,
             help="acceptable ignored error record ratio (0.01%)")
-    group.add_option("--snapshot_dir", type="string", default="",
-            help="shared dir to keep snapshot of RDDs")
+    group.add_option("--checkpoint_dir", type="string", default="",
+            help="shared dir to keep checkpoint of RDDs")
 
     group.add_option("--conf", type="string",
             help="path for configuration file")
