@@ -2,36 +2,53 @@ import os
 import time
 import math
 import socket
+import shutil
+import tempfile
 import itertools
 import threading
 import logging
 import random
+from functools import reduce
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 from dpark.util import spawn
+from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
-from dpark.rdd import CoGroupedRDD
+from dpark.rdd import CoGroupedRDD, CheckpointRDD
 
 logger = logging.getLogger(__name__)
 
+
 class Interval(object):
+
     def __init__(self, beginTime, endTime):
         self.begin = beginTime
         self.end = endTime
+
     @property
     def duration(self):
         return self.end - self.begin
+
     def __add__(self, d):
         return Interval(self.begin + d, self.end + d)
+
     def __sub__(self, d):
         return Interval(self.begin - d, self.end - d)
+
     def __le__(self, that):
         assert self.duration == that.duration
         return self.begin < that.begin
+
     def __ge__(self, that):
         return not self < that
+
     def __str__(self):
         return '[%s, %s]' % (self.begin, self.end)
+
     @classmethod
     def current(cls, duration):
         now = int(time.time())
@@ -41,6 +58,7 @@ class Interval(object):
 
 
 class DStreamGraph(object):
+
     def __init__(self, batchDuration):
         self.inputStreams = []
         self.outputStreams = []
@@ -51,7 +69,6 @@ class DStreamGraph(object):
     def start(self, time):
         self.zeroTime = int(time / self.batchDuration) * self.batchDuration
         for out in self.outputStreams:
-            #out.initialize(time)
             out.remember(self.rememberDuration)
         for ins in self.inputStreams:
             ins.start()
@@ -60,9 +77,12 @@ class DStreamGraph(object):
         for ins in self.inputStreams:
             ins.stop()
 
-    #def setContext(self, ssc):
-    #    for out in self.outputStreams:
-    #        out.setContext(ssc)
+    def setContext(self, ssc):
+        for ins in self.inputStreams:
+            ins.setContext(ssc)
+
+        for out in self.outputStreams:
+            out.setContext(ssc)
 
     def remember(self, duration):
         self.rememberDuration = duration
@@ -76,8 +96,9 @@ class DStreamGraph(object):
         self.outputStreams.append(output)
 
     def generateRDDs(self, time):
-        #print 'generateRDDs', self, time
-        return filter(None, [out.generateJob(time) for out in self.outputStreams])
+        # print 'generateRDDs', self, time
+        return filter(None, [out.generateJob(time)
+                             for out in self.outputStreams])
 
     def forgetOldRDDs(self, time):
         for out in self.outputStreams:
@@ -87,45 +108,44 @@ class DStreamGraph(object):
         for out in self.outputStreams:
             out.updateCheckpointData(time)
 
-    def restoreCheckpointData(self, time):
+    def restoreCheckpointData(self):
         for out in self.outputStreams:
-            out.restoreCheckpointData(time)
+            out.restoreCheckpointData()
 
 
 class StreamingContext(object):
-    def __init__(self, batchDuration, sc=None):
-        if isinstance(sc, str) or not sc: # None
+
+    def __init__(self, batchDuration, sc=None, graph=None):
+        if isinstance(sc, str) or not sc:  # None
             sc = DparkContext(sc)
         self.sc = sc
         batchDuration = int(batchDuration)
         self.batchDuration = batchDuration
-        self.graph = DStreamGraph(batchDuration)
+        self.graph = graph or DStreamGraph(batchDuration)
         self.checkpointDir = None
         self.checkpointDuration = None
         self.scheduler = None
+        self.lastCheckpointTime = 0
 
-   # def load(self, cp):
-   #     if isinstance(cp, str):
-   #         cp = Checkpoint.read(cp)
-   #     self.cp = cp
-   #     self.sc = DparkContext(cp.master)
-   #     self.graph = cp.graph
-   #     self.graph.setContext(self)
-   #     self.graph.restoreCheckpointData()
-   #     #self.sc.setCheckpointDir(cp.checkpointDir, True)
-   #     self.checkpointDir = cp.checkpointDir
-   #     self.checkpointDuration = cp.checkpointDuration
+    @classmethod
+    def load(cls, path):
+        cp = Checkpoint.read(path)
+        graph = cp.graph
+        ssc = cls(cp.batchDuration, cp.master, graph)
+        ssc.checkpointDir = path
+        ssc.checkpointDuration = cp.checkpointDuration
+        graph.setContext(ssc)
+        graph.restoreCheckpointData()
+        return ssc, cp.time
 
     def remember(self, duration):
         self.graph.remember(duration)
 
     def checkpoint(self, directory, interval):
-        #if directory:
-        #    self.sc.setCheckpointDir(directory)
         self.checkpointDir = directory
         self.checkpointDuration = interval
 
-    #def getInitialCheckpoint(self):
+    # def getInitialCheckpoint(self):
     #    return self.cp
 
     def registerInputStream(self, ds):
@@ -150,7 +170,8 @@ class StreamingContext(object):
         return ds
 
     def textFileStream(self, directory, filter=None, newFilesOnly=True):
-        return self.fileStream(directory, filter, newFilesOnly).map(lambda (k,v):v)
+        return self.fileStream(
+            directory, filter, newFilesOnly).map(lambda k_v: k_v[1])
 
     def makeStream(self, rdd):
         return ConstantInputDStream(self, rdd)
@@ -164,12 +185,9 @@ class StreamingContext(object):
         return UnionDStream(streams)
 
     def start(self, t=None):
-        if not self.checkpointDuration:
-            self.checkpointDuration = self.batchDuration
-
         self.sc.start()
         nis = [ds for ds in self.graph.inputStreams
-                    if isinstance(ds, NetworkInputDStream)]
+               if isinstance(ds, NetworkInputDStream)]
         for stream in nis:
             stream.startReceiver()
 
@@ -182,29 +200,50 @@ class StreamingContext(object):
         self.sc.stop()
         logger.info("StreamingContext stopped successfully")
 
-    def getSparkCheckpointDir(self, dir):
-        return os.path.join(dir, str(random.randint(0, 1000)))
+    def doCheckpoint(self, time):
+        if self.checkpointDuration and time >= self.lastCheckpointTime + \
+                self.checkpointDuration:
+            self.lastCheckpointTime = time
+            self.graph.updateCheckpointData(time)
+            Checkpoint(self, time).write(self.checkpointDir)
 
 
 class Checkpoint(object):
+
     def __init__(self, ssc, time):
-        self.ssc = ssc
         self.time = time
         self.master = ssc.sc.master
-        self.framework = ssc.sc.jobName
         self.graph = ssc.graph
-        self.checkpointDir = ssc.checkpointDir
         self.checkpointDuration = ssc.checkpointDuration
+        self.batchDuration = ssc.batchDuration
 
-    def write(self, dir):
-        pass
+    def write(self, path):
+        try:
+            os.mkdir(path)
+        except OSError:
+            pass
+
+        fd, file_name = tempfile.mkstemp(dir=path)
+        output_file = os.path.join(path, 'metadata')
+        try:
+            with os.fdopen(fd, 'wb+') as f:
+                f.write(pickle.dumps(self, -1))
+            os.rename(file_name, output_file)
+        finally:
+            try:
+                os.remove(file_name)
+            except OSError:
+                pass
 
     @classmethod
-    def read(cls, dir):
-        pass
+    def read(cls, path):
+        filename = os.path.join(path, 'metadata')
+        with open(filename) as f:
+            return pickle.loads(f.read())
 
 
 class Job(object):
+
     def __init__(self, time, func):
         self.time = time
         self.func = func
@@ -218,7 +257,9 @@ class Job(object):
     def __str__(self):
         return '<Job %s at %s>' % (self.func, self.time)
 
+
 class JobManager(object):
+
     def __init__(self, numThreads):
         pass
 
@@ -228,7 +269,9 @@ class JobManager(object):
         delayed = time.time() - job.time
         logger.info("job used %s, delayed %s", used, delayed)
 
+
 class RecurringTimer(object):
+
     def __init__(self, period, callback):
         self.period = period
         self.callback = callback
@@ -251,18 +294,19 @@ class RecurringTimer(object):
             now = time.time()
             if now >= self.nextTime:
                 logger.debug("start call %s with %d (delayed %f)", self.callback,
-                        self.nextTime, now - self.nextTime)
+                             self.nextTime, now - self.nextTime)
                 self.callback(self.nextTime)
                 self.nextTime += self.period
             else:
                 time.sleep(max(min(self.nextTime - now, 1), 0.01))
 
+
 class Scheduler(object):
+
     def __init__(self, ssc):
         self.ssc = ssc
         self.graph = ssc.graph
         self.jobManager = JobManager(1)
-        #self.checkpointWriter = CheckpointWriter(ssc.checkpointDir) if ssc.checkpointDir else None
         self.timer = RecurringTimer(ssc.batchDuration, self.generateRDDs)
 
     def start(self, t):
@@ -279,16 +323,7 @@ class Scheduler(object):
             logger.debug("start to run job %s", job)
             self.jobManager.runJob(job)
         self.graph.forgetOldRDDs(time)
-    #    self.doCheckpoint(time)
-
-    #def doCheckpoint(self, time):
-    #    return
-    #    if self.ssc.checkpointDuration and (time-self.graph.zeroTime):
-    #        startTime = time.time()
-    #        self.ssc.graph.updateCheckpointData()
-    #        Checkpoint(self.ssc, time).write(self.ssc.checkpointDir)
-    #        stopTime = time.time()
-    #        logger.info("Checkpointing the graph took %.0f ms", (stopTime - startTime)*1000)
+        self.ssc.doCheckpoint(time)
 
 
 class DStream(object):
@@ -312,6 +347,7 @@ class DStream(object):
  *  - A time interval at which the DStream generates an RDD
  *  - A function that is used to generate an RDD after each time interval
     """
+
     def __init__(self, ssc):
         self.ssc = ssc
         self.slideDuration = None
@@ -320,9 +356,24 @@ class DStream(object):
         self.generatedRDDs = {}
         self.rememberDuration = None
         self.mustCheckpoint = False
-        self.checkpointDuration = None
-        self.checkpointData = []
+        self.last_checkpoint_time = 0
+        self.checkpointData = {}
         self.graph = None
+
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        d.pop('generatedRDDs')
+        d.pop('ssc')
+        return d
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self.generatedRDDs = {}
+
+    def setContext(self, context):
+        self.ssc = context
+        for dep in self.dependencies:
+            dep.setContext(context)
 
     @property
     def zeroTime(self):
@@ -331,20 +382,6 @@ class DStream(object):
     @property
     def parentRememberDuration(self):
         return self.rememberDuration
-
-    def checkpoint(self, interval):
-        self.checkpointDuration = interval
-
-#    def initialize(self):
-#        if self.mustCheckpoint and not self.checkpointDuration:
-#            self.checkpointDuration = max(10, self.slideDuration)
-#        for dep in self.dependencies:
-#            dep.initialize()
-
-    #def setContext(self, ssc):
-    #    self.ssc = ssc
-    #    for dep in self.dependencies:
-    #        dep.setContext(ssc)
 
     def setGraph(self, g):
         self.graph = g
@@ -360,7 +397,7 @@ class DStream(object):
     def isTimeValid(self, t):
         d = (t - self.zeroTime)
         dd = d / self.slideDuration * self.slideDuration
-        return abs(d-dd) < 1e-3
+        return abs(d - dd) < 1e-3
 
     def compute(self, time):
         raise NotImplementedError
@@ -371,15 +408,17 @@ class DStream(object):
         if self.isTimeValid(time):
             rdd = self.compute(time)
             self.generatedRDDs[time] = rdd
-            # do checkpoint TODO
+            if (self.ssc.checkpointDuration and
+                    time >= self.last_checkpoint_time + self.ssc.checkpointDuration):
+                self.last_checkpoint_time = time
+                if rdd:
+                    rdd.checkpoint(self.ssc.checkpointDir)
             return rdd
-        #else:
-            #print 'invalid time', time, (time - self.zeroTime) / self.slideDuration * self.slideDuration
 
     def generateJob(self, time):
         rdd = self.getOrCompute(time)
         if rdd:
-            return Job(time, lambda : self.ssc.sc.runJob(rdd, lambda x:{}))
+            return Job(time, lambda: self.ssc.sc.runJob(rdd, lambda x: {}))
 
     def forgetOldRDDs(self, time):
         oldest = time - (self.rememberDuration or 0)
@@ -390,30 +429,37 @@ class DStream(object):
             dep.forgetOldRDDs(time)
 
     def updateCheckpointData(self, time):
-        newRdds = [(t, rdd.getCheckpointFile) for t, rdd in self.generatedRDDs.items()
-                    if rdd.getCheckpointFile]
-        oldRdds = self.checkpointData
+        newRdds = [(t, rdd.checkpoint_path) for t, rdd in self.generatedRDDs.items()
+                   if rdd and rdd.checkpoint_path]
+
         if newRdds:
+            oldRdds = self.checkpointData
             self.checkpointData = dict(newRdds)
+            for t, p in oldRdds.iteritems():
+                if t not in self.checkpointData:
+                    try:
+                        shutil.rmtree(p)
+                    except OSError:
+                        pass
+
         for dep in self.dependencies:
             dep.updateCheckpointData(time)
-        ns = dict(newRdds)
-        for t, p in oldRdds:
-            if t not in ns:
-                os.unlink(p)
-                logger.info("remove %s %s", t, p)
-        logger.info("updated checkpoint data for time %s (%d)", time, len(newRdds))
+
+        logger.info(
+            "updated checkpoint data for time %s (%d)",
+            time,
+            len(newRdds))
 
     def restoreCheckpointData(self):
-        for t, path in self.checkpointData:
-            self.generatedRDDs[t] = self.ssc.sc.checkpointFile(path)
+        for t, path in self.checkpointData.iteritems():
+            self.generatedRDDs[t] = CheckpointRDD(self.ssc.sc, path)
         for dep in self.dependencies:
             dep.restoreCheckpointData()
         logger.info("restoreCheckpointData")
 
     def slice(self, beginTime, endTime):
         rdds = []
-        t = endTime # - self.slideDuration
+        t = endTime  # - self.slideDuration
         while t > self.zeroTime and t > beginTime:
             rdd = self.getOrCompute(t)
             if rdd:
@@ -444,10 +490,11 @@ class DStream(object):
         return MapPartitionedDStream(self, func, preserve)
 
     def reduce(self, func):
-        return self.map(lambda x:(None, x)).reduceByKey(func, 1).map(lambda (x,y):y)
+        return self.map(lambda x: (None, x)).reduceByKey(
+            func, 1).map(lambda x_y1: x_y1[1])
 
     def count(self):
-        return self.map(lambda x:1).reduce(lambda x,y:x+y)
+        return self.map(lambda x: 1).reduce(lambda x, y: x + y)
 
     def foreach(self, func):
         out = ForEachDStream(self, func)
@@ -480,13 +527,13 @@ class DStream(object):
 
     def reduceByWindow(self, func, window, slideDuration=None, invFunc=None):
         if invFunc is not None:
-            return self.map(lambda x:(1, x)).reduceByKeyAndWindow(func, invFunc,
-                window, slideDuration, 1).map(lambda (x,y): y)
+            return self.map(lambda x: (1, x)).reduceByKeyAndWindow(
+                func, invFunc, window, slideDuration, 1).map(lambda x_y: x_y[1])
         return self.window(window, slideDuration).reduce(func)
 
     def countByWindow(self, windowDuration, slideDuration=None):
-        return self.map(lambda x:1).reduceByWindow(lambda x,y:x+y,
-            windowDuration, slideDuration, lambda x,y:x-y)
+        return self.map(lambda x: 1).reduceByWindow(
+            lambda x, y: x + y, windowDuration, slideDuration, lambda x, y: x - y)
 
     def defaultPartitioner(self, part=None):
         if part is None:
@@ -495,43 +542,52 @@ class DStream(object):
 
     def groupByKey(self, numPart=None):
         createCombiner = lambda x: [x]
-        mergeValue = lambda l,x: l.append(x) or l
-        mergeCombiner = lambda x,y: x.extend(y) or x
+        mergeValue = lambda l, x: l.append(x) or l
+        mergeCombiner = lambda x, y: x.extend(y) or x
         if not isinstance(numPart, Partitioner):
             numPart = self.defaultPartitioner(numPart)
-        return self.combineByKey(createCombiner, mergeValue, mergeCombiner, numPart)
+        return self.combineByKey(
+            createCombiner, mergeValue, mergeCombiner, numPart)
 
     def reduceByKey(self, func, part=None):
         if not isinstance(part, Partitioner):
             part = self.defaultPartitioner(part)
-        return self.combineByKey(lambda x:x, func, func, part)
+        return self.combineByKey(lambda x: x, func, func, part)
 
-    def combineByKey(self, createCombiner, mergeValue, mergeCombiner, partitioner):
+    def combineByKey(self, createCombiner, mergeValue,
+                     mergeCombiner, partitioner):
         agg = Aggregator(createCombiner, mergeValue, mergeCombiner)
         return ShuffledDStream(self, agg, partitioner)
 
     def countByKey(self, numPartitions=None):
-        return self.map(lambda (k,_):(k, 1)).reduceByKey(lambda x,y:x+y, numPartitions)
+        return self.map(lambda k__: (k__[0], 1)).reduceByKey(
+            lambda x, y: x + y, numPartitions)
 
-    def groupByKeyAndWindow(self, window, slideDuration=None, numPartitions=None):
+    def groupByKeyAndWindow(
+            self, window, slideDuration=None, numPartitions=None):
         return self.window(window, slideDuration).groupByKey(numPartitions)
 
-    def reduceByKeyAndWindow(self, func, invFunc, windowDuration, slideDuration=None, partitioner=None):
+    def reduceByKeyAndWindow(
+            self, func, invFunc, windowDuration, slideDuration=None, partitioner=None):
         if invFunc is None:
-            return self.window(windowDuration, slideDuration).reduceByKey(func, partitioner)
+            return self.window(windowDuration, slideDuration).reduceByKey(
+                func, partitioner)
         if slideDuration is None:
             slideDuration = self.slideDuration
         if not isinstance(partitioner, Partitioner):
             partitioner = self.defaultPartitioner(partitioner)
-        return ReducedWindowedDStream(self, func, invFunc, windowDuration, slideDuration, partitioner)
+        return ReducedWindowedDStream(
+            self, func, invFunc, windowDuration, slideDuration, partitioner)
 
-    def countByKeyAndWindow(self, windowDuration, slideDuration=None, numPartitions=None):
-        return self.map(lambda (k,_):(k, 1)).reduceByKeyAndWindow(
-                lambda x,y:x+y, lambda x,y:x-y, windowDuration, slideDuration, numPartitions)
+    def countByKeyAndWindow(self, windowDuration,
+                            slideDuration=None, numPartitions=None):
+        return self.map(lambda k__2: (k__2[0], 1)).reduceByKeyAndWindow(
+            lambda x, y: x + y, lambda x, y: x - y, windowDuration, slideDuration, numPartitions)
 
     def updateStateByKey(self, func, partitioner=None, remember=True):
         if not isinstance(partitioner, Partitioner):
             partitioner = self.defaultPartitioner(partitioner)
+
         def newF(it):
             for k, (vs, r) in it:
                 nr = func(vs, r)
@@ -551,12 +607,13 @@ class DStream(object):
         return CoGroupedDStream([self, other], partitioner)
 
     def join(self, other, partitioner=None):
-        return self.cogroup(other, partitioner).flatMapValues(lambda (x,y): itertools.product(x,y))
-
+        return self.cogroup(other, partitioner).flatMapValues(
+            lambda x_y3: itertools.product(x_y3[0], x_y3[1]))
 
 
 class DerivedDStream(DStream):
     transformer = None
+
     def __init__(self, parent, func=None):
         DStream.__init__(self, parent.ssc)
         self.parent = parent
@@ -564,34 +621,53 @@ class DerivedDStream(DStream):
         self.dependencies = [parent]
         self.slideDuration = parent.slideDuration
 
+    def __getstate__(self):
+        d = DStream.__getstate__(self)
+        del d['func']
+        d['_func'] = dump_func(self.func)
+        return d
+
+    def __setstate__(self, state):
+        self.func = load_func(state.pop('_func'))
+        DStream.__setstate__(self, state)
+
     def compute(self, t):
         rdd = self.parent.getOrCompute(t)
         if rdd:
             return getattr(rdd, self.transformer)(self.func)
 
+
 class MappedDStream(DerivedDStream):
     transformer = 'map'
+
 
 class FlatMappedDStream(DerivedDStream):
     transformer = 'flatMap'
 
+
 class FilteredDStream(DerivedDStream):
     transformer = 'filter'
+
 
 class MapValuedDStream(DerivedDStream):
     transformer = 'mapValue'
 
+
 class FlatMapValuedDStream(DerivedDStream):
     transformer = 'flatMapValue'
 
+
 class GlommedDStream(DerivedDStream):
     transformer = 'glom'
+
     def compute(self, t):
         rdd = self.parent.getOrCompute(t)
         if rdd:
             return rdd.glom()
 
+
 class MapPartitionedDStream(DerivedDStream):
+
     def __init__(self, parent, func, preserve=True):
         DerivedDStream.__init__(self, parent, func)
         self.preserve = preserve
@@ -599,34 +675,41 @@ class MapPartitionedDStream(DerivedDStream):
     def compute(self, t):
         rdd = self.parent.getOrCompute(t)
         if rdd:
-            return rdd.mapPartitions(self.func) # TODO preserve
+            return rdd.mapPartitions(self.func)  # TODO preserve
+
 
 class TransformedDStream(DerivedDStream):
+
     def compute(self, t):
         rdd = self.parent.getOrCompute(t)
         if rdd:
             return self.func(rdd, t)
 
+
 class ForEachDStream(DerivedDStream):
+
     def compute(self, t):
         return self.parent.getOrCompute(t)
 
     def generateJob(self, time):
         rdd = self.getOrCompute(time)
         if rdd:
-            return Job(time, lambda :self.func(rdd, time))
+            return Job(time, lambda: self.func(rdd, time))
+
 
 class StateDStream(DerivedDStream):
-    def __init__(self, parent, updateFunc, partitioner, preservePartitioning=True):
+
+    def __init__(self, parent, updateFunc, partitioner,
+                 preservePartitioning=True):
         DerivedDStream.__init__(self, parent, updateFunc)
         self.partitioner = partitioner
         self.preservePartitioning = preservePartitioning
         self.mustCheckpoint = True
-        self.rememberDuration = self.slideDuration # FIXME
+        self.rememberDuration = self.slideDuration  # FIXME
 
     def compute(self, t):
         if t <= self.zeroTime:
-            #print 'less', t, self.zeroTime
+            # print 'less', t, self.zeroTime
             return
         prevRDD = self.getOrCompute(t - self.slideDuration)
         parentRDD = self.parent.getOrCompute(t)
@@ -634,15 +717,21 @@ class StateDStream(DerivedDStream):
         if prevRDD:
             if parentRDD:
                 cogroupedRDD = parentRDD.cogroup(prevRDD)
-                return cogroupedRDD.mapValue(lambda (vs, rs):(vs, rs and rs[0] or None)).mapPartitions(updateFuncLocal) # preserve TODO
+                return cogroupedRDD.mapValue(
+                    lambda vs_rs: (vs_rs[0], vs_rs[1] and vs_rs[1][0] or None)) \
+                        .mapPartitions(updateFuncLocal)  # preserve TODO
             else:
-                return prevRDD.mapValue(lambda rs: ([], rs)).mapPartitions(updateFuncLocal)
+                return prevRDD.mapValue(
+                    lambda rs: ([], rs)).mapPartitions(updateFuncLocal)
         else:
             if parentRDD:
                 groupedRDD = parentRDD.groupByKey(self.partitioner)
-                return groupedRDD.mapValue(lambda v:(v, None)).mapPartitions(updateFuncLocal)
+                return groupedRDD.mapValue(
+                    lambda v: (v, None)).mapPartitions(updateFuncLocal)
+
 
 class UnionDStream(DStream):
+
     def __init__(self, parents):
         DStream.__init__(self, parents[0].ssc)
         self.parents = parents
@@ -654,7 +743,9 @@ class UnionDStream(DStream):
         if rdds:
             return self.ssc.sc.union(rdds)
 
+
 class WindowedDStream(DStream):
+
     def __init__(self, parent, windowDuration, slideDuration):
         DStream.__init__(self, parent.ssc)
         self.parent = parent
@@ -675,11 +766,13 @@ class WindowedDStream(DStream):
 
 
 class CoGroupedDStream(DStream):
+
     def __init__(self, parents, partitioner):
         DStream.__init__(self, parents[0].ssc)
         self.parents = parents
         self.partitioner = partitioner
-        assert len(set([p.slideDuration for p in parents])) == 1, "the slideDuration must be same"
+        assert len(set([p.slideDuration for p in parents])) == 1, \
+                "the slideDuration must be same"
         self.dependencies = parents
         self.slideDuration = parents[0].slideDuration
 
@@ -690,6 +783,7 @@ class CoGroupedDStream(DStream):
 
 
 class ShuffledDStream(DerivedDStream):
+
     def __init__(self, parent, agg, partitioner):
         assert isinstance(parent, DStream)
         DerivedDStream.__init__(self, parent, agg)
@@ -701,9 +795,11 @@ class ShuffledDStream(DerivedDStream):
         if rdd:
             return rdd.combineByKey(self.agg, self.partitioner)
 
+
 class ReducedWindowedDStream(DerivedDStream):
+
     def __init__(self, parent, func, invReduceFunc,
-            windowDuration, slideDuration, partitioner):
+                 windowDuration, slideDuration, partitioner):
         DerivedDStream.__init__(self, parent, func)
         self.invfunc = invReduceFunc
         self.windowDuration = windowDuration
@@ -729,17 +825,20 @@ class ReducedWindowedDStream(DerivedDStream):
 
         oldRDDs = self.reducedStream.slice(prevWindow.begin, currWindow.begin)
         newRDDs = self.reducedStream.slice(prevWindow.end, currWindow.end)
-        prevWindowRDD = self.getOrCompute(prevWindow.end) or self.ssc.sc.makeRDD([])
+        prevWindowRDD = (self.getOrCompute(prevWindow.end)
+                         or self.ssc.sc.makeRDD([]))
         allRDDs = [prevWindowRDD] + oldRDDs + newRDDs
         cogroupedRDD = CoGroupedRDD(allRDDs, self.partitioner)
 
         nOld = len(oldRDDs)
         nNew = len(newRDDs)
+
         def mergeValues(values):
-            #print values, nOld, nNew
-            assert len(values) == 1+nOld+nNew
-            oldValues = [values[i][0] for i in range(1, nOld+1) if values[i]]
-            newValues = [values[i][0] for i in range(1+nOld, nOld+1+nNew) if values[i]]
+            # print values, nOld, nNew
+            assert len(values) == 1 + nOld + nNew
+            oldValues = [values[i][0] for i in range(1, nOld + 1) if values[i]]
+            newValues = [values[i][0]
+                         for i in range(1 + nOld, nOld + 1 + nNew) if values[i]]
             if not values[0]:
                 if newValues:
                     return reduce(reduceF, newValues)
@@ -754,6 +853,7 @@ class ReducedWindowedDStream(DerivedDStream):
 
 
 class InputDStream(DStream):
+
     def __init__(self, ssc):
         DStream.__init__(self, ssc)
         self.dependencies = []
@@ -765,19 +865,25 @@ class InputDStream(DStream):
     def stop(self):
         pass
 
+
 class ConstantInputDStream(InputDStream):
+
     def __init__(self, ssc, rdd):
         InputDStream.__init__(self, ssc)
         self.rdd = rdd
+
     def compute(self, validTime):
         return self.rdd
+
 
 def defaultFilter(path):
     if '/.' in path:
         return False
     return True
 
+
 class ModTimeAndRangeFilter(object):
+
     def __init__(self, lastModTime, filter):
         self.lastModTime = lastModTime
         self.filter = filter
@@ -813,14 +919,18 @@ class ModTimeAndRangeFilter(object):
     def rotate(self):
         self.lastModTime = self.latestModTime
 
+
 class FileInputDStream(InputDStream):
+
     def __init__(self, ssc, directory, filter=None, newFilesOnly=True):
         InputDStream.__init__(self, ssc)
-        assert os.path.exists(directory), 'directory %s must exists' % directory
+        assert os.path.exists(directory), \
+                'directory %s must exists' % directory
         assert os.path.isdir(directory), '%s is not directory' % directory
         self.directory = directory
         lastModTime = time.time() if newFilesOnly else 0
-        self.filter = ModTimeAndRangeFilter(lastModTime, filter or defaultFilter)
+        self.filter = ModTimeAndRangeFilter(
+            lastModTime, filter or defaultFilter)
 
     def compute(self, validTime):
         files = []
@@ -832,10 +942,11 @@ class FileInputDStream(InputDStream):
         if files:
             self.filter.rotate()
             return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
-                    for path, begin, end in files])
+                                      for path, begin, end in files])
 
 
 class QueueInputDStream(InputDStream):
+
     def __init__(self, ssc, queue, oneAtAtime=True, defaultRDD=None):
         InputDStream.__init__(self, ssc)
         self.queue = queue
@@ -853,7 +964,9 @@ class QueueInputDStream(InputDStream):
         elif self.defaultRDD:
             return self.defaultRDD
 
+
 class NetworkInputDStream(InputDStream):
+
     def __init__(self, ssc, func):
         InputDStream.__init__(self, ssc)
         self.func = func
@@ -890,11 +1003,13 @@ class NetworkInputDStream(InputDStream):
     def compute(self, t):
         with self._lock:
             if self._messages:
-                rdd =  self.ssc.sc.makeRDD(self._messages)
+                rdd = self.ssc.sc.makeRDD(self._messages)
                 self._messages = []
                 return rdd
 
+
 class SocketInputDStream(NetworkInputDStream):
+
     def __init__(self, ssc, hostname, port):
         NetworkInputDStream.__init__(self, ssc, self._receive)
         self.hostname = hostname

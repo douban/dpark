@@ -2,6 +2,7 @@ import os, sys, logging
 import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from tempfile import mkdtemp
 from dpark.dstream import *
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
@@ -23,14 +24,22 @@ class TestInputStream(InputDStream):
             else:
                 return self.ssc.sc.makeRDD(d, self.numPart)
 
+def collect(output):
+    def _(rdd, t):
+        r = rdd.collect()
+        #print 'collect', t, r
+        return output.append(r)
+    return _
+
 class TestOutputStream(ForEachDStream):
     def __init__(self, parent, output):
-        def collect(rdd, t):
-            r = rdd.collect()
-            #print 'collect', t, r
-            return self.output.append(r)
-        ForEachDStream.__init__(self, parent, collect)
+        ForEachDStream.__init__(self, parent, collect(output))
         self.output = output
+
+    def __setstate__(self, state):
+        ForEachDStream.__setstate__(self, state)
+        self.output = []
+        self.func = collect(self.output)
 
 
 class TestDStream(unittest.TestCase):
@@ -48,15 +57,16 @@ class TestDStream(unittest.TestCase):
         ssc.registerOutputStream(output)
         return ssc
 
-    def _runStreams(self, ssc, numBatches, numExpectedOuput):
+    def _runStreams(self, ssc, numBatches, numExpectedOuput, first=None):
         output = ssc.graph.outputStreams[0].output
         try:
             #print 'expected', numExpectedOuput
-            first = int(time.time()) - numBatches * ssc.batchDuration
+            first = first or int(time.time()) - numBatches * ssc.batchDuration
             #print 'start', first, numBatches
             ssc.start(first)
             while len(output) < numExpectedOuput:
                 time.sleep(.01)
+
         finally:
             ssc.stop()
         return output
@@ -349,15 +359,75 @@ class TestWindow(TestDStream):
         self._testOperation(d, None, lambda s: s.countByKeyAndWindow(4, 2), r)
 
 
-class TestInputDStream(TestDStream):
-    def test_input_stream(self):
-        pass
+class TestCheckpoint(TestDStream):
+    def test_input_stream_serialize(self):
+        d = [range(i*4, i*4+4) for i in range(4)]
+        ssc = self._setupStreams(d, None, lambda x: x.map(str))
+        ins = ssc.graph.inputStreams[0]
+        ins_ = pickle.loads(pickle.dumps(ins))
 
-    def test_failure(self):
-        pass
+    def test_metadata_checkpoint_dump(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = [range(i*4, i*4+4) for i in range(4)]
+            r = [[str(i) for i in row] for row in d]
+            ssc = self._setupStreams(d, None, lambda x: x.map(str))
+            ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
+            output = self._runStreams(ssc, 4, 4)
+            assert os.path.exists(os.path.join(checkpoint_path, 'metadata'))
+            self.assertEqual(output, r)
+        finally:
+            shutil.rmtree(checkpoint_path)
 
-    def test_checkpoint(self):
-        pass
+    def test_metadata_checkpoint_restore(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = [range(i*4, i*4+4) for i in range(4)]
+            r = [[str(i) for i in row] for row in d]
+            ssc = self._setupStreams(d, None, lambda x: x.map(str))
+            ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
+            output = self._runStreams(ssc, 4, 4)
+            self._verifyOutput(output, r, False)
+            ssc, first = StreamingContext.load(checkpoint_path)
+            d = [range(i*4, i*4+4) for i in range(4, 6)]
+            r = [[str(i) for i in row] for row in d]
+            ssc.graph.inputStreams[0].input[:] = d
+            output = self._runStreams(ssc, 2, 2, first=first)
+            self._verifyOutput(output, r, False)
+        finally:
+            shutil.rmtree(checkpoint_path)
+        
+    def test_updateStateByKey_restore(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
+            r = [[("a", 1)],
+                 [("a", 2), ("b", 1)],
+                 [("a", 3), ("b", 2), ("c", 1)],
+                 [("a", 4), ("b", 3), ("c", 1)],
+                 [("a", 5), ("b", 3), ("c", 1)],
+                 [("a", 5), ("b", 3), ("c", 1)],
+            ]
+
+            def op(s):
+                def updatef(vs, state):
+                    return sum(vs) + (state or 0)
+                return s.map(lambda x: (x,1)).updateStateByKey(updatef)
+            ssc = self._setupStreams(d, None, op)
+            ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
+            output = self._runStreams(ssc, 6, 6)
+            self._verifyOutput(output, r, False)
+            ssc, first = StreamingContext.load(checkpoint_path)
+            d = [['a'], []]
+            r = [
+                 [("a", 5), ("b", 3), ("c", 1)],
+                 [("a", 5), ("b", 3), ("c", 1)],
+            ]
+            ssc.graph.inputStreams[0].input[:] = d
+            output = self._runStreams(ssc, 2, 2, first=first)
+            self._verifyOutput(output, r, False)
+        finally:
+            shutil.rmtree(checkpoint_path)
 
 
 if __name__ == '__main__':
