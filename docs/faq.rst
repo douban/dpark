@@ -54,3 +54,12 @@ FAQ
 
      rdd = dpark.parallelize([random.randint(0, 10) for _ in range(100)], 5)
      print rdd.map(lambda x: (x, 1)).reduceByKey(lambda x, y: x + y).collect()
+
+8. 让人挠头的幽灵文件
+---------------------
+
+你有一个通过 dpark saveAsTextFile 的输出，然后用一个其他的程序读取这个输出目录下的文件，结果程序奇怪的崩溃了。你发现是文件的输入格式不符合预期。你检查了你的 dpark 程序，但并没有什么收获。还尝试写了一个 dpark 程序想看看这些不符合预期的输入行，但是没有找到。正当你百思不得其解之际，你想起了 dpark 输出目录下的 tmp 文件。对的，就是他们。
+
+dpark 同一个 task 会同时执行，但并不能保证这些临时输出的 tmp 文件会被清除掉，而 textFile 会主动忽略隐藏文件的。所以下次你可以主动清理一下这些 tmp 文件，或者在程序里做一些读入检查。不过你看到这一条的时候也许已经知道为什么了。
+
+
