@@ -148,7 +148,11 @@ class TabularRDD(RDD):
                 i += 1
         self._dependencies = [OneToOneDependency(rdd) for rdd in rdds]
         self.repr_name = '<%s %d %s...>' % (self.__class__.__name__, len(rdds),
-                                            ','.join(str(rdd) for rdd in rdds[:1]))
+                                  ','.join(str(rdd) for rdd in rdds[:1]))
+        self._preferred_locs = {}
+        for split in self._splits:
+            self._preferred_locs[split] = split.rdd.preferredLocations(split.split)
+
 
     def _get_files(self, path):
         path = os.path.realpath(path)
@@ -160,9 +164,6 @@ class TabularRDD(RDD):
 
         else:
             yield path
-
-    def _preferredLocations(self, split):
-        return split.rdd.preferredLocations(split.split)
 
     def compute(self, split):
         return split.rdd.iterator(split.split)
@@ -178,14 +179,14 @@ class FilteredByIndexRDD(RDD):
         self.mem = max(self.mem, rdd.mem)
         self._dependencies = [OneToOneDependency(rdd)]
         self._splits = self._get_splits()
-        self.repr_name = '<%s %s>' % (self.__class__.__name__, self.rdd)
+        self.repr_name = '<%s %s>' % (self.__class__.__name__, rdd)
+        self._preferred_locs = {}
+        for split in self._splits:
+            self._preferred_locs[split] = rdd.preferredLocations(split)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
         self.rdd = None
-
-    def _preferredLocations(self, split):
-        return self.rdd.preferredLocations(split)
 
     @cached
     def __getstate__(self):
@@ -354,7 +355,7 @@ class OutputTabularRDD(RDD):
         self._splits = [MultiSplit(i, rdd.splits[s[i]:s[i+1]]) for i in xrange(numSplits)]
         self._dependencies = [OneToRangeDependency(rdd, int(prev_splits/numSplits),
                                                   prev_splits)]
-        self.repr_name = '<OutputTabularRDD %s %s>' % (self.path, self.prev)
+        self.repr_name = '<OutputTabularRDD %s %s>' % (path, rdd)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)

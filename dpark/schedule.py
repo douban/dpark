@@ -109,6 +109,17 @@ class CompletionEvent:
         self.result = result
         self.accumUpdates = accumUpdates
 
+def walk_dependencies(rdd, func):
+    visited = set()
+    to_visit = [(rdd, None)]
+    while to_visit:
+        r, dep = to_visit.pop(0)
+        if r.id in visited:
+            continue
+        visited.add(r.id)
+        if func(r, dep):
+            for dep in r.dependencies:
+                to_visit.append((dep.rdd, dep))
 
 class DAGScheduler(Scheduler):
 
@@ -159,19 +170,16 @@ class DAGScheduler(Scheduler):
 
     def getParentStages(self, rdd):
         parents = set()
-        visited = set()
-        def visit(r):
-            if r.id in visited:
-                return
-            visited.add(r.id)
+        def _(r, dep):
             if r.shouldCache:
                 self.cacheTracker.registerRDD(r.id, len(r))
-            for dep in r.dependencies:
-                if isinstance(dep, ShuffleDependency):
-                    parents.add(self.getShuffleMapStage(dep))
-                else:
-                    visit(dep.rdd)
-        visit(rdd)
+            if isinstance(dep, ShuffleDependency):
+                parents.add(self.getShuffleMapStage(dep))
+                return False
+
+            return True
+
+        walk_dependencies(rdd, _)
         return list(parents)
 
     def getShuffleMapStage(self, dep):
@@ -183,23 +191,19 @@ class DAGScheduler(Scheduler):
 
     def getMissingParentStages(self, stage):
         missing = set()
-        visited = set()
-        def visit(r):
-            if r.id in visited:
-                return
-            visited.add(r.id)
+        def _(r, dep):
             if r.shouldCache and all(self.getCacheLocs(r)):
-                return
+                return False
 
-            for dep in r.dependencies:
-                if isinstance(dep, ShuffleDependency):
-                    stage = self.getShuffleMapStage(dep)
-                    if not stage.isAvailable:
-                        missing.add(stage)
-                elif isinstance(dep, NarrowDependency):
-                    visit(dep.rdd)
+            if isinstance(dep, ShuffleDependency):
+                stage = self.getShuffleMapStage(dep)
+                if not stage.isAvailable:
+                    missing.add(stage)
+                return False
 
-        visit(stage.rdd)
+            return True
+
+        walk_dependencies(stage.rdd, _)
         return list(missing)
 
     def runJob(self, finalRdd, func, partitions, allowLocal):
@@ -223,8 +227,11 @@ class DAGScheduler(Scheduler):
         logger.debug("Parents of final stage: %s", finalStage.parents)
         logger.debug("Missing parents: %s", self.getMissingParentStages(finalStage))
         def onStageFinished(stage):
+            def _(r, dep):
+                return r._do_checkpoint()
+
             MutableDict.merge()
-            stage.rdd._do_checkpoint()
+            walk_dependencies(stage.rdd, _)
 
         if allowLocal and (not finalStage.parents or not self.getMissingParentStages(finalStage)) and numOutputParts == 1:
             split = finalRdd.splits[outputParts[0]]

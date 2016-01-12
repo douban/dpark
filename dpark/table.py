@@ -94,9 +94,7 @@ class TableRDD(DerivedRDD):
             fields = [n.strip() for n in fields.split(',')]
         self.fields = fields
         self.field_types = field_types
-
-    def __str__(self):
-        return '<Table(%s) from %s>' % (','.join(self.fields), self.prev)
+        self._repr = '<Table(%s) from %s>' % (','.join(fields), rdd)
 
     def iterator(self, split):
         cls = namedtuple(self.name or ('Row%d' % self.id), self.fields)
