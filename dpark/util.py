@@ -1,4 +1,5 @@
 # util
+import sys
 import types
 from zlib import compress as _compress, decompress
 import threading
@@ -83,3 +84,27 @@ def memory_str_to_mb(str):
         't': 1024 * 1024,
     }
     return number * scale_factors[unit]
+
+MIN_REMAIN_RECURSION_LIMIT = 100
+def recurion_limit_breaker(f):
+    def _(*a, **kw):
+        depth = 0
+        frame = sys._getframe()
+        while frame is not None:
+            frame = frame.f_back
+            depth += 1
+
+        if depth < sys.getrecursionlimit() - MIN_REMAIN_RECURSION_LIMIT:
+            result = f(*a, **kw)
+        else:
+            result = []
+            def _run():
+                for r in f(*a, **kw):
+                    result.append(r)
+
+            spawn(_run).join()
+
+        for r in result:
+            yield r
+
+    return _
