@@ -14,7 +14,7 @@ try:
 except ImportError:
     import pickle
 
-from dpark.util import spawn
+from dpark.util import spawn, mkdir_p
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
@@ -218,11 +218,7 @@ class Checkpoint(object):
         self.batchDuration = ssc.batchDuration
 
     def write(self, path):
-        try:
-            os.mkdir(path)
-        except OSError:
-            pass
-
+        mkdir_p(path)
         fd, file_name = tempfile.mkstemp(dir=path)
         output_file = os.path.join(path, 'metadata')
         try:
