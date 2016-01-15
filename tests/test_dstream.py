@@ -59,16 +59,17 @@ class TestDStream(unittest.TestCase):
 
     def _runStreams(self, ssc, numBatches, numExpectedOuput, first=None):
         output = ssc.graph.outputStreams[0].output
-        try:
-            #print 'expected', numExpectedOuput
-            first = first or int(time.time()) - numBatches * ssc.batchDuration
-            #print 'start', first, numBatches
-            ssc.start(first)
-            while len(output) < numExpectedOuput:
-                time.sleep(.01)
+        def _():
+            if len(output) >= numExpectedOuput:
+                ssc.stop()
 
-        finally:
-            ssc.stop()
+        #print 'expected', numExpectedOuput
+        first = first or int(time.time()) - numBatches * ssc.batchDuration
+        #print 'start', first, numBatches
+        ssc.start(first)
+        ssc.batchCallback = _
+        ssc.awaitTermination(timeout=10)
+
         return output
 
     def _verifyOutput(self, output, expected, useSet):

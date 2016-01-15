@@ -28,9 +28,5 @@ if __name__ == '__main__':
                 .updateStateByKey(lambda vs, state: sum(vs) + (state or 0)) \
                 .show()
 
-    try:
-        ssc.start(start_time)
-        while True:
-            time.sleep(10)
-    except:
-        ssc.stop()
+    ssc.start(start_time)
+    ssc.awaitTermination()

@@ -9,6 +9,7 @@ import threading
 import logging
 import random
 from functools import reduce
+from collections import deque
 try:
     import cPickle as pickle
 except ImportError:
@@ -115,7 +116,7 @@ class DStreamGraph(object):
 
 class StreamingContext(object):
 
-    def __init__(self, batchDuration, sc=None, graph=None):
+    def __init__(self, batchDuration, sc=None, graph=None, batchCallback=None):
         if isinstance(sc, str) or not sc:  # None
             sc = DparkContext(sc)
         self.sc = sc
@@ -126,6 +127,7 @@ class StreamingContext(object):
         self.checkpointDuration = None
         self.scheduler = None
         self.lastCheckpointTime = 0
+        self.batchCallback = batchCallback
 
     @classmethod
     def load(cls, path):
@@ -194,11 +196,31 @@ class StreamingContext(object):
         self.scheduler = Scheduler(self)
         self.scheduler.start(t or time.time())
 
+    def _runOnce(self):
+        return self.scheduler.runOnce()
+
+    def awaitTermination(self, timeout=None):
+        if self.scheduler is None:
+            raise RuntimeError('StreamimgContext not started')
+
+        try:
+            deadline = time.time() + timeout if timeout is not None else None
+            while True:
+                is_terminated = self._runOnce()
+                if is_terminated or (
+                        deadline is not None and time.time() > deadline):
+                    break
+                if self.batchCallback:
+                    self.batchCallback()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            self.sc.stop()
+            logger.info("StreamingContext stopped successfully")
+
     def stop(self):
         if self.scheduler:
             self.scheduler.stop()
-        self.sc.stop()
-        logger.info("StreamingContext stopped successfully")
 
     def doCheckpoint(self, time):
         if self.checkpointDuration and time >= self.lastCheckpointTime + \
@@ -296,6 +318,8 @@ class RecurringTimer(object):
             else:
                 time.sleep(max(min(self.nextTime - now, 1), 0.01))
 
+_STOP, _EVENT = range(2)
+
 
 class Scheduler(object):
 
@@ -303,7 +327,8 @@ class Scheduler(object):
         self.ssc = ssc
         self.graph = ssc.graph
         self.jobManager = JobManager(1)
-        self.timer = RecurringTimer(ssc.batchDuration, self.generateRDDs)
+        self.timer = RecurringTimer(ssc.batchDuration, self.generateEvent)
+        self._queue = deque()
 
     def start(self, t):
         self.graph.start(t)
@@ -313,6 +338,23 @@ class Scheduler(object):
     def stop(self):
         self.timer.stop()
         self.graph.stop()
+        self._queue.append((_STOP, None))
+
+    def generateEvent(self, time):
+        self._queue.append((_EVENT, time))
+
+    def runOnce(self):
+        try:
+            t, v = self._queue.popleft()
+        except IndexError:
+            time.sleep(0.1)
+            return False
+
+        if t == _STOP:
+            return True
+
+        self.generateRDDs(v)
+        return False
 
     def generateRDDs(self, time):
         for job in self.graph.generateRDDs(time):
@@ -715,7 +757,7 @@ class StateDStream(DerivedDStream):
                 cogroupedRDD = parentRDD.cogroup(prevRDD)
                 return cogroupedRDD.mapValue(
                     lambda vs_rs: (vs_rs[0], vs_rs[1] and vs_rs[1][0] or None)) \
-                        .mapPartitions(updateFuncLocal)  # preserve TODO
+                    .mapPartitions(updateFuncLocal)  # preserve TODO
             else:
                 return prevRDD.mapValue(
                     lambda rs: ([], rs)).mapPartitions(updateFuncLocal)
@@ -768,7 +810,7 @@ class CoGroupedDStream(DStream):
         self.parents = parents
         self.partitioner = partitioner
         assert len(set([p.slideDuration for p in parents])) == 1, \
-                "the slideDuration must be same"
+            "the slideDuration must be same"
         self.dependencies = parents
         self.slideDuration = parents[0].slideDuration
 
@@ -921,7 +963,7 @@ class FileInputDStream(InputDStream):
     def __init__(self, ssc, directory, filter=None, newFilesOnly=True):
         InputDStream.__init__(self, ssc)
         assert os.path.exists(directory), \
-                'directory %s must exists' % directory
+            'directory %s must exists' % directory
         assert os.path.isdir(directory), '%s is not directory' % directory
         self.directory = directory
         lastModTime = time.time() if newFilesOnly else 0
