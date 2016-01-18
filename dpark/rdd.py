@@ -68,6 +68,7 @@ class RDD(object):
         d = dict(self.__dict__)
         d.pop('_dependencies', None)
         d.pop('_splits', None)
+        d.pop('_preferred_locs', None)
         d.pop('ctx', None)
         return d
 
