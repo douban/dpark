@@ -29,7 +29,6 @@ from dpark.schedule import Success, FetchFailed, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
-from dpark.serialize import loads
 
 logger = logging.getLogger("dpark.executor@%s" % socket.gethostname())
 
@@ -58,7 +57,7 @@ def reply_status(driver, task_id, state, data=None):
 def run_task(task_data):
     try:
         gc.disable()
-        task, ntry = loads(decompress(task_data))
+        task, ntry = cPickle.loads(decompress(task_data))
         Accumulator.clear()
         result = task.run(ntry)
         accUpdate = Accumulator.values()
