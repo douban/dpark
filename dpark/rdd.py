@@ -20,7 +20,7 @@ import struct
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
-from dpark.util import spawn, chain, mkdir_p, recurion_limit_breaker
+from dpark.util import spawn, chain, mkdir_p
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
@@ -54,7 +54,6 @@ class RDD(object):
         ctx.init()
         self.err = ctx.options.err
         self.mem = ctx.options.mem
-        self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
 
     nextId = 0
@@ -103,6 +102,9 @@ class RDD(object):
     def partitioner(self):
         return self._partitioner
 
+    def _preferredLocations(self, split):
+        return []
+
     def cache(self):
         self.shouldCache = True
         self._pickle_cache = None # clear pickle cache
@@ -110,13 +112,13 @@ class RDD(object):
 
     def preferredLocations(self, split):
         if self._checkpoint_rdd:
-            return self._checkpoint_rdd._preferred_locs.get(split, [])
+            return self._checkpoint_rdd._preferredLocations(split)
 
         if self.shouldCache:
             locs = env.cacheTracker.getCachedLocs(self.id, split.index)
             if locs:
                 return locs
-        return self._preferred_locs.get(split, [])
+        return self._preferredLocations(split)
 
     def checkpoint(self, path=None):
         if path is None:
@@ -146,10 +148,10 @@ class RDD(object):
                 self._pickle_cache = None
                 self._checkpoint_rdd = CheckpointRDD(self.ctx, self.checkpoint_path)
                 self._clear_dependencies()
-            return False
-        return True
+        else:
+            for dep in self._dependencies:
+                dep.rdd._do_checkpoint()
 
-    @recurion_limit_breaker
     def iterator(self, split):
         def _compute(rdd, split):
             if self.shouldCache:
@@ -574,9 +576,7 @@ class DerivedRDD(RDD):
         self.prev = rdd
         self.mem = max(self.mem, rdd.mem)
         self._dependencies = [OneToOneDependency(rdd)]
-        self._splits = self.prev.splits
-        self._preferred_locs = self.prev._preferred_locs
-        self.repr_name = '<%s %s>' % (self.__class__.__name__, rdd)
+        self.repr_name = '<%s %s>' % (self.__class__.__name__, self.prev)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -586,7 +586,10 @@ class DerivedRDD(RDD):
     def splits(self):
         if self._checkpoint_rdd:
             return self._checkpoint_rdd.splits
-        return self._splits
+        return self.prev.splits
+
+    def _preferredLocations(self, split):
+        return self.prev.preferredLocations(split)
 
 
 class MappedRDD(DerivedRDD):
@@ -695,7 +698,7 @@ class PipedRDD(DerivedRDD):
         self.command = command
         self.quiet = quiet
         self.shell = shell
-        self.repr_name = '<PipedRDD %s %s>' % (' '.join(command), prev)
+        self.repr_name = '<PipedRDD %s %s>' % (' '.join(self.command), self.prev)
 
     def compute(self, split):
         import subprocess
@@ -832,11 +835,10 @@ class CartesianRDD(RDD):
             for s1 in rdd1.splits for s2 in rdd2.splits]
         self._dependencies = [CartesianDependency(rdd1, True, n),
                              CartesianDependency(rdd2, False, n)]
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = rdd1.preferredLocations(split.s1) + rdd2.preferredLocations(split.s2)
-
         self.repr_name = '<Cartesian %s and %s>' % (self.rdd1, self.rdd2)
+
+    def _preferredLocations(self, split):
+        return self.rdd1.preferredLocations(split.s1) + self.rdd2.preferredLocations(split.s2)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -898,10 +900,10 @@ class CoGroupedRDD(RDD):
                             for i,r in enumerate(rdds)])
                         for j in range(partitioner.numPartitions)]
         self.repr_name = ('<CoGrouped of %s>' % (','.join(str(rdd) for rdd in rdds)))[:80]
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
-                                               if isinstance(dep, NarrowCoGroupSplitDep)], []) 
+
+    def _preferredLocations(self, split):
+        return sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
+                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
         m = CoGroupMerger(self.len)
@@ -921,7 +923,7 @@ class SampleRDD(DerivedRDD):
         self.frac = frac
         self.withReplacement = withReplacement
         self.seed = seed
-        self.repr_name = '<SampleRDD(%s) of %s>' % (frac, prev)
+        self.repr_name = '<SampleRDD(%s) of %s>' % (self.frac, self.prev)
 
     def compute(self, split):
         rd = random.Random(self.seed + split.index)
@@ -952,9 +954,9 @@ class UnionRDD(RDD):
             self._dependencies.append(RangeDependency(rdd, 0, pos, len(rdd)))
             pos += len(rdd)
         self.repr_name = '<UnionRDD %d %s ...>' % (len(rdds), ','.join(str(rdd) for rdd in rdds[:1]))
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = split.rdd.preferredLocations(split.split)
+
+    def _preferredLocations(self, split):
+        return split.rdd.preferredLocations(split.split)
 
     def compute(self, split):
         return split.rdd.iterator(split.split)
@@ -970,15 +972,14 @@ class SliceRDD(RDD):
         self.j = j
         self._splits = rdd.splits[i:j]
         self._dependencies = [RangeDependency(rdd, i, 0, j-i)]
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = rdd.preferredLocations(split)
-
-        self.repr_name = '<SliceRDD [%d:%d] of %s>' % (i, j, rdd)
+        self.repr_name = '<SliceRDD [%d:%d] of %s>' % (self.i, self.j, self.rdd)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
         self.rdd = None
+
+    def _preferredLocations(self, split):
+        return self.rdd.preferredLocations(split)
 
     def compute(self, split):
         return self.rdd.iterator(split)
@@ -1004,16 +1005,14 @@ class MergedRDD(RDD):
         self._splits = [MultiSplit(i, splits[i*splitSize:(i+1)*splitSize])
                for i in range(numSplits)]
         self._dependencies = [OneToRangeDependency(rdd, splitSize, len(rdd))]
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = sum([rdd.preferredLocations(sp) for sp in split.splits], [])
-
-        self.repr_name = '<MergedRDD %s:1 of %s>' % (splitSize, rdd)
+        self.repr_name = '<MergedRDD %s:1 of %s>' % (self.splitSize, self.rdd)
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
         self.rdd = None
 
+    def _preferredLocations(self, split):
+        return sum([self.rdd.preferredLocations(sp) for sp in split.splits], [])
 
     def compute(self, split):
         return chain(self.rdd.iterator(sp) for sp in split.splits)
@@ -1028,15 +1027,15 @@ class ZippedRDD(RDD):
         self._splits = [MultiSplit(i, splits)
                 for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
         self._dependencies = [OneToOneDependency(rdd) for rdd in rdds]
-        self._preferred_locs = {}
-        for split in self._splits:
-            self._preferred_locs[split] = sum(
-                [rdd.preferredLocations(sp) for rdd,sp in zip(self.rdds, split.splits)], [])
-        self.repr_name = '<Zipped %s>' % (','.join(str(rdd) for rdd in rdds))
+        self.repr_name = '<Zipped %s>' % (','.join(str(rdd) for rdd in self.rdds))
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
         self.rdds = []
+
+    def _preferredLocations(self, split):
+        return sum([rdd.preferredLocations(sp)
+            for rdd,sp in zip(self.rdds, split.splits)], [])
 
     def compute(self, split):
         return itertools.izip(*[rdd.iterator(sp)
@@ -1047,7 +1046,7 @@ class CSVReaderRDD(DerivedRDD):
     def __init__(self, prev, dialect='excel'):
         DerivedRDD.__init__(self, prev)
         self.dialect = dialect
-        self.repr_name = '<CSVReaderRDD %s of %s>' % (dialect, prev)
+        self.repr_name = '<CSVReaderRDD %s of %s>' % (self.dialect, self.prev)
 
     def compute(self, split):
         return csv.reader(self.prev.iterator(split), self.dialect)
@@ -1150,18 +1149,18 @@ class TextFileRDD(RDD):
         self.len = n
         self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize))
                     for i in range(self.len)]
+        self.repr_name = '<%s %s>' % (self.__class__.__name__, self.path)
 
-        self._preferred_locs = {}
-        if self.fileinfo:
-            for split in self._splits:
-                if self.splitSize != moosefs.CHUNKSIZE:
-                    start = split.begin / moosefs.CHUNKSIZE
-                    end = (split.end + moosefs.CHUNKSIZE - 1)/ moosefs.CHUNKSIZE
-                    self._preferred_locs[split] = sum((self.fileinfo.locs(i) for i in range(start, end)), [])
-                else:
-                    self._preferred_locs[split] = self.fileinfo.locs(split.begin / self.splitSize)
+    def _preferredLocations(self, split):
+        if not self.fileinfo:
+            return []
 
-        self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
+        if self.splitSize != moosefs.CHUNKSIZE:
+            start = split.begin / moosefs.CHUNKSIZE
+            end = (split.end + moosefs.CHUNKSIZE - 1)/ moosefs.CHUNKSIZE
+            return sum((self.fileinfo.locs(i) for i in range(start, end)), [])
+        else:
+            return self.fileinfo.locs(split.begin / self.splitSize)
 
     def open_file(self):
         if self.fileinfo:
@@ -1237,8 +1236,7 @@ class PartialTextFileRDD(TextFileRDD):
                     for i in  range(ns)
                  ] + [PartialSplit(ns+1, last_edge, lastPos)]
         self.len = len(self._splits)
-        self.repr_name = '<%s %s (%d-%d)>' % (self.__class__.__name__, path, firstPos, lastPos)
-
+        self.repr_name = '<%s %s (%d-%d)>' % (self.__class__.__name__, self.path, self.firstPos, self.lastPos)
 
 class GZipFileRDD(TextFileRDD):
     "the gziped file must be seekable, compressed by pigz -i"
@@ -1472,7 +1470,7 @@ class BinaryFileRDD(TextFileRDD):
         if self.size % self.splitSize > 0:
             n += 1
         self.len = n
-        self.repr_name = '<BinaryFileRDD(%s) %s>' % (fmt, path)
+        self.repr_name = '<BinaryFileRDD(%s) %s>' % (self.fmt, self.path)
 
     def compute(self, split):
         start = split.index * self.splitSize
@@ -1514,7 +1512,7 @@ class OutputTextFileRDD(DerivedRDD):
         self.ext = ext
         self.overwrite = overwrite
         self.compress = compress
-        self.repr_name = '<%s %s %s>' % (self.__class__.__name__, path, rdd)
+        self.repr_name = '<%s %s %s>' % (self.__class__.__name__, self.path, self.prev)
 
     def compute(self, split):
         path = os.path.join(self.path,

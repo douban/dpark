@@ -365,14 +365,6 @@ class TestRDD(unittest.TestCase):
         finally:
             shutil.rmtree(checkpoint_path)
 
-    def test_long_recursion(self):
-        d = range(10)
-        rdd = self.sc.makeRDD(d)
-        for i in xrange(1000):
-            rdd = rdd.map(lambda x: x+1)
-
-        self.assertEqual(rdd.collect(), map(lambda x:x+1000, d))
-
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")
