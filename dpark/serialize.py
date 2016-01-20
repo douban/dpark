@@ -47,18 +47,22 @@ class MyPickler(Pickler):
         if self.proto >= 2:
             self.write(PROTO + chr(self.proto))
         self.realsave(obj)
-        while self.lazywrites:
-            lws = self.lazywrites
+        queues = deque([self.lazywrites])
+        while queues:
+            lws = queues[0]
             self.lazywrites = deque()
             while lws:
                 lw = lws.popleft()
                 if isinstance(lw, LazySave):
                     self.realsave(lw.obj)
                     if self.lazywrites:
-                        self.lazywrites.extend(lws)
+                        queues.appendleft(self.lazywrites)
                         break
                 else:
                     self.realwrite(*lw)
+            else:
+                queues.popleft()
+
         self.realwrite(STOP)
 
     dispatch = Pickler.dispatch.copy()

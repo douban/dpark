@@ -1,5 +1,6 @@
 import sys
 import unittest
+import timeit
 from dpark.serialize import dump_closure, load_closure, dumps, loads
 from contextlib import contextmanager
 
@@ -27,6 +28,17 @@ class TestSerialize(unittest.TestCase):
 
         self.assertRaises(NameError, func)
         x = 10
+
+    def test_big_object_performance(self):
+        t1 = max(timeit.repeat('dumps(d)',
+                               'from dpark.serialize import dumps;'
+                               'd = {(str(i),):i for i in xrange(10000)}',
+                               repeat=3, number=1))
+        t2 = max(timeit.repeat('dumps(d, -1)',
+                               'from pickle import dumps;'
+                               'd = {(str(i),):i for i in xrange(10000)}',
+                               repeat=3, number=1))
+        assert t1 < t2 * 2
 
     def testNoneAsFreeVar(self):
         y = None
