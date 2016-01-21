@@ -38,7 +38,7 @@ class TestSerialize(unittest.TestCase):
                                'from pickle import dumps;'
                                'd = {(str(i),):i for i in xrange(10000)}',
                                repeat=3, number=1))
-        assert t1 < t2 * 2
+        assert t1 < t2 * 2.5
 
     def testNoneAsFreeVar(self):
         y = None
