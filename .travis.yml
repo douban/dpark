@@ -1,19 +1,21 @@
 language: python
-cache: pip
+cache:
+    directories:
+      $HOME/.cache/pip
 python:
-- 2.7
+  - 2.7
 sudo: false
 addons:
   apt:
     packages:
-    - libzmq3-dev
+      - libzmq3-dev
 install:
-- pip install -r req.txt
+  - pip install -r req.txt
 script:
-- python setup.py test
+  - python setup.py test
 branches:
   except:
-  - legacy
+    - legacy
 deploy:
   provider: pypi
   user: windreamer
