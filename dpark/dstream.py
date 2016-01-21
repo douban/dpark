@@ -935,7 +935,11 @@ class ModTimeAndRangeFilter(object):
 
         if path in self.oldFiles:
             return
-        mtime = os.path.getmtime(path)
+        try:
+            mtime = os.path.getmtime(path)
+        except Exception as e:
+            logger.warning(str(e))
+            return
         if mtime < self.lastModTime:
             self.oldFiles.add(path)
             return
