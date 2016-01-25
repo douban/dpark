@@ -6,7 +6,7 @@ import logging
 import struct
 
 from dpark.util import compress, decompress
-from dpark.serialize import marshalable, load_func, dump_func
+from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle
 
 logger = logging.getLogger(__name__)
@@ -60,11 +60,14 @@ class ResultTask(DAGTask):
     def __getstate__(self):
         d = dict(self.__dict__)
         del d['func']
-        return d, dump_func(self.func)
+        del d['rdd']
+        return d, dumps(self.rdd), dump_func(self.func)
 
     def __setstate__(self, state):
-        self.__dict__, code = state
-        self.func = load_func(code)
+        d, rdd, func = state
+        self.__dict__.update(d)
+        self.rdd = loads(rdd)
+        self.func = load_func(func)
 
 
 class ShuffleMapTask(DAGTask):
@@ -80,6 +83,16 @@ class ShuffleMapTask(DAGTask):
 
     def __repr__(self):
         return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
+
+    def __getstate__(self):
+        d = dict(self.__dict__)
+        del d['rdd']
+        return d, dumps(self.rdd)
+
+    def __setstate__(self, state):
+        d, rdd = state
+        self.__dict__.update(d)
+        self.rdd = loads(rdd)
 
     def preferredLocations(self):
         return self.locs

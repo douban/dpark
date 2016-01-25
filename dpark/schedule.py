@@ -757,7 +757,7 @@ class MesosScheduler(DAGScheduler):
         task.name = "task %s" % tid
         task.task_id.value = tid
         task.slave_id.value = o.slave_id.value
-        task.data = compress(dumps((t, t.tried)))
+        task.data = compress(cPickle.dumps((t, t.tried), -1))
         task.executor.MergeFrom(self.executor)
         if len(task.data) > 1000*1024:
             logger.warning("task too large: %s %d",
