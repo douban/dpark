@@ -1,12 +1,11 @@
 Cython==0.23.4
-argparse==1.2.1
 google-common==0.0.1
 lz4==0.7.0
 mesos.interface==0.26.0
-msgpack-python==0.4.6
-protobuf==2.6.1
+msgpack-python==0.4.7
+nose==1.3.7
+protobuf==3.0.0b2
 psutil==3.4.2
 pymesos==0.1.0
 pyzmq==15.2.0
 six==1.10.0
-wsgiref==0.1.2

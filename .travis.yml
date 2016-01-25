@@ -1,26 +1,28 @@
 language: python
 cache:
     directories:
-      $HOME/.cache/pip
+        $HOME/.cache/pip
 python:
-  - 2.7
+    - 2.7
 sudo: false
 addons:
-  apt:
-    packages:
-      - libzmq3-dev
+    apt:
+        packages:
+            - libzmq3-dev
 install:
-  - pip install -r req.txt
+    - pip install -r req.txt
+    - pip install .
+
 script:
-  - python setup.py test
+    - nosetests -v
 branches:
-  except:
-    - legacy
+    except:
+        - legacy
 deploy:
-  provider: pypi
-  user: windreamer
-  password:
-    secure: Qo9ucolE2ajQSbgifbqzfDYD5J09FgYEntXpak1ffPUWxJyeR6H2/uChCGqXC3+ZEkTpzc/MHshHQRRymtPZeHn5etnSHzshWu8njBVLr4I7ft2d5dNGJDxfK2j79HPVnib1MoPNC8kiqP05QD+hyMMQNZDFCHwG1D5bnWNhZYI=
-  on:
-    tags: true
-    repo: douban/dpark
+    provider: pypi
+    user: windreamer
+    password:
+        secure: Qo9ucolE2ajQSbgifbqzfDYD5J09FgYEntXpak1ffPUWxJyeR6H2/uChCGqXC3+ZEkTpzc/MHshHQRRymtPZeHn5etnSHzshWu8njBVLr4I7ft2d5dNGJDxfK2j79HPVnib1MoPNC8kiqP05QD+hyMMQNZDFCHwG1D5bnWNhZYI=
+    on:
+        tags: true
+        repo: douban/dpark
