@@ -10,7 +10,7 @@ import urllib
 import msgpack
 
 from dpark.env import env
-from dpark.util import mkdir_p
+from dpark.util import mkdir_p, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 
 logger = logging.getLogger(__name__)
@@ -95,8 +95,7 @@ class DiskCache(Cache):
 
     def save(self, path, items):
         # TODO: purge old cache
-        tp = "%s.%d" % (path, os.getpid())
-        with open(tp, 'wb') as f:
+        with atomic_file(path) as f:
             c = 0
             f.write(struct.pack("I", c))
             try_marshal = True
@@ -120,7 +119,6 @@ class DiskCache(Cache):
             f.seek(0)
             f.write(struct.pack("I", c))
 
-        os.rename(tp, path)
 
 class BaseCacheTracker(object):
     cache = None

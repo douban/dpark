@@ -6,7 +6,7 @@ import struct
 import glob
 import uuid
 from dpark.env import env
-from dpark.util import compress, decompress, mkdir_p
+from dpark.util import compress, decompress, mkdir_p, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
 from collections import OrderedDict
@@ -110,11 +110,10 @@ class MutableDict(object):
                 raise RuntimeError('conflict uuid for mutable_dict')
 
             url = '%s/%s' % (server_uri, filename)
-            with open(fn+'.tmp', 'wb+') as f:
+            with atomic_file(fn) as f:
                 data = compress(cPickle.dumps(new))
                 f.write(struct.pack('<I', len(data)+4) + data)
 
-            os.rename(fn+'.tmp', fn)
             env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
 
             files = glob.glob(os.path.join(path, '%s-*' % self.uuid ))
@@ -122,7 +121,7 @@ class MutableDict(object):
                 if int(f.split('_')[-2]) < self.generation -1:
                     try:
                         os.remove(f)
-                    except OSError, e:
+                    except OSError:
                         pass
 
         self.updated.clear()

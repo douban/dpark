@@ -5,6 +5,9 @@ from zlib import compress as _compress, decompress
 import threading
 import warnings
 import errno
+import uuid
+import tempfile
+from contextlib import contextmanager
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
@@ -108,3 +111,37 @@ def recurion_limit_breaker(f):
             yield r
 
     return _
+
+class AbortFileReplacement(Exception):
+    pass
+
+@contextmanager
+def atomic_file(filename, mode='w+b', bufsize=-1):
+    path, name = os.path.split(filename)
+    path = path or None
+    prefix = '.%s.' % (name,) if name else '.'
+    suffix = '.%s.tmp' % (uuid.uuid4().hex,)
+    tempname = None
+    try:
+        try:
+            mkdir_p(path)
+        except (IOError, OSError):
+            time.sleep(1) # there are dir cache in mfs for 1 sec
+            mkdir_p(path)
+
+        with tempfile.NamedTemporaryFile(
+            mode=mode, suffix=suffix, prefix=prefix,
+            dir=path, delete=False, bufsize=bufsize) as f:
+            tempname = f.name
+            yield f
+
+        os.chmod(tempname, 0o644)
+        os.rename(tempname, filename)
+    except AbortFileReplacement:
+        pass
+    finally:
+        try:
+            if tempname:
+                os.remove(tempname)
+        except OSError:
+            pass

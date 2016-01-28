@@ -20,7 +20,7 @@ import struct
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
-from dpark.util import spawn, chain, mkdir_p, recurion_limit_breaker
+from dpark.util import spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file, AbortFileReplacement
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
@@ -160,12 +160,10 @@ class RDD(object):
         if self.checkpoint_path:
             if self._checkpoint_rdd is None:
                 p = os.path.join(self.checkpoint_path, str(split.index))
-                bak = p + '.bak'
                 v = list(self.compute(split))
-                with open(bak, 'w') as f:
+                with atomic_file(p) as f:
                     f.write(cPickle.dumps(v, -1))
 
-                os.rename(bak, p)
                 return v
             else:
                 return _compute(self._checkpoint_rdd, split)
@@ -1521,28 +1519,18 @@ class OutputTextFileRDD(DerivedRDD):
             "%04d%s" % (split.index, self.ext))
         if os.path.exists(path) and not self.overwrite:
             return
-        tpath = os.path.join(self.path,
-            ".%04d%s.%s.%d.tmp" % (split.index, self.ext,
-            socket.gethostname(), os.getpid()))
-        try:
-            try:
-                f = open(tpath,'w', 4096 * 1024 * 16)
-            except IOError:
-                time.sleep(1) # there are dir cache in mfs for 1 sec
-                f = open(tpath,'w', 4096 * 1024 * 16)
+
+        with atomic_file(path, mode='w', bufsize=4096 * 1024 * 16) as f:
             if self.compress:
                 have_data = self.write_compress_data(f, self.prev.iterator(split))
             else:
                 have_data = self.writedata(f, self.prev.iterator(split))
-            f.close()
-            if have_data and not os.path.exists(path):
-                os.rename(tpath, path)
-                yield path
-        finally:
-            try:
-                os.remove(tpath)
-            except:
-                pass
+
+            if not have_data:
+                raise AbortFileReplacement
+
+        if os.path.exists(path):
+            yield path
 
     def writedata(self, f, lines):
         it = iter(lines)

@@ -7,7 +7,7 @@ import marshal
 import cPickle
 from lz4 import compress, decompress
 from dpark.rdd import RDD, MultiSplit, TextFileRDD, Split, ParallelCollection, cached
-from dpark.util import chain
+from dpark.util import chain, atomic_file
 from dpark.moosefs import walk
 from dpark.bitindex import Bloomfilter, BitIndex
 from dpark.serialize import dumps, loads
@@ -365,8 +365,6 @@ class OutputTabularRDD(RDD):
         buffers = [list() for i in self.fields]
         remain_size = STRIPE_DATA_SIZE
         path = os.path.join(self.path, '%04d.dt' % split.index)
-        tpath = os.path.join(self.path, '.%04d_%s_%s.dt' % (
-            split.index, socket.gethostname(), os.getpid()))
         indices = dict((i, AdaptiveIndex()) for i in self.indices)
 
         def write_stripe(f, compressed, header, padding=True):
@@ -382,54 +380,43 @@ class OutputTabularRDD(RDD):
             if padding:
                 f.write('\0' * padding_size)
 
-        try:
-            with open(tpath, 'wb+') as f:
-                stripe_id = 0
-                for it in chain(self.prev.iterator(sp) for sp in split.splits):
-                    row = it[:len(self.fields)]
-                    size = len(marshal.dumps(tuple(row)))
-                    if size > STRIPE_DATA_SIZE:
-                        raise RuntimeError('Row too big')
+        with atomic_file(path) as f:
+            stripe_id = 0
+            for it in chain(self.prev.iterator(sp) for sp in split.splits):
+                row = it[:len(self.fields)]
+                size = len(marshal.dumps(tuple(row)))
+                if size > STRIPE_DATA_SIZE:
+                    raise RuntimeError('Row too big')
 
-                    if size > remain_size:
-                        compressed = [compress(marshal.dumps(tuple(b))) for b in buffers]
-                        _sizes = tuple(map(len, compressed))
-                        _remain_size = STRIPE_DATA_SIZE - sum(_sizes)
-                        if size > _remain_size:
-                            write_stripe(f, compressed, _sizes)
-                            buffers = [list() for i in self.fields]
-                            remain_size = STRIPE_DATA_SIZE
-                            stripe_id += 1
-                        else:
-                            remain_size = _remain_size
-
-                    remain_size -= size
-                    for i, value in enumerate(row):
-                        buffers[i].append(value)
-                        field = self.fields[i]
-                        if field in self.indices:
-                            indices[field].add(value, stripe_id)
-
-                if any(buffers):
+                if size > remain_size:
                     compressed = [compress(marshal.dumps(tuple(b))) for b in buffers]
                     _sizes = tuple(map(len, compressed))
-                    write_stripe(f, compressed, _sizes, False)
+                    _remain_size = STRIPE_DATA_SIZE - sum(_sizes)
+                    if size > _remain_size:
+                        write_stripe(f, compressed, _sizes)
+                        buffers = [list() for i in self.fields]
+                        remain_size = STRIPE_DATA_SIZE
+                        stripe_id += 1
+                    else:
+                        remain_size = _remain_size
 
-                footer_indices = zlib.compress(cPickle.dumps(indices, -1))
-                footer_fields = compress(marshal.dumps(self.fields))
-                f.write(footer_indices)
-                f.write(footer_fields)
-                f.write(struct.pack('II', len(footer_fields), len(footer_indices)))
+                remain_size -= size
+                for i, value in enumerate(row):
+                    buffers[i].append(value)
+                    field = self.fields[i]
+                    if field in self.indices:
+                        indices[field].add(value, stripe_id)
 
-            try:
-                os.rename(tpath, path)
-            except OSError:
-                pass
+            if any(buffers):
+                compressed = [compress(marshal.dumps(tuple(b))) for b in buffers]
+                _sizes = tuple(map(len, compressed))
+                write_stripe(f, compressed, _sizes, False)
 
-            yield path
-        finally:
-            try:
-                os.remove(tpath)
-            except OSError:
-                pass
+            footer_indices = zlib.compress(cPickle.dumps(indices, -1))
+            footer_fields = compress(marshal.dumps(self.fields))
+            f.write(footer_indices)
+            f.write(footer_fields)
+            f.write(struct.pack('II', len(footer_fields), len(footer_indices)))
+
+        yield path
 

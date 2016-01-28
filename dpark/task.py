@@ -5,7 +5,7 @@ import cPickle
 import logging
 import struct
 
-from dpark.util import compress, decompress
+from dpark.util import compress, decompress, atomic_file
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle
 
@@ -111,17 +111,13 @@ class ShuffleMapTask(DAGTask):
             for tried in range(1, 4):
                 try:
                     path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i, len(cd) * tried)
-                    tpath = path + ".%s.%s" % (socket.gethostname(), os.getpid())
-                    f = open(tpath, 'wb', 1024*4096)
-                    f.write(flag + struct.pack("I", 5 + len(cd)))
-                    f.write(cd)
-                    f.close()
-                    os.rename(tpath, path)
+                    with atomic_file(path, bufsize=1024*4096) as f:
+                        f.write(flag + struct.pack("I", 5 + len(cd)))
+                        f.write(cd)
+
                     break
                 except IOError, e:
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
-                    try: os.remove(tpath)
-                    except OSError: pass
             else:
                 raise
 
