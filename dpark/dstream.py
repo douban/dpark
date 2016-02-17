@@ -1,9 +1,7 @@
 import os
 import time
-import math
 import socket
 import shutil
-import tempfile
 import itertools
 import threading
 import logging
@@ -15,7 +13,7 @@ try:
 except ImportError:
     import pickle
 
-from dpark.util import spawn, mkdir_p, atomic_file
+from dpark.util import spawn, atomic_file
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
@@ -97,7 +95,6 @@ class DStreamGraph(object):
         self.outputStreams.append(output)
 
     def generateRDDs(self, time):
-        # print 'generateRDDs', self, time
         return filter(None, [out.generateJob(time)
                              for out in self.outputStreams])
 
@@ -166,14 +163,20 @@ class StreamingContext(object):
         self.registerInputStream(ds)
         return ds
 
-    def fileStream(self, directory, filter=None, newFilesOnly=True):
-        ds = FileInputDStream(self, directory, filter, newFilesOnly)
+    def fileStream(self, directory, filter=None, newFilesOnly=True, oldThreshold=3600):
+        """
+        `oldThreshold`: If a file is not modified in last `oldThreshold` seconds, it will be
+        classified as an old file, and will be ommitted in future batches. The default value is
+        3600, this may be **changed** in the future, we highly recommend user to set `oldThreshold`
+        explicitly.
+        """
+        ds = FileInputDStream(self, directory, filter, newFilesOnly, oldThreshold)
         self.registerInputStream(ds)
         return ds
 
-    def textFileStream(self, directory, filter=None, newFilesOnly=True):
+    def textFileStream(self, directory, filter=None, newFilesOnly=True, oldThreshold=3600):
         return self.fileStream(
-            directory, filter, newFilesOnly).map(lambda k_v: k_v[1])
+            directory, filter, newFilesOnly, oldThreshold).map(lambda k_v: k_v[1])
 
     def makeStream(self, rdd):
         return ConstantInputDStream(self, rdd)
@@ -913,10 +916,11 @@ def defaultFilter(path):
 
 class ModTimeAndRangeFilter(object):
 
-    def __init__(self, lastModTime, filter):
+    def __init__(self, lastModTime, filter, oldThreshold):
         self.lastModTime = lastModTime
-        self.filter = filter
         self.latestModTime = 0
+        self.filter = filter
+        self.oldThreshold = oldThreshold
         self.accessedFiles = {}
         self.oldFiles = set()
 
@@ -926,20 +930,22 @@ class ModTimeAndRangeFilter(object):
 
         if path in self.oldFiles:
             return
+
+        if os.path.islink(path):
+            self.oldFiles.add(path)
+            return
+
         try:
             mtime = os.path.getmtime(path)
         except Exception as e:
             logger.warning(str(e))
             return
         if mtime < self.lastModTime:
-            self.oldFiles.add(path)
+            if mtime < time.time() - self.oldThreshold:
+                self.oldFiles.add(path)
             return
         if mtime > self.latestModTime:
             self.latestModTime = mtime
-
-        if os.path.islink(path):
-            self.oldFiles.add(path)
-            return
 
         nsize = os.path.getsize(path)
         osize = self.accessedFiles.get(path, 0)
@@ -955,15 +961,16 @@ class ModTimeAndRangeFilter(object):
 
 class FileInputDStream(InputDStream):
 
-    def __init__(self, ssc, directory, filter=None, newFilesOnly=True):
+    def __init__(self, ssc, directory, filter=None, newFilesOnly=True, oldThreshold=3600):
         InputDStream.__init__(self, ssc)
         assert os.path.exists(directory), \
             'directory %s must exists' % directory
         assert os.path.isdir(directory), '%s is not directory' % directory
         self.directory = directory
-        lastModTime = time.time() if newFilesOnly else 0
-        self.filter = ModTimeAndRangeFilter(
-            lastModTime, filter or defaultFilter)
+        lastModTime = time.time() - oldThreshold if newFilesOnly else 0
+        filter = filter or defaultFilter
+        self.filter = ModTimeAndRangeFilter(lastModTime, filter, oldThreshold)
+        self.newFilesOnly = newFilesOnly
 
     def compute(self, validTime):
         files = []
@@ -976,6 +983,13 @@ class FileInputDStream(InputDStream):
             self.filter.rotate()
             return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
                                       for path, begin, end in files])
+
+    def start(self):
+        if self.newFilesOnly:
+            # Init the new files old sizes.
+            for root, dirs, names in os.walk(self.directory):
+                for name in names:
+                    self.filter(os.path.join(root, name))
 
 
 class QueueInputDStream(InputDStream):
