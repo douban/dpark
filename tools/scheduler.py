@@ -32,6 +32,8 @@ class Task:
 
 REFUSE_FILTER = mesos_pb2.Filters()
 REFUSE_FILTER.refuse_seconds = 10*60 # 10 mins
+EXECUTOR_CPUS = 0.01
+EXECUTOR_MEMORY = 64 # cache
 
 
 def safe(f):
@@ -83,6 +85,15 @@ class SubmitScheduler(object):
         v = execInfo.command.environment.variables.add()
         v.name = 'GID'
         v.value = str(os.getgid())
+
+        mem = execInfo.resources.add()
+        mem.name = 'mem'
+        mem.type = mesos_pb2.Value.SCALAR
+        mem.scalar.value = EXECUTOR_MEMORY
+        cpus = execInfo.resources.add()
+        cpus.name = 'cpus'
+        cpus.type = mesos_pb2.Value.SCALAR
+        cpus.scalar.value = EXECUTOR_CPUS
 
         if hasattr(execInfo, 'framework_id'):
             execInfo.framework_id.value = str(self.framework_id)
@@ -228,12 +239,12 @@ class SubmitScheduler(object):
 
         cpu = task.resources.add()
         cpu.name = "cpus"
-        cpu.type = 0 # mesos_pb2.Value.SCALAR
+        cpu.type = mesos_pb2.Value.SCALAR
         cpu.scalar.value = min(self.cpus, cpus)
 
         mem = task.resources.add()
         mem.name = "mem"
-        mem.type = 0 # mesos_pb2.Value.SCALAR
+        mem.type = mesos_pb2.Value.SCALAR
         mem.scalar.value = self.mem
         return task
 
@@ -453,12 +464,12 @@ class MPIScheduler(SubmitScheduler):
         cpus, mem = self.getResource(offer)
         cpu = task.resources.add()
         cpu.name = "cpus"
-        cpu.type = 0 #mesos_pb2.Value.SCALAR
+        cpu.type = mesos_pb2.Value.SCALAR
         cpu.scalar.value = min(self.cpus * k, cpus)
 
         mem = task.resources.add()
         mem.name = "mem"
-        mem.type = 0 #mesos_pb2.Value.SCALAR
+        mem.type = mesos_pb2.Value.SCALAR
         mem.scalar.value = min(self.mem * k, mem)
 
         return task

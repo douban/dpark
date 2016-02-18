@@ -28,6 +28,7 @@ import dpark.conf as conf
 logger = logging.getLogger(__name__)
 
 MAX_FAILED = 3
+EXECUTOR_CPUS = 0.01
 EXECUTOR_MEMORY = 64 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
@@ -635,8 +636,13 @@ class MesosScheduler(DAGScheduler):
 
         mem = info.resources.add()
         mem.name = 'mem'
-        mem.type = 0 #mesos_pb2.Value.SCALAR
+        mem.type = mesos_pb2.Value.SCALAR
         mem.scalar.value = EXECUTOR_MEMORY
+        cpus = info.resources.add()
+        cpus.name = 'cpus'
+        cpus.type = mesos_pb2.Value.SCALAR
+        cpus.scalar.value = EXECUTOR_CPUS
+
         Script = os.path.realpath(sys.argv[0])
         if hasattr(info, 'name'):
             info.name = Script
@@ -765,11 +771,11 @@ class MesosScheduler(DAGScheduler):
 
         cpu = task.resources.add()
         cpu.name = 'cpus'
-        cpu.type = 0 #mesos_pb2.Value.SCALAR
+        cpu.type = mesos_pb2.Value.SCALAR
         cpu.scalar.value = min(t.cpus, available_cpus)
         mem = task.resources.add()
         mem.name = 'mem'
-        mem.type = 0 #mesos_pb2.Value.SCALAR
+        mem.type = mesos_pb2.Value.SCALAR
         mem.scalar.value = t.mem
         return task
 
