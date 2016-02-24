@@ -1,7 +1,7 @@
 DPark
 =====
 
-|travis-ci status|
+|pypi status| |travis-ci status|
 
 DPark is a Python clone of Spark, MapReduce(R) alike computing framework
 supporting iterative computation.
@@ -62,3 +62,6 @@ Mailing list: dpark-users@googlegroups.com
 
 .. |travis-ci status| image:: https://travis-ci.org/douban/dpark.svg
    :target: https://travis-ci.org/douban/dpark
+
+.. |pypi status| image:: https://img.shields.io/pypi/dm/DPark.svg
+   :target: https://pypi.python.org/pypi/DPark
