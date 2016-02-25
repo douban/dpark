@@ -266,6 +266,7 @@ class SubmitScheduler(object):
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
+        sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
 
         if update.state == mesos_pb2.TASK_RUNNING:
             self.started = True
@@ -278,15 +279,13 @@ class SubmitScheduler(object):
             t.state = -1
             self.task_launched.pop(tid)
             self.total_tasks.append(t)
+            if sid:
+                self.slaveTasks[sid].remove(tid)
 
         elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
             t = self.task_launched.pop(tid)
-            slave = None
-            for s in self.slaveTasks:
-                if tid in self.slaveTasks[s]:
-                    slave = s
-                    self.slaveTasks[s].remove(tid)
-                    break
+            if sid:
+                self.slaveTasks[sid].remove(tid)
 
             if update.state >= mesos_pb2.TASK_FAILED:
                 if t.tried < self.options.retry:
@@ -314,6 +313,9 @@ class SubmitScheduler(object):
                 t.state = -1
                 self.task_launched.pop(tid)
                 self.total_tasks.append(t)
+                sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
+                if sid:
+                    self.slaveTasks[sid].remove(tid)
             # TODO: check run time
 
     @safe
@@ -364,7 +366,6 @@ class SubmitScheduler(object):
 class MPIScheduler(SubmitScheduler):
     def __init__(self, options, command):
         SubmitScheduler.__init__(self, options, command)
-        self.used_hosts = {}
         self.used_tasks = {}
         self.id = 0
         self.p = None
@@ -375,9 +376,11 @@ class MPIScheduler(SubmitScheduler):
 
     def start_task(self, driver, offer, k):
         t = Task(self.id)
+        sid = offer.slave_id.value
         self.id += 1
         self.task_launched[t.id] = t
         self.used_tasks[t.id] = (offer.hostname, k)
+        self.slaveTasks.setdefault(sid, set()).add(t.id)
         task = self.create_task(offer, t, k)
         logger.debug("lauching %s task with offer %s on %s, slots %d", t.id,
                      offer.id.value, offer.hostname, k)
@@ -386,14 +389,18 @@ class MPIScheduler(SubmitScheduler):
     @safe
     def resourceOffers(self, driver, offers):
         random.shuffle(offers)
-        launched = sum(self.used_hosts.values())
         self.last_offer_time = time.time()
+        launched = 0
+        used_hosts = set()
+        for hostname, slots in self.used_tasks.iteritems:
+            used_hosts.add(hostname)
+            launched += slots
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
             logger.debug("got resource offer %s: cpus:%s, mem:%s at %s",
                 offer.id.value, cpus, mem, offer.hostname)
-            if launched >= self.options.tasks or offer.hostname in self.used_hosts:
+            if launched >= self.options.tasks or offer.hostname in used_hosts:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
 
@@ -407,8 +414,8 @@ class MPIScheduler(SubmitScheduler):
                 slots = min(slots, self.options.task_per_node)
             slots = min(slots, self.options.tasks - launched)
             if slots >= 1:
-                self.used_hosts[offer.hostname] = slots
                 launched += slots
+                used_hosts.add(offer.hostname)
                 self.start_task(driver, offer, slots)
             else:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
@@ -428,10 +435,10 @@ class MPIScheduler(SubmitScheduler):
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
-        hostname, slots = self.used_tasks[tid]
+        sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
 
         if update.state == mesos_pb2.TASK_RUNNING:
-            launched = sum(self.used_hosts.values())
+            launched = sum(slots for hostname, slots in self.used_tasks.values())
             ready = all(t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
             if launched == self.options.tasks and ready:
                 logger.debug("all tasks are ready, start to run")
@@ -443,9 +450,11 @@ class MPIScheduler(SubmitScheduler):
                 driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
-                self.used_hosts.pop(hostname)
                 self.used_tasks.pop(tid)
                 self.task_launched.pop(tid)
+                if sid:
+                    self.slaveTasks[sid].remove(tid)
+
             else:
                 logger.error("Task %s failed, cancel all tasks", tid)
                 self.stop(1)
@@ -456,6 +465,9 @@ class MPIScheduler(SubmitScheduler):
                 return
 
             t = self.task_launched.pop(tid)
+            if sid:
+                self.slaveTasks[sid].remove(tid)
+
             if not self.task_launched:
                 self.stop(0)
 
@@ -468,10 +480,12 @@ class MPIScheduler(SubmitScheduler):
                 driver.reviveOffers() # request more offers again
                 t.tried += 1
                 t.state = -1
-                hostname, slots = self.used_tasks[tid]
-                self.used_hosts.pop(hostname)
                 self.used_tasks.pop(tid)
                 self.task_launched.pop(tid)
+                sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
+                if sid:
+                    self.slaveTasks[sid].remove(tid)
+
 
     def create_task(self, offer, t, k):
         task = mesos_pb2.TaskInfo()
