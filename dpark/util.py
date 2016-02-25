@@ -1,13 +1,15 @@
 # util
+import os
 import sys
 import types
-from zlib import compress as _compress, decompress
 import threading
 import warnings
 import errno
 import uuid
+import time
 import tempfile
 from contextlib import contextmanager
+from zlib import compress as _compress, decompress
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
@@ -16,7 +18,6 @@ except ImportError:
     from dpark.portable_hash import portable_hash as _hash
 
 try:
-    import os
     import pwd
     def getuser():
         return pwd.getpwuid(os.getuid()).pw_name

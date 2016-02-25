@@ -3,7 +3,8 @@
 # hook for virtualenv
 # switch to the virtualenv where the executor belongs,
 # replace all the path for modules
-import sys, os.path
+import sys
+import os.path
 P = 'site-packages'
 apath = os.path.abspath(__file__)
 if P in apath:
@@ -18,7 +19,6 @@ import subprocess
 import threading
 from threading import Thread
 import socket
-import psutil
 import time
 
 import zmq
@@ -29,6 +29,7 @@ from mesos.interface import Executor
 
 ctx = zmq.Context()
 
+
 def forword(fd, addr, prefix=''):
     f = os.fdopen(fd, 'r', 4096)
     out = ctx.socket(zmq.PUSH)
@@ -36,12 +37,14 @@ def forword(fd, addr, prefix=''):
     while True:
         try:
             line = f.readline()
-            if not line: break
-            out.send(prefix+line)
+            if not line:
+                break
+            out.send(prefix + line)
         except IOError:
             break
     f.close()
     out.close()
+
 
 def reply_status(driver, task_id, status):
     update = mesos_pb2.TaskStatus()
@@ -49,6 +52,7 @@ def reply_status(driver, task_id, status):
     update.state = status
     update.timestamp = time.time()
     driver.sendStatusUpdate(update)
+
 
 def launch_task(self, driver, task):
     reply_status(driver, task.task_id, mesos_pb2.TASK_RUNNING)
@@ -65,9 +69,8 @@ def launch_task(self, driver, task):
     t2 = Thread(target=forword, args=[errr, addr2, prefix])
     t2.daemon = True
     t2.start()
-    wout = os.fdopen(outw,'w',0)
-    werr = os.fdopen(errw,'w',0)
-
+    wout = os.fdopen(outw, 'w', 0)
+    werr = os.fdopen(errw, 'w', 0)
 
     if addr3:
         subscriber = ctx.socket(zmq.SUB)
@@ -82,7 +85,8 @@ def launch_task(self, driver, task):
             if line:
                 command = line.split(' ')
             else:
-                return reply_status(driver, task.task_id, mesos_pb2.TASK_FAILED)
+                return reply_status(driver, task.task_id,
+                                    mesos_pb2.TASK_FAILED)
         else:
             return reply_status(driver, task.task_id, mesos_pb2.TASK_FAILED)
 
@@ -99,8 +103,8 @@ def launch_task(self, driver, task):
             print >>werr, 'CWD %s is not exists, use /tmp instead' % cwd
             cwd = '/tmp'
         p = subprocess.Popen(command,
-                stdout=wout, stderr=werr,
-                cwd=cwd, env=env, shell=shell)
+                             stdout=wout, stderr=werr,
+                             cwd=cwd, env=env, shell=shell)
         tid = task.task_id.value
         self.ps[tid] = p
         code = None
@@ -117,31 +121,34 @@ def launch_task(self, driver, task):
 
             last_time = now
             try:
+                import psutil
                 process = psutil.Process(p.pid)
 
                 rss = sum((proc.get_memory_info().rss
-                          for proc in process.get_children(recursive=True)),
+                           for proc in process.get_children(recursive=True)),
                           process.get_memory_info().rss)
                 rss = (rss >> 20)
-            except Exception, e:
-                continue
 
-            if rss > mem * 1.5:
-                print >>werr, "task %s used too much memory: %dMB > %dMB * 1.5, kill it. " \
-                "use -m argument to request more memory." % (
-                    tid, rss, mem)
-                p.kill()
-            elif rss > mem:
-                print >>werr, "task %s used too much memory: %dMB > %dMB, " \
-                "use -m to request for more memory" % (
-                    tid, rss, mem)
+                if rss > mem * 1.5:
+                    print >>werr, "task %s used too much memory: %dMB > %dMB * 1.5, kill it. " \
+                        "use -m argument to request more memory." % (
+                            tid, rss, mem)
+                    p.kill()
+
+                elif rss > mem:
+                    print >>werr, "task %s used too much memory: %dMB > %dMB, " \
+                        "use -m to request for more memory" % (
+                            tid, rss, mem)
+
+            except Exception:
+                pass
 
         if code == 0:
             status = mesos_pb2.TASK_FINISHED
         else:
             print >>werr, ' '.join(command) + ' exit with %s' % code
             status = mesos_pb2.TASK_FAILED
-    except Exception, e:
+    except Exception as e:
         status = mesos_pb2.TASK_FAILED
         import traceback
         print >>werr, 'exception while open ' + ' '.join(command)
@@ -158,7 +165,9 @@ def launch_task(self, driver, task):
     self.ps.pop(tid, None)
     self.ts.pop(tid, None)
 
+
 class MyExecutor(Executor):
+
     def __init__(self):
         self.ps = {}
         self.ts = {}
@@ -174,12 +183,15 @@ class MyExecutor(Executor):
             if task_id.value in self.ps:
                 self.ps[task_id.value].kill()
                 reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
-        except: pass
+        except:
+            pass
 
     def shutdown(self, driver):
         for p in self.ps.values():
-            try: p.kill()
-            except: pass
+            try:
+                p.kill()
+            except:
+                pass
         for t in self.ts.values():
             t.join()
 

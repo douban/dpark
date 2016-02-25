@@ -8,7 +8,6 @@ import random
 from optparse import OptionParser
 import threading
 import subprocess
-from operator import itemgetter
 import logging
 import signal
 
@@ -23,7 +22,9 @@ from dpark import moosefs
 
 logger = logging.getLogger('dpark.scheduler')
 
+
 class Task:
+
     def __init__(self, id):
         self.id = id
         self.tried = 0
@@ -31,9 +32,9 @@ class Task:
         self.state_time = 0
 
 REFUSE_FILTER = mesos_pb2.Filters()
-REFUSE_FILTER.refuse_seconds = 10*60 # 10 mins
+REFUSE_FILTER.refuse_seconds = 10 * 60  # 10 mins
 EXECUTOR_CPUS = 0.01
-EXECUTOR_MEMORY = 64 # cache
+EXECUTOR_MEMORY = 64  # cache
 
 
 def safe(f):
@@ -44,33 +45,30 @@ def safe(f):
     return _
 
 
-class SubmitScheduler(object):
-    def __init__(self, options, command):
+class BaseScheduler(object):
+
+    def __init__(self, name, options, command):
         self.framework_id = None
         self.executor = None
         self.framework = mesos_pb2.FrameworkInfo()
         self.framework.user = getuser()
         if self.framework.user == 'root':
             raise Exception("drun is not allowed to run as 'root'")
-        name = '[drun] ' + ' '.join(sys.argv[1:])
-        if len(name) > 256:
-            name = name[:256] + '...'
+
         self.framework.name = name
         self.framework.hostname = socket.gethostname()
         self.cpus = options.cpus
         self.mem = memory_str_to_mb(options.mem)
         self.options = options
         self.command = command
-        self.total_tasks = list(reversed([Task(i)
-            for i in range(options.start, options.tasks)]))
-        self.task_launched = {}
-        self.slaveTasks = {}
         self.started = False
         self.stopped = False
         self.status = 0
         self.next_try = 0
         self.lock = threading.RLock()
         self.last_offer_time = time.time()
+        self.task_launched = {}
+        self.slaveTasks = {}
 
     def getExecutorInfo(self):
         frameworkDir = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -130,7 +128,7 @@ class SubmitScheduler(object):
 
                     try:
                         os.makedirs(host_path)
-                    except OSError as e:
+                    except OSError:
                         pass
 
                 v = execInfo.container.volumes.add()
@@ -163,14 +161,6 @@ class SubmitScheduler(object):
         t.start()
         return t, "tcp://%s:%d" % (host, port)
 
-    @safe
-    def registered(self, driver, fid, masterInfo):
-        logger.debug("Registered with Mesos, FID = %s" % fid.value)
-        self.framework_id = fid.value
-        self.executor = self.getExecutorInfo()
-        self.std_t, self.std_port = self.create_port(sys.stdout)
-        self.err_t, self.err_port = self.create_port(sys.stderr)
-
     def getResource(self, offer):
         cpus, mem = 0, 0
         for r in offer.resources:
@@ -186,6 +176,80 @@ class SubmitScheduler(object):
             attrs[a.name] = a.text.value
         return attrs
 
+    def kill_task(self, driver, t):
+        task_id = mesos_pb2.TaskID()
+        task_id.value = "%s-%s" % (t.id, t.tried)
+        driver.killTask(task_id)
+
+    @safe
+    def registered(self, driver, fid, masterInfo):
+        logger.debug("Registered with Mesos, FID = %s" % fid.value)
+        self.framework_id = fid.value
+        self.executor = self.getExecutorInfo()
+        self.std_t, self.std_port = self.create_port(sys.stdout)
+        self.err_t, self.err_port = self.create_port(sys.stderr)
+
+    @safe
+    def offerRescinded(self, driver, offer):
+        logger.debug("resource rescinded: %s", offer)
+
+    @safe
+    def frameworkMessage(self, driver, executorId, slaveId, data):
+        logger.warning("[slave %s] %s", slaveId.value, data)
+
+    @safe
+    def executorLost(self, driver, executorId, slaveId, status):
+        logger.warning(
+            "executor at %s %s lost: %s",
+            slaveId.value,
+            executorId.value,
+            status)
+        self.slaveLost(driver, slaveId)
+
+    @safe
+    def slaveLost(self, driver, slaveId):
+        logger.warning("slave %s lost", slaveId.value)
+        sid = slaveId.value
+        if sid in self.slaveTasks:
+            for tid in self.slaveTasks[sid]:
+                if tid in self.task_launched:
+                    logger.warning("Task %d killed for slave lost", tid)
+                    self.kill_task(driver, self.task_launched[tid])
+
+    @safe
+    def error(self, driver, code, message):
+        logger.error("Error from Mesos: %s (error code: %d)" % (message, code))
+
+    @safe
+    def check(self, driver):
+        now = time.time()
+        for t in self.task_launched.values():
+            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
+                logger.warning("task %d lauched failed, assign again", t.id)
+                self.kill_task(driver, t)
+
+    @safe
+    def stop(self, status):
+        if self.stopped:
+            return
+        self.stopped = True
+        self.status = status
+        self.std_t.join()
+        self.err_t.join()
+        logger.debug("scheduler stopped")
+
+
+class SubmitScheduler(BaseScheduler):
+
+    def __init__(self, options, command):
+        name = '[drun] ' + ' '.join(sys.argv[1:])
+        if len(name) > 256:
+            name = name[:256] + '...'
+
+        super(SubmitScheduler, self).__init__(name, options, command)
+        self.total_tasks = list(reversed([Task(i)
+                                          for i in range(options.start, options.tasks)]))
+
     @safe
     def resourceOffers(self, driver, offers):
         tpn = self.options.task_per_node
@@ -199,13 +263,13 @@ class SubmitScheduler(object):
 
             cpus, mem = self.getResource(offer)
             logger.debug("got resource offer %s: cpus:%s, mem:%s at %s",
-                offer.id.value, cpus, mem, offer.hostname)
+                         offer.id.value, cpus, mem, offer.hostname)
             sid = offer.slave_id.value
             tasks = []
-            while (self.total_tasks and cpus+1e-4 >= self.cpus and mem >= self.mem
-                    and (tpn ==0 or tpn > 0 and len(self.slaveTasks.get(sid,set())) < tpn)):
+            while (self.total_tasks and cpus + 1e-4 >= self.cpus and mem >= self.mem
+                    and (tpn == 0 or tpn > 0 and len(self.slaveTasks.get(sid, set())) < tpn)):
                 logger.debug("Accepting slot on slave %s (%s)",
-                    offer.slave_id.value, offer.hostname)
+                             offer.slave_id.value, offer.hostname)
                 t = self.total_tasks.pop()
                 task = self.create_task(offer, t, cpus)
                 tasks.append(task)
@@ -218,7 +282,10 @@ class SubmitScheduler(object):
                 if not self.total_tasks:
                     break
 
-            logger.debug("dispatch %d tasks to slave %s", len(tasks), offer.hostname)
+            logger.debug(
+                "dispatch %d tasks to slave %s",
+                len(tasks),
+                offer.hostname)
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
     def create_task(self, offer, t, cpus):
@@ -235,7 +302,7 @@ class SubmitScheduler(object):
             for i, x in enumerate(command):
                 command[i] = x % {'RANK': t.id, 'SIZE': self.options.tasks}
         task.data = pickle.dumps([os.getcwd(), command, env, self.options.shell,
-            self.std_port, self.err_port, None])
+                                  self.std_port, self.err_port, None])
 
         cpu = task.resources.add()
         cpu.name = "cpus"
@@ -250,122 +317,60 @@ class SubmitScheduler(object):
 
     @safe
     def statusUpdate(self, driver, update):
-        logger.debug("Task %s in state %d" % (update.task_id.value, update.state))
+        logger.debug(
+            "Task %s in state %d" %
+            (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
-            # check failed after launched
             for t in self.total_tasks:
-                if t.id == tid:
-                    self.task_launched[tid] = t
-                    self.total_tasks.remove(t)
-                    break
-            else:
-                logger.debug("Task %d is finished, ignore it", tid)
+                logger.error("Task %d not in task_launched", tid)
                 return
 
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
-        sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
 
         if update.state == mesos_pb2.TASK_RUNNING:
             self.started = True
-
-        elif update.state == mesos_pb2.TASK_LOST:
-            logger.warning("Task %s was lost, try again", tid)
-            if not self.total_tasks:
-                driver.reviveOffers() # request more offers again
-            t.tried += 1
-            t.state = -1
-            self.task_launched.pop(tid)
-            self.total_tasks.append(t)
-            if sid:
-                self.slaveTasks[sid].remove(tid)
-
-        elif update.state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED):
-            t = self.task_launched.pop(tid)
-            if sid:
-                self.slaveTasks[sid].remove(tid)
-
-            if update.state >= mesos_pb2.TASK_FAILED:
-                if t.tried < self.options.retry:
-                    t.tried += 1
-                    logger.warning("task %d failed with %d, retry %d", t.id, update.state, t.tried)
-                    if not self.total_tasks:
-                        driver.reviveOffers() # request more offers again
-                    self.total_tasks.append(t) # try again
-                else:
-                    logger.error("task %d failed with %d on %s", t.id, update.state, slave)
-                    self.stop(1)
-
-            if not self.task_launched and not self.total_tasks:
-                self.stop(0)
-
-    @safe
-    def check(self, driver):
-        now = time.time()
-        for tid, t in self.task_launched.items():
-            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
-                logger.warning("task %d lauched failed, assign again", tid)
-                if not self.total_tasks:
-                    driver.reviveOffers() # request more offers again
-                t.tried += 1
-                t.state = -1
-                self.task_launched.pop(tid)
-                self.total_tasks.append(t)
-                sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
-                if sid:
-                    self.slaveTasks[sid].remove(tid)
-            # TODO: check run time
-
-    @safe
-    def offerRescinded(self, driver, offer):
-        logger.debug("resource rescinded: %s", offer)
-        # task will retry by checking
-
-    @safe
-    def frameworkMessage(self, driver, executorId, slaveId, data):
-        logger.warning("[slave %s] %s", slaveId.value, data)
-
-    @safe
-    def executorLost(self, driver, executorId, slaveId, status):
-        logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
-        self.slaveLost(driver, slaveId)
-
-    @safe
-    def slaveLost(self, driver, slaveId):
-        logger.warning("slave %s lost", slaveId.value)
-        sid = slaveId.value
-        if sid in self.slaveTasks:
-            for tid in self.slaveTasks[sid]:
-                t.tried += 1
-                t.state = -1
-                self.task_launched.pop(tid)
-                self.total_tasks.append(t)
-
-            del self.slaveTasks[sid]
-
-        if not self.total_tasks:
-            driver.reviveOffers() # request more offers again
-
-    @safe
-    def error(self, driver, code, message):
-        logger.error("Error from Mesos: %s (error code: %d)" % (message, code))
-
-    @safe
-    def stop(self, status):
-        if self.stopped:
             return
-        self.stopped = True
-        self.status = status
-        self.std_t.join()
-        self.err_t.join()
-        logger.debug("scheduler stopped")
+
+        del self.task_launched[tid]
+        sid = next(
+            (sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]),
+            None)
+        if sid:
+            self.slaveTasks[sid].remove(tid)
+
+        if update.state != mesos_pb2.TASK_FINISHED:
+            if t.tried < self.options.retry:
+                logger.warning("Task %d %s with %d, retry %d", t.id,
+                               'Lost' if update.state == mesos_pb2.TASK_LOST else "Failed",
+                               update.state, t.tried)
+                t.tried += 1
+                t.state = -1
+                self.total_tasks.append(t)  # try again
+            else:
+                logger.error("Task %d %s with %d on %s", t.id,
+                             'Lost' if update.state == mesos_pb2.TASK_LOST else "Failed",
+                             update.state, sid)
+                self.stop(1)
+                return
+
+        if self.total_tasks:
+            driver.reviveOffers()  # request more offers again
+
+        if not self.task_launched and not self.total_tasks:
+            self.stop(0)
 
 
-class MPIScheduler(SubmitScheduler):
+class MPIScheduler(BaseScheduler):
+
     def __init__(self, options, command):
-        SubmitScheduler.__init__(self, options, command)
+        name = '[mrun] ' + ' '.join(sys.argv[1:])
+        if len(name) > 256:
+            name = name[:256] + '...'
+
+        super(MPIScheduler, self).__init__(name, options, command)
         self.used_tasks = {}
         self.id = 0
         self.p = None
@@ -392,14 +397,14 @@ class MPIScheduler(SubmitScheduler):
         self.last_offer_time = time.time()
         launched = 0
         used_hosts = set()
-        for hostname, slots in self.used_tasks.iteritems:
+        for hostname, slots in self.used_tasks.itervalues():
             used_hosts.add(hostname)
             launched += slots
 
         for offer in offers:
             cpus, mem = self.getResource(offer)
             logger.debug("got resource offer %s: cpus:%s, mem:%s at %s",
-                offer.id.value, cpus, mem, offer.hostname)
+                         offer.id.value, cpus, mem, offer.hostname)
             if launched >= self.options.tasks or offer.hostname in used_hosts:
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
@@ -409,7 +414,7 @@ class MPIScheduler(SubmitScheduler):
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
 
-            slots = int(min(cpus/self.cpus, mem/self.mem) + 1e-5)
+            slots = int(min(cpus / self.cpus, mem / self.mem) + 1e-5)
             if self.options.task_per_node:
                 slots = min(slots, self.options.task_per_node)
             slots = min(slots, self.options.tasks - launched)
@@ -422,11 +427,13 @@ class MPIScheduler(SubmitScheduler):
 
         if launched < self.options.tasks:
             logger.warning('not enough offers: need %d offer %d, waiting more resources',
-                            self.options.tasks, launched)
+                           self.options.tasks, launched)
 
     @safe
     def statusUpdate(self, driver, update):
-        logger.debug("Task %s in state %d" % (update.task_id.value, update.state))
+        logger.debug(
+            "Task %s in state %d" %
+            (update.task_id.value, update.state))
         tid = int(update.task_id.value.split('-')[0])
         if tid not in self.task_launched:
             logger.error("Task %d not in task_launched", tid)
@@ -435,57 +442,46 @@ class MPIScheduler(SubmitScheduler):
         t = self.task_launched[tid]
         t.state = update.state
         t.state_time = time.time()
-        sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
-
         if update.state == mesos_pb2.TASK_RUNNING:
-            launched = sum(slots for hostname, slots in self.used_tasks.values())
-            ready = all(t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
+            launched = sum(
+                slots for hostname, slots in self.used_tasks.values())
+            ready = all(
+                t.state == mesos_pb2.TASK_RUNNING for t in self.task_launched.values())
             if launched == self.options.tasks and ready:
                 logger.debug("all tasks are ready, start to run")
                 self.start_mpi()
 
-        elif update.state in (mesos_pb2.TASK_LOST, mesos_pb2.TASK_FAILED):
+            return
+
+        del self.task_launched[tid]
+        sid = next(
+            (sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]),
+            None)
+        if sid:
+            self.slaveTasks[sid].remove(tid)
+
+        if update.state != mesos_pb2.TASK_FINISHED:
             if not self.started:
-                logger.warning("Task %s was lost, try again", tid)
-                driver.reviveOffers() # request more offers again
-                t.tried += 1
-                t.state = -1
+                logger.warning("Task %d %s with %d, retry %d", t.id,
+                               'Lost' if update.state == mesos_pb2.TASK_LOST else "Failed",
+                               update.state, t.tried)
+                driver.reviveOffers()  # request more offers again
                 self.used_tasks.pop(tid)
-                self.task_launched.pop(tid)
-                if sid:
-                    self.slaveTasks[sid].remove(tid)
 
             else:
                 logger.error("Task %s failed, cancel all tasks", tid)
                 self.stop(1)
 
-        elif update.state == mesos_pb2.TASK_FINISHED:
+        else:
             if not self.started:
-                logger.warning("Task %s has not started, ignore it %s", tid, update.state)
+                logger.warning(
+                    "Task %s has not started, ignore it %s",
+                    tid,
+                    update.state)
                 return
-
-            t = self.task_launched.pop(tid)
-            if sid:
-                self.slaveTasks[sid].remove(tid)
 
             if not self.task_launched:
                 self.stop(0)
-
-    @safe
-    def check(self, driver):
-        now = time.time()
-        for tid, t in self.task_launched.items():
-            if t.state == mesos_pb2.TASK_STARTING and t.state_time + 30 < now:
-                logger.warning("task %d lauched failed, assign again", tid)
-                driver.reviveOffers() # request more offers again
-                t.tried += 1
-                t.state = -1
-                self.used_tasks.pop(tid)
-                self.task_launched.pop(tid)
-                sid = next((sid for sid in self.slaveTasks if tid in self.slaveTasks[sid]), None)
-                if sid:
-                    self.slaveTasks[sid].remove(tid)
-
 
     def create_task(self, offer, t, k):
         task = mesos_pb2.TaskInfo()
@@ -494,7 +490,13 @@ class MPIScheduler(SubmitScheduler):
         task.name = "task %s" % t.id
         task.executor.MergeFrom(self.executor)
         env = dict(os.environ)
-        task.data = pickle.dumps([os.getcwd(), None, env, self.options.shell, self.std_port, self.err_port, self.publisher_port])
+        task.data = pickle.dumps([os.getcwd(),
+                                  None,
+                                  env,
+                                  self.options.shell,
+                                  self.std_port,
+                                  self.err_port,
+                                  self.publisher_port])
 
         cpus, mem = self.getResource(offer)
         cpu = task.resources.add()
@@ -511,13 +513,14 @@ class MPIScheduler(SubmitScheduler):
 
     def start_mpi(self):
         try:
-            slaves = self.try_to_start_mpi(self.command, self.options.tasks, self.used_hosts.items())
+            commands = self.try_to_start_mpi(
+                self.command, self.options.tasks, self.used_tasks.values())
         except Exception:
+            logger.exception("Failed to start mpi, retry")
             self.broadcast_command({})
-            self.next_try = time.time() + random.randint(5,10)
+            self.next_try = time.time() + random.randint(5, 10)
             return
 
-        commands = dict(zip(self.used_hosts.keys(), slaves))
         self.broadcast_command(commands)
         self.started = True
 
@@ -526,7 +529,8 @@ class MPIScheduler(SubmitScheduler):
             for i in xrange(10):
                 self.publisher.send(pickle.dumps(command))
                 time.sleep(1)
-                if self.stopped: break
+                if self.stopped:
+                    break
 
         t = threading.Thread(target=repeat_pub)
         t.deamon = True
@@ -535,17 +539,29 @@ class MPIScheduler(SubmitScheduler):
 
     def try_to_start_mpi(self, command, tasks, items):
         if self.p:
-            try: self.p.kill()
-            except: pass
-        hosts = ','.join("%s:%d" % (hostname, slots) for hostname, slots in items)
+            try:
+                self.p.kill()
+            except:
+                pass
+        hosts = ','.join("%s:%d" % (hostname, slots)
+                         for hostname, slots in items)
         logger.debug("choosed hosts: %s", hosts)
-        cmd = ['mpirun', '-prepend-rank', '-launcher', 'none', '-hosts', hosts, '-np', str(tasks)] + command
+        cmd = [
+            'mpirun',
+            '-prepend-rank',
+            '-launcher',
+            'none',
+            '-hosts',
+            hosts,
+            '-np',
+            str(tasks)] + command
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         slaves = []
         prefix = 'HYDRA_LAUNCH: '
         while True:
             line = p.stdout.readline()
-            if not line: break
+            if not line:
+                break
             if line.startswith(prefix):
                 slaves.append(line[len(prefix):-1].strip())
             if line == 'HYDRA_LAUNCH_END\n':
@@ -553,15 +569,17 @@ class MPIScheduler(SubmitScheduler):
         if len(slaves) != len(items):
             logger.error("hosts: %s, slaves: %s", items, slaves)
             raise Exception("slaves not match with hosts")
+
         def output(f):
             while True:
                 line = f.readline()
-                if not line: break
+                if not line:
+                    break
                 sys.stdout.write(line)
         self.tout = t = threading.Thread(target=output, args=[p.stdout])
         t.deamon = True
         t.start()
-        return slaves
+        return dict(zip((hostname for hostname, slots in items), slaves))
 
     @safe
     def stop(self, status):
@@ -569,7 +587,8 @@ class MPIScheduler(SubmitScheduler):
             try:
                 self.p.kill()
                 self.p.wait()
-            except: pass
+            except:
+                pass
             self.tout.join()
         self.publisher.close()
         super(MPIScheduler, self).stop(status)
@@ -577,46 +596,45 @@ class MPIScheduler(SubmitScheduler):
 
 if __name__ == "__main__":
     parser = OptionParser(usage="Usage: drun [options] <command>")
-    parser.allow_interspersed_args=False
+    parser.allow_interspersed_args = False
     parser.add_option("-s", "--master", type="string",
-                default="mesos",
-                        help="url of master (default: mesos)")
+                      default="mesos",
+                      help="url of master (default: mesos)")
     parser.add_option("-i", "--mpi", action="store_true",
-                        help="run MPI tasks")
+                      help="run MPI tasks")
 
     parser.add_option("-n", "--tasks", type="int", default=1,
-                        help="number task to launch (default: 1)")
+                      help="number task to launch (default: 1)")
     parser.add_option("-b", "--start", type="int", default=0,
-                        help="which task to start (default: 0)")
+                      help="which task to start (default: 0)")
     parser.add_option("-p", "--task_per_node", type="int", default=0,
-                        help="max number of tasks on one node (default: 0)")
-    parser.add_option("-r","--retry", type="int", default=0,
-                        help="retry times when failed (default: 0)")
-    parser.add_option("-t", "--timeout", type="int", default=3600*24,
-                        help="timeout of job in seconds (default: 86400)")
+                      help="max number of tasks on one node (default: 0)")
+    parser.add_option("-r", "--retry", type="int", default=0,
+                      help="retry times when failed (default: 0)")
+    parser.add_option("-t", "--timeout", type="int", default=3600 * 24,
+                      help="timeout of job in seconds (default: 86400)")
 
-    parser.add_option("-c","--cpus", type="float", default=1.0,
-            help="number of CPUs per task (default: 1)")
-    parser.add_option("-m","--mem", type="string", default='100m',
-            help="MB of memory per task (default: 100m)")
-    parser.add_option("-g","--group", type="string", default='',
-            help="which group to run (default: ''")
+    parser.add_option("-c", "--cpus", type="float", default=1.0,
+                      help="number of CPUs per task (default: 1)")
+    parser.add_option("-m", "--mem", type="string", default='100m',
+                      help="MB of memory per task (default: 100m)")
+    parser.add_option("-g", "--group", type="string", default='',
+                      help="which group to run (default: ''")
 
-    parser.add_option("-I","--image", type="string",
+    parser.add_option("-I", "--image", type="string",
                       help="image name for Docker")
-    parser.add_option("-V","--volumes", type="string",
+    parser.add_option("-V", "--volumes", type="string",
                       help="volumes to mount into Docker")
 
-
     parser.add_option("--expand", action="store_true",
-                        help="expand expression in command line")
+                      help="expand expression in command line")
     parser.add_option("--shell", action="store_true",
                       help="using shell re-intepret the cmd args")
 
     parser.add_option("-q", "--quiet", action="store_true",
-                        help="be quiet", )
+                      help="be quiet", )
     parser.add_option("-v", "--verbose", action="store_true",
-                        help="show more useful log", )
+                      help="show more useful log", )
 
     (options, command) = parser.parse_args()
 
@@ -633,22 +651,21 @@ if __name__ == "__main__":
         options.master = conf.MESOS_MASTER
     elif options.master.startswith('mesos://'):
         if '@' in options.master:
-            options.master = options.master[options.master.rfind('@')+1:]
+            options.master = options.master[options.master.rfind('@') + 1:]
         else:
-            options.master = options.master[options.master.rfind('//')+2:]
+            options.master = options.master[options.master.rfind('//') + 2:]
     elif options.master.startswith('zoo://'):
         options.master = 'zk' + options.master[3:]
 
     if ':' not in options.master:
         options.master += ':5050'
 
-
     if not command:
         parser.print_help()
         sys.exit(2)
 
     logging.basicConfig(format='[drun] %(threadName)s %(asctime)-15s %(message)s',
-                    level=options.quiet and logging.ERROR
+                        level=options.quiet and logging.ERROR
                         or options.verbose and logging.DEBUG
                         or logging.WARNING)
 
@@ -662,9 +679,10 @@ if __name__ == "__main__":
 
     logger.debug("Connecting to mesos master %s", options.master)
     driver = mesos.MesosSchedulerDriver(sched, sched.framework,
-        options.master)
+                                        options.master)
 
     driver.start()
+
     def handler(signm, frame):
         logger.warning("got signal %d, exit now", signm)
         sched.stop(3)
@@ -690,7 +708,8 @@ if __name__ == "__main__":
                 sched.next_try = 0
                 driver.reviveOffers()
 
-            if not sched.started and now > sched.last_offer_time + 60 + random.randint(0,5):
+            if not sched.started and now > sched.last_offer_time + \
+                    60 + random.randint(0, 5):
                 logger.warning("too long to get offer, reviving...")
                 sched.last_offer_time = now
                 driver.reviveOffers()
