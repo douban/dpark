@@ -322,8 +322,29 @@ class SubmitScheduler(object):
         # task will retry by checking
 
     @safe
-    def slaveLost(self, driver, slave):
-        logger.warning("slave %s lost", slave.value)
+    def frameworkMessage(self, driver, executorId, slaveId, data):
+        logger.warning("[slave %s] %s", slaveId.value, data)
+
+    @safe
+    def executorLost(self, driver, executorId, slaveId, status):
+        logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
+        self.slaveLost(driver, slaveId)
+
+    @safe
+    def slaveLost(self, driver, slaveId):
+        logger.warning("slave %s lost", slaveId.value)
+        sid = slaveId.value
+        if sid in self.slaveTasks:
+            for tid in self.slaveTasks[sid]:
+                t.tried += 1
+                t.state = -1
+                self.task_launched.pop(tid)
+                self.total_tasks.append(t)
+
+            del self.slaveTasks[sid]
+
+        if not self.total_tasks:
+            driver.reviveOffers() # request more offers again
 
     @safe
     def error(self, driver, code, message):
@@ -577,8 +598,6 @@ if __name__ == "__main__":
                         help="expand expression in command line")
     parser.add_option("--shell", action="store_true",
                       help="using shell re-intepret the cmd args")
-#    parser.add_option("--kill", type="string", default="",
-#                        help="kill a job with frameword id")
 
     parser.add_option("-q", "--quiet", action="store_true",
                         help="be quiet", )
@@ -609,15 +628,6 @@ if __name__ == "__main__":
     if ':' not in options.master:
         options.master += ':5050'
 
-#    if options.kill:
-#        sched = MPIScheduler(options, command)
-#        fid = mesos_pb2.FrameworkID()
-#        fid.value =  options.kill
-#        driver = mesos.MesosSchedulerDriver(sched, sched.framework,
-#            options.master, fid)
-#        driver.start()
-#        driver.stop(False)
-#        sys.exit(0)
 
     if not command:
         parser.print_help()
