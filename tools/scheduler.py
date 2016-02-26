@@ -543,18 +543,24 @@ class MPIScheduler(BaseScheduler):
                 self.p.kill()
             except:
                 pass
+
         hosts = ','.join("%s:%d" % (hostname, slots)
                          for hostname, slots in items)
         logger.debug("choosed hosts: %s", hosts)
-        cmd = [
-            'mpirun',
-            '-prepend-rank',
-            '-launcher',
-            'none',
-            '-hosts',
-            hosts,
-            '-np',
-            str(tasks)] + command
+        info = subprocess.check_output(["mpirun", "--version"])
+        for line in info.splitlines():
+            if 'Launchers available' in line and ' none ' in line:
+                #MPICH2 1.x
+                cmd = ['mpirun', '-prepend-rank', '-launcher', 'none',
+                       '-hosts', hosts, '-np', str(tasks)] + command
+                break
+
+        else:
+            #MPICH2 3.x
+            cmd = ['mpirun', '-prepend-rank', '-launcher', 'manual',
+                   '-rmk', 'user', '-hosts', hosts, '-np', str(tasks)] \
+                    + command
+
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         slaves = []
         prefix = 'HYDRA_LAUNCH: '
