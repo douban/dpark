@@ -899,7 +899,7 @@ class CoGroupedRDD(RDD):
         self._preferred_locs = {}
         for split in self._splits:
             self._preferred_locs[split] = sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
-                                               if isinstance(dep, NarrowCoGroupSplitDep)], []) 
+                                               if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
         m = CoGroupMerger(self.len)
@@ -1576,9 +1576,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
         tpath = self.paths.get(key)
         if not tpath:
             dpath = os.path.join(self.path, str(key))
-            if not os.path.exists(dpath):
-                try: os.mkdir(dpath)
-                except: pass
+            mkdir_p(dpath)
             tpath = os.path.join(dpath,
                 ".%04d%s.%s.%d.tmp" % (self.split.index, self.ext,
                 socket.gethostname(), os.getpid()))
