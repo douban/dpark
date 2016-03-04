@@ -162,7 +162,7 @@ def get_pool_memory(pool):
     try:
         import psutil
         p = psutil.Process(pool._pool[0].pid)
-        return p.get_memory_info()[0] >> 20
+        return p.memory_info().rss >> 20
     except Exception:
         return 0
 
@@ -239,7 +239,7 @@ class MyExecutor(Executor):
                 try:
                     pid = pool._pool[0].pid
                     p = psutil.Process(pid)
-                    rss = p.get_memory_info()[0] >> 20
+                    rss = p.memory_info().rss >> 20
                 except Exception, e:
                     logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
                     reply_status(driver, task_id, mesos_pb2.TASK_LOST)
@@ -363,22 +363,17 @@ class MyExecutor(Executor):
 
     @safe
     def shutdown(self, driver=None):
-        def terminate(p):
-            try:
-                for pi in p._pool:
-                    os.kill(pi.pid, signal.SIGKILL)
-            except Exception, e:
-                pass
         for _, p in self.idle_workers:
-            terminate(p)
+            p.terminate()
         for _, p in self.busy_workers.itervalues():
-            terminate(p)
-
+            p.terminate()
         # clean work files
         for d in self.workdir:
             try: shutil.rmtree(d, True)
             except: pass
 
+        self.idle_workers = []
+        self.busy_workers = {}
         sys.stdout.close()
         sys.stderr.close()
         os.close(1)

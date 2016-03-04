@@ -124,9 +124,9 @@ def launch_task(self, driver, task):
                 import psutil
                 process = psutil.Process(p.pid)
 
-                rss = sum((proc.get_memory_info().rss
+                rss = sum((proc.memory_info().rss
                            for proc in process.get_children(recursive=True)),
-                          process.get_memory_info().rss)
+                          process.memory_info().rss)
                 rss = (rss >> 20)
 
                 if rss > mem * 1.5:
