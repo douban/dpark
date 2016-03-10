@@ -11,18 +11,14 @@ from utils import *
 
 logger = logging.getLogger(__name__)
 
-# mfsmaster need to been patched with dcache
-ENABLE_DCACHE = False
-
-
 class StatInfo:
 
     def __init__(self, totalspace, availspace, trashspace,
-                 reservedspace, inodes):
+                 sustainedspace, inodes):
         self.totalspace = totalspace
         self.availspace = availspace
         self.trashspace = trashspace
-        self.reservedspace = reservedspace
+        self.sustainedspace = sustainedspace
         self.inodes = inodes
 
 
@@ -70,17 +66,20 @@ def spawn(target, *args, **kw):
 
 class MasterConn:
 
-    def __init__(self, host='mfsmaster', port=9421):
+    def __init__(self, host='mfsmaster', port=9421, mountpoint="/", subfolder="/"):
         self.host = host
         self.port = port
         self.uid = os.getuid()
         self.gid = os.getgid()
         self.sessionid = 0
+        self.sesflags = 0
+        self.masterversion = 0
         self.conn = None
         self.packetid = 0
         self.fail_count = 0
-        self.dcache = {}
         self.dstat = {}
+        self.mountpoint = mountpoint + '\0'
+        self.subfolder = subfolder + '\0'
 
         self.lock = threading.RLock()
         self.reply = Queue.Queue()
@@ -114,26 +113,36 @@ class MasterConn:
         if not self.conn:
             raise IOError("mfsmaster not availbale")
 
-        regbuf = pack(CUTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_NOACL,
-                      self.sessionid, VERSION)
+        regbuf = pack(CLTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL, REGISTER_NEWSESSION, VERSION, 
+                      len(self.mountpoint), self.mountpoint, len(self.subfolder), self.subfolder)
         self.send(regbuf)
         recv = self.recv(8)
         cmd, i = unpack("II", recv)
-        if cmd != MATOCU_FUSE_REGISTER:
+        if cmd != MATOCL_FUSE_REGISTER:
             raise Exception("got incorrect answer from mfsmaster %s" % cmd)
 
-        if i not in (1, 4):
+        if i not in (1, 4, 13, 21, 25, 35):
             raise Exception("got incorrect size from mfsmaster")
 
         data = self.recv(i)
+        if len(data) != i:
+            raise Exception("error receiving data from mfsmaster")
+
         if i == 1:
             code, = unpack("B", data)
             if code != 0:
                 raise Exception("mfsmaster register error: "
                                 + mfs_strerror(code))
-        if self.sessionid == 0:
-            self.sessionid, = unpack("I", data)
+        elif i == 4:
+            self.host = socket.inet_ntoa(unpack("I", data))
+            logger.warning('mfsmaster redirected to %s', self.host)
+            return self.connect()
 
+        if i in [25, 35]:
+            self.masterversion, self.sessionid, self.sesflags = unpack("IIB", data)
+        else:
+            self.sessionid, self.sesflags = unpack("I", data)
+        
         self.is_ready = True
 
     def close(self):
@@ -141,7 +150,6 @@ class MasterConn:
             if self.conn:
                 self.conn.close()
                 self.conn = None
-                self.dcache.clear()
                 self.is_ready = False
 
     def send(self, buf):
@@ -178,36 +186,12 @@ class MasterConn:
         return r
 
     def recv_cmd(self):
-        d = self.recv(12)
-        cmd, size = unpack("II", d)
-        data = self.recv(size - 4) if size > 4 else ''
-        while cmd in (ANTOAN_NOP, MATOCU_FUSE_NOTIFY_ATTR,
-                      MATOCU_FUSE_NOTIFY_DIR):
-            if cmd == ANTOAN_NOP:
-                pass
-            elif cmd == MATOCU_FUSE_NOTIFY_ATTR:
-                while len(data) >= 43:
-                    parent, inode = unpack("II", data)
-                    attr = data[8:43]
-                    if parent in self.dcache:
-                        cache = self.dcache[parent]
-                        for name in cache:
-                            if cache[name].inode == inode:
-                                cache[name] = attrToFileInfo(inode, attr)
-                                break
-                    data = data[43:]
-            elif cmd == MATOCU_FUSE_NOTIFY_DIR:
-                while len(data) >= 4:
-                    inode, = unpack("I", data)
-                    if inode in self.dcache:
-                        del self.dcache[inode]
-                        with self.lock:
-                            self.send(pack(CUTOMA_FUSE_DIR_REMOVED, 0, inode))
-                    data = data[4:]
+        while True:
             d = self.recv(12)
             cmd, size = unpack("II", d)
             data = self.recv(size - 4) if size > 4 else ''
-        return d, data
+            if cmd != ANTOAN_NOP:
+                return d, data
 
     def recv_thread(self):
         while True:
@@ -245,24 +229,15 @@ class MasterConn:
         return d
 
     def statfs(self):
-        ans = self.sendAndReceive(CUTOMA_FUSE_STATFS)
+        ans = self.sendAndReceive(CLTOMA_FUSE_STATFS)
         return StatInfo(*unpack("QQQQI", ans))
 
 #    def access(self, inode, modemask):
-#        return self.sendAndReceive(CUTOMA_FUSE_ACCESS, inode,
+#        return self.sendAndReceive(CLTOMA_FUSE_ACCESS, inode,
 #            self.uid, self.gid, uint8(modemask))
 #
     def lookup(self, parent, name):
-        if ENABLE_DCACHE:
-            cache = self.dcache.get(parent)
-            if cache is None and self.dstat.get(parent, 0) > 1:
-                cache = self.getdirplus(parent)
-            if cache is not None:
-                return cache.get(name), None
-
-            self.dstat[parent] = self.dstat.get(parent, 0) + 1
-
-        ans = self.sendAndReceive(CUTOMA_FUSE_LOOKUP, parent,
+        ans = self.sendAndReceive(CLTOMA_FUSE_LOOKUP, parent,
                                   uint8(len(name)), name, 0, 0)
         if len(ans) == 1:
             return None, ""
@@ -272,12 +247,12 @@ class MasterConn:
         return attrToFileInfo(inode, ans[4:]), None
 
     def getattr(self, inode):
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETATTR, inode,
+        ans = self.sendAndReceive(CLTOMA_FUSE_GETATTR, inode,
                                   self.uid, self.gid)
         return attrToFileInfo(inode, ans)
 
     def readlink(self, inode):
-        ans = self.sendAndReceive(CUTOMA_FUSE_READLINK, inode)
+        ans = self.sendAndReceive(CLTOMA_FUSE_READLINK, inode)
         length, = unpack("I", ans)
         if length + 4 != len(ans):
             raise Exception("invalid length")
@@ -285,7 +260,7 @@ class MasterConn:
 
     def getdir(self, inode):
         "return: {name: (inode,type)}"
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
+        ans = self.sendAndReceive(CLTOMA_FUSE_GETDIR, inode,
                                   self.uid, self.gid)
         p = 0
         names = {}
@@ -303,15 +278,8 @@ class MasterConn:
 
     def getdirplus(self, inode):
         "return {name: FileInfo()}"
-        if ENABLE_DCACHE:
-            infos = self.dcache.get(inode)
-            if infos is not None:
-                return infos
-
         flag = GETDIR_FLAG_WITHATTR
-        if ENABLE_DCACHE:
-            flag |= GETDIR_FLAG_DIRCACHE
-        ans = self.sendAndReceive(CUTOMA_FUSE_GETDIR, inode,
+        ans = self.sendAndReceive(CLTOMA_FUSE_GETDIR, inode,
                                   self.uid, self.gid, uint8(flag))
         p = 0
         infos = {}
@@ -324,17 +292,15 @@ class MasterConn:
             attr = ans[p + 4:p + 39]
             infos[name] = attrToFileInfo(i, attr, name)
             p += 39
-        if ENABLE_DCACHE:
-            self.dcache[inode] = infos
         return infos
 
     def opencheck(self, inode, flag=1):
-        ans = self.sendAndReceive(CUTOMA_FUSE_OPEN, inode,
+        ans = self.sendAndReceive(CLTOMA_FUSE_OPEN, inode,
                                   self.uid, self.gid, uint8(flag))
         return ans
 
     def readchunk(self, inode, index):
-        ans = self.sendAndReceive(CUTOMA_FUSE_READ_CHUNK, inode, index)
+        ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode, index)
         n = len(ans)
         if n < 20 or (n - 20) % 6 != 0:
             raise Exception("read chunk: invalid length: %s" % n)
@@ -342,7 +308,7 @@ class MasterConn:
         return Chunk(id, length, version, ans[20:])
 
     def append(self, inode_dst, inode_src):
-        self.sendAndReceive(CUTOMA_FUSE_APPEND, inode_dst, inode_src,
+        self.sendAndReceive(CLTOMA_FUSE_APPEND, inode_dst, inode_src,
                             self.uid, self.gid)
 
 

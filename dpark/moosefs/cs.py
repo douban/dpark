@@ -3,7 +3,7 @@ import socket
 import logging
 import commands
 
-from consts import CHUNKSIZE, CUTOCS_READ, CSTOCU_READ_DATA, CSTOCU_READ_STATUS
+from consts import CHUNKSIZE, CLTOCS_READ, CSTOCL_READ_DATA, CSTOCL_READ_STATUS
 from utils import uint64, pack, unpack
 
 logger = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
     conn.settimeout(10)
     conn.connect((host, port))
 
-    msg = pack(CUTOCS_READ, uint64(chunkid), version, offset, size)
+    msg = pack(CLTOCS_READ, uint64(chunkid), version, offset, size)
     n = conn.send(msg)
     while n < len(msg):
         if not n:
@@ -95,7 +95,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
     while size > 0:
         cmd, l = unpack("II", recv(8))
 
-        if cmd == CSTOCU_READ_STATUS:
+        if cmd == CSTOCL_READ_STATUS:
             if l != 9:
                 raise Exception("readblock: READ_STATUS incorrect message size")
             cid, code = unpack("QB", recv(l))
@@ -104,7 +104,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
             conn.close()
             return
 
-        elif cmd == CSTOCU_READ_DATA:
+        elif cmd == CSTOCL_READ_DATA:
             if l < 20 :
                 raise Exception("readblock; READ_DATA incorrect message size")
             cid, bid, boff, bsize, crc = unpack("QHHII", recv(20))

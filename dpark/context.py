@@ -42,7 +42,6 @@ def setup_conf(options):
     conf.__dict__.update(os.environ)
     import moosefs
     moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
-    moosefs.master.ENABLE_DCACHE = conf.MOOSEFS_DIR_CACHE
 
 @singleton
 class DparkContext(object):

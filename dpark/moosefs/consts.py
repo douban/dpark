@@ -5,8 +5,8 @@ MFS_ROOT_ID       = 1
 MFS_NAME_MAX      = 255
 MFS_MAX_FILE_SIZE = 0x20000000000
 
-# 1.6.21
-VERSION = 0x010615
+# 1.6.27
+VERSION = 0x01061B
 
 CHUNKSIZE = 1<<26
 
@@ -23,7 +23,7 @@ TYPE_BLOCKDEV  = 'b'
 TYPE_CHARDEV   = 'c'
 TYPE_SOCKET    = 's'
 TYPE_TRASH     = 't'
-TYPE_RESERVED  = 'r'
+TYPE_SUSTAINED  = 'r'
 TYPE_UNKNOWN   = '?'
 
 # status code
@@ -71,12 +71,12 @@ ERROR_NOPASSWORD     = 36 # Password is needed
 ERROR_BADPASSWORD    = 37 # Incorrect password
 ERROR_MAX            = 38
 
-# flags: "flags" fileld in "CUTOMA_FUSE_AQUIRE"
+# flags: "flags" fileld in "CLTOMA_FUSE_AQUIRE"
 WANT_READ    = 1
 WANT_WRITE   = 2
 AFTER_CREATE = 4
 
-# flags: "setmask" field in "CUTOMA_FUSE_SETATTR"
+# flags: "setmask" field in "CLTOMA_FUSE_SETATTR"
 # SET_GOAL_FLAG,SET_DELETE_FLAG are no longer supported
 # SET_LENGTH_FLAG,SET_OPENED_FLAG are deprecated
 # instead of using FUSE_SETATTR with SET_GOAL_FLAG use FUSE_SETGOAL command
@@ -94,20 +94,20 @@ SET_DELETE_FLAG   = 1 << 8
 ANTOAN_NOP        = 0
 
 # CHUNKSERVER <-> CLIENT/CHUNKSERVER
-CUTOCS_READ = 200
+CLTOCS_READ = 200
 # chunkid:64 version:32 offset:32 size:32
-CSTOCU_READ_STATUS = 201
+CSTOCL_READ_STATUS = 201
 # chunkid:64 status:8
-CSTOCU_READ_DATA = 202
+CSTOCL_READ_DATA = 202
 # chunkid:64 blocknum:16 offset:16 size:32 crc:32 size*[ databyte:8 ]
 
-CUTOCS_WRITE = 210
+CLTOCS_WRITE = 210
 # chunkid:64 version:32 N*[ ip:32 port:16 ]
-CSTOCU_WRITE_STATUS = 211
+CSTOCL_WRITE_STATUS = 211
 # chunkid:64 writeid:32 status:8
-CUTOCS_WRITE_DATA = 212
+CLTOCS_WRITE_DATA = 212
 # chunkid:64 writeid:32 blocknum:16 offset:16 size:32 crc:32 size*[ databyte:8 ]
-CUTOCS_WRITE_FINISH = 213
+CLTOCS_WRITE_FINISH = 213
 # chunkid:64 version:32
 
 #ANY <-> CHUNKSERVER
@@ -150,279 +150,275 @@ CSTOAN_CHUNK_CHECKSUM_TAB = 303
 
 
 FUSE_REGISTER_BLOB_NOACL = "kFh9mdZsR84l5e675v8bi54VfXaXSYozaU3DSz9AsLLtOtKipzb9aQNkxeOISx64"
-# CUTOMA:
+# CLTOMA:
 #  clientid:32 [ version:32 ]
-# MATOCU:
+# MATOCL:
 #  clientid:32
 #  status:8
 
 FUSE_REGISTER_BLOB_TOOLS_NOACL = "kFh9mdZsR84l5e675v8bi54VfXaXSYozaU3DSz9AsLLtOtKipzb9aQNkxeOISx63"
-# CUTOMA:
+# CLTOMA:
 #  -
-# MATOCU:
+# MATOCL:
 #  status:8
 
 FUSE_REGISTER_BLOB_ACL = "DjI1GAQDULI5d2YjA26ypc3ovkhjvhciTQVx3CS4nYgtBoUcsljiVpsErJENHaw0"
 
-REGISTER_GETRANDOM = 1
+REGISTER_GETRANDOM = '\1'
 # rcode==1: generate random blob
-# CUTOMA:
+# CLTOMA:
 #  rcode:8
-# MATOCU:
+# MATOCL:
 #  randomblob:32B
 
-REGISTER_NEWSESSION = 2
+REGISTER_NEWSESSION = '\2'
 # rcode==2: first register
-# CUTOMA:
+# CLTOMA:
 #  rcode:8 version:32 ileng:32 info:ilengB pleng:32 path:plengB [ passcode:16B ]
-# MATOCU:
+# MATOCL:
 #  sessionid:32 sesflags:8 rootuid:32 rootgid:32
 #  status:8
 
-REGISTER_RECONNECT = 3
+REGISTER_RECONNECT = '\3'
 # rcode==3: mount reconnect
-# CUTOMA:
+# CLTOMA:
 #  rcode:8 sessionid:32 version:32
-# MATOCU:
+# MATOCL:
 #  status:8
 
-REGISTER_TOOLS = 4
+REGISTER_TOOLS = '\4'
 # rcode==4: tools connect
-# CUTOMA:
+# CLTOMA:
 #  rcode:8 sessionid:32 version:32
-# MATOCU:
+# MATOCL:
 #  status:8
 
-REGISTER_NEWMETASESSION = 5
+REGISTER_NEWMETASESSION = '\5'
 # rcode==5: first register
-# CUTOMA:
+# CLTOMA:
 #  rcode:8 version:32 ileng:32 info:ilengB [ passcode:16B ]
-# MATOCU:
+# MATOCL:
 #  sessionid:32 sesflags:8
 #  status:8
 
-CUTOMA_FUSE_REGISTER = 400
+CLTOMA_FUSE_REGISTER = 400
 # blob:64B ... (depends on blob - see blob descriptions above
-MATOCU_FUSE_REGISTER = 401
+MATOCL_FUSE_REGISTER = 401
 # depends on blob - see blob descriptions above
-CUTOMA_FUSE_STATFS = 402
+CLTOMA_FUSE_STATFS = 402
 # msgid:32 -
-MATOCU_FUSE_STATFS = 403
+MATOCL_FUSE_STATFS = 403
 # msgid:32 totalspace:64 availspace:64 trashspace:64 inodes:32
-CUTOMA_FUSE_ACCESS = 404
+CLTOMA_FUSE_ACCESS = 404
 # msgid:32 inode:32 uid:32 gid:32 modemask:8
-MATOCU_FUSE_ACCESS = 405
+MATOCL_FUSE_ACCESS = 405
 # msgid:32 status:8
-CUTOMA_FUSE_LOOKUP = 406
+CLTOMA_FUSE_LOOKUP = 406
 # msgid:32 inode:32 name:NAME uid:32 gid:32
-MATOCU_FUSE_LOOKUP = 407
+MATOCL_FUSE_LOOKUP = 407
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CUTOMA_FUSE_GETATTR = 408
+CLTOMA_FUSE_GETATTR = 408
 # msgid:32 inode:32
 # msgid:32 inode:32 uid:32 gid:32
-MATOCU_FUSE_GETATTR = 409
+MATOCL_FUSE_GETATTR = 409
 # msgid:32 status:8
 # msgid:32 attr:35B
-CUTOMA_FUSE_SETATTR = 410
+CLTOMA_FUSE_SETATTR = 410
 # msgid:32 inode:32 uid:32 gid:32 setmask:8 attr:32B   - compatibility with very old version
 # msgid:32 inode:32 uid:32 gid:32 setmask:16 attr:32B  - compatibility with old version
 # msgid:32 inode:32 uid:32 gid:32 setmask:8 attrmode:16 attruid:32 attrgid:32 attratime:32 attrmtime:32
-MATOCU_FUSE_SETATTR = 411
+MATOCL_FUSE_SETATTR = 411
 # msgid:32 status:8
 # msgid:32 attr:35B
-CUTOMA_FUSE_READLINK = 412
+CLTOMA_FUSE_READLINK = 412
 # msgid:32 inode:32
-MATOCU_FUSE_READLINK = 413
+MATOCL_FUSE_READLINK = 413
 # msgid:32 status:8
 # msgid:32 length:32 path:lengthB
-CUTOMA_FUSE_SYMLINK = 414
+CLTOMA_FUSE_SYMLINK = 414
 # msgid:32 inode:32 name:NAME length:32 path:lengthB uid:32 gid:32
-MATOCU_FUSE_SYMLINK = 415
+MATOCL_FUSE_SYMLINK = 415
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CUTOMA_FUSE_MKNOD = 416
+CLTOMA_FUSE_MKNOD = 416
 # msgid:32 inode:32 name:NAME type:8 mode:16 uid:32 gid:32 rdev:32
-MATOCU_FUSE_MKNOD = 417
+MATOCL_FUSE_MKNOD = 417
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CUTOMA_FUSE_MKDIR = 418
+CLTOMA_FUSE_MKDIR = 418
 # msgid:32 inode:32 name:NAME mode:16 uid:32 gid:32
-MATOCU_FUSE_MKDIR = 419
+MATOCL_FUSE_MKDIR = 419
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CUTOMA_FUSE_UNLINK = 420
+CLTOMA_FUSE_UNLINK = 420
 # msgid:32 inode:32 name:NAME uid:32 gid:32
-MATOCU_FUSE_UNLINK = 421
+MATOCL_FUSE_UNLINK = 421
 # msgid:32 status:8
-CUTOMA_FUSE_RMDIR = 422
+CLTOMA_FUSE_RMDIR = 422
 # msgid:32 inode:32 name:NAME uid:32 gid:32
-MATOCU_FUSE_RMDIR = 423
+MATOCL_FUSE_RMDIR = 423
 # msgid:32 status:8
-CUTOMA_FUSE_RENAME = 424
+CLTOMA_FUSE_RENAME = 424
 # msgid:32 inode_src:32 name_src:NAME inode_dst:32 name_dst:NAME uid:32 gid:32
-MATOCU_FUSE_RENAME = 425
+MATOCL_FUSE_RENAME = 425
 # msgid:32 status:8
-CUTOMA_FUSE_LINK = 426
+CLTOMA_FUSE_LINK = 426
 # msgid:32 inode:32 inode_dst:32 name_dst:NAME uid:32 gid:32
-MATOCU_FUSE_LINK = 427
+MATOCL_FUSE_LINK = 427
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CUTOMA_FUSE_GETDIR = 428
+CLTOMA_FUSE_GETDIR = 428
 # msgid:32 inode:32 uid:32 gid:32 - old version (works like new version with flags==0
 # msgid:32 inode:32 uid:32 gid:32 flags:8
-MATOCU_FUSE_GETDIR = 429
+MATOCL_FUSE_GETDIR = 429
 # msgid:32 status:8
 # msgid:32 N*[ name:NAME inode:32 type:8 ] - when GETDIR_FLAG_WITHATTR in flags is not set
 # msgid:32 N*[ name:NAME inode:32 type:35B ]   - when GETDIR_FLAG_WITHATTR in flags is set
-CUTOMA_FUSE_OPEN = 430
+CLTOMA_FUSE_OPEN = 430
 # msgid:32 inode:32 uid:32 gid:32 flags:8
-MATOCU_FUSE_OPEN = 431
+MATOCL_FUSE_OPEN = 431
 # msgid:32 status:8
 # since 1.6.9 if no error:
 # msgid:32 attr:35B
 
-CUTOMA_FUSE_READ_CHUNK = 432
+CLTOMA_FUSE_READ_CHUNK = 432
 # msgid:32 inode:32 chunkindx:32
-MATOCU_FUSE_READ_CHUNK = 433
+MATOCL_FUSE_READ_CHUNK = 433
 # msgid:32 status:8
 # msgid:32 length:64 chunkid:64 version:32 N*[ip:32 port:16]
 # msgid:32 length:64 srcs:8 srcs*[chunkid:64 version:32 ip:32 port:16] - not implemented
-CUTOMA_FUSE_WRITE_CHUNK = 434 # it creates, duplicates or sets new version of chunk if necessary */
+CLTOMA_FUSE_WRITE_CHUNK = 434 # it creates, duplicates or sets new version of chunk if necessary */
 # msgid:32 inode:32 chunkindx:32
-MATOCU_FUSE_WRITE_CHUNK = 435
+MATOCL_FUSE_WRITE_CHUNK = 435
 # msgid:32 status:8
 # msgid:32 length:64 chunkid:64 version:32 N*[ip:32 port:16]
-CUTOMA_FUSE_WRITE_CHUNK_END = 436
+CLTOMA_FUSE_WRITE_CHUNK_END = 436
 # msgid:32 chunkid:64 inode:32 length:64
-MATOCU_FUSE_WRITE_CHUNK_END = 437
+MATOCL_FUSE_WRITE_CHUNK_END = 437
 # msgid:32 status:8
 
 
-CUTOMA_FUSE_APPEND = 438
+CLTOMA_FUSE_APPEND = 438
 # msgid:32 inode:32 srcinode:32 uid:32 gid:32 - append to existing element
-MATOCU_FUSE_APPEND = 439
+MATOCL_FUSE_APPEND = 439
 # msgid:32 status:8
 
 
-CUTOMA_FUSE_CHECK = 440
+CLTOMA_FUSE_CHECK = 440
 # msgid:32 inode:32
-MATOCU_FUSE_CHECK = 441
+MATOCL_FUSE_CHECK = 441
 # msgid:32 status:8
 # msgid:32 N*[ copies:8 chunks:16 ]
 
-CUTOMA_FUSE_GETTRASHTIME = 442
+CLTOMA_FUSE_GETTRASHTIME = 442
 # msgid:32 inode:32 gmode:8
-MATOCU_FUSE_GETTRASHTIME = 443
+MATOCL_FUSE_GETTRASHTIME = 443
 # msgid:32 status:8
 # msgid:32 tdirs:32 tfiles:32 tdirs*[ trashtime:32 dirs:32 ] tfiles*[ trashtime:32 files:32 ]
-CUTOMA_FUSE_SETTRASHTIME = 444
+CLTOMA_FUSE_SETTRASHTIME = 444
 # msgid:32 inode:32 uid:32 trashtimeout:32 smode:8
-MATOCU_FUSE_SETTRASHTIME = 445
+MATOCL_FUSE_SETTRASHTIME = 445
 # msgid:32 status:8
 # msgid:32 changed:32 notchanged:32 notpermitted:32
 
-CUTOMA_FUSE_GETGOAL = 446
+CLTOMA_FUSE_GETGOAL = 446
 # msgid:32 inode:32 gmode:8
-MATOCU_FUSE_GETGOAL = 447
+MATOCL_FUSE_GETGOAL = 447
 # msgid:32 status:8
 # msgid:32 gdirs:8 gfiles:8 gdirs*[ goal:8 dirs:32 ] gfiles*[ goal:8 files:32 ]
 
-CUTOMA_FUSE_SETGOAL = 448
+CLTOMA_FUSE_SETGOAL = 448
 # msgid:32 inode:32 uid:32 goal:8 smode:8
-MATOCU_FUSE_SETGOAL = 449
+MATOCL_FUSE_SETGOAL = 449
 # msgid:32 status:8
 # msgid:32 changed:32 notchanged:32 notpermitted:32
 
-CUTOMA_FUSE_GETTRASH = 450
+CLTOMA_FUSE_GETTRASH = 450
 # msgid:32
-MATOCU_FUSE_GETTRASH = 451
+MATOCL_FUSE_GETTRASH = 451
 # msgid:32 status:8
 # msgid:32 N*[ name:NAME inode:32 ]
 
-CUTOMA_FUSE_GETDETACHEDATTR = 452
+CLTOMA_FUSE_GETDETACHEDATTR = 452
 # msgid:32 inode:32 dtype:8
-MATOCU_FUSE_GETDETACHEDATTR = 453
+MATOCL_FUSE_GETDETACHEDATTR = 453
 # msgid:32 status:8
 # msgid:32 attr:35B
 
-CUTOMA_FUSE_GETTRASHPATH = 454
+CLTOMA_FUSE_GETTRASHPATH = 454
 # msgid:32 inode:32
-MATOCU_FUSE_GETTRASHPATH = 455
+MATOCL_FUSE_GETTRASHPATH = 455
 # msgid:32 status:8
 # msgid:32 length:32 path:lengthB
 
-CUTOMA_FUSE_SETTRASHPATH = 456
+CLTOMA_FUSE_SETTRASHPATH = 456
 # msgid:32 inode:32 length:32 path:lengthB
-MATOCU_FUSE_SETTRASHPATH = 457
+MATOCL_FUSE_SETTRASHPATH = 457
 # msgid:32 status:8
 
-CUTOMA_FUSE_UNDEL = 458
+CLTOMA_FUSE_UNDEL = 458
 # msgid:32 inode:32
-MATOCU_FUSE_UNDEL = 459
+MATOCL_FUSE_UNDEL = 459
 # msgid:32 status:8
-CUTOMA_FUSE_PURGE = 460
+CLTOMA_FUSE_PURGE = 460
 # msgid:32 inode:32
-MATOCU_FUSE_PURGE = 461
+MATOCL_FUSE_PURGE = 461
 # msgid:32 status:8
 
-CUTOMA_FUSE_GETDIRSTATS = 462
+CLTOMA_FUSE_GETDIRSTATS = 462
 # msgid:32 inode:32
-MATOCU_FUSE_GETDIRSTATS = 463
+MATOCL_FUSE_GETDIRSTATS = 463
 # msgid:32 status:8
 # msgid:32 inodes:32 dirs:32 files:32 ugfiles:32 mfiles:32 chunks:32 ugchunks:32 mchunks32 length:64 size:64 gsize:64
 
-CUTOMA_FUSE_TRUNCATE = 464
+CLTOMA_FUSE_TRUNCATE = 464
 # msgid:32 inode:32 [opened:8] uid:32 gid:32 opened:8 length:64
-MATOCU_FUSE_TRUNCATE = 465
+MATOCL_FUSE_TRUNCATE = 465
 # msgid:32 status:8
 # msgid:32 attr:35B
 
-CUTOMA_FUSE_REPAIR = 466
+CLTOMA_FUSE_REPAIR = 466
 # msgid:32 inode:32 uid:32 gid:32
-MATOCU_FUSE_REPAIR = 467
+MATOCL_FUSE_REPAIR = 467
 # msgid:32 status:8
 # msgid:32 notchanged:32 erased:32 repaired:32
 
-CUTOMA_FUSE_SNAPSHOT = 468
+CLTOMA_FUSE_SNAPSHOT = 468
 # msgid:32 inode:32 inode_dst:32 name_dst:NAME uid:32 gid:32 canoverwrite:8
-MATOCU_FUSE_SNAPSHOT = 469
+MATOCL_FUSE_SNAPSHOT = 469
 # msgid:32 status:8
 
-CUTOMA_FUSE_GETRESERVED = 470
+CLTOMA_FUSE_GETSUSTAINED = 470
 # msgid:32
-MATOCU_FUSE_GETRESERVED = 471
+MATOCL_FUSE_GETSUSTAINED = 471
 # msgid:32 status:8
 # msgid:32 N*[ name:NAME inode:32 ]
 
-CUTOMA_FUSE_GETEATTR = 472
+CLTOMA_FUSE_GETEATTR = 472
 # msgid:32 inode:32 gmode:8
-MATOCU_FUSE_GETEATTR = 473
+MATOCL_FUSE_GETEATTR = 473
 # msgid:32 status:8
 # msgid:32 eattrdirs:8 eattrfiles:8 eattrdirs*[ eattr:8 dirs:32 ] eattrfiles*[ eattr:8 files:32 ]
 
-CUTOMA_FUSE_SETEATTR = 474
+CLTOMA_FUSE_SETEATTR = 474
 # msgid:32 inode:32 uid:32 eattr:8 smode:8
-MATOCU_FUSE_SETEATTR = 475
+MATOCL_FUSE_SETEATTR = 475
 # msgid:32 status:8
 # msgid:32 changed:32 notchanged:32 notpermitted:32
 
-CUTOMA_FUSE_QUOTACONTROL = 476
+CLTOMA_FUSE_QUOTACONTROL = 476
 # msgid:32 inode:32 qflags:8 - delete quota
 # msgid:32 inode:32 qflags:8 sinodes:32 slength:64 ssize:64 srealsize:64 hinodes:32 hlength:64 hsize:64 hrealsize:64 - set quota
-MATOCU_FUSE_QUOTACONTROL = 477
+MATOCL_FUSE_QUOTACONTROL = 477
 # msgid:32 status:8
 # msgid:32 qflags:8 sinodes:32 slength:64 ssize:64 srealsize:64 hinodes:32 hlength:64 hsize:64 hrealsize:64 curinodes:32 curlength:64 cursize:64 currealsize:64
 
-CUTOMA_FUSE_DIR_REMOVED = 490
+CLTOMA_FUSE_DIR_REMOVED = 490
 # msgid:32 N*[ inode:32 ]
 
-MATOCU_FUSE_NOTIFY_ATTR = 491
-# msgid:32 N*[ parent:32 inode:32 attr:35B ]
-MATOCU_FUSE_NOTIFY_DIR = 492
-# msgid:32 N*[ inode:32 ]
-# special - reserved (opened) inodes - keep opened files.
-CUTOMA_FUSE_RESERVED_INODES = 499
+# special - sustained (opened) inodes - keep opened files.
+CLTOMA_FUSE_SUSTAINED_INODES = 499
 # N*[inode:32]
 
 errtab = [
