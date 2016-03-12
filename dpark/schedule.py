@@ -113,15 +113,15 @@ class CompletionEvent:
 
 def walk_dependencies(rdd, func):
     visited = set()
-    to_visit = [(rdd, None)]
+    to_visit = [rdd]
     while to_visit:
-        r, dep = to_visit.pop(0)
+        r = to_visit.pop(0)
         if r.id in visited:
             continue
         visited.add(r.id)
-        if func(r, dep):
-            for dep in r.dependencies:
-                to_visit.append((dep.rdd, dep))
+        for dep in r.dependencies:
+            if func(r, dep):
+                to_visit.append(dep.rdd)
 
 class DAGScheduler(Scheduler):
 

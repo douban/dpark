@@ -375,6 +375,13 @@ class TestRDD(unittest.TestCase):
         loads(dumps(rdd))
         self.assertEqual(rdd.collect(), map(lambda x:x+1000, d))
 
+    def test_cache_shuffle(self):
+        rdd1 = self.sc.parallelize([(1, 11), (2, 12), (3, 22)]).cache()
+        rdd2 = self.sc.parallelize([(1, 33), (2, 44), (4, 55)]).cache()
+        expected = set([(2, (12, 44)), (1, (11, 33))])
+        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
+        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
+
 #class TestRDDInProcess(TestRDD):
 #    def setUp(self):
 #        self.sc = DparkContext("process")
