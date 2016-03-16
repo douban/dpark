@@ -82,7 +82,10 @@ class ShuffleMapTask(DAGTask):
         self.locs = locs
 
     def __repr__(self):
-        return '<ShuffleTask(%d, %d) of %s>' % (self.shuffleId, self.partition, self.rdd)
+        shuffleId = getattr(self, 'shuffleId', None)
+        partition = getattr(self, 'partition', None)
+        rdd = getattr(self, 'rdd', None)
+        return '<ShuffleTask(%s, %s) of %s>' % (shuffleId, partition, rdd)
 
     def __getstate__(self):
         d = dict(self.__dict__)
