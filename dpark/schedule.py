@@ -838,9 +838,10 @@ class MesosScheduler(DAGScheduler):
         if job.id in self.activeJobs:
             del self.activeJobs[job.id]
             self.activeJobsQueue.remove(job)
-            for id in self.jobTasks[job.id]:
-                del self.taskIdToJobId[id]
-                del self.taskIdToSlaveId[id]
+            for tid in self.jobTasks[job.id]:
+                self.driver.killTask(mesos_pb2.TaskID(value=tid))
+                del self.taskIdToJobId[tid]
+                del self.taskIdToSlaveId[tid]
             del self.jobTasks[job.id]
             self.last_finish_time = time.time()
 
