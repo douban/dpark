@@ -1,8 +1,6 @@
 import sys, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import cPickle
 import unittest
-import pprint
 import random
 import operator
 import shutil
@@ -52,8 +50,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(len(nums.mergeSplit(2)), 1)
         self.assertEqual(nums.mergeSplit(2).collect(), range(4))
         self.assertEqual(nums.zipWith(nums).collectAsMap(), dict(zip(d,d)))
-        self.assertEqual(self.sc.parallelize(["a", "b", "c", "d"], 3).zipWithIndex().collect(),
-                         [('a', 0), ('b', 1), ('c', 2), ('d', 3)])
 
     def test_ignore_bad_record(self):
         d = range(100)
@@ -286,11 +282,11 @@ class TestRDD(unittest.TestCase):
         N = 100
         p = 10
         l = range(N)
-        d1 = sorted(map(lambda x: (x/p, x), l))
-        d2 = sorted(map(lambda x: ((x/p, x%p), x), l))
+        d1 = map(lambda x: (x/p, x), l)
+        d2 = list(enumerate(l))
         rdd = self.sc.makeRDD(l, p)
-        self.assertEqual(sorted(rdd.enumeratePartition().collect()), d1)
-        self.assertEqual(sorted(rdd.enumerate().collect()), d2)
+        self.assertEqual(rdd.enumeratePartition().collect(), d1)
+        self.assertEqual(rdd.enumerate().collect(), d2)
 
     def test_tabular(self):
         d = range(10000)
