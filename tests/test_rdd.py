@@ -78,6 +78,13 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.innerJoin(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
+        # join - data contains duplicate key
+        numsDup = self.sc.makeRDD(zip([2,2,4], [1,2,3]), 2)
+        self.assertEqual(nums.join(numsDup).collect(),
+                [(2, (5, 1)), (2, (5, 2))])
+        self.assertEqual(nums.innerJoin(numsDup).collect(),
+                [(2, (5, 1)), (2, (5, 2))])
+
         self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
         self.assertEqual(nums.flatMapValue(lambda x:range(x)).count(), 22)
