@@ -18,6 +18,8 @@ from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
 from dpark.rdd import CoGroupedRDD, CheckpointRDD
+from dpark.moosefs import open_file
+from dpark.moosefs.utils import Error
 
 logger = logging.getLogger(__name__)
 
@@ -171,6 +173,11 @@ class StreamingContext(object):
         explicitly.
         """
         ds = FileInputDStream(self, directory, filter, newFilesOnly, oldThreshold)
+        self.registerInputStream(ds)
+        return ds
+
+    def rotatingfiles(self, files):
+        ds = RotatingFilesInputDStream(self, files)
         self.registerInputStream(ds)
         return ds
 
@@ -990,6 +997,64 @@ class FileInputDStream(InputDStream):
             for root, dirs, names in os.walk(self.directory):
                 for name in names:
                     self.filter(os.path.join(root, name))
+
+
+class RotatingFilesInputDStream(InputDStream):
+    def __init__(self, ssc, files):
+        InputDStream.__init__(self, ssc)
+        self.files = files
+        self._state = {}
+
+    def start(self):
+        self._state = dict(self._get_state())
+
+    def _get_state(self):
+        for fn in self.files:
+            try:
+                realname = os.path.realpath(fn)
+                f = open_file(realname)
+                if f:
+                    yield realname, (f.info.inode, f.info.length, f.info.mtime)
+                else:
+                    st = os.stat(realname)
+                    yield realname, (st.st_ino, st.st_size, st.st_mtime)
+
+            except (OSError, Error):
+                pass
+
+    def compute(self, validTime):
+        state = {}
+        offsets = {}
+
+        for fn, (inode, size, mtime) in self._get_state():
+            if fn not in self._state:
+                offsets[fn] = (0, size)
+            else:
+                _inode, _size, _mtime = self._state[fn]
+                if inode != _inode or (mtime > _mtime and size < _size):
+                    offsets[fn] = (0, size)
+                elif mtime >= _mtime and size > _size:
+                    offsets[fn] = (_size, size)
+
+            state[fn] = (inode, size, mtime)
+
+        for fn, (_inode, _size, _mtime) in self._state.iteritems():
+            if fn not in state:
+                try:
+                    st = os.stat(fn)
+                    inode, size, mtime = st.st_ino, st.st_size, st.st_mtime
+                except OSError:
+                    continue
+
+                if inode != _inode or (mtime > _mtime and size < _size):
+                    offsets[fn] = (0, size)
+                elif mtime >= _mtime and size > _size:
+                    offsets[fn] = (_size, size)
+
+        self._state = state
+        return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
+                                  for path, (begin, end) in offsets.iteritems()])
+
 
 
 class QueueInputDStream(InputDStream):
