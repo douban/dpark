@@ -467,7 +467,10 @@ class RDD(object):
         >>> y = dpark.parallelize([("a", 2), ("a", 3)])
         [('a', (1, 2)), ('a', (1, 3))]
         """
-        o_b = self.ctx.broadcast(smallRdd.collectAsMap(allowDup=True))
+        o = collections.defaultdict(list)
+        for (k, v) in smallRdd:
+            o[k].append(v)
+        o_b = self.ctx.broadcast(o)
         def do_join((k, v)):
             for v1 in o_b.value[k]:
                 yield (k, (v, v1))
@@ -499,16 +502,10 @@ class RDD(object):
                     yield (k, (vv, ww))
         return self.cogroup(other, numSplits, taskMemory).flatMap(dispatch)
 
-    def collectAsMap(self, allowDup=False):
-        if allowDup:
-            d = collections.defaultdict(list)
-            for lst in self.ctx.runJob(self, lambda x:list(x)):
-                for (k, v) in lst:
-                    d[k].append(v)
-        else:
-            d = {}
-            for v in self.ctx.runJob(self, lambda x:list(x)):
-                d.update(dict(v))
+    def collectAsMap(self):
+        d = {}
+        for v in self.ctx.runJob(self, lambda x:list(x)):
+            d.update(dict(v))
         return d
 
     def mapValue(self, f):
