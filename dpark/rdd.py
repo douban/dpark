@@ -5,7 +5,7 @@ import socket
 import csv
 from cStringIO import StringIO
 import itertools
-import operator
+import collections
 import math
 import cPickle
 import random
@@ -431,12 +431,6 @@ class RDD(object):
     def partitionByKey(self, numSplits=None, taskMemory=None):
         return self.groupByKey(numSplits, taskMemory).flatMapValue(lambda x: x)
 
-    def innerJoin(self, other):
-        o_b = self.ctx.broadcast(other.collectAsMap())
-        r = self.filter(lambda (k,v):k in o_b.value).map(lambda (k,v):(k,(v,o_b.value[k])))
-        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
-        return r
-
     def update(self, other, replace_only=False, numSplits=None,
                taskMemory=None):
         rdd = self.mapValue(
@@ -464,6 +458,23 @@ class RDD(object):
             lambda (val, rev): val
         )
 
+    def innerJoin(self, smallRdd):
+        """
+        This is functionally equivalent to `join`, but `innerJoin` assume `smallRdd` is a
+        small Data set, and `innerJoin` will broadcast the `smallRdd` to optimize running time.
+
+        >>> x = dpark.parallelize([("a", 1), ("b", 4)])
+        >>> y = dpark.parallelize([("a", 2), ("a", 3)])
+        [('a', (1, 2)), ('a', (1, 3))]
+        """
+        o_b = self.ctx.broadcast(smallRdd.collectAsMap(allowDup=True))
+        def do_join((k, v)):
+            for v1 in o_b.value[k]:
+                yield (k, (v, v1))
+        r = self.flatMap(do_join)
+        r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
+        return r
+
     def join(self, other, numSplits=None, taskMemory=None):
         return self._join(other, (), numSplits, taskMemory)
 
@@ -488,10 +499,16 @@ class RDD(object):
                     yield (k, (vv, ww))
         return self.cogroup(other, numSplits, taskMemory).flatMap(dispatch)
 
-    def collectAsMap(self):
-        d = {}
-        for v in self.ctx.runJob(self, lambda x:list(x)):
-            d.update(dict(v))
+    def collectAsMap(self, allowDup=False):
+        if allowDup:
+            d = collections.defaultdict(list)
+            for lst in self.ctx.runJob(self, lambda x:list(x)):
+                for (k, v) in lst:
+                    d[k].append(v)
+        else:
+            d = {}
+            for v in self.ctx.runJob(self, lambda x:list(x)):
+                d.update(dict(v))
         return d
 
     def mapValue(self, f):
