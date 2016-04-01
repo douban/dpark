@@ -27,7 +27,6 @@ import dpark.conf as conf
 
 logger = logging.getLogger(__name__)
 
-MAX_FAILED = 3
 EXECUTOR_CPUS = 0.01
 EXECUTOR_MEMORY = 64 # cache
 POLL_TIMEOUT = 0.1
@@ -491,7 +490,6 @@ class MesosScheduler(DAGScheduler):
         self.taskIdToSlaveId = {}
         self.jobTasks = {}
         self.slaveTasks = {}
-        self.slaveFailed = {}
 
     def clear(self):
         DAGScheduler.clear(self)
@@ -704,8 +702,6 @@ class MesosScheduler(DAGScheduler):
                     sid = o.slave_id.value
                     if self.group and (self.getAttribute(o.attributes, 'group') or 'none') not in self.group:
                         continue
-                    if self.slaveFailed.get(sid, 0) >= MAX_FAILED:
-                        continue
                     if self.slaveTasks.get(sid, 0) >= self.task_per_node:
                         continue
                     if mems[i] < self.mem or cpus[i]+1e-4 < self.cpus:
@@ -786,15 +782,16 @@ class MesosScheduler(DAGScheduler):
         logger.debug("status update: %s %s", tid, state)
 
         jid = self.taskIdToJobId.get(tid)
-        if jid not in self.activeJobs:
-            logger.debug("Ignoring update from TID %s " +
-                "because its job is gone", tid)
-            return
-
-        job = self.activeJobs[jid]
         _, task_id, tried = map(int, tid.split(':'))
         if state == mesos_pb2.TASK_RUNNING:
-            return job.statusUpdate(task_id, tried, state)
+            if jid in self.activeJobs:
+                job = self.activeJobs[jid]
+                job.statusUpdate(task_id, tried, state)
+            else:
+                logger.debug('kill task %s as its job has gone', tid)
+                self.driver.killTask(mesos_pb2.TaskID(value=tid))
+            
+            return
 
         del self.taskIdToJobId[tid]
         self.jobTasks[jid].remove(tid)
@@ -803,6 +800,11 @@ class MesosScheduler(DAGScheduler):
             self.slaveTasks[slave_id] -= 1
         del self.taskIdToSlaveId[tid]
 
+        if jid not in self.activeJobs:
+            logger.debug('ignore task %s as its job has gone', tid)
+            return
+
+        job = self.activeJobs[jid]
         if state in (mesos_pb2.TASK_FINISHED, mesos_pb2.TASK_FAILED) and status.data:
             try:
                 reason,result,accUpdate = cPickle.loads(status.data)
@@ -830,8 +832,6 @@ class MesosScheduler(DAGScheduler):
 
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, status.data)
-        #if state in (mesos_pb2.TASK_FAILED, mesos_pb2.TASK_LOST):
-        #    self.slaveFailed[slave_id] = self.slaveFailed.get(slave_id,0) + 1
 
     def jobFinished(self, job):
         logger.debug("job %s finished", job.id)
@@ -840,20 +840,22 @@ class MesosScheduler(DAGScheduler):
             self.activeJobsQueue.remove(job)
             for tid in self.jobTasks[job.id]:
                 self.driver.killTask(mesos_pb2.TaskID(value=tid))
-                del self.taskIdToJobId[tid]
-                del self.taskIdToSlaveId[tid]
             del self.jobTasks[job.id]
             self.last_finish_time = time.time()
 
             if not self.activeJobs:
                 self.slaveTasks.clear()
-                self.slaveFailed.clear()
 
     @safe
     def check(self):
         for job in self.activeJobs.values():
             if job.check_task_timeout():
                 self.requestMoreResources()
+
+        for tid, jid in self.taskIdToJobId.iteritems():
+            if jid not in self.activeJobs:
+                logger.debug('kill task %s, because it is orphan', tid)
+                self.driver.killTask(mesos_pb2.TaskID(value=tid))
 
     @safe
     def error(self, driver, message):
@@ -878,12 +880,10 @@ class MesosScheduler(DAGScheduler):
     def executorLost(self, driver, executorId, slaveId, status):
         logger.warning("executor at %s %s lost: %s", slaveId.value, executorId.value, status)
         self.slaveTasks.pop(slaveId.value, None)
-        self.slaveFailed.pop(slaveId.value, None)
 
     def slaveLost(self, driver, slaveId):
         logger.warning("slave %s lost", slaveId.value)
         self.slaveTasks.pop(slaveId.value, None)
-        self.slaveFailed.pop(slaveId.value, None)
 
     def killTask(self, job_id, task_id, tried):
         tid = mesos_pb2.TaskID()
