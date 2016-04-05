@@ -793,12 +793,14 @@ class MesosScheduler(DAGScheduler):
             
             return
 
-        del self.taskIdToJobId[tid]
-        self.jobTasks[jid].remove(tid)
-        slave_id = self.taskIdToSlaveId[tid]
-        if slave_id in self.slaveTasks:
-            self.slaveTasks[slave_id] -= 1
-        del self.taskIdToSlaveId[tid]
+        self.taskIdToJobId.pop(tid, None)
+        if jid in self.jobTasks:
+            self.jobTasks[jid].remove(tid)
+        if tid in sef.taskIdToSlaveId:
+            slave_id = self.taskIdToSlaveId[tid]
+            if slave_id in self.slaveTasks:
+                self.slaveTasks[slave_id] -= 1
+            del self.taskIdToSlaveId[tid]
 
         if jid not in self.activeJobs:
             logger.debug('ignore task %s as its job has gone', tid)
