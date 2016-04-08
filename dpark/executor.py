@@ -1,19 +1,20 @@
-import logging
-import os, sys, time
+import gc
+import os
+import sys
+import time
+import fcntl
+import shutil
 import signal
-import os.path
-import marshal
+import socket
 import cPickle
-import multiprocessing
+import logging
+import marshal
+import urllib2
+import platform
 import threading
 import SocketServer
 import SimpleHTTPServer
-import shutil
-import socket
-import urllib2
-import platform
-import gc
-import time
+import multiprocessing
 
 import zmq
 
@@ -22,7 +23,7 @@ from mesos.interface import mesos_pb2
 from mesos.interface import Executor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, spawn
+from dpark.util import compress, decompress, spawn, mkdir_p
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
@@ -38,6 +39,7 @@ DEFAULT_WEB_PORT = 5055
 MAX_WORKER_IDLE_TIME = 60
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 Script = ''
+_fd_for_locks = []
 
 def setproctitle(x):
     try:
@@ -310,6 +312,12 @@ class MyExecutor(Executor):
             if not os.path.exists(root):
                 os.mkdir(root)
                 os.chmod(root, 0777) # because umask
+
+            mkdir_p(self.workdir[0])
+            fd = os.open(self.workdir[0], os.O_RDONLY)
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _fd_for_locks.append(fd)
+
             args['SERVER_URI'] = startWebServer(self.workdir[0])
             if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
                 setup_cleaner_process(self.workdir)
