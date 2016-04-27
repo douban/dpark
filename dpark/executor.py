@@ -10,8 +10,8 @@ import cPickle
 import logging
 import marshal
 import urllib2
-import platform
 import threading
+import subprocess
 import SocketServer
 import SimpleHTTPServer
 import multiprocessing
@@ -308,17 +308,29 @@ class MyExecutor(Executor):
                 logger.warning("cwd (%s) not exists", cwd)
 
             self.workdir = args['WORKDIR']
-            root = os.path.dirname(self.workdir[0])
+            main_workdir = self.workdir[0]
+
+            root = os.path.dirname(main_workdir)
             if not os.path.exists(root):
                 os.mkdir(root)
                 os.chmod(root, 0777) # because umask
 
-            mkdir_p(self.workdir[0])
-            fd = os.open(self.workdir[0], os.O_RDONLY)
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            mkdir_p(main_workdir)
+            fd = os.open(main_workdir, os.O_RDONLY)
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except IOError as e:
+                try:
+                    pids = subprocess.check_output(["fuser", main_workdir]).split()
+                    curr_pid = os.getpid()
+                    logger.warning("curr_pid %s, processes use %s are %s" %
+                                   curr_pid, main_workdir, pids)
+                except Exception:
+                    pass
+                raise e
             _fd_for_locks.append(fd)
 
-            args['SERVER_URI'] = startWebServer(self.workdir[0])
+            args['SERVER_URI'] = startWebServer(main_workdir)
             if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
                 setup_cleaner_process(self.workdir)
 
