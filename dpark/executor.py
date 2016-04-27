@@ -206,6 +206,21 @@ def setup_cleaner_process(workdir):
         os._exit(0)
     os.wait()
 
+def try_flock(path):
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except IOError as e:
+        try:
+            pids = subprocess.check_output(["fuser", path]).split()
+            curr_pid = os.getpid()
+            logger.warning("curr_pid %s, processes use %s are %s" %
+                            curr_pid, path, pids)
+        except Exception:
+            pass
+        raise e
+    _fd_for_locks.append(fd)
+
 class MyExecutor(Executor):
     def __init__(self):
         self.workdir = []
@@ -316,19 +331,7 @@ class MyExecutor(Executor):
                 os.chmod(root, 0777) # because umask
 
             mkdir_p(main_workdir)
-            fd = os.open(main_workdir, os.O_RDONLY)
-            try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-            except IOError as e:
-                try:
-                    pids = subprocess.check_output(["fuser", main_workdir]).split()
-                    curr_pid = os.getpid()
-                    logger.warning("curr_pid %s, processes use %s are %s" %
-                                   curr_pid, main_workdir, pids)
-                except Exception:
-                    pass
-                raise e
-            _fd_for_locks.append(fd)
+            try_flock(main_workdir)
 
             args['SERVER_URI'] = startWebServer(main_workdir)
             if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
