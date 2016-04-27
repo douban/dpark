@@ -55,7 +55,9 @@ class ResultTask(DAGTask):
         return self.locs
 
     def __repr__(self):
-        return "<ResultTask(%d) of %s" % (self.partition, self.rdd)
+        partition = getattr(self, 'partition', None)
+        rdd = getattr(self, 'rdd', None)
+        return "<ResultTask(%s) of %s" % (partition, rdd)
 
     def __getstate__(self):
         d = dict(self.__dict__)
