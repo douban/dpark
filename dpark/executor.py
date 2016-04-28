@@ -39,7 +39,6 @@ DEFAULT_WEB_PORT = 5055
 MAX_WORKER_IDLE_TIME = 60
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 Script = ''
-_fd_for_locks = []
 
 def setproctitle(x):
     try:
@@ -206,27 +205,16 @@ def setup_cleaner_process(workdir):
         os._exit(0)
     os.wait()
 
-def try_flock(path):
-    fd = os.open(path, os.O_RDONLY)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except IOError as e:
-        try:
-            pids = subprocess.check_output(["fuser", path]).split()
-            curr_pid = os.getpid()
-            logger.warning("curr_pid %s, processes use %s are %s" %
-                            curr_pid, path, pids)
-        except Exception:
-            pass
-        raise e
-    _fd_for_locks.append(fd)
-
 class MyExecutor(Executor):
     def __init__(self):
         self.workdir = []
         self.idle_workers = []
         self.busy_workers = {}
         self.lock = threading.RLock()
+
+        # Keep the file descriptor of current workdir,
+        # so we can check whether a workdir is in use externally.
+        self._fd_for_locks = []
 
         self.stdout, wfd = os.pipe()
         sys.stdout = os.fdopen(wfd, 'w', 0)
@@ -299,6 +287,21 @@ class MyExecutor(Executor):
 
             time.sleep(1)
 
+    def _try_flock(self, path):
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except IOError as e:
+            try:
+                pids = subprocess.check_output(["fuser", path]).split()
+                curr_pid = os.getpid()
+                logger.warning("current process: %s, processes that are using %s: %s" %
+                                curr_pid, path, pids)
+            except Exception:
+                pass
+            raise e
+        self._fd_for_locks.append(fd)
+
     @safe
     def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
         try:
@@ -331,7 +334,7 @@ class MyExecutor(Executor):
                 os.chmod(root, 0777) # because umask
 
             mkdir_p(main_workdir)
-            try_flock(main_workdir)
+            self._try_flock(main_workdir)
 
             args['SERVER_URI'] = startWebServer(main_workdir)
             if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
@@ -390,7 +393,10 @@ class MyExecutor(Executor):
             p.terminate()
         for _, p in self.busy_workers.itervalues():
             p.terminate()
+
         # clean work files
+        for fd in self._fd_for_locks:
+            os.close(fd)
         for d in self.workdir:
             try: shutil.rmtree(d, True)
             except: pass
