@@ -342,17 +342,18 @@ class SubmitScheduler(BaseScheduler):
             self.slaveTasks[sid].remove(tid)
 
         if update.state != mesos_pb2.TASK_FINISHED:
+            message = getattr(update, 'message', '')
             if t.tried < self.options.retry:
-                logger.warning("Task %d %s with %d, retry %d", t.id,
+                logger.warning("Task %d %s with %d, retry %d: %s", t.id,
                                'Lost' if update.state == mesos_pb2.TASK_LOST else "Failed",
-                               update.state, t.tried)
+                               update.state, t.tried, message)
                 t.tried += 1
                 t.state = -1
                 self.total_tasks.append(t)  # try again
             else:
-                logger.error("Task %d %s with %d on %s", t.id,
+                logger.error("Task %d %s with %d on %s: %s", t.id,
                              'Lost' if update.state == mesos_pb2.TASK_LOST else "Failed",
-                             update.state, sid)
+                             update.state, sid, message)
                 self.stop(1)
                 return
 
