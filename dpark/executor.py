@@ -97,6 +97,12 @@ def run_task(task_data):
 def init_env(args):
     env.start(False, args)
 
+def terminate(p):
+    try:
+        for pi in p._pool:
+            os.kill(pi.pid, signal.SIGKILL)
+    except Exception, e:
+        pass
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -237,53 +243,50 @@ class MyExecutor(Executor):
         idle_since = time.time()
 
         while True:
-            self.lock.acquire()
+            with self.lock:
+                for tid, (task, pool) in self.busy_workers.items():
+                    task_id = task.task_id
+                    try:
+                        pid = pool._pool[0].pid
+                        p = psutil.Process(pid)
+                        rss = p.memory_info().rss >> 20
+                    except Exception, e:
+                        logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
+                        reply_status(driver, task_id, mesos_pb2.TASK_LOST)
+                        self.busy_workers.pop(tid)
+                        continue
 
-            for tid, (task, pool) in self.busy_workers.items():
-                task_id = task.task_id
-                try:
-                    pid = pool._pool[0].pid
-                    p = psutil.Process(pid)
-                    rss = p.memory_info().rss >> 20
-                except Exception, e:
-                    logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
-                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                    self.busy_workers.pop(tid)
-                    continue
+                    if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
+                        logger.error("worker process %d of task %s is zombie", pid, tid)
+                        reply_status(driver, task_id, mesos_pb2.TASK_LOST)
+                        self.busy_workers.pop(tid)
+                        continue
 
-                if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
-                    logger.error("worker process %d of task %s is zombie", pid, tid)
-                    reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                    self.busy_workers.pop(tid)
-                    continue
+                    offered = get_task_memory(task)
+                    if not offered:
+                        continue
+                    if rss > offered * 1.5:
+                        logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
+                                + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
+                        reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
+                        self.busy_workers.pop(tid)
+                        terminate(pool)
+                    elif rss > offered * mem_limit.get(tid, 1.0):
+                        logger.debug("task %s used too much memory: %dMB > %dMB, "
+                                + "use -M to request or taskMemory for more memory", tid, rss, offered)
+                        mem_limit[tid] = rss / offered + 0.1
 
-                offered = get_task_memory(task)
-                if not offered:
-                    continue
-                if rss > offered * 1.5:
-                    logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
-                            + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
-                    reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
-                    self.busy_workers.pop(tid)
-                    pool.terminate()
-                elif rss > offered * mem_limit.get(tid, 1.0):
-                    logger.debug("task %s used too much memory: %dMB > %dMB, "
-                            + "use -M to request or taskMemory for more memory", tid, rss, offered)
-                    mem_limit[tid] = rss / offered + 0.1
+                now = time.time()
+                n = len([1 for t, p in self.idle_workers if t + MAX_WORKER_IDLE_TIME < now])
+                if n:
+                    for _, p in self.idle_workers[:n]:
+                        terminate(p)
+                    self.idle_workers = self.idle_workers[n:]
 
-            now = time.time()
-            n = len([1 for t, p in self.idle_workers if t + MAX_WORKER_IDLE_TIME < now])
-            if n:
-                for _, p in self.idle_workers[:n]:
-                    p.terminate()
-                self.idle_workers = self.idle_workers[n:]
-
-            if self.busy_workers or self.idle_workers:
-                idle_since = now
-            elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
-                os._exit(0)
-
-            self.lock.release()
+                if self.busy_workers or self.idle_workers:
+                    idle_since = now
+                elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
+                    os._exit(0)
 
             time.sleep(1)
 
@@ -385,14 +388,14 @@ class MyExecutor(Executor):
         reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
         if taskId.value in self.busy_workers:
             task, pool = self.busy_workers.pop(taskId.value)
-            pool.terminate()
+            terminate(pool)
 
     @safe
     def shutdown(self, driver=None):
         for _, p in self.idle_workers:
-            p.terminate()
+            terminate(p)
         for _, p in self.busy_workers.itervalues():
-            p.terminate()
+            terminate(p)
 
         # clean work files
         for fd in self._fd_for_locks:
