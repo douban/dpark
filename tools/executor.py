@@ -73,12 +73,13 @@ def launch_task(self, driver, task):
     werr = os.fdopen(errw, 'w', 0)
 
     if addr3:
+        tid = int(task.task_id.value.split('-')[0])
         subscriber = ctx.socket(zmq.SUB)
         subscriber.connect(addr3)
         subscriber.setsockopt(zmq.SUBSCRIBE, '')
         poller = zmq.Poller()
         poller.register(subscriber, zmq.POLLIN)
-        socks = dict(poller.poll(60 * 1000))
+        socks = dict(poller.poll(min(tid / 100.0 + 1, 5) * 60 * 1000))
         if socks and socks.get(subscriber) == zmq.POLLIN:
             hosts = pickle.loads(subscriber.recv(zmq.NOBLOCK))
             line = hosts.get(host)
