@@ -848,16 +848,16 @@ class MesosScheduler(DAGScheduler):
             if not self.activeJobs:
                 self.slaveTasks.clear()
 
+        for tid, jid in self.taskIdToJobId.iteritems():
+            if jid not in self.activeJobs:
+                logger.debug('kill task %s, because it is orphan', tid)
+                self.driver.killTask(mesos_pb2.TaskID(value=tid))
+
     @safe
     def check(self):
         for job in self.activeJobs.values():
             if job.check_task_timeout():
                 self.requestMoreResources()
-
-        for tid, jid in self.taskIdToJobId.iteritems():
-            if jid not in self.activeJobs:
-                logger.debug('kill task %s, because it is orphan', tid)
-                self.driver.killTask(mesos_pb2.TaskID(value=tid))
 
     @safe
     def error(self, driver, message):
