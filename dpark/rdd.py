@@ -21,7 +21,7 @@ import struct
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
 from dpark.util import spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file, AbortFileReplacement
-from dpark.shuffle import Merger, CoGroupMerger
+from dpark.shuffle import DiskMerger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
 
@@ -70,9 +70,12 @@ class RDD(object):
         d.pop('_splits', None)
         d.pop('_preferred_locs', None)
         d.pop('ctx', None)
+        d['_split_size'] = len(self.splits)
         return d
 
     def __len__(self):
+        if hasattr(self, '_split_size'):
+            return self._split_size
         return len(self.splits)
 
     def __repr__(self):
@@ -809,7 +812,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = Merger(self.numParts, self.aggregator.mergeCombiners)
+        merger = DiskMerger(self)
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
@@ -904,7 +907,7 @@ class CoGroupedRDD(RDD):
                                                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def compute(self, split):
-        m = CoGroupMerger(self.len)
+        m = CoGroupMerger(self)
         for i,dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))

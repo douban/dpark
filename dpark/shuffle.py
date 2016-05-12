@@ -1,4 +1,5 @@
 import os, os.path
+import sys
 import random
 import urllib
 import logging
@@ -10,8 +11,13 @@ import gzip
 import Queue
 import heapq
 import platform
+import uuid
+try:
+    import cStringIO as StringIO
+except ImportError:
+    import StringIO
 
-from dpark.util import decompress, spawn, mkdir_p
+from dpark.util import decompress, spawn, mkdir_p, atomic_file
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 
@@ -174,23 +180,23 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
 class Merger(object):
 
-    def __init__(self, total, mergeCombiner):
-        self.mergeCombiner = mergeCombiner
+    def __init__(self, rdd):
+        self.mergeCombiners = rdd.aggregator.mergeCombiners
         self.combined = {}
 
     def merge(self, items):
         combined = self.combined
-        mergeCombiner = self.mergeCombiner
+        mergeCombiners = self.mergeCombiners
         for k,v in items:
             o = combined.get(k)
-            combined[k] = mergeCombiner(o, v) if o is not None else v
+            combined[k] = mergeCombiners(o, v) if o is not None else v
 
     def __iter__(self):
         return self.combined.iteritems()
 
 class CoGroupMerger(object):
-    def __init__(self, size):
-        self.size = size
+    def __init__(self, rdd):
+        self.size = rdd.len
         self.combined = {}
 
     def get_seq(self, k):
@@ -207,23 +213,24 @@ class CoGroupMerger(object):
     def __iter__(self):
         return self.combined.iteritems()
 
-def heap_merged(items_lists, combiner):
+def heap_merged(items_lists, combiner, max_memory):
     heap = []
-    def pushback(it):
+    def pushback(it, i):
         try:
             k,v = it.next()
             # put i before value, so do not compare the value
             heapq.heappush(heap, (k, i, v))
         except StopIteration:
             pass
+
     for i, it in enumerate(items_lists):
-        if isinstance(it, list):
-            items_lists[i] = it = (k for k in it)
-        pushback(it)
+        it.set_bufsize((max_memory * 1024) / len(items_lists))
+        pushback(it, i)
+
     if not heap: return
 
     last_key, i, last_value = heapq.heappop(heap)
-    pushback(items_lists[i])
+    pushback(items_lists[i], i)
 
     while heap:
         k, i, v = heapq.heappop(heap)
@@ -232,98 +239,115 @@ def heap_merged(items_lists, combiner):
             last_key, last_value = k, v
         else:
             last_value = combiner(last_value, v)
-        pushback(items_lists[i])
+        pushback(items_lists[i], i)
 
     yield last_key, last_value
 
-class sorted_items(object):
-    next_id = 0
-    @classmethod
-    def new_id(cls):
-        cls.next_id += 1
-        return cls.next_id
-
+class SortedItems(object):
     def __init__(self, items):
-        self.id = self.new_id()
-        self.path = path = os.path.join(LocalFileShuffle.shuffleDir,
-            'shuffle-%d-%d.tmp.gz' % (os.getpid(), self.id))
-        f = gzip.open(path, 'wb+')
+        self.bufsize = 4096 * 1024
+        self.buf = None
+        self.offset = 0
+        self.path = path = os.path.join(LocalFileShuffle.shuffleDir[-1],
+            'shuffle-%s.tmp.gz' % uuid.uuid4().hex)
 
-        items = sorted(items)
-        try:
-            for i in items:
-                s = marshal.dumps(i)
-                f.write(struct.pack("I", len(s)))
-                f.write(s)
-            self.loads = marshal.loads
-        except Exception, e:
-            f.rewind()
-            for i in items:
-                s = cPickle.dumps(i)
-                f.write(struct.pack("I", len(s)))
-                f.write(s)
-            self.loads = cPickle.loads
-        f.close()
+        with atomic_file(path, bufsize=self.bufsize) as f:
+            f = gzip.GzipFile(fileobj=f)
+            items = sorted(items)
+            try:
+                for i in items:
+                    s = marshal.dumps(i)
+                    f.write(struct.pack("I", len(s)))
+                    f.write(s)
+                self.loads = marshal.loads
+            except Exception, e:
+                f.rewind()
+                for i in items:
+                    s = cPickle.dumps(i)
+                    f.write(struct.pack("I", len(s)))
+                    f.write(s)
+                self.loads = cPickle.loads
+            f.close()
 
-        self.f = gzip.open(path)
-        self.c = 0
+    def set_bufsize(self, bufsize):
+        self.bufsize = min(max(int(bufsize / 4096), 1), 1024) * 4096
 
-    def __iter__(self):
-        self.f = gzip.open(self.path)
-        self.c = 0
-        return self
+    def fill(self):
+        with gzip.open(self.path) as f:
+            if self.offset != 0:
+                f.seek(self.offset)
+
+            self.buf = StringIO.StringIO(f.read(self.bufsize))
+            self.offset = f.tell()
+
+    def read(self, size):
+        r = self.buf.read(size)
+        if len(r) < size:
+            self.fill()
+            r += self.buf.read(size - len(r))
+
+        return r
 
     def next(self):
-        f = self.f
-        b = f.read(4)
+        if self.buf is None:
+            self.fill()
+
+        b = self.read(4)
         if not b:
-            f.close()
-            if os.path.exists(self.path):
-                os.remove(self.path)
+            try:
+                if os.path.exists(self.path):
+                    os.remove(self.path)
+            except Exception:
+                pass
+
             raise StopIteration
+
         sz, = struct.unpack("I", b)
-        self.c += 1
-        return self.loads(f.read(sz))
+        return self.loads(self.read(sz))
 
     def __dealloc__(self):
-        self.f.close()
-        if os.path.exists(self.path):
-            os.remove(self.path)
+        try:
+            if os.path.exists(self.path):
+                os.remove(self.path)
+        except Exception:
+            pass
 
 
 class DiskMerger(Merger):
-    def __init__(self, total, combiner):
-        Merger.__init__(self, total, combiner)
-        self.total = total
+    def __init__(self, rdd):
+        Merger.__init__(self, rdd)
+        self.total = len(rdd)
+        self.mem = 0.8 * rdd.mem or MAX_SHUFFLE_MEMORY
         self.archives = []
         self.base_memory = self.get_used_memory()
         self.max_merge = None
         self.merged = 0
 
     def get_used_memory(self):
-        if platform.system() == 'Linux':
-            for line in open('/proc/self/status'):
-                if line.startswith('VmRSS:'):
-                    return int(line.split()[1]) >> 10
-        return 0
+        try:
+            import psutil
+            return psutil.Process().rss >> 20
+        except Exception:
+            return 0
 
     def merge(self, items):
         Merger.merge(self, items)
 
         self.merged += 1
-        #print 'used', self.merged, self.total, self.get_used_memory() - self.base_memory, self.base_memory
         if self.max_merge is None:
-            if self.merged < self.total/5 and self.get_used_memory() - self.base_memory > MAX_SHUFFLE_MEMORY:
+            current_mem = max(self.get_used_memory() - self.base_memory,
+                              sys.getsizeof(self.combined) >> 20)
+            if current_mem > self.mem:
+                logging.warning('Too much memory for shuffle, using disk-based shuffle')
                 self.max_merge = self.merged
 
         if self.max_merge is not None and self.merged >= self.max_merge:
             t = time.time()
             self.rotate()
             self.merged = 0
-            #print 'after rotate', self.get_used_memory() - self.base_memory, time.time() - t
 
     def rotate(self):
-        self.archives.append(sorted_items(self.combined.iteritems()))
+        self.archives.append(SortedItems(self.combined.iteritems()))
         self.combined = {}
 
     def __iter__(self):
@@ -332,7 +356,7 @@ class DiskMerger(Merger):
 
         if self.combined:
             self.rotate()
-        return heap_merged(self.archives, self.mergeCombiner)
+        return heap_merged(self.archives, self.mergeCombiners, self.mem)
 
 class BaseMapOutputTracker(object):
     def registerMapOutputs(self, shuffleId, locs):
@@ -358,40 +382,42 @@ class MapOutputTracker(BaseMapOutputTracker):
         return locs
 
 def test():
+    from dpark.util import compress
+    logging.basicConfig(level=logging.DEBUG)
+    from dpark.env import env
+    env.start(True)
+    LocalFileShuffle.initialize(True)
+
     l = []
     for i in range(10):
         d = zip(range(10000), range(10000))
-        l.append(sorted_items(d))
-    hl = heap_merged(l, lambda x,y:x+y)
+        random.shuffle(d)
+        l.append(SortedItems(d))
+    hl = heap_merged(l, lambda x,y:x+y, MAX_SHUFFLE_MEMORY)
     for i in range(10):
         print i, hl.next()
 
-    import logging
-    logging.basicConfig(level=logging.INFO)
-    from dpark.env import env
-    import cPickle
-    env.start(True)
 
     path = LocalFileShuffle.getOutputFile(1, 0, 0)
+    d = compress(cPickle.dumps({'key':'value'}, -1))
     f = open(path, 'w')
-    f.write(cPickle.dumps([('key','value')], -1))
+    f.write('p' + struct.pack('I', 5 + len(d)) + d)
     f.close()
 
     uri = LocalFileShuffle.getServerUri()
     env.mapOutputTracker.registerMapOutputs(1, [uri])
     fetcher = SimpleShuffleFetcher()
-    def func(k,v):
+    def func(it):
+        k, v = next(it)
         assert k=='key'
         assert v=='value'
     fetcher.fetch(1, 0, func)
 
-    tracker = MapOutputTracker(True)
+    tracker = MapOutputTracker()
     tracker.registerMapOutputs(2, [None, uri, None, None, None])
     assert tracker.getServerUris(2) == [None, uri, None, None, None]
-    ntracker = MapOutputTracker(False)
-    assert ntracker.getServerUris(2) == [None, uri, None, None, None]
-    ntracker.stop()
     tracker.stop()
 
 if __name__ == '__main__':
+    from dpark.shuffle import test
     test()
