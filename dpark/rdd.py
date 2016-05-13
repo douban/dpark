@@ -174,25 +174,6 @@ class RDD(object):
 
         return _compute(self, split)
 
-
-    def _prepare_shuffle(self, split, partitioner, aggregator):
-        numOutputSplits = partitioner.numPartitions
-        getPartition = partitioner.getPartition
-        mergeValue = aggregator.mergeValue
-        createCombiner = aggregator.createCombiner
-
-        buckets = [{} for i in range(numOutputSplits)]
-        for k,v in self.iterator(split):
-            bucketId = getPartition(k)
-            bucket = buckets[bucketId]
-            r = bucket.get(k, None)
-            if r is not None:
-                bucket[k] = mergeValue(r, v)
-            else:
-                bucket[k] = createCombiner(v)
-
-        return enumerate(buckets)
-
     def map(self, f):
         return MappedRDD(self, f)
 
@@ -884,7 +865,7 @@ class CoGroupAggregator:
 class CoGroupedRDD(RDD):
     def __init__(self, rdds, partitioner, taskMemory=None):
         RDD.__init__(self, rdds[0].ctx)
-        self.len = len(rdds)
+        self.size = len(rdds)
         if taskMemory:
             self.mem = taskMemory
         self.aggregator = CoGroupAggregator()
@@ -1146,13 +1127,12 @@ class TextFileRDD(RDD):
                 splitSize = self.DEFAULT_SPLIT_SIZE
             else:
                 splitSize = size / numSplits or self.DEFAULT_SPLIT_SIZE
-        n = size / splitSize
+        numSplits = size / splitSize
         if size % splitSize > 0:
-            n += 1
+            numSplits += 1
         self.splitSize = splitSize
-        self.len = n
         self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize))
-                    for i in range(self.len)]
+                    for i in range(numSplits)]
 
         self._preferred_locs = {}
         if self.fileinfo:
@@ -1239,7 +1219,6 @@ class PartialTextFileRDD(TextFileRDD):
                 PartialSplit(i+1, first_edge + i*splitSize, first_edge + (i+1) * splitSize)
                     for i in  range(ns)
                  ] + [PartialSplit(ns+1, last_edge, lastPos)]
-        self.len = len(self._splits)
         self.repr_name = '<%s %s (%d-%d)>' % (self.__class__.__name__, path, firstPos, lastPos)
 
 
@@ -1463,18 +1442,16 @@ class BZip2FileRDD(TextFileRDD):
 
 class BinaryFileRDD(TextFileRDD):
     def __init__(self, ctx, path, fmt=None, length=None, numSplits=None, splitSize=None):
-        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
         self.fmt = fmt
         if fmt:
             length = struct.calcsize(fmt)
         self.length = length
         assert length, "fmt or length must been provided"
+        if splitSize is None:
+            splitSize = self.DEFAULT_SPLIT_SIZE
 
-        self.splitSize = max(self.splitSize / length, 1) * length
-        n = self.size / self.splitSize
-        if self.size % self.splitSize > 0:
-            n += 1
-        self.len = n
+        splitSize = max(splitSize / length, 1) * length
+        TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
         self.repr_name = '<BinaryFileRDD(%s) %s>' % (fmt, path)
 
     def compute(self, split):

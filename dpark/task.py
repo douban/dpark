@@ -102,9 +102,28 @@ class ShuffleMapTask(DAGTask):
     def preferredLocations(self):
         return self.locs
 
+    def _prepare_shuffle(self, rdd):
+        split = self.split
+        numOutputSplits = self.partitioner.numPartitions
+        getPartition = self.partitioner.getPartition
+        mergeValue = self.aggregator.mergeValue
+        createCombiner = self.aggregator.createCombiner
+
+        buckets = [{} for i in range(numOutputSplits)]
+        for k,v in rdd.iterator(split):
+            bucketId = getPartition(k)
+            bucket = buckets[bucketId]
+            r = bucket.get(k, None)
+            if r is not None:
+                bucket[k] = mergeValue(r, v)
+            else:
+                bucket[k] = createCombiner(v)
+
+        return enumerate(buckets)
+
     def run(self, attempId):
         logger.debug("shuffling %d of %s", self.partition, self.rdd)
-        for i, bucket in self.rdd._prepare_shuffle(self.split, self.partitioner, self.aggregator):
+        for i, bucket in self._prepare_shuffle(self.rdd):
             try:
                 if marshalable(bucket):
                     flag, d = 'm', marshal.dumps(bucket)

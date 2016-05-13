@@ -217,7 +217,7 @@ class Merger(object):
 class CoGroupMerger(object):
 
     def __init__(self, rdd):
-        self.size = rdd.len
+        self.size = rdd.size
         self.combined = {}
 
     def get_seq(self, k):
