@@ -161,7 +161,7 @@ enumerate / enumeratePartition
 ::
 
     rdd = dpark.makeRDD(range(10), 5)
-    rdd.enumerate().collect() # [((0, 0), 0), ((0, 1), 1), ((1, 0), 2), ((1, 1), 3), ((2, 0), 4), ((2, 1), 5), ((3, 0), 6), ((3, 1), 7), ((4, 0), 8), ((4, 1), 9)]
+    rdd.enumerate().collect() # [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8), (9, 9)]
     rdd.enumeratePartition().collect() # [(0, 0), (0, 1), (1, 2), (1, 3), (2, 4), (2, 5), (3, 6), (3, 7), (4, 8), (4, 9)] 
     rdd.filter(lambda x: x > 3).enumeratePartition().collect() # [(2, 4), (2, 5), (3, 6), (3, 7), (4, 8), (4, 9)]
 
