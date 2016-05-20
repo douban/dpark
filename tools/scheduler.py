@@ -266,12 +266,12 @@ class SubmitScheduler(BaseScheduler):
                          offer.id.value, cpus, mem, offer.hostname)
             sid = offer.slave_id.value
             tasks = []
-            while (self.total_tasks and cpus + 1e-4 >= self.cpus and mem >= self.mem
+            while (self.total_tasks and cpus >= self.cpus + EXECUTOR_CPUS and mem >= self.mem + EXECUTOR_MEMORY
                     and (tpn == 0 or tpn > 0 and len(self.slaveTasks.get(sid, set())) < tpn)):
                 logger.debug("Accepting slot on slave %s (%s)",
                              offer.slave_id.value, offer.hostname)
                 t = self.total_tasks.pop()
-                task = self.create_task(offer, t, cpus)
+                task = self.create_task(offer, t)
                 tasks.append(task)
                 t.state = mesos_pb2.TASK_STARTING
                 t.state_time = time.time()
@@ -288,7 +288,7 @@ class SubmitScheduler(BaseScheduler):
                 offer.hostname)
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
-    def create_task(self, offer, t, cpus):
+    def create_task(self, offer, t):
         task = mesos_pb2.TaskInfo()
         task.task_id.value = "%d-%d" % (t.id, t.tried)
         task.slave_id.value = offer.slave_id.value
@@ -307,7 +307,7 @@ class SubmitScheduler(BaseScheduler):
         cpu = task.resources.add()
         cpu.name = "cpus"
         cpu.type = mesos_pb2.Value.SCALAR
-        cpu.scalar.value = min(self.cpus, cpus)
+        cpu.scalar.value = self.cpus
 
         mem = task.resources.add()
         mem.name = "mem"
@@ -415,7 +415,7 @@ class MPIScheduler(BaseScheduler):
                 driver.launchTasks(offer.id, [], REFUSE_FILTER)
                 continue
 
-            slots = int(min(cpus / self.cpus, mem / self.mem) + 1e-5)
+            slots = int(min((cpus - EXECUTOR_CPUS) / self.cpus, (mem - EXECUTOR_MEMORY) / self.mem))
             if self.options.task_per_node:
                 slots = min(slots, self.options.task_per_node)
             slots = min(slots, self.options.tasks - launched)
@@ -499,16 +499,15 @@ class MPIScheduler(BaseScheduler):
                                   self.err_port,
                                   self.publisher_port])
 
-        cpus, mem = self.getResource(offer)
         cpu = task.resources.add()
         cpu.name = "cpus"
         cpu.type = mesos_pb2.Value.SCALAR
-        cpu.scalar.value = min(self.cpus * k, cpus)
+        cpu.scalar.value = self.cpus * k
 
         mem = task.resources.add()
         mem.name = "mem"
         mem.type = mesos_pb2.Value.SCALAR
-        mem.scalar.value = min(self.mem * k, mem)
+        mem.scalar.value = self.mem * k
 
         return task
 

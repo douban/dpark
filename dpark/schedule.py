@@ -704,12 +704,13 @@ class MesosScheduler(DAGScheduler):
                         continue
                     if self.slaveTasks.get(sid, 0) >= self.task_per_node:
                         continue
-                    if mems[i] < self.mem or cpus[i]+1e-4 < self.cpus:
+                    if (mems[i] < self.mem + EXECUTOR_MEMORY
+                            or cpus[i] < self.cpus + EXECUTOR_CPUS):
                         continue
                     t = job.slaveOffer(str(o.hostname), cpus[i], mems[i])
                     if not t:
                         continue
-                    task = self.createTask(o, job, t, cpus[i])
+                    task = self.createTask(o, job, t)
                     tasks.setdefault(o.id.value, []).append(task)
 
                     logger.debug("dispatch %s into %s", t, o.hostname)
@@ -753,7 +754,7 @@ class MesosScheduler(DAGScheduler):
             if r.name == name:
                 return r.text.value
 
-    def createTask(self, o, job, t, available_cpus):
+    def createTask(self, o, job, t):
         task = mesos_pb2.TaskInfo()
         tid = "%s:%s:%s" % (job.id, t.id, t.tried)
         task.name = "task %s" % tid
@@ -768,7 +769,7 @@ class MesosScheduler(DAGScheduler):
         cpu = task.resources.add()
         cpu.name = 'cpus'
         cpu.type = mesos_pb2.Value.SCALAR
-        cpu.scalar.value = min(t.cpus, available_cpus)
+        cpu.scalar.value = t.cpus
         mem = task.resources.add()
         mem.name = 'mem'
         mem.type = mesos_pb2.Value.SCALAR
