@@ -101,6 +101,7 @@ def terminate(p):
     try:
         for pi in p._pool:
             os.kill(pi.pid, signal.SIGKILL)
+        p.terminate()
     except Exception, e:
         pass
 
