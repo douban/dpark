@@ -115,7 +115,7 @@ def startWebServer(path):
     with open(testpath, 'w') as f:
         f.write(path)
     default_uri = 'http://%s:%d/%s' % (socket.gethostname(), DEFAULT_WEB_PORT,
-            os.path.basename(path))
+                                       os.path.basename(path))
     try:
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
         if data == path:
@@ -128,7 +128,7 @@ def startWebServer(path):
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     spawn(ss.serve_forever)
     uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1],
-            os.path.basename(path))
+                               os.path.basename(path))
     return uri
 
 def forward(fd, addr, prefix=''):
@@ -145,7 +145,8 @@ def forward(fd, addr, prefix=''):
     while True:
         try:
             line = f.readline()
-            if not line: break
+            if not line:
+                break
             buf.append(line)
             if line.endswith('\n'):
                 send(buf)
@@ -297,8 +298,8 @@ class MyExecutor(Executor):
             try:
                 pids = subprocess.check_output(["fuser", path]).split()
                 curr_pid = os.getpid()
-                logger.warning("current process: %s, processes that are using %s: %s" %
-                                curr_pid, path, pids)
+                logger.warning("current process: %s, processes that are using %s: %s",
+                               curr_pid, path, pids)
             except Exception:
                 pass
             raise e
