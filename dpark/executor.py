@@ -37,6 +37,7 @@ logger = logging.getLogger("dpark.executor@%s" % socket.gethostname())
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
+KILL_TIME_OUT = 0.1 # 0.1 sec
 Script = ''
 
 def setproctitle(x):
@@ -161,8 +162,12 @@ def forward(fd, addr, prefix=''):
 def terminate(proc):
     try:
         os.kill(proc.pid, signal.SIGKILL)
+        proc.join(KILL_TIME_OUT)
+        existcode = proc.exitcode
+        if proc.exitcode != - signal.SIGKILL:
+            logger.warn("worker process terminate fail: %s", existcode)
     except Exception, e:
-        pass
+        logger.warn("worker process terminate exception: %s", e)
 
 def get_task_memory(task):
     for r in task.resources:
