@@ -389,7 +389,7 @@ class MyExecutor(Executor):
                                             task.task_id.value,
                                             task.data,
                                             self.init_args))
-            proc.name = "DparkTask-%s" % task.task_id.value
+            proc.name = "[TASK-%s]%s" % (task.task_id.value, Script)
             proc.daemon = True
             proc.start()
             self.tasks[task.task_id.value] = (task, proc, driver)
