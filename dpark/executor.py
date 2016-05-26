@@ -36,7 +36,6 @@ logger = logging.getLogger("dpark.executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_WORKER_IDLE_TIME = 60
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 Script = ''
 
@@ -97,13 +96,6 @@ def run_task(task_data):
 def init_env(args):
     env.start(False, args)
 
-def terminate(p):
-    try:
-        for pi in p._pool:
-            os.kill(pi.pid, signal.SIGKILL)
-        p.terminate()
-    except Exception, e:
-        pass
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
@@ -166,13 +158,11 @@ def forward(fd, addr, prefix=''):
     f.close()
     ctx.shutdown()
 
-def get_pool_memory(pool):
+def terminate(proc):
     try:
-        import psutil
-        p = psutil.Process(pool._pool[0].pid)
-        return p.memory_info().rss >> 20
-    except Exception:
-        return 0
+        os.kill(proc.pid, signal.SIGKILL)
+    except Exception, e:
+        pass
 
 def get_task_memory(task):
     for r in task.resources:
@@ -213,10 +203,15 @@ def setup_cleaner_process(workdir):
     os.wait()
 
 class MyExecutor(Executor):
+
     def __init__(self):
         self.workdir = []
-        self.idle_workers = []
-        self.busy_workers = {}
+
+        # task_id.value -> (task, process, driver)
+        self.tasks = {}
+        # (task_id.value, (status, data))
+        self.result_queue = multiprocessing.Queue()
+
         self.lock = threading.RLock()
 
         # Keep the file descriptor of current workdir,
@@ -233,6 +228,7 @@ class MyExecutor(Executor):
         os.close(2)
         assert os.dup(wfd) == 2, 'redirect io failed'
 
+
     def check_memory(self, driver):
         try:
             import psutil
@@ -245,22 +241,22 @@ class MyExecutor(Executor):
 
         while True:
             with self.lock:
-                for tid, (task, pool) in self.busy_workers.items():
+                for tid, (task, proc, _) in self.tasks.iteritems():
                     task_id = task.task_id
                     try:
-                        pid = pool._pool[0].pid
+                        pid = proc.pid
                         p = psutil.Process(pid)
                         rss = p.memory_info().rss >> 20
                     except Exception, e:
                         logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
                         reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                        self.busy_workers.pop(tid)
+                        self.tasks.pop(tid)
                         continue
 
                     if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
                         logger.error("worker process %d of task %s is zombie", pid, tid)
                         reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                        self.busy_workers.pop(tid)
+                        self.tasks.pop(tid)
                         continue
 
                     offered = get_task_memory(task)
@@ -268,23 +264,20 @@ class MyExecutor(Executor):
                         continue
                     if rss > offered * 1.5:
                         logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
-                                + "use -M argument or taskMemory to request more memory.", tid, rss, offered)
+                                       + "use -M argument or taskMemory to request more memory.",
+                                       tid, rss, offered)
+
                         reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
-                        self.busy_workers.pop(tid)
-                        terminate(pool)
+                        self.tasks.pop(tid)
+                        terminate(proc)
                     elif rss > offered * mem_limit.get(tid, 1.0):
                         logger.debug("task %s used too much memory: %dMB > %dMB, "
-                                + "use -M to request or taskMemory for more memory", tid, rss, offered)
+                                     + "use -M to request or taskMemory for more memory",
+                                     tid, rss, offered)
                         mem_limit[tid] = rss / offered + 0.1
 
                 now = time.time()
-                n = len([1 for t, p in self.idle_workers if t + MAX_WORKER_IDLE_TIME < now])
-                if n:
-                    for _, p in self.idle_workers[:n]:
-                        terminate(p)
-                    self.idle_workers = self.idle_workers[n:]
-
-                if self.busy_workers or self.idle_workers:
+                if self.tasks:
                     idle_since = now
                 elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
                     os._exit(0)
@@ -319,7 +312,8 @@ class MyExecutor(Executor):
             prefix = '[%s] ' % socket.gethostname()
             self.outt = spawn(forward, self.stdout, out_logger, prefix)
             self.errt = spawn(forward, self.stderr, err_logger, prefix)
-            logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s', level=logLevel)
+            logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
+                                level=logLevel)
 
             if os.path.exists(cwd):
                 try:
@@ -345,6 +339,7 @@ class MyExecutor(Executor):
                 setup_cleaner_process(self.workdir)
 
             spawn(self.check_memory, driver)
+            spawn(self.replier)
 
             logger.debug("executor started at %s", slaveInfo.hostname)
 
@@ -354,30 +349,44 @@ class MyExecutor(Executor):
             logger.error("init executor failed: %s", msg)
             raise
 
-    def get_idle_worker(self):
-        try:
-            return self.idle_workers.pop()[1]
-        except IndexError:
-            p = multiprocessing.Pool(1, init_env, [self.init_args])
-            p.done = 0
-            return p
+    def replier(self):
+        while True:
+            try:
+                result = self.result_queue.get()
+                if result is None:
+                    logger.debug("replier exit")
+                    return
+                (task_id_value, result) = result
+                state, data = result
+
+                with self.lock:
+                    task, _, driver = self.tasks.pop(task_id_value)
+
+                reply_status(driver, task.task_id, state, data)
+
+            except Exception,e:
+                logger.warning("reply fail %s", e)
 
     @safe
     def launchTask(self, driver, task):
         task_id = task.task_id
         reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
         logger.debug("launch task %s", task.task_id.value)
-        try:
-            def callback((state, data)):
-                reply_status(driver, task_id, state, data)
-                with self.lock:
-                    _, pool = self.busy_workers.pop(task.task_id.value)
-                    pool.done += 1
-                    self.idle_workers.append((time.time(), pool))
 
-            pool = self.get_idle_worker()
-            self.busy_workers[task.task_id.value] = (task, pool)
-            pool.apply_async(run_task, [task.data], callback=callback)
+        def worker(q, task_id_value, task_data, init_args):
+            init_env(init_args)
+            q.put((task_id_value, run_task(task_data)))
+
+        try:
+            proc = multiprocessing.Process(worker,
+                                           (self.result_queue,
+                                            task.task_id.value,
+                                            task.data,
+                                            self.init_args))
+            proc.name = "DparkTask-%s" % task.task_id.value
+            proc.daemon = True
+            proc.start()
+            self.tasks[task.task_id.value] = (task, proc, driver)
 
         except Exception, e:
             import traceback
@@ -387,26 +396,26 @@ class MyExecutor(Executor):
     @safe
     def killTask(self, driver, taskId):
         reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
-        if taskId.value in self.busy_workers:
-            task, pool = self.busy_workers.pop(taskId.value)
-            terminate(pool)
+        if taskId.value in self.tasks:
+            _, proc, _ = self.tasks.pop(taskId.value)
+            terminate(proc)
 
     @safe
     def shutdown(self, driver=None):
-        for _, p in self.idle_workers:
-            terminate(p)
-        for _, p in self.busy_workers.itervalues():
-            terminate(p)
+
+        for _, proc, _ in self.tasks.itervalues():
+            terminate(proc)
 
         # clean work files
         for fd in self._fd_for_locks:
             os.close(fd)
         for d in self.workdir:
-            try: shutil.rmtree(d, True)
-            except: pass
+            try:
+                shutil.rmtree(d, True)
+            except:
+                pass
 
-        self.idle_workers = []
-        self.busy_workers = {}
+        self.tasks = {}
         sys.stdout.close()
         sys.stderr.close()
         os.close(1)
