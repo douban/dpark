@@ -316,7 +316,7 @@ class MyExecutor(Executor):
             self.init_args = args
             sys.path = python_path
             os.environ.update(osenv)
-            setproctitle(Script)
+            setproctitle("[Executor]" + Script)
 
             prefix = '[%s] ' % socket.gethostname()
             self.outt = spawn(forward, self.stdout, out_logger, prefix)
@@ -382,17 +382,20 @@ class MyExecutor(Executor):
         reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
         logger.debug("launch task %s", task.task_id.value)
 
-        def worker(q, task_id_value, task_data, init_args):
+        def worker(name, q, task_id_value, task_data, init_args):
+            setproctitle(name)
             init_env(init_args)
             q.put((task_id_value, run_task(task_data)))
 
         try:
-            proc = multiprocessing.Process(worker,
-                                           (self.result_queue,
-                                            task.task_id.value,
-                                            task.data,
-                                            self.init_args))
-            proc.name = "[TASK-%s]%s" % (task.task_id.value, Script)
+            name = "[Task-%s]%s" % (task.task_id.value, Script)
+            proc = multiprocessing.Process(target=worker,
+                                           args=(name,
+                                                 self.result_queue,
+                                                 task.task_id.value,
+                                                 task.data,
+                                                 self.init_args))
+            proc.name = name
             proc.daemon = True
             proc.start()
             self.tasks[task.task_id.value] = (task, proc, driver)
@@ -433,6 +436,7 @@ class MyExecutor(Executor):
         self.errt.join()
 
 def run():
+    setproctitle("Executor")
     if os.getuid() == 0:
         gid = os.environ['GID']
         uid = os.environ['UID']
