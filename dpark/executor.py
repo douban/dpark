@@ -160,15 +160,18 @@ def forward(fd, addr, prefix=''):
     f.close()
     ctx.shutdown()
 
-def terminate(proc):
+def terminate(tid, proc):
+    name = "worker(tid: %s, pid: %s)" % (tid, proc.pid)
     try:
         os.kill(proc.pid, signal.SIGKILL)
         proc.join(KILL_TIME_OUT)
         existcode = proc.exitcode
         if proc.exitcode != - signal.SIGKILL:
-            logger.warn("worker process terminate fail: %s", existcode)
+            logger.warn("%s terminate fail: %s", name, existcode)
+        else:
+            logger.debug("%s terminate ok", name)
     except Exception, e:
-        logger.warn("worker process terminate exception: %s", e)
+        logger.warn("%s terminate exception: %s", name, e)
 
 def get_task_memory(task):
     for r in task.resources:
@@ -275,7 +278,7 @@ class MyExecutor(Executor):
 
                         reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
                         self.tasks.pop(tid)
-                        terminate(proc)
+                        terminate(tid, proc)
                     elif rss > offered * mem_limit.get(tid, 1.0):
                         logger.debug("task %s used too much memory: %dMB > %dMB, "
                                      + "use -M to request or taskMemory for more memory",
@@ -404,13 +407,13 @@ class MyExecutor(Executor):
         reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
         if taskId.value in self.tasks:
             _, proc, _ = self.tasks.pop(taskId.value)
-            terminate(proc)
+            terminate(taskId.value, proc)
 
     @safe
     def shutdown(self, driver=None):
-
-        for _, proc, _ in self.tasks.itervalues():
-            terminate(proc)
+        for tid, (_, proc, _) in self.tasks.iteritems():
+            terminate(tid, proc)
+        self.result_queue.put(None)
 
         # clean work files
         for fd in self._fd_for_locks:
