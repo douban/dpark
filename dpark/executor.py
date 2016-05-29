@@ -185,23 +185,94 @@ def setup_cleaner_process(workdir):
 
 
 class Redirect(object):
-    def __init__(self, fd):
-        self.fd = 0
+    def __init__(self, fd, addr, prefix):
+        self.fd = fd
+        self.addr = addr
+        self.prefix = prefix
+
+        self.fd_dup = os.dup(self.fd)
+        self.origin_wfile = None
+
         self.pipe_rfd, self.pipe_wfd = os.pipe()
         self.pipe_rfile = os.fdopen(self.pipe_rfd, 'r')
         self.pipe_wfile = os.fdopen(self.pipe_wfd, 'w', 0)
-        os.close(self.fd)
-        assert os.dup(self.pipe_wfd) == self.fd, 'redirect io failed'
 
-    def close_write(self):
-        self.pipe_wfile.close()
         os.close(self.fd)
+        os.dup2(self.pipe_wfd, self.fd)
+        #assert os.dup(self.pipe_wfd) == self.fd, 'redirect io failed'
+
+        self.ctx = zmq.Context()
+        self._shutdown = False
+        self.thread = None
+        self.sock = None
+
+        self.thread = spawn(self._forward)
+
+    def reset(self):
+        err = None
+        try:
+            self._shutdown = True
+            self.pipe_wfile.close()
+            os.close(self.fd)
+
+            self.thread.join(1)
+            if self.sock:
+                self.sock.close()
+            self.ctx.destroy()
+        except Exception, e:
+            err = e
+
+        os.dup2(self.fd_dup, self.fd) # will close fd first
+        self.origin_wfile = os.fdopen(self.fd, 'w', 0)
+
+        logger.debug("should see me in sandbox")
+        if err:
+            logger.error("redirect reset err:", err)
+
+        if self.thread.isAlive():
+            logger.error("redirect thread not exit")
+
+        return self.origin_wfile
+
+    def _send(self, buf):
+        if not self.sock:
+            self.sock = self.ctx.socket(zmq.PUSH)
+            self.sock.setsockopt(zmq.LINGER, 0)
+            self.sock.connect(self.addr)
+
+        data = self.prefix + ''.join(buf)
+
+        while not self._shutdown:
+            try:
+                self.sock.send(data, zmq.NOBLOCK)
+                return
+            except zmq.Again:
+                time.sleep(0.1)
+                continue
+
+    def _forward(self):
+        buf = []
+        try:
+            while not self._shutdown:
+                try:
+                    line = self.pipe_rfile.readline()
+                    if not line:
+                        break
+                    buf.append(line)
+                    if line.endswith('\n'):
+                        self._send(buf)
+                        buf = []
+                except IOError:
+                    break
+            if buf:
+                self._send(buf)
+        except Exception, e:
+            logger.error("_forward err: %s", e)
 
 
 class MyExecutor(Executor):
 
     def __init__(self):
-        self._shutdown = False
         self.workdir = []
 
         # task_id.value -> (task, process, driver)
@@ -214,12 +285,6 @@ class MyExecutor(Executor):
         # Keep the file descriptor of current workdir,
         # so we can check whether a workdir is in use externally.
         self._fd_for_locks = []
-
-        self.stdout_redirect = Redirect(1)
-        sys.stdout = self.stdout_redirect.pipe_wfile
-
-        self.stderr_redirect = Redirect(2)
-        sys.stderr = self.stderr_redirect.pipe_wfile
 
     def check_memory(self, driver):
         try:
@@ -302,10 +367,15 @@ class MyExecutor(Executor):
             setproctitle("[Executor]" + Script)
 
             prefix = '[%s] ' % socket.gethostname()
-            self.outt = spawn(self.forward, self.stdout_redirect, out_logger, prefix)
-            self.errt = spawn(self.forward, self.stderr_redirect, err_logger, prefix)
+
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
                                 level=logLevel)
+
+            r1 = self.stdout_redirect = Redirect(1, out_logger, prefix)
+            sys.stdout = r1.pipe_wfile
+
+            r2 = self.stderr_redirect = Redirect(2, err_logger, prefix)
+            sys.stderr = r2.pipe_wfile
 
             if os.path.exists(cwd):
                 try:
@@ -346,7 +416,6 @@ class MyExecutor(Executor):
             try:
                 result = self.result_queue.get()
                 if result is None:
-                    logger.debug("replier exit")
                     return
                 (task_id_value, result) = result
                 state, data = result
@@ -395,52 +464,11 @@ class MyExecutor(Executor):
             _, proc, _ = self.tasks.pop(taskId.value)
             terminate(taskId.value, proc)
 
-    def forward(self, redirct, addr, prefix=''):
-        f = redirct.pipe_rfile
-        ctx = zmq.Context()
-        out = [None]
-        buf = []
-
-        def send(buf):
-            if not out[0]:
-                out[0] = ctx.socket(zmq.PUSH)
-                out[0].setsockopt(zmq.LINGER, 0)
-                out[0].connect(addr)
-
-            data = prefix + ''.join(buf)
-
-            while not self._shutdown:
-                try:
-                    out[0].send(data, zmq.NOBLOCK)
-                    return
-                except zmq.Again:
-                    time.sleep(0.1)
-                    continue
-
-        while not self._shutdown:
-            try:
-                line = f.readline()
-                if not line:
-                    break
-                buf.append(line)
-                if line.endswith('\n'):
-                    send(buf)
-                    buf = []
-            except IOError:
-                break
-        if buf:
-            send(buf)
-        if out[0]:
-            out[0].close()
-        f.close()
-        ctx.destroy()
-
-
     @safe
     def shutdown(self, driver=None):
-        self._shutdown = True
         for tid, (_, proc, _) in self.tasks.iteritems():
             terminate(tid, proc)
+        self.tasks = {}
         self.result_queue.put(None)
 
         # clean work files
@@ -452,13 +480,8 @@ class MyExecutor(Executor):
             except:
                 pass
 
-        self.tasks = {}
-
-        self.stdout_redirect.close_write()
-        self.stdout_redirect.close_write()
-
-        self.outt.join()
-        self.errt.join()
+        sys.stdout = self.stdout_redirect.reset()
+        sys.stderr = self.stderr_redirect.reset()
 
 
 def run():
