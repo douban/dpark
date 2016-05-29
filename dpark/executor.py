@@ -131,34 +131,6 @@ def startWebServer(path):
                                os.path.basename(path))
     return uri
 
-def forward(fd, addr, prefix=''):
-    f = os.fdopen(fd, 'r')
-    ctx = zmq.Context()
-    out = [None]
-    buf = []
-    def send(buf):
-        if not out[0]:
-            out[0] = ctx.socket(zmq.PUSH)
-            out[0].connect(addr)
-        out[0].send(prefix+''.join(buf))
-
-    while True:
-        try:
-            line = f.readline()
-            if not line:
-                break
-            buf.append(line)
-            if line.endswith('\n'):
-                send(buf)
-                buf = []
-        except IOError:
-            break
-    if buf:
-        send(buf)
-    if out[0]:
-        out[0].close()
-    f.close()
-    ctx.shutdown()
 
 def terminate(tid, proc):
     name = "worker(tid: %s, pid: %s)" % (tid, proc.pid)
@@ -211,9 +183,11 @@ def setup_cleaner_process(workdir):
         os._exit(0)
     os.wait()
 
+
 class MyExecutor(Executor):
 
     def __init__(self):
+        self._shutdown = False
         self.workdir = []
 
         # task_id.value -> (task, process, driver)
@@ -319,8 +293,8 @@ class MyExecutor(Executor):
             setproctitle("[Executor]" + Script)
 
             prefix = '[%s] ' % socket.gethostname()
-            self.outt = spawn(forward, self.stdout, out_logger, prefix)
-            self.errt = spawn(forward, self.stderr, err_logger, prefix)
+            self.outt = spawn(self.forward, self.stdout, out_logger, prefix)
+            self.errt = spawn(self.forward, self.stderr, err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
                                 level=logLevel)
 
@@ -412,8 +386,50 @@ class MyExecutor(Executor):
             _, proc, _ = self.tasks.pop(taskId.value)
             terminate(taskId.value, proc)
 
+    def forward(self, fd, addr, prefix=''):
+        f = os.fdopen(fd, 'r')
+        ctx = zmq.Context()
+        out = [None]
+        buf = []
+
+        def send(buf):
+            if not out[0]:
+                out[0] = ctx.socket(zmq.PUSH)
+                out[0].setsockopt(zmq.LINGER, 0)
+                out[0].connect(addr)
+
+            data = prefix + ''.join(buf)
+
+            while not self._shutdown:
+                try:
+                    out[0].send(data, zmq.NOBLOCK)
+                    return
+                except zmq.Again:
+                    time.sleep(0.1)
+                    continue
+
+        while not self._shutdown:
+            try:
+                line = f.readline()
+                if not line:
+                    break
+                buf.append(line)
+                if line.endswith('\n'):
+                    send(buf)
+                    buf = []
+            except IOError:
+                break
+        if buf:
+            send(buf)
+        if out[0]:
+            out[0].close()
+        f.close()
+        ctx.destroy()
+
+
     @safe
     def shutdown(self, driver=None):
+        self._shutdown = True
         for tid, (_, proc, _) in self.tasks.iteritems():
             terminate(tid, proc)
         self.result_queue.put(None)
@@ -430,8 +446,12 @@ class MyExecutor(Executor):
         self.tasks = {}
         sys.stdout.close()
         sys.stderr.close()
+
+        os.close(self.stdout)
+        os.close(self.stderr)
         os.close(1)
         os.close(2)
+
         self.outt.join()
         self.errt.join()
 
