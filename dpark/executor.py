@@ -184,6 +184,20 @@ def setup_cleaner_process(workdir):
     os.wait()
 
 
+class Redirect(object):
+    def __init__(self, fd):
+        self.fd = 0
+        self.pipe_rfd, self.pipe_wfd = os.pipe()
+        self.pipe_rfile = os.fdopen(self.pipe_rfd, 'r')
+        self.pipe_wfile = os.fdopen(self.pipe_wfd, 'w', 0)
+        os.close(self.fd)
+        assert os.dup(self.pipe_wfd) == self.fd, 'redirect io failed'
+
+    def close_write(self):
+        self.pipe_wfile.close()
+        os.close(self.fd)
+
+
 class MyExecutor(Executor):
 
     def __init__(self):
@@ -201,16 +215,11 @@ class MyExecutor(Executor):
         # so we can check whether a workdir is in use externally.
         self._fd_for_locks = []
 
-        self.stdout, wfd = os.pipe()
-        sys.stdout = os.fdopen(wfd, 'w', 0)
-        os.close(1)
-        assert os.dup(wfd) == 1, 'redirect io failed'
+        self.stdout_redirect = Redirect(1)
+        sys.stdout = self.stdout_redirect.pipe_wfile
 
-        self.stderr, wfd = os.pipe()
-        sys.stderr = os.fdopen(wfd, 'w', 0)
-        os.close(2)
-        assert os.dup(wfd) == 2, 'redirect io failed'
-
+        self.stderr_redirect = Redirect(2)
+        sys.stderr = self.stderr_redirect.pipe_wfile
 
     def check_memory(self, driver):
         try:
@@ -293,8 +302,8 @@ class MyExecutor(Executor):
             setproctitle("[Executor]" + Script)
 
             prefix = '[%s] ' % socket.gethostname()
-            self.outt = spawn(self.forward, self.stdout, out_logger, prefix)
-            self.errt = spawn(self.forward, self.stderr, err_logger, prefix)
+            self.outt = spawn(self.forward, self.stdout_redirect, out_logger, prefix)
+            self.errt = spawn(self.forward, self.stderr_redirect, err_logger, prefix)
             logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
                                 level=logLevel)
 
@@ -386,8 +395,8 @@ class MyExecutor(Executor):
             _, proc, _ = self.tasks.pop(taskId.value)
             terminate(taskId.value, proc)
 
-    def forward(self, fd, addr, prefix=''):
-        f = os.fdopen(fd, 'r')
+    def forward(self, redirct, addr, prefix=''):
+        f = redirct.pipe_rfile
         ctx = zmq.Context()
         out = [None]
         buf = []
@@ -444,16 +453,13 @@ class MyExecutor(Executor):
                 pass
 
         self.tasks = {}
-        sys.stdout.close()
-        sys.stderr.close()
 
-        os.close(self.stdout)
-        os.close(self.stderr)
-        os.close(1)
-        os.close(2)
+        self.stdout_redirect.close_write()
+        self.stdout_redirect.close_write()
 
         self.outt.join()
         self.errt.join()
+
 
 def run():
     setproctitle("Executor")
