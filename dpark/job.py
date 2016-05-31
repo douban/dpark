@@ -259,7 +259,7 @@ class SimpleJob(Job):
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
             if reason not in self.reasons:
-                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
+                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, str(reason))
                 self.reasons.add(reason)
             else:
                 _logger("task %s failed @ %s: %s", task.id, task.host, task)

@@ -16,13 +16,12 @@ import pymesos as mesos
 from mesos.interface import mesos_pb2
 
 from dpark.util import compress, decompress, spawn, getuser, mkdir_p
-from dpark.dependency import NarrowDependency, ShuffleDependency
+from dpark.dependency import ShuffleDependency
 from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
 from dpark.job import SimpleJob
 from dpark.env import env
 from dpark.mutable_dict import MutableDict
-from dpark.serialize import dumps
 import dpark.conf as conf
 
 logger = logging.getLogger(__name__)
@@ -791,7 +790,7 @@ class MesosScheduler(DAGScheduler):
             else:
                 logger.debug('kill task %s as its job has gone', tid)
                 self.driver.killTask(mesos_pb2.TaskID(value=tid))
-            
+
             return
 
         self.taskIdToJobId.pop(tid, None)
