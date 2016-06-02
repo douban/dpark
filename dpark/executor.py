@@ -23,7 +23,7 @@ from mesos.interface import mesos_pb2
 from mesos.interface import Executor
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, spawn, mkdir_p
+from dpark.util import compress, decompress, spawn, mkdir_p, get_logger
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
@@ -32,7 +32,7 @@ from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
 
-logger = logging.getLogger("dpark.executor@%s" % socket.gethostname())
+logger = get_logger("dpark.executor@%s" % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055

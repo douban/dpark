@@ -4,7 +4,6 @@ import socket
 import shutil
 import itertools
 import threading
-import logging
 import random
 from functools import reduce
 from collections import deque
@@ -13,7 +12,7 @@ try:
 except ImportError:
     import pickle
 
-from dpark.util import spawn, atomic_file
+from dpark.util import spawn, atomic_file, get_logger
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
@@ -21,7 +20,7 @@ from dpark.rdd import CoGroupedRDD, CheckpointRDD
 from dpark.moosefs import open_file
 from dpark.moosefs.utils import Error
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class Interval(object):

@@ -1,12 +1,11 @@
 import socket
 import zmq
-import logging
 import time
 
 from dpark.env import env
-from dpark.util import spawn
+from dpark.util import spawn, get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class TrackerMessage(object):
     pass

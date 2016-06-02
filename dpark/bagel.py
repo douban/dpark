@@ -1,11 +1,10 @@
 import sys
-import os, os.path
 import time
-import logging
-import shutil
 import operator
 
-logger = logging.getLogger(__name__)
+from dpark.util import get_logger
+
+logger = get_logger(__name__)
 
 class Vertex:
     def __init__(self, id, value, outEdges, active):

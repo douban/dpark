@@ -1,6 +1,4 @@
 import os
-import logging
-import time
 import socket
 import shutil
 import uuid
@@ -10,7 +8,7 @@ import zmq
 from dpark import util
 import dpark.conf as conf
 
-logger = logging.getLogger(__name__)
+logger = util.get_logger(__name__)
 
 
 class DparkEnv:

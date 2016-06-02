@@ -1,15 +1,12 @@
-import os,os.path
-import socket
 import marshal
 import cPickle
-import logging
 import struct
 
-from dpark.util import compress, decompress, atomic_file
+from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class Task:
     def __init__(self):

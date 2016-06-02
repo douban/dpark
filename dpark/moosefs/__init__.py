@@ -1,15 +1,16 @@
 import os
 import socket
 from cStringIO import StringIO
-import logging
 
 from consts import *
 from master import MasterConn
 from cs import read_chunk, read_chunk_from_local
 
+from dpark.util import get_logger
+
 MFS_ROOT_INODE = 1
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class CrossSystemSymlink(Exception):
     def __init__(self, src, dst):

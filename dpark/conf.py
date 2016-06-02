@@ -1,7 +1,8 @@
 import os.path
-import logging
+from dpark.util import get_logger
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 # workdir used in slaves for internal files
 #

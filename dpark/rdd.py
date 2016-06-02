@@ -12,7 +12,6 @@ import random
 import bz2
 import gzip
 import zlib
-import logging
 from copy import copy
 import shutil
 import heapq
@@ -20,12 +19,16 @@ import struct
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
-from dpark.util import spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file, AbortFileReplacement
+from dpark.util import (
+    spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
+    AbortFileReplacement, get_logger
+)
 from dpark.shuffle import DiskMerger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 class Split(object):
     def __init__(self, idx):
@@ -265,7 +268,7 @@ class RDD(object):
 
     def reduce(self, f):
         def reducePartition(it):
-            logger = logging.getLogger(__name__)
+            logger = get_logger(__name__)
             if self.err < 1e-8:
                 try:
                     return [reduce(f, it)]

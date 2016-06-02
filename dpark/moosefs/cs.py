@@ -1,12 +1,13 @@
 import os
 import socket
-import logging
 import commands
+from dpark.util import get_logger
 
 from consts import CHUNKSIZE, CLTOCS_READ, CSTOCL_READ_DATA, CSTOCL_READ_STATUS
 from utils import uint64, pack, unpack
 
-logger = logging.getLogger(__name__)
+
+logger = get_logger(__name__)
 
 mfsdirs = []
 def _scan():

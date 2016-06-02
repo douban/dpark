@@ -1,21 +1,23 @@
-import os, sys
+import os
+import sys
 import socket
-import logging
 import marshal
 import cPickle
-import threading, Queue
+import threading
+import Queue
 import time
 import random
 import urllib
 import weakref
 import multiprocessing
-
 import zmq
 
 import pymesos as mesos
 from mesos.interface import mesos_pb2
 
-from dpark.util import compress, decompress, spawn, getuser, mkdir_p
+from dpark.util import (
+    compress, decompress, spawn, getuser, mkdir_p, get_logger
+)
 from dpark.dependency import ShuffleDependency
 from dpark.accumulator import Accumulator
 from dpark.task import ResultTask, ShuffleMapTask
@@ -24,10 +26,10 @@ from dpark.env import env
 from dpark.mutable_dict import MutableDict
 import dpark.conf as conf
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 EXECUTOR_CPUS = 0.01
-EXECUTOR_MEMORY = 64 # cache
+EXECUTOR_MEMORY = 64  # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30

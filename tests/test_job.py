@@ -1,6 +1,6 @@
 import sys
 import unittest
-import socket
+import logging
 
 from dpark.job import *
 import pymesos as mesos

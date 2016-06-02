@@ -3,7 +3,6 @@ import os.path
 import sys
 import random
 import urllib
-import logging
 import marshal
 import struct
 import time
@@ -18,13 +17,13 @@ try:
 except ImportError:
     import StringIO
 
-from dpark.util import decompress, spawn, mkdir_p, atomic_file
+from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LocalFileShuffle:
@@ -368,7 +367,7 @@ class DiskMerger(Merger):
             current_mem = max(self.get_used_memory() - self.base_memory,
                               sys.getsizeof(self.combined) >> 20)
             if current_mem > self.mem:
-                logging.warning(
+                logger.warning(
                     'Too much memory for shuffle, using disk-based shuffle')
                 self.max_merge = self.merged
 
@@ -419,6 +418,7 @@ class MapOutputTracker(BaseMapOutputTracker):
 
 def test():
     from dpark.util import compress
+    import logging
     logging.basicConfig(level=logging.DEBUG)
     from dpark.env import env
     env.start(True)

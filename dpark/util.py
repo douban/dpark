@@ -1,13 +1,12 @@
 # util
 import os
 import sys
-import types
 import threading
-import warnings
 import errno
 import uuid
 import time
 import tempfile
+import logging
 from contextlib import contextmanager
 from zlib import compress as _compress, decompress
 try:
@@ -146,3 +145,32 @@ def atomic_file(filename, mode='w+b', bufsize=-1):
                 os.remove(tempname)
         except OSError:
             pass
+
+
+def init_dpark_logger(log_level):
+    log_format = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
+    logging.basicConfig(format=log_format, level=log_level)
+
+    logger = get_logger('dpark')
+    logger.propagate = False
+    print logger
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter(log_format))
+
+    logger.addHandler(handler)
+    logger.setLevel(max(log_level, logger.level))
+
+
+def get_logger(name):
+    """ Always use logging.Logger class.
+
+    The user code may change the loggerClass (e.g. pyinotify),
+    and will cause exception when format log message.
+    """
+    old_class = logging.getLoggerClass()
+    logging.setLoggerClass(logging.Logger)
+    logger = logging.getLogger(name)
+    logging.setLoggerClass(old_class)
+    return logger
+

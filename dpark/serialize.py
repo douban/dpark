@@ -6,9 +6,10 @@ import new
 import cPickle
 import itertools
 from pickle import Pickler, whichmodule, PROTO, STOP
-import logging
 from collections import deque
-logger = logging.getLogger(__name__)
+
+from dpark.util import get_logger
+logger = get_logger(__name__)
 
 
 class LazySave(object):

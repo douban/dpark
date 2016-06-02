@@ -11,11 +11,11 @@ from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.moosefs import walk
 from dpark.tabular import TabularRDD
-from dpark.util import memory_str_to_mb
+from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
 import dpark.conf as conf
 from math import ceil
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 def singleton(cls):
     instances = {}
@@ -95,7 +95,7 @@ class DparkContext(object):
 
     @staticmethod
     def setLogLevel(level):
-        logging.getLogger('dpark').setLevel(level)
+        get_logger('dpark').setLevel(level)
 
     def newShuffleId(self):
         self.nextShuffleId += 1
@@ -362,18 +362,7 @@ def parse_options():
 
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
-
-    log_format = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
-    logging.basicConfig(format=log_format, level=options.logLevel)
-
-    logger = logging.getLogger('dpark')
-    logger.propagate = False
-
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(log_format))
-
-    logger.addHandler(handler)
-    logger.setLevel(max(options.logLevel, logger.level))
+    init_dpark_logger(options.logLevel)
 
     if any(arg.startswith('-') for arg in args):
         logger.warning('unknown args found in command-line: %s', ' '.join(args))

@@ -391,5 +391,4 @@ class TestRDD(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    import logging
     unittest.main()

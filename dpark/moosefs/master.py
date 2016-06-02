@@ -3,13 +3,13 @@ import socket
 import threading
 import Queue
 import time
-import struct
-import logging
+
+from dpark.util import get_logger
 
 from consts import *
 from utils import *
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class StatInfo:
 
@@ -113,7 +113,7 @@ class MasterConn:
         if not self.conn:
             raise IOError("mfsmaster not availbale")
 
-        regbuf = pack(CLTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL, REGISTER_NEWSESSION, VERSION, 
+        regbuf = pack(CLTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL, REGISTER_NEWSESSION, VERSION,
                       len(self.mountpoint), self.mountpoint, len(self.subfolder), self.subfolder)
         self.send(regbuf)
         recv = self.recv(8)
@@ -142,7 +142,7 @@ class MasterConn:
             self.masterversion, self.sessionid, self.sesflags = unpack("IIB", data)
         else:
             self.sessionid, self.sesflags = unpack("I", data)
-        
+
         self.is_ready = True
 
     def close(self):

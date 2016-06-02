@@ -1,6 +1,4 @@
 import os
-import multiprocessing
-import logging
 import marshal
 import cPickle
 import shutil
@@ -10,10 +8,10 @@ import urllib
 import msgpack
 
 from dpark.env import env
-from dpark.util import mkdir_p, atomic_file
+from dpark.util import mkdir_p, atomic_file, get_logger
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 class Cache:
     data = {}
@@ -223,6 +221,7 @@ class CacheTracker(BaseCacheTracker):
 
 
 def test():
+    import logging
     logging.basicConfig(level=logging.DEBUG)
     from dpark.context import DparkContext
     dc = DparkContext("local")

@@ -7,15 +7,14 @@ import random
 import socket
 import struct
 import cPickle
-import logging
 import marshal
 
-from dpark.util import compress, decompress, spawn
+from dpark.util import compress, decompress, spawn, get_logger
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
 
-logger = logging.getLogger("broadcast")
+logger = get_logger(__name__)
 
 MARSHAL_TYPE, PICKLE_TYPE = range(2)
 BLOCK_SHIFT = 20

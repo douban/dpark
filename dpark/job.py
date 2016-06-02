@@ -1,10 +1,10 @@
 import time
 import sys
-import logging
 import socket
 from operator import itemgetter
+from util import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 TASK_STARTING = 0
 TASK_RUNNING  = 1
@@ -259,7 +259,7 @@ class SimpleJob(Job):
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
                     else logger.warning
             if reason not in self.reasons:
-                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, str(reason))
+                _logger("task %s failed @ %s: %s\n%s", task.id, task.host, task, reason)
                 self.reasons.add(reason)
             else:
                 _logger("task %s failed @ %s: %s", task.id, task.host, task)
@@ -278,8 +278,8 @@ class SimpleJob(Job):
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:
             self.sched.requestMoreResources()
-	    for i in xrange(len(self.blacklist)):
-	    	self.blacklist[i] = []
+        for i in xrange(len(self.blacklist)):
+            self.blacklist[i] = []
         self.tasksLaunched -= 1
 
     def check_task_timeout(self):
