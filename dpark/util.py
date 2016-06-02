@@ -153,7 +153,6 @@ def init_dpark_logger(log_level):
 
     logger = get_logger('dpark')
     logger.propagate = False
-    print logger
 
     handler = logging.StreamHandler()
     handler.setFormatter(logging.Formatter(log_format))

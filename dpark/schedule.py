@@ -34,14 +34,23 @@ POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
 
-class TaskEndReason: pass
-class Success(TaskEndReason): pass
+class TaskEndReason:
+    def __hash__(self):
+        return hash(str(self))
+
+    def __eq__(self, o):
+        return str(self) == str(o)
+
+class Success(TaskEndReason):
+    pass
+
 class FetchFailed(TaskEndReason):
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
         self.serverUri = serverUri
         self.shuffleId = shuffleId
         self.mapId = mapId
         self.reduceId = reduceId
+
     def __str__(self):
         return '<FetchFailed(%s, %d, %d, %d)>' % (self.serverUri,
                 self.shuffleId, self.mapId, self.reduceId)
@@ -49,6 +58,7 @@ class FetchFailed(TaskEndReason):
 class OtherFailure(TaskEndReason):
     def __init__(self, message):
         self.message = message
+
     def __str__(self):
         return '<OtherFailure %s>' % self.message
 
