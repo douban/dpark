@@ -298,6 +298,7 @@ class MyExecutor(Executor):
 
         while True:
             with self.lock:
+                tids_to_pop = []
                 for tid, (task, proc, _) in self.tasks.iteritems():
                     task_id = task.task_id
                     try:
@@ -307,13 +308,13 @@ class MyExecutor(Executor):
                     except Exception, e:
                         logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
                         reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                        self.tasks.pop(tid)
+                        tids_to_pop.append(tid)
                         continue
 
                     if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
                         logger.error("worker process %d of task %s is zombie", pid, tid)
                         reply_status(driver, task_id, mesos_pb2.TASK_LOST)
-                        self.tasks.pop(tid)
+                        tids_to_pop.append(tid)
                         continue
 
                     offered = get_task_memory(task)
@@ -325,14 +326,15 @@ class MyExecutor(Executor):
                                        tid, rss, offered)
 
                         reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
-                        self.tasks.pop(tid)
+                        tids_to_pop.append(tid)
                         terminate(tid, proc)
                     elif rss > offered * mem_limit.get(tid, 1.0):
                         logger.debug("task %s used too much memory: %dMB > %dMB, "
                                      + "use -M to request or taskMemory for more memory",
                                      tid, rss, offered)
                         mem_limit[tid] = rss / offered + 0.1
-
+                for tid in tids_to_pop:
+                    self.tasks.pop(tid)
                 now = time.time()
                 if self.tasks:
                     idle_since = now
