@@ -2,8 +2,8 @@ import time
 import sys
 import socket
 from operator import itemgetter
-from util import get_logger
 
+from dpark.util import get_logger
 logger = get_logger(__name__)
 
 TASK_STARTING = 0
