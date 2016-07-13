@@ -397,15 +397,16 @@ class TestCheckpoint(TestDStream):
             self._verifyOutput(output, r, False)
         finally:
             shutil.rmtree(checkpoint_path)
-        
+
     def test_updateStateByKey_restore(self):
         checkpoint_path = mkdtemp()
         try:
-            d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], []]
+            d = [["a"], ["a", "b",], ['a', 'b','c'], ['a','b'], ['a'], [], []]
             r = [[("a", 1)],
                  [("a", 2), ("b", 1)],
                  [("a", 3), ("b", 2), ("c", 1)],
                  [("a", 4), ("b", 3), ("c", 1)],
+                 [("a", 5), ("b", 3), ("c", 1)],
                  [("a", 5), ("b", 3), ("c", 1)],
                  [("a", 5), ("b", 3), ("c", 1)],
             ]
@@ -415,17 +416,37 @@ class TestCheckpoint(TestDStream):
                     return sum(vs) + (state or 0)
                 return s.map(lambda x: (x,1)).updateStateByKey(updatef)
             ssc = self._setupStreams(d, None, op)
-            ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
-            output = self._runStreams(ssc, 6, 6)
+
+
+            """
+            Scheduler <--- Queue <--- Timer
+
+            Scheduler and Timer are two different threads, Timer generate
+            <action, time_interval> event, and put it in the Queue, Scheduler
+            will get event from the Queue.
+
+            If the batch task is slow, then the folowing is possible:
+
+                len(generated events) > len(input_data)
+
+            We cannot accurately control the number of generated events, so
+            the following assertion try to avoid the unexpected events on
+            checkpoint interval.
+            """
+            checkpoint_duration = 3 * ssc.batchDuration
+            assert ((len(d) - 1) * ssc.batchDuration) % checkpoint_duration == 0, \
+                   "Should do checkpoint on last element of input data."
+            ssc.checkpoint(checkpoint_path, checkpoint_duration)
+
+            output = self._runStreams(ssc, len(d), len(r))
             self._verifyOutput(output, r, False)
             ssc, first = StreamingContext.load(checkpoint_path)
             d = [['a'], []]
-            r = [
-                 [("a", 5), ("b", 3), ("c", 1)],
-                 [("a", 5), ("b", 3), ("c", 1)],
+            r = [[("a", 6), ("b", 3), ("c", 1)],
+                 [("a", 6), ("b", 3), ("c", 1)],
             ]
             ssc.graph.inputStreams[0].input[:] = d
-            output = self._runStreams(ssc, 2, 2, first=first)
+            output = self._runStreams(ssc, len(d), len(r), first=first)
             self._verifyOutput(output, r, False)
         finally:
             shutil.rmtree(checkpoint_path)
