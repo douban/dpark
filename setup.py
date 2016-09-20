@@ -8,7 +8,7 @@ if 'setuptools.extension' in sys.modules:
 
 
 ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
-version = '0.3.2'
+version = '0.3.3'
 
 setup(name='DPark',
       version=version,
