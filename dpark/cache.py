@@ -58,7 +58,11 @@ class DiskCache(Cache):
 
         serve_uri = locs[-1]
         uri = '%s/cache/%s' % (serve_uri, os.path.basename(p))
-        f = urllib.urlopen(uri)
+        try:
+            f = urllib.urlopen(uri)
+        except IOError:
+            logger.warning('urlopen cache uri %s failed', uri)
+            raise
         if f.code == 404:
             logger.warning('load from cache %s failed', uri)
             self.tracker.removeHost(rdd_id, index, serve_uri)
