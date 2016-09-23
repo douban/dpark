@@ -1,43 +1,42 @@
-import sys
+import setuptools
 from setuptools import setup, Extension
 
-# setuptools DWIM monkey-patch madness: http://dou.bz/37m3XL
-if 'setuptools.extension' in sys.modules:
-    m = sys.modules['setuptools.extension']
-    m.Extension.__dict__ = m._Extension.__dict__
-
+setuptools_version = tuple(int(n) for n in setuptools.__version__.split('.'))
+assert setuptools_version >= (18, 0, 0), \
+    'setuptools >= 18.0.0 required for Cython extension'
 
 ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
-version = '0.3.5'
+version = '0.4.0'
 
 setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "
-            +"computing framework supporting iterative algorithms.",
+      + "computing framework supporting iterative algorithms.",
       classifiers=[
-        "Programming Language :: Python",
-        'Intended Audience :: Developers',
+          "Programming Language :: Python",
+          'Intended Audience :: Developers',
         'License :: OSI Approved :: BSD License',
         'Operating System :: POSIX',
       ],
       keywords='dpark python mapreduce spark',
       author='Davies Liu',
       author_email='davies.liu@gmail.com',
-      license= 'BSD License',
+      license='BSD License',
       packages=['dpark', 'dpark.moosefs'],
       include_package_data=True,
       zip_safe=False,
-      setup_requires=['setuptools_cython', 'Cython >= 0.20'],
+      setup_requires=['Cython >= 0.20'],
       url="https://github.com/douban/dpark",
-      download_url = 'https://github.com/douban/dpark/archive/%s.tar.gz' % version,
+      download_url=(
+          'https://github.com/douban/dpark/archive/%s.tar.gz' % version
+      ),
       install_requires=[
-          'pymesos<0.2.0',
-          'setuptools',
+          'pymesos>=0.2.2',
           'pyzmq',
           'msgpack-python',
-          'cython',
           'lz4',
           'psutil',
+          'addict',
       ],
       tests_require=[
           'nose',
@@ -52,4 +51,4 @@ setup(name='DPark',
           'tools/dquery',
           'examples/dgrep',
       ]
-)
+      )

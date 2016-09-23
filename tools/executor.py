@@ -14,18 +14,15 @@ if P in apath:
         sys.path = [p.replace(sysp, virltualenv) for p in sys.path]
 
 import os
+import zmq
+import time
+import socket
 import pickle
 import subprocess
-import threading
+
+from addict import Dict
 from threading import Thread
-import socket
-import time
-
-import zmq
-
-import pymesos as mesos
-from mesos.interface import mesos_pb2
-from mesos.interface import Executor
+from pymesos import Executor, MesosExecutorDriver, decode_data
 
 ctx = zmq.Context()
 
@@ -47,18 +44,20 @@ def forword(fd, addr, prefix=''):
 
 
 def reply_status(driver, task_id, status):
-    update = mesos_pb2.TaskStatus()
-    update.task_id.MergeFrom(task_id)
+    update = Dict()
+    update.task_id = task_id
     update.state = status
     update.timestamp = time.time()
     driver.sendStatusUpdate(update)
 
 
 def launch_task(self, driver, task):
-    reply_status(driver, task.task_id, mesos_pb2.TASK_RUNNING)
+    reply_status(driver, task.task_id, 'TASK_RUNNING')
 
     host = socket.gethostname()
-    cwd, command, _env, shell, addr1, addr2, addr3 = pickle.loads(task.data)
+    cwd, command, _env, shell, addr1, addr2, addr3 = pickle.loads(
+        decode_data(task.data)
+    )
 
     prefix = "[%s@%s] " % (str(task.task_id.value), host)
     outr, outw = os.pipe()
@@ -86,10 +85,9 @@ def launch_task(self, driver, task):
             if line:
                 command = line.split(' ')
             else:
-                return reply_status(driver, task.task_id,
-                                    mesos_pb2.TASK_FAILED)
+                return reply_status(driver, task.task_id, 'TASK_FAILED')
         else:
-            return reply_status(driver, task.task_id, mesos_pb2.TASK_FAILED)
+            return reply_status(driver, task.task_id, 'TASK_FAILED')
 
     mem = 100
     for r in task.resources:
@@ -145,12 +143,12 @@ def launch_task(self, driver, task):
                 pass
 
         if code == 0:
-            status = mesos_pb2.TASK_FINISHED
+            status = 'TASK_FINISHED'
         else:
             print >>werr, ' '.join(command) + ' exit with %s' % code
-            status = mesos_pb2.TASK_FAILED
-    except Exception as e:
-        status = mesos_pb2.TASK_FAILED
+            status = 'TASK_FAILED'
+    except Exception:
+        status = 'TASK_FAILED'
         import traceback
         print >>werr, 'exception while open ' + ' '.join(command)
         for line in traceback.format_exc():
@@ -183,7 +181,7 @@ class MyExecutor(Executor):
         try:
             if task_id.value in self.ps:
                 self.ps[task_id.value].kill()
-                reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
+                reply_status(driver, task_id, 'TASK_KILLED')
         except:
             pass
 
@@ -203,4 +201,4 @@ if __name__ == "__main__":
         os.setgid(int(gid))
         os.setuid(int(uid))
     executor = MyExecutor()
-    mesos.MesosExecutorDriver(executor).run()
+    MesosExecutorDriver(executor, use_addict=True).run()

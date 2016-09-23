@@ -13,14 +13,13 @@ import urllib2
 import threading
 import subprocess
 import SocketServer
-import SimpleHTTPServer
 import multiprocessing
+import SimpleHTTPServer
+
 
 import zmq
-
-import pymesos as mesos
-from mesos.interface import mesos_pb2
-from mesos.interface import Executor
+from addict import Dict
+from pymesos import Executor, MesosExecutorDriver, encode_data, decode_data
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import compress, decompress, spawn, mkdir_p, get_logger
@@ -33,13 +32,14 @@ from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
 from dpark.moosefs import close_mfs
 
-logger = get_logger("dpark.executor@%s" % socket.gethostname())
+logger = get_logger('dpark.executor@%s' % socket.gethostname())
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
-KILL_TIME_OUT = 0.1 # 0.1 sec
+KILL_TIME_OUT = 0.1  # 0.1 sec
 Script = ''
+
 
 def setproctitle(x):
     try:
@@ -48,14 +48,16 @@ def setproctitle(x):
     except ImportError:
         pass
 
+
 def reply_status(driver, task_id, state, data=None):
-    status = mesos_pb2.TaskStatus()
-    status.task_id.MergeFrom(task_id)
+    status = Dict()
+    status.task_id = task_id
     status.state = state
     status.timestamp = time.time()
     if data is not None:
-        status.data = data
+        status.data = encode_data(data)
     driver.sendStatusUpdate(status)
+
 
 def run_task(task_data):
     try:
@@ -69,7 +71,7 @@ def run_task(task_data):
         if marshalable(result):
             try:
                 flag, data = 0, marshal.dumps(result)
-            except Exception, e:
+            except Exception as e:
                 flag, data = 1, cPickle.dumps(result, -1)
 
         else:
@@ -81,20 +83,25 @@ def run_task(task_data):
             f = open(path, 'w')
             f.write(data)
             f.close()
-            data = '/'.join([LocalFileShuffle.getServerUri()] + path.split('/')[-3:])
+            data = '/'.join(
+                [LocalFileShuffle.getServerUri()] + path.split('/')[-3:]
+            )
             flag += 2
 
-        return mesos_pb2.TASK_FINISHED, cPickle.dumps((Success(), (flag, data), accUpdate), -1)
-    except FetchFailed, e:
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((e, None, None), -1)
-    except :
+        return 'TASK_FINISHED', cPickle.dumps(
+            (Success(), (flag, data), accUpdate), -1)
+    except FetchFailed as e:
+        return 'TASK_FAILED', cPickle.dumps((e, None, None), -1)
+    except:
         import traceback
         msg = traceback.format_exc()
-        return mesos_pb2.TASK_FAILED, cPickle.dumps((OtherFailure(msg), None, None), -1)
+        return 'TASK_FAILED', cPickle.dumps(
+            (OtherFailure(msg), None, None), -1)
     finally:
         close_mfs()
         gc.collect()
         gc.enable()
+
 
 def init_env(args):
     env.start(False, args)
@@ -102,12 +109,15 @@ def init_env(args):
 
 class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
+
     def translate_path(self, path):
-        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(self, path)
+        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(
+            self, path)
         return self.basedir + '/' + os.path.relpath(out)
 
     def log_message(self, format, *args):
         pass
+
 
 def startWebServer(path):
     # check the default web server
@@ -122,37 +132,39 @@ def startWebServer(path):
         data = urllib2.urlopen(default_uri + '/' + 'test').read()
         if data == path:
             return default_uri
-    except IOError, e:
+    except IOError:
         pass
 
-    logger.warning("default webserver at %s not available", DEFAULT_WEB_PORT)
+    logger.warning('default webserver at %s not available', DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
     ss = SocketServer.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     spawn(ss.serve_forever)
-    uri = "http://%s:%d/%s" % (socket.gethostname(), ss.server_address[1],
+    uri = 'http://%s:%d/%s' % (socket.gethostname(), ss.server_address[1],
                                os.path.basename(path))
     return uri
 
 
 def terminate(tid, proc):
-    name = "worker(tid: %s, pid: %s)" % (tid, proc.pid)
+    name = 'worker(tid: %s, pid: %s)' % (tid, proc.pid)
     try:
         os.kill(proc.pid, signal.SIGKILL)
         proc.join(KILL_TIME_OUT)
         existcode = proc.exitcode
         if proc.exitcode != - signal.SIGKILL:
-            logger.warn("%s terminate fail: %s", name, existcode)
+            logger.warn('%s terminate fail: %s', name, existcode)
         else:
-            logger.debug("%s terminate ok", name)
-    except Exception, e:
-        logger.warn("%s terminate exception: %s", name, e)
+            logger.debug('%s terminate ok', name)
+    except Exception as e:
+        logger.warn('%s terminate exception: %s', name, e)
+
 
 def get_task_memory(task):
     for r in task.resources:
         if r.name == 'mem':
             return r.scalar.value
-    logger.error("no memory in resource: %s", task.resources)
-    return 100 # 100M
+    logger.error('no memory in resource: %s', task.resources)
+    return 100  # 100M
+
 
 def safe(f):
     def _(self, *a, **kw):
@@ -160,6 +172,7 @@ def safe(f):
             r = f(self, *a, **kw)
         return r
     return _
+
 
 def setup_cleaner_process(workdir):
     ppid = os.getpid()
@@ -174,19 +187,22 @@ def setup_cleaner_process(workdir):
                 os._exit(1)
             try:
                 psutil.Process(ppid).wait()
-                os.killpg(ppid, signal.SIGKILL) # kill workers
-            except Exception, e:
-                pass # make sure to exit
+                os.killpg(ppid, signal.SIGKILL)  # kill workers
+            except Exception:
+                pass  # make sure to exit
             finally:
                 for d in workdir:
                     while os.path.exists(d):
-                        try: shutil.rmtree(d, True)
-                        except: pass
+                        try:
+                            shutil.rmtree(d, True)
+                        except:
+                            pass
         os._exit(0)
     os.wait()
 
 
 class Redirect(object):
+
     def __init__(self, fd, addr, prefix):
         self.fd = fd
         self.addr = addr
@@ -201,7 +217,7 @@ class Redirect(object):
 
         os.close(self.fd)
         os.dup2(self.pipe_wfd, self.fd)
-        #assert os.dup(self.pipe_wfd) == self.fd, 'redirect io failed'
+        # assert os.dup(self.pipe_wfd) == self.fd, 'redirect io failed'
 
         self.ctx = zmq.Context()
         self._shutdown = False
@@ -221,18 +237,18 @@ class Redirect(object):
             if self.sock:
                 self.sock.close()
             self.ctx.destroy()
-        except Exception, e:
+        except Exception as e:
             err = e
 
-        os.dup2(self.fd_dup, self.fd) # will close fd first
+        os.dup2(self.fd_dup, self.fd)  # will close fd first
         self.origin_wfile = os.fdopen(self.fd, 'w', 0)
 
-        logger.debug("should see me in sandbox")
+        logger.debug('should see me in sandbox')
         if err:
-            logger.error("redirect reset err:", err)
+            logger.error('redirect reset err:', err)
 
         if self.thread.isAlive():
-            logger.error("redirect thread not exit")
+            logger.error('redirect thread not exit')
 
         return self.origin_wfile
 
@@ -268,8 +284,8 @@ class Redirect(object):
                     break
             if buf:
                 self._send(buf)
-        except Exception, e:
-            logger.error("_forward err: %s", e)
+        except Exception as e:
+            logger.error('_forward err: %s', e)
 
 
 class MyExecutor(Executor):
@@ -277,7 +293,7 @@ class MyExecutor(Executor):
     def __init__(self):
         self.workdir = []
 
-        # task_id.value -> (task, process, driver)
+        # task_id.value -> (task, process)
         self.tasks = {}
         # (task_id.value, (status, data))
         self.result_queue = multiprocessing.Queue()
@@ -292,7 +308,7 @@ class MyExecutor(Executor):
         try:
             import psutil
         except ImportError:
-            logger.error("no psutil module")
+            logger.error('no psutil module')
             return
 
         mem_limit = {}
@@ -301,21 +317,25 @@ class MyExecutor(Executor):
         while True:
             with self.lock:
                 tids_to_pop = []
-                for tid, (task, proc, _) in self.tasks.iteritems():
+                for tid, (task, proc) in self.tasks.iteritems():
                     task_id = task.task_id
                     try:
                         pid = proc.pid
                         p = psutil.Process(pid)
                         rss = p.memory_info().rss >> 20
-                    except Exception, e:
-                        logger.error("worker process %d of task %s is dead: %s", pid, tid, e)
-                        reply_status(driver, task_id, mesos_pb2.TASK_LOST)
+                    except Exception as e:
+                        logger.error(
+                            'worker process %d of task %s is dead: %s',
+                            pid, tid, e
+                        )
+                        reply_status(driver, task_id, 'TASK_LOST')
                         tids_to_pop.append(tid)
                         continue
 
                     if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
-                        logger.error("worker process %d of task %s is zombie", pid, tid)
-                        reply_status(driver, task_id, mesos_pb2.TASK_LOST)
+                        logger.error(
+                            'worker process %d of task %s is zombie', pid, tid)
+                        reply_status(driver, task_id, 'TASK_LOST')
                         tids_to_pop.append(tid)
                         continue
 
@@ -323,17 +343,21 @@ class MyExecutor(Executor):
                     if not offered:
                         continue
                     if rss > offered * 1.5:
-                        logger.warning("task %s used too much memory: %dMB > %dMB * 1.5, kill it. "
-                                       + "use -M argument or taskMemory to request more memory.",
-                                       tid, rss, offered)
+                        logger.warning(
+                            'task %s used too much memory: %dMB > %dMB * 1.5, '
+                            'kill it. ' 'use -M argument or taskMemory '
+                            'to request more memory.',
+                            tid, rss, offered
+                        )
 
-                        reply_status(driver, task_id, mesos_pb2.TASK_KILLED)
+                        reply_status(driver, task_id, 'TASK_KILLED')
                         tids_to_pop.append(tid)
                         terminate(tid, proc)
                     elif rss > offered * mem_limit.get(tid, 1.0):
-                        logger.debug("task %s used too much memory: %dMB > %dMB, "
-                                     + "use -M to request or taskMemory for more memory",
-                                     tid, rss, offered)
+                        logger.debug(
+                            'task %s used too much memory: %dMB > %dMB, '
+                            'use -M to request or taskMemory for more memory',
+                            tid, rss, offered)
                         mem_limit[tid] = rss / offered + 0.1
                 for tid in tids_to_pop:
                     self.tasks.pop(tid)
@@ -351,29 +375,34 @@ class MyExecutor(Executor):
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except IOError as e:
             try:
-                pids = subprocess.check_output(["fuser", path]).split()
+                pids = subprocess.check_output(['fuser', path]).split()
                 curr_pid = os.getpid()
-                logger.warning("current process: %s, processes that are using %s: %s",
-                               curr_pid, path, pids)
+                logger.warning(
+                    'current process: %s, processes that are using %s: %s',
+                    curr_pid, path, pids)
             except Exception:
                 pass
             raise e
         self._fd_for_locks.append(fd)
 
     @safe
-    def registered(self, driver, executorInfo, frameworkInfo, slaveInfo):
+    def registered(self, driver, executorInfo, frameworkInfo, agent_info):
         try:
             global Script
-            Script, cwd, python_path, osenv, self.parallel, out_logger, err_logger, logLevel, args = marshal.loads(executorInfo.data)
+            (
+                Script, cwd, python_path, osenv, self.parallel,
+                out_logger, err_logger, logLevel, args
+            ) = marshal.loads(decode_data(executorInfo.data))
+
             self.init_args = args
             sys.path = python_path
             os.environ.update(osenv)
-            setproctitle("[Executor]" + Script)
+            setproctitle('[Executor]' + Script)
 
             prefix = '[%s] ' % socket.gethostname()
 
-            logging.basicConfig(format='%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s',
-                                level=logLevel)
+            fmt = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
+            logging.basicConfig(format=fmt, level=logLevel)
 
             r1 = self.stdout_redirect = Redirect(1, out_logger, prefix)
             sys.stdout = r1.pipe_wfile
@@ -384,10 +413,10 @@ class MyExecutor(Executor):
             if os.path.exists(cwd):
                 try:
                     os.chdir(cwd)
-                except Exception, e:
-                    logger.warning("change cwd to %s failed: %s", cwd, e)
+                except Exception as e:
+                    logger.warning('change cwd to %s failed: %s', cwd, e)
             else:
-                logger.warning("cwd (%s) not exists", cwd)
+                logger.warning('cwd (%s) not exists', cwd)
 
             self.workdir = args['WORKDIR']
             main_workdir = self.workdir[0]
@@ -395,27 +424,27 @@ class MyExecutor(Executor):
             root = os.path.dirname(main_workdir)
             if not os.path.exists(root):
                 os.mkdir(root)
-                os.chmod(root, 0777) # because umask
+                os.chmod(root, 0o777)  # because umask
 
             mkdir_p(main_workdir)
             self._try_flock(main_workdir)
 
             args['SERVER_URI'] = startWebServer(main_workdir)
-            if 'MESOS_SLAVE_PID' in os.environ: # make unit test happy
+            if 'MESOS_SLAVE_PID' in os.environ:  # make unit test happy
                 setup_cleaner_process(self.workdir)
 
             spawn(self.check_memory, driver)
-            spawn(self.replier)
+            spawn(self.replier, driver)
 
-            logger.debug("executor started at %s", slaveInfo.hostname)
+            logger.debug('executor started at %s', agent_info.hostname)
 
-        except Exception, e:
+        except Exception as e:
             import traceback
             msg = traceback.format_exc()
-            logger.error("init executor failed: %s", msg)
+            logger.error('init executor failed: %s', msg)
             raise
 
-    def replier(self):
+    def replier(self, driver):
         while True:
             try:
                 result = self.result_queue.get()
@@ -425,18 +454,18 @@ class MyExecutor(Executor):
                 state, data = result
 
                 with self.lock:
-                    task, _, driver = self.tasks.pop(task_id_value)
+                    task, _ = self.tasks.pop(task_id_value)
 
                 reply_status(driver, task.task_id, state, data)
 
-            except Exception,e:
-                logger.warning("reply fail %s", e)
+            except Exception as e:
+                logger.warning('reply fail %s', e)
 
     @safe
     def launchTask(self, driver, task):
         task_id = task.task_id
-        reply_status(driver, task_id, mesos_pb2.TASK_RUNNING)
-        logger.debug("launch task %s", task.task_id.value)
+        reply_status(driver, task_id, 'TASK_RUNNING')
+        logger.debug('launch task %s', task.task_id.value)
 
         def worker(name, q, task_id_value, task_data, init_args):
             setproctitle(name)
@@ -444,33 +473,33 @@ class MyExecutor(Executor):
             q.put((task_id_value, run_task(task_data)))
 
         try:
-            name = "[Task-%s]%s" % (task.task_id.value, Script)
+            name = '[Task-%s]%s' % (task.task_id.value, Script)
             proc = multiprocessing.Process(target=worker,
                                            args=(name,
                                                  self.result_queue,
                                                  task.task_id.value,
-                                                 task.data,
+                                                 decode_data(task.data),
                                                  self.init_args))
             proc.name = name
             proc.daemon = True
             proc.start()
-            self.tasks[task.task_id.value] = (task, proc, driver)
+            self.tasks[task.task_id.value] = (task, proc)
 
-        except Exception, e:
+        except Exception:
             import traceback
             msg = traceback.format_exc()
-            reply_status(driver, task_id, mesos_pb2.TASK_LOST, msg)
+            reply_status(driver, task_id, 'TASK_LOST', msg)
 
     @safe
     def killTask(self, driver, taskId):
-        reply_status(driver, taskId, mesos_pb2.TASK_KILLED)
+        reply_status(driver, taskId, 'TASK_KILLED')
         if taskId.value in self.tasks:
-            _, proc, _ = self.tasks.pop(taskId.value)
+            _, proc = self.tasks.pop(taskId.value)
             terminate(taskId.value, proc)
 
     @safe
     def shutdown(self, driver=None):
-        for tid, (_, proc, _) in self.tasks.iteritems():
+        for tid, (_, proc) in self.tasks.iteritems():
             terminate(tid, proc)
         self.tasks = {}
         self.result_queue.put(None)
@@ -489,7 +518,7 @@ class MyExecutor(Executor):
 
 
 def run():
-    setproctitle("Executor")
+    setproctitle('Executor')
     if os.getuid() == 0:
         gid = os.environ['GID']
         uid = os.environ['UID']
@@ -497,7 +526,7 @@ def run():
         os.setuid(int(uid))
 
     executor = MyExecutor()
-    driver = mesos.MesosExecutorDriver(executor)
+    driver = MesosExecutorDriver(executor, use_addict=True)
     driver.run()
 
 if __name__ == '__main__':

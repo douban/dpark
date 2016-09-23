@@ -1,5 +1,6 @@
-Cython==0.23.4
-google-common==0.0.1
+addict==1.0.0
+Cython==0.24.1
+http-parser==0.8.3
 lz4==0.7.0
 msgpack-python==0.4.8
 psutil==4.3.1
