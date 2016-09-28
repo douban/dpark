@@ -284,6 +284,7 @@ class P2PBroadcastManager(BroadcastManager):
         if avail:
             req.recv_pyobj()
         req.close()
+        self.server_thread = None
 
 
 _manager = P2PBroadcastManager()
