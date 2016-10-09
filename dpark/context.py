@@ -9,7 +9,7 @@ from dpark.rdd import *
 from dpark.accumulator import Accumulator
 from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
-from dpark.moosefs import walk
+from dpark.moosefs import walk, close_mfs
 from dpark.tabular import TabularRDD
 from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
 import dpark.conf as conf
@@ -280,6 +280,7 @@ class DparkContext(object):
         env.stop()
         self.scheduler.stop()
         self.started = False
+        close_mfs()
 
     def __getstate__(self):
         raise ValueError("should not pickle ctx")

@@ -201,6 +201,13 @@ REGISTER_NEWMETASESSION = '\5'
 #  sessionid:32 sesflags:8
 #  status:8
 
+REGISTER_CLOSESESSION = '\6'
+# rcode==6: close session
+# CLTOMA:
+#  rcode:8 sessionid:32 [ metaid:64 ]
+# MATOCL:
+#  status:8
+
 CLTOMA_FUSE_REGISTER = 400
 # blob:64B ... (depends on blob - see blob descriptions above
 MATOCL_FUSE_REGISTER = 401

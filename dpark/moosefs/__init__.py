@@ -12,12 +12,15 @@ MFS_ROOT_INODE = 1
 
 logger = get_logger(__name__)
 
+
 class CrossSystemSymlink(Exception):
     def __init__(self, src, dst):
         self.src = src
         self.dst = dst
+
     def __str__(self):
         return '%s -> %s' % (self.src, self.dst)
+
 
 class MooseFS(object):
     def __init__(self, host='mfsmaster', port=9421, mountpoint='/mfs'):
@@ -41,7 +44,8 @@ class MooseFS(object):
         info = None
         ps = path.split('/')
         for i, n in enumerate(ps):
-            if not n: continue
+            if not n:
+                continue
             info = self._lookup(parent, n)
             if not info:
                 return
@@ -78,7 +82,8 @@ class MooseFS(object):
             cs = self.listdir(root)
             dirs, files = [], []
             for name, info in cs.iteritems():
-                if name in '..': continue
+                if name in '..':
+                    continue
                 while followlinks and info and info.type == TYPE_SYMLINK:
                     target = self.readlink(info.inode)
                     if target.startswith('/'):
@@ -88,7 +93,7 @@ class MooseFS(object):
                                     dirs.append(target)
                                 else:
                                     files.append(target)
-                            info = None # ignore broken symlink
+                            info = None  # ignore broken symlink
                             break
                         else:
                             target = target[len(self.mountpoint):]
@@ -109,11 +114,11 @@ class MooseFS(object):
 
             yield root, dirs, files
             for d in sorted(dirs, reverse=True):
-                if not d.startswith('/'): # skip external links
+                if not d.startswith('/'):  # skip external links
                     ds.append(os.path.join(root, d))
 
     def close(self):
-        self.mc.close()
+        self.mc.terminate()
 
 
 class File(object):
@@ -136,7 +141,7 @@ class File(object):
         if i is None:
             n = (self.length - 1) / CHUNKSIZE + 1
             return [[host for host, _ in self.get_chunk(i).addrs]
-                     for i in range(n)]
+                    for i in range(n)]
         return [host for host, _ in self.get_chunk(i).addrs]
 
 
@@ -218,10 +223,12 @@ class ReadableFile(File):
             return
 
         local_ip = socket.gethostbyname(socket.gethostname())
-        if any(ip == local_ip for ip,port in chunk.addrs):
+        if any(ip == local_ip for ip, port in chunk.addrs):
             try:
                 for block in read_chunk_from_local(chunk.id,
-                        chunk.version, length-offset, offset):
+                                                   chunk.version,
+                                                   length-offset,
+                                                   offset):
                     yield block
                     offset += len(block)
                     if offset >= length:
@@ -235,7 +242,9 @@ class ReadableFile(File):
             while nerror < 2:
                 try:
                     for block in read_chunk(host, port, chunk.id,
-                        chunk.version, length-offset, offset):
+                                            chunk.version,
+                                            length-offset,
+                                            offset):
                         yield block
                         offset += len(block)
                         if offset >= length:
@@ -243,7 +252,7 @@ class ReadableFile(File):
                         nerror = 0
                     break
                 except IOError, e:
-                    #print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
+                    # print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
                     nerror += 1
 
         raise Exception("unexpected error[%s]: %d %d %s < %s" % (self.path, roff, index, offset, length))
@@ -263,7 +272,8 @@ class ReadableFile(File):
                 line = ''
 
                 ll = list(generator)
-                if not ll: continue
+                if not ll:
+                    continue
 
                 for line in ll[:-1]:
                     yield line
@@ -292,22 +302,34 @@ _mfs = {}
 MFS_PREFIX = {
     }
 
+
 def get_mfs(master, mountpoint=''):
     if master in _mfs:
         return _mfs[master]
     _mfs[master] = MooseFS(master, mountpoint=mountpoint)
     return _mfs[master]
 
+
+def close_mfs():
+    for master in _mfs:
+        logger.debug('close the fs:%s at dir:%s' % (master,
+                                                    _mfs[master].mountpoint))
+        _mfs[master].close()
+
+
 def mfsopen(path, master='mfsmaster'):
     return get_mfs(master).open(path)
 
+
 def listdir(path, master='mfsmaster'):
     return get_mfs(master).listdir(path)
+
 
 def get_mfs_by_path(path):
     for prefix, master in MFS_PREFIX.iteritems():
         if path.startswith(prefix):
             return get_mfs(master, prefix)
+
 
 def add_prefix(gen, prefix):
     for root, dirs, names in gen:
@@ -316,6 +338,7 @@ def add_prefix(gen, prefix):
             if d.startswith('/'):
                 for root, dd, ns in walk(d, True):
                     yield root, dd, ns
+
 
 def walk(path, followlinks=False):
     path = os.path.realpath(path)
@@ -326,6 +349,7 @@ def walk(path, followlinks=False):
     else:
         return os.walk(path, followlinks=followlinks)
 
+
 def open_file(path):
     mfs = get_mfs_by_path(path)
     if mfs:
@@ -333,6 +357,7 @@ def open_file(path):
             return mfs.open(path[len(mfs.mountpoint):])
         except CrossSystemSymlink, e:
             return open_file(e.dst)
+
 
 def _test():
     f = open('/mfs2/test.csv')
@@ -351,7 +376,7 @@ def _test():
     for _ in csv.reader(f2):
         break
 
-    #print listdir('/')
+    # print listdir('/')
     for root, dirs, names in walk('/'):
         print root, dirs, names
         for n in names:

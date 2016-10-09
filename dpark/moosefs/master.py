@@ -11,6 +11,7 @@ from utils import *
 
 logger = get_logger(__name__)
 
+
 class StatInfo:
 
     def __init__(self, totalspace, availspace, trashspace,
@@ -84,37 +85,44 @@ class MasterConn:
         self.lock = threading.RLock()
         self.reply = Queue.Queue()
         self.is_ready = False
-        spawn(self.heartbeat)
-        spawn(self.recv_thread)
+        # notify the daemon thread to exit
+        self.term = False
+        self.thread_heartbeat = spawn(self.heartbeat)
+        self.thread_recv = spawn(self.recv_thread)
 
     def heartbeat(self):
         while True:
             try:
                 self.nop()
             except Exception as e:
+                logger.debug('close in heart beat except:%s', e)
                 self.close()
             time.sleep(2)
+            with self.lock:
+                if self.term:
+                    break
 
     def connect(self):
         if self.conn is not None:
             return
-
         for _ in range(10):
             try:
-                self.conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                self.conn = socket.socket(socket.AF_INET,
+                                          socket.SOCK_STREAM)
                 self.conn.connect((self.host, self.port))
+                logger.debug('the host:%s, the port:%d, local:%s',
+                             self.host, self.port,
+                             self.conn.getsockname())
                 break
-            except socket.error as e:
+            except socket.error:
                 self.conn = None
-                #self.next_try = time.time() + 1.5 ** self.fail_count
                 self.fail_count += 1
                 time.sleep(1.5 ** self.fail_count)
-
         if not self.conn:
             raise IOError("mfsmaster not availbale")
-
-        regbuf = pack(CLTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL, REGISTER_NEWSESSION, VERSION,
-                      len(self.mountpoint), self.mountpoint, len(self.subfolder), self.subfolder)
+        regbuf = pack(CLTOMA_FUSE_REGISTER, FUSE_REGISTER_BLOB_ACL,
+                      REGISTER_NEWSESSION, VERSION, len(self.mountpoint),
+                      self.mountpoint, len(self.subfolder), self.subfolder)
         self.send(regbuf)
         recv = self.recv(8)
         cmd, i = unpack("II", recv)
@@ -142,7 +150,7 @@ class MasterConn:
             self.masterversion, self.sessionid, self.sesflags = unpack("IIB", data)
         else:
             self.sessionid, self.sesflags = unpack("I", data)
-
+        logger.debug('start connection with session id:%s ' % (self.sessionid))
         self.is_ready = True
 
     def close(self):
@@ -151,6 +159,42 @@ class MasterConn:
                 self.conn.close()
                 self.conn = None
                 self.is_ready = False
+        logger.debug('close the socket at session:%s', self.sessionid)
+
+    def _close_session(self):
+        with self.lock:
+            if self.conn:
+                # close session
+                regbuf = pack(CLTOMA_FUSE_REGISTER,
+                              FUSE_REGISTER_BLOB_ACL,
+                              REGISTER_CLOSESESSION,
+                              self.sessionid)
+                try:
+                    self.send(regbuf)
+                    recv_cnt = 0
+                    bound = 2
+                    self.conn.settimeout(2)
+                    while recv_cnt < bound:
+                        try:
+                            r = self.recv(8)
+                            cmd, size = unpack("II", r)
+                            logger.debug('clean recv: cmd:%d, size:%d',
+                                         cmd, size)
+                            r = self.recv(size)
+                        except Exception as e:
+                            logger.debug('end of exception:%s' % e)
+                            break
+                        recv_cnt += 1
+                except:
+                    logger.debug('send exception ignore')
+
+    def terminate(self):
+        with self.lock:
+            self.term = True
+        self.thread_recv.join(2)
+        self.thread_heartbeat.join(3)
+        self._close_session()
+        self.close()
 
     def send(self, buf):
         with self.lock:
@@ -190,12 +234,15 @@ class MasterConn:
             d = self.recv(12)
             cmd, size = unpack("II", d)
             data = self.recv(size - 4) if size > 4 else ''
-            if cmd != ANTOAN_NOP:
-                return d, data
+            with self.lock:
+                if cmd != ANTOAN_NOP or self.term:
+                    return d, data
 
     def recv_thread(self):
         while True:
             with self.lock:
+                if self.term:
+                    break
                 if not self.is_ready:
                     time.sleep(0.01)
                     continue
