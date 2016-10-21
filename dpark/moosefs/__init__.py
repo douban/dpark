@@ -315,6 +315,7 @@ def close_mfs():
         logger.debug('close the fs:%s at dir:%s' % (master,
                                                     _mfs[master].mountpoint))
         _mfs[master].close()
+    _mfs.clear()
 
 
 def mfsopen(path, master='mfsmaster'):

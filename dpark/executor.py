@@ -31,6 +31,7 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
+from dpark.moosefs import close_mfs
 
 logger = get_logger("dpark.executor@%s" % socket.gethostname())
 
@@ -91,6 +92,7 @@ def run_task(task_data):
         msg = traceback.format_exc()
         return mesos_pb2.TASK_FAILED, cPickle.dumps((OtherFailure(msg), None, None), -1)
     finally:
+        close_mfs()
         gc.collect()
         gc.enable()
 
