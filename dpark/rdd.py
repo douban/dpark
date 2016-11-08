@@ -26,7 +26,7 @@ from dpark.util import (
 from dpark.shuffle import DiskMerger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
-
+from dpark.beansdb import BeansdbReader, BeansdbWriter
 
 logger = get_logger(__name__)
 
@@ -379,11 +379,23 @@ class RDD(object):
     def saveAsTableFile(self, path, overwrite=True):
         return OutputTableFileRDD(self, path, overwrite).collect()
 
-    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True, raw=False):
+    def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True,
+                      raw=False, valueWithMeta=False):
+        ''' save (key, value) pair in beansdb format files
+
+        Args:
+            depth: choice = [0, 1, 2].
+                e.g. depth = 2 will write split N to 256 files:
+                    'path/[0-F]/[0-F]/%03d.data' % N
+                MUST use depth == 0 to generate data for rivendb
+            raw: same as in DparkContext.beansdb
+            valueWithMeta: expect TRIPLE as input value
+        '''
         assert depth<=2, 'only support depth<=2 now'
         if len(self) >= 256:
             self = self.mergeSplit(len(self) / 256 + 1)
-        return OutputBeansdbRDD(self, path, depth, overwrite, compress, raw).collect()
+        return OutputBeansdbRDD(self, path, depth, overwrite, compress,
+                                raw, valueWithMeta).collect()
 
     def saveAsTabular(self, path, field_names, **kw):
         from dpark.tabular import OutputTabularRDD
@@ -1733,351 +1745,30 @@ class OutputTableFileRDD(OutputTextFileRDD):
 
     write_compress_data = writedata
 
-#
-# Beansdb
-#
-import marshal
-import binascii
-try:
-    import quicklz
-except ImportError:
-    quicklz = None
-
-try:
-    from fnv1a import get_hash
-    from fnv1a import get_hash_beansdb
-    def fnv1a(d):
-        return get_hash(d) & 0xffffffff
-    def fnv1a_beansdb(d):
-        return get_hash_beansdb(d) & 0xffffffff
-except ImportError:
-    FNV_32_PRIME = 0x01000193
-    FNV_32_INIT = 0x811c9dc5
-    def fnv1a(d):
-        h = FNV_32_INIT
-        for c in d:
-            h ^= ord(c)
-            h *= FNV_32_PRIME
-            h &= 0xffffffff
-        return h
-    fnv1a_beansdb = fnv1a
-
-
-FLAG_PICKLE   = 0x00000001
-FLAG_INTEGER  = 0x00000002
-FLAG_LONG     = 0x00000004
-FLAG_BOOL     = 0x00000008
-FLAG_COMPRESS1= 0x00000010 # by cmemcached
-FLAG_MARSHAL  = 0x00000020
-FLAG_COMPRESS = 0x00010000 # by beansdb
-
-PADDING = 256
-BEANSDB_MAX_KEY_LENGTH = 250
-
-
-def restore_value(flag, val):
-    if flag & FLAG_COMPRESS:
-        val = quicklz.decompress(val)
-    if flag & FLAG_COMPRESS1:
-        val = zlib.decompress(val)
-
-    if flag & FLAG_BOOL:
-        val = bool(int(val))
-    elif flag & FLAG_INTEGER:
-        val = int(val)
-    elif flag & FLAG_MARSHAL:
-        val = marshal.loads(val)
-    elif flag & FLAG_PICKLE:
-        val = cPickle.loads(val)
-    return val
-
-def prepare_value(val, compress):
-    flag = 0
-    if isinstance(val, str):
-        pass
-    elif isinstance(val, (bool)):
-        flag = FLAG_BOOL
-        val = str(int(val))
-    elif isinstance(val, (int, long)):
-        flag = FLAG_INTEGER
-        val = str(val)
-    elif type(val) is unicode:
-        flag = FLAG_MARSHAL
-        val = marshal.dumps(val, 2)
-    else:
-        try:
-            val = marshal.dumps(val, 2)
-            flag = FLAG_MARSHAL
-        except ValueError:
-                val = cPickle.dumps(val, -1)
-                flag = FLAG_PICKLE
-
-    if compress and len(val) > 1024:
-        flag |= FLAG_COMPRESS
-        val = quicklz.compress(val)
-
-    return flag, val
-
 
 class BeansdbFileRDD(TextFileRDD):
+
     def __init__(self, ctx, path, filter=None, fullscan=False, raw=False):
-        if not fullscan:
-            hint = path[:-5] + '.hint'
-            if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
-                fullscan = True
-            if not filter:
-                fullscan = True
-        TextFileRDD.__init__(self, ctx, path, numSplits=None if fullscan else 1)
-        self.func = filter
-        self.fullscan = fullscan
-        self.raw = raw
-
-    @cached
-    def __getstate__(self):
-        d = RDD.__getstate__(self)
-        del d['func']
-        return d, dump_func(self.func)
-
-    def __setstate__(self, state):
-        self.__dict__, code = state
-        try:
-            self.func = load_func(code)
-        except Exception:
-            print 'load failed', self.__class__, code[:1024]
-            raise
+        key_filter = filter
+        if key_filter is None:
+            fullscan = True
+        TextFileRDD.__init__(
+            self, ctx, path, numSplits=None if fullscan else 1)
+        self.reader = BeansdbReader(path, key_filter, fullscan, raw)
 
     def compute(self, split):
-        if self.fullscan:
-            return self.full_scan(split)
-        hint = self.path[:-5] + '.hint.qlz'
-        if os.path.exists(hint):
-            return self.scan_hint(hint)
-        hint = self.path[:-5] + '.hint'
-        if os.path.exists(hint):
-            return self.scan_hint(hint)
-        return self.full_scan(split)
-
-    def scan_hint(self, hint_path):
-        hint = open(hint_path).read()
-        if hint_path.endswith('.qlz'):
-            try:
-                hint = quicklz.decompress(hint)
-            except ValueError, e:
-                msg = str(e.message)
-                if msg.startswith('compressed length not match'):
-                    hint = hint[:int(msg.split('!=')[1])]
-                    hint = quicklz.decompress(hint)
-
-        func = self.func or (lambda x:True)
-        dataf = open(self.path)
-        p = 0
-        while p < len(hint):
-            pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
-            p += 10
-            ksz = pos & 0xff
-            key = hint[p: p+ksz]
-            if func(key):
-                dataf.seek(pos & 0xffffff00)
-                r = self.read_record(dataf)
-                if r:
-                    rsize, key, value = r
-                    yield key, value
-                else:
-                    logger.error("read failed from %s at %d", self.path, pos & 0xffffff00)
-            p += ksz + 1 # \x00
-
-    def restore(self, flag, val):
-        if self.raw:
-            return (flag, val)
-        try:
-            return restore_value(flag, val)
-        except:
-            logger.warning("read value failed: %s, %d", repr(val), flag)
-            return ''
-
-    def try_read_record(self, f):
-        block = f.read(PADDING)
-        if not block:
-            return
-
-        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
-        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
-            return
-        rsize = 24 + ksz + vsz
-        if rsize & 0xff:
-            rsize = ((rsize >> 8) + 1) << 8
-        if rsize > PADDING:
-            block += f.read(rsize-PADDING)
-        crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
-        if crc != crc32:
-            return
-        return True
-
-    def read_record(self, f):
-        block = f.read(PADDING)
-        if len(block) < 24:
-            return
-
-        crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
-        if not (0 < ksz < 255 and 0 <= vsz < (50<<20)):
-            logger.warning('bad key length %d %d', ksz, vsz)
-            return
-
-        rsize = 24 + ksz + vsz
-        if rsize & 0xff:
-            rsize = ((rsize >> 8) + 1) << 8
-        if rsize > PADDING:
-            block += f.read(rsize-PADDING)
-        #crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
-        #if crc != crc32:
-        #    print 'crc broken', crc, crc32
-        #    return
-        key = block[24:24+ksz]
-        value = block[24+ksz:24+ksz+vsz]
-        if not self.func or self.func(key):
-            value = self.restore(flag, value)
-        return rsize, key, (value, ver, tstamp)
-
-    def full_scan(self, split):
-        f = self.open_file()
-
-        # try to find first record
-        begin, end = split.begin, split.end
-        while True:
-            f.seek(begin)
-            r = self.try_read_record(f)
-            if r: break
-            begin += PADDING
-            if begin >= end: break
-        if begin >= end:
-            return
-
-        f.seek(begin)
-        func = self.func or (lambda x:True)
-        while begin < end:
-            r = self.read_record(f)
-            if not r:
-                begin += PADDING
-                logger.error('read fail at %s pos: %d', self.path, begin)
-                while begin < end:
-                    f.seek(begin)
-                    if self.try_read_record(f):
-                        break
-                    begin += PADDING
-                continue
-            size, key, value = r
-            if func(key):
-                yield key, value
-            begin += size
+        return self.reader.read(split.begin, split.end)
 
 
 class OutputBeansdbRDD(DerivedRDD):
-    def __init__(self, rdd, path, depth, overwrite, compress=False, raw=False):
+
+    def __init__(self, rdd, path, depth, overwrite, compress=False,
+                 raw=False, value_with_meta=False):
         DerivedRDD.__init__(self, rdd)
-        self.path = path
-        self.depth = depth
-        self.overwrite = overwrite
-        if not quicklz:
-            compress = False
-        self.compress = compress
-        self.raw = raw
-        self.repr_name = '<%s %s %s>' % (self.__class__.__name__, self.path, self.prev)
-
-        for i in range(16 ** depth):
-            if depth > 0:
-                ps = list(('%%0%dx' % depth) % i)
-                p = os.path.join(path, *ps)
-            else:
-                p = path
-            if os.path.exists(p):
-                if overwrite:
-                    for n in os.listdir(p):
-                        if n[:3].isdigit():
-                            os.remove(os.path.join(p, n))
-            else:
-                os.makedirs(p)
-
-    def prepare(self, val):
-        if self.raw:
-            return val
-
-        return prepare_value(val, self.compress)
-
-    def gen_hash(self, d):
-        # used in beansdb
-        h = len(d) * 97
-        if len(d) <= 1024:
-            h += fnv1a_beansdb(d)
-        else:
-            h += fnv1a_beansdb(d[:512])
-            h *= 97
-            h += fnv1a_beansdb(d[-512:])
-        return h & 0xffff
-
-    @staticmethod
-    def is_valid_key(key):
-        if len(key) > BEANSDB_MAX_KEY_LENGTH:
-            return False
-        invalid_chars = ' \r\n\0'
-        return not any(c in key for c in invalid_chars)
-
-    def write_record(self, f, key, flag, value, now=None):
-        header = struct.pack('IIIII', now, flag, 1, len(key), len(value))
-        crc32 = binascii.crc32(header)
-        crc32 = binascii.crc32(key, crc32)
-        crc32 = binascii.crc32(value, crc32) & 0xffffffff
-        f.write(struct.pack("I", crc32))
-        f.write(header)
-        f.write(key)
-        f.write(value)
-        rsize = 24 + len(key) + len(value)
-        if rsize & 0xff:
-            f.write('\x00' * (PADDING - (rsize & 0xff)))
-            rsize = ((rsize >> 8) + 1) << 8
-        return rsize
+        self.writer = BeansdbWriter(path, depth, overwrite, compress,
+                                    raw, value_with_meta)
+        self.repr_name = '<%s %s %s>' % (
+            self.__class__.__name__, path, self.prev)
 
     def compute(self, split):
-        N = 16 ** self.depth
-        if self.depth > 0:
-            fmt='%%0%dx' % self.depth
-            ds = [os.path.join(self.path, *list(fmt % i)) for i in range(N)]
-        else:
-            ds = [self.path]
-        pname = '%03d.data' % split.index
-        tname = '.%03d.data.%s.tmp' % (split.index, socket.gethostname())
-        p = [os.path.join(d, pname) for d in ds]
-        tp = [os.path.join(d, tname) for d in ds]
-        pos = [0] * N
-        f = [open(t, 'w', 1<<20) for t in tp]
-        now = int(time.time())
-        hint = [[] for d in ds]
-
-        bits = 32 - self.depth * 4
-        for key, value in self.prev.iterator(split):
-            key = str(key)
-            if not self.is_valid_key(key):
-                logger.warning("ignored invalid key: %s" % [key])
-                continue
-
-            i = fnv1a(key) >> bits
-            flag, value = self.prepare(value)
-            h = self.gen_hash(value)
-            hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, h) + key + '\x00')
-            pos[i] += self.write_record(f[i], key, flag, value, now)
-            if pos[i] > (4000<<20):
-                raise Exception("split is large than 4000M")
-        [i.close() for i in f]
-
-        for i in range(N):
-            if hint[i] and not os.path.exists(p[i]):
-                os.rename(tp[i], p[i])
-                hintdata = ''.join(hint[i])
-                hint_path = os.path.join(os.path.dirname(p[i]), '%03d.hint' % split.index)
-                if self.compress:
-                    hintdata = quicklz.compress(hintdata)
-                    hint_path += '.qlz'
-                open(hint_path, 'w').write(hintdata)
-            else:
-                os.remove(tp[i])
-
-        return sum([([p[i]] if hint[i] else []) for i in range(N)], [])
+        return self.writer.write_bucket(self.prev.iterator(split), split.index)

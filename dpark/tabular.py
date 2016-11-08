@@ -201,8 +201,8 @@ class FilteredByIndexRDD(RDD):
     def _get_splits(self):
         filters = self.filters
         def _filter(v):
-            path, splits = v
-            result_set = set(sp.split.begin / STRIPE_SIZE for sp in splits)
+            path, ids = v
+            result_set = set(ids)
             with open(path, 'rb') as f:
                 f.seek(-8, 2)
                 footer_fields_size, footer_indices_size = struct.unpack('II', f.read(8))
@@ -229,27 +229,31 @@ class FilteredByIndexRDD(RDD):
                             v = [v]
 
                         for vv in v:
-                            for id in result_set:
-                                if index.get(vv, id):
-                                    result.add(id)
-
-		    result_set &= result
-
-            for sp in splits:
-                id = sp.split.begin / STRIPE_SIZE
-                if id in result:
-                    yield sp
+                            for _id in result_set:
+                                if index.get(vv, _id):
+                                    result.add(_id)
+            return path, result
 
         sp_dict = {}
         for sp in self.rdd.splits:
             path = sp.rdd.path
+            _id = sp.split.begin / STRIPE_SIZE
             if path not in sp_dict:
-                sp_dict[path] = [sp]
+                sp_dict[path] = [_id]
             else:
-                sp_dict[path].append(sp)
+                sp_dict[path].append(_id)
 
         rdd = ParallelCollection(self.ctx, sp_dict.items(), len(sp_dict))
-        return rdd.flatMap(_filter).collect()
+        path_ids_filter = dict(rdd.map(_filter).collect())
+
+        splits = []
+        for sp in self.rdd.splits:
+            path = sp.rdd.path
+            _id = sp.split.begin / STRIPE_SIZE
+            if _id in path_ids_filter[path]:
+                splits.append(sp)
+        return splits
+
 
     def compute(self, split):
         for t in self.rdd.iterator(split):

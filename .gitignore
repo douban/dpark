@@ -16,6 +16,8 @@ var
 sdist
 develop-eggs
 .installed.cfg
+.eggs
+.cache
 lib
 lib64
 

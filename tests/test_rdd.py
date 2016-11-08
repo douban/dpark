@@ -7,6 +7,7 @@ import shutil
 import logging
 from dpark.context import *
 from dpark.rdd import *
+from dpark.beansdb import is_valid_key, restore_value
 from dpark.accumulator import *
 from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
@@ -253,26 +254,43 @@ class TestRDD(unittest.TestCase):
         N = 100
         l = range(N)
         d = zip(map(str, l), l)
-        rdd = self.sc.makeRDD(d, 10)
-        self.assertEqual(rdd.saveAsBeansdb('/tmp/beansdb'),
-                       ['/tmp/beansdb/%03d.data' % i for i in range(10)])
-        rdd = self.sc.beansdb('/tmp/beansdb', depth=0)
-        self.assertEqual(len(rdd), 10)
-        self.assertEqual(rdd.count(), N)
-        self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
-        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
-        self.assertEqual(s, sum(l))
+        num_splits = 10
+        rdd = self.sc.makeRDD(d, num_splits)
+        root = '/tmp/beansdb'
 
-        rdd = self.sc.beansdb('/tmp/beansdb', depth=0, fullscan=True)
-        self.assertEqual(len(rdd), 10)
-        self.assertEqual(rdd.count(), N)
-        self.assertEqual(sorted(rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
-        s = rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
-        self.assertEqual(s, sum(l))
-        shutil.rmtree('/tmp/beansdb')
+        def newpath(c):
+            return  os.path.join(root, str(c))
+
+        def check_rdd(_rdd, files, num_w, num_r):
+            self.assertEqual(files,
+                ['%s/%03d.data' % (path, i) for i in range(num_w)])
+            self.assertEqual(len(_rdd), num_r)
+            self.assertEqual(_rdd.count(), N)
+            self.assertEqual(sorted(_rdd.map(lambda (k,v):(k,v[0])).collect()), sorted(d))
+            s = _rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+            self.assertEqual(s, sum(l))
+
+        path = newpath(0)
+        files = rdd.saveAsBeansdb(path)
+        rdd = self.sc.beansdb(path, depth=0, filter=lambda x: x!="")
+        check_rdd(rdd, files, num_splits, num_splits)
+
+        path = newpath(1)
+        files = rdd.saveAsBeansdb(path, valueWithMeta=True)
+        rdd = self.sc.beansdb(path, depth=0, fullscan=True, only_latest=True)
+        num_splits_reduce = int(ceil(num_splits/4))
+        check_rdd(rdd, files, num_splits, num_splits_reduce)
+
+        path = newpath(num_splits_reduce)
+        files = rdd.map(lambda (k,v):(k,v[0])).saveAsBeansdb(path)
+        rdd = self.sc.beansdb(path, raw=True, depth=0, fullscan=True)
+        rdd = rdd.mapValue(lambda v:(restore_value(*v[0]), v[1], v[2]))
+        check_rdd(rdd, files, num_splits_reduce, num_splits_reduce)
+
+        shutil.rmtree(root)
 
     def test_beansdb_invalid_key(self):
-        func = OutputBeansdbRDD.is_valid_key
+        func = is_valid_key
         input_expect = [
             ('/test/aaa/12321', True),
             ('a' * 251, False),

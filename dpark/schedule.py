@@ -392,8 +392,8 @@ class LocalScheduler(DAGScheduler):
     def submitTasks(self, tasks):
         logger.debug("submit tasks %s in LocalScheduler", tasks)
         for task in tasks:
-#            task = cPickle.loads(cPickle.dumps(task, -1))
-            _, reason, result, update = run_task(task, self.nextAttempId())
+            task_copy = cPickle.loads(cPickle.dumps(task, -1))
+            _, reason, result, update = run_task(task_copy, self.nextAttempId())
             self.taskEnded(task, reason, result, update)
 
 def run_task_in_process(task, tid, environ):

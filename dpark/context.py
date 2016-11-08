@@ -6,6 +6,7 @@ import logging
 import gc
 
 from dpark.rdd import *
+from dpark.beansdb import restore_value
 from dpark.accumulator import Accumulator
 from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
@@ -181,11 +182,43 @@ class DparkContext(object):
             raise Exception("no .field_names found in %s" % path)
         return self.tableFile(path, **kwargs).asTable(fields)
 
-    def beansdb(self, path, depth=None, filter=None, fullscan=False, raw=False, only_latest=False):
-        "(Key, (Value, Version, Timestamp)) data in beansdb"
+    def beansdb(self, path, depth=None, filter=None,
+                fullscan=False, raw=False, only_latest=False):
+        '''(Key, (VALUE, Version, Timestamp)) data in beansdb
+
+        Data structure:
+            REC = (Key, TRIPLE)
+            TRIPLE = (VALUE, Version, Timestamp)
+            VALUE = RAW_VALUE | REAL_VALUE
+            RAW_VALUE = (flag, BYTES_VALUE)
+
+        Args:
+            filter: used to filter key
+            depth: choice = [None, 0, 1, 2]. e.g. depth=2 assume dir tree like:
+                    'path/[0-F]/[0-F]/%03d.data'
+                If depth is None, dpark will guess.
+            fullscan: NOT use index files, which contain (key, pos_in_datafile).
+                pairs.
+                Better use fullscan unless the filter selectivity is low.
+                Effect of using index:
+                    inefficient random access
+                    one split(task) for each file instead of each moosefs chunk
+
+                Omitted if filter is None.
+            raw: VALUE = RAW_VALUE if raw else REAL_VALUE.
+            only_latest: for each key, keeping the REC with the largest
+                Timestamp. This will append a reduceByKey RDD.
+                Need this because online beansdb data is log structured.
+        '''
+
+        key_filter = filter
+
         self.init()
+        if key_filter is None:
+            fullscan = True
         if isinstance(path, (tuple, list)):
-            return self.union([self.beansdb(p, depth, filter, fullscan, raw, only_latest)
+            return self.union([self.beansdb(p, depth, key_filter, fullscan,
+                                            raw, only_latest)
                     for p in path])
 
         path = os.path.realpath(path)
@@ -193,21 +226,25 @@ class DparkContext(object):
         if os.path.isdir(path):
             subs = []
             if not depth:
-                subs = [os.path.join(path, n) for n in os.listdir(path) if n.endswith('.data')]
+                subs = [os.path.join(path, n) for n in os.listdir(path)
+                        if n.endswith('.data')]
             if subs:
-                rdd = self.union([BeansdbFileRDD(self, p, filter, fullscan, True)
+                rdd = self.union([BeansdbFileRDD(self, p, key_filter,
+                                                 fullscan, raw=True)
                         for p in subs])
             else:
                 subs = [os.path.join(path, '%x'%i) for i in range(16)]
-                rdd = self.union([self.beansdb(p, depth and depth-1, filter, fullscan, True, only_latest)
+                rdd = self.union([self.beansdb(p, depth and depth-1, key_filter,
+                                               fullscan, True, only_latest)
                         for p in subs if os.path.exists(p)])
                 only_latest = False
         else:
-            rdd = BeansdbFileRDD(self, path, filter, fullscan, True)
+            rdd = BeansdbFileRDD(self, path, key_filter, fullscan, raw=True)
 
         # choose only latest version
         if only_latest:
-            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2, int(ceil(len(rdd) / 4)))
+            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2,
+                                  int(ceil(len(rdd) / 4)))
         if not raw:
             rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
         return rdd
