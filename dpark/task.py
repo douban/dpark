@@ -60,13 +60,15 @@ class ResultTask(DAGTask):
         d = dict(self.__dict__)
         del d['func']
         del d['rdd']
-        return d, dumps(self.rdd), dump_func(self.func)
+        del d['split']
+        return d, dumps(self.rdd), dump_func(self.func), dumps(self.split)
 
     def __setstate__(self, state):
-        d, rdd, func = state
+        d, rdd, func, split = state
         self.__dict__.update(d)
         self.rdd = loads(rdd)
         self.func = load_func(func)
+        self.split = loads(split)
 
 
 class ShuffleMapTask(DAGTask):
@@ -89,12 +91,14 @@ class ShuffleMapTask(DAGTask):
     def __getstate__(self):
         d = dict(self.__dict__)
         del d['rdd']
-        return d, dumps(self.rdd)
+        del d['split']
+        return d, dumps(self.rdd), dumps(self.split)
 
     def __setstate__(self, state):
-        d, rdd = state
+        d, rdd, split = state
         self.__dict__.update(d)
         self.rdd = loads(rdd)
+        self.split = loads(split)
 
     def preferredLocations(self):
         return self.locs

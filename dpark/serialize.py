@@ -309,7 +309,7 @@ def load_local_class(bytes):
     if name in classes_loaded:
         return classes_loaded[name]
 
-    cls = type(name, bases, internal)
+    cls = new.classobj(name, bases, internal)
     classes_loaded[name] = cls
     for k, v in loads(external).items():
         if isinstance(k, tuple):

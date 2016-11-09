@@ -153,3 +153,19 @@ class _ClsWithSlots(object):
             f = MAIN._ClsWithSlots()
             _f = loads(dumps(f))
             assert _f.__slots__ == f.__slots__
+
+    def testOldStyleClass(self):
+        exec_str = """
+import csv
+
+class DumDialect(csv.Dialect):
+    delimiter = '\\t'
+    quotechar = '"'
+    escapechar = '\\\\'
+    doublequote = False
+    skipinitialspace = False
+    lineterminator = '\\n'
+    quoting = csv.QUOTE_MINIMAL
+"""
+        with main_environ(exec_str):
+            loads(dumps(MAIN.DumDialect))
