@@ -16,6 +16,7 @@ from copy import copy
 import shutil
 import heapq
 import struct
+import traceback
 
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import *
@@ -43,6 +44,17 @@ def cached(func):
         return d
     return getstate
 
+STACK_FILE_NAME = 0
+STACK_LINE_NUM = 1
+STACK_FUNC_NAME = 2
+
+
+class Scope(object):
+    def __init__(self):
+        self.func_name = None
+        self.call_site = None
+
+
 class RDD(object):
     def __init__(self, ctx):
         self.ctx = ctx
@@ -59,8 +71,30 @@ class RDD(object):
         self.mem = ctx.options.mem
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
+        self._get_scope()
+
+    def _get_scope(self):
+        stack = traceback.extract_stack(sys._getframe())
+        idx = len(stack) - 1
+        self.scope = Scope()
+        for i in range(len(stack) - 1, -1, -1):
+            if stack[i][STACK_FUNC_NAME] == '__init__':
+                idx = i
+                break
+        for i in range(idx, -1, -1):
+            if stack[i][STACK_FUNC_NAME] != '__init__':
+                self.scope.func_name = stack[i][STACK_FUNC_NAME]
+                if i > 0:
+                    self.scope.call_site = '%s at %s : %s ' % \
+                                           (self.scope.func_name,
+                                            stack[i - 1][STACK_FILE_NAME],
+                                            str(stack[i - 1][STACK_LINE_NUM]))
+                else:
+                    self.scope.call_site = '<root>'
+                break
 
     nextId = 0
+
     @classmethod
     def newId(cls):
         cls.nextId += 1
@@ -1160,6 +1194,23 @@ class TextFileRDD(RDD):
                     self._preferred_locs[split] = self.fileinfo.locs(split.begin / self.splitSize)
 
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
+
+    def _get_scope(self):
+        stack = traceback.extract_stack(sys._getframe())
+        self.scope = Scope()
+        for i in range(0, len(stack)):
+            if 'dpark/context.py' in stack[i][STACK_FILE_NAME]:
+                self.scope.func_name = stack[i][STACK_FUNC_NAME]
+                if i > 0:
+                    self.scope.call_site = '%s in %s:%s' % \
+                                           (self.scope.func_name,
+                                            stack[i - 1][STACK_FILE_NAME],
+                                            str(stack[i - 1][STACK_LINE_NUM]))
+                else:
+                    self.scope.call_site = '<root>'
+                break
+        if not self.scope.func_name:
+            super(TextFileRDD, self)._get_scope()
 
     def open_file(self):
         if self.fileinfo:

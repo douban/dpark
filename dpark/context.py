@@ -15,6 +15,7 @@ from dpark.tabular import TabularRDD
 from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
 import dpark.conf as conf
 from math import ceil
+import socket
 
 logger = get_logger(__name__)
 
@@ -52,6 +53,7 @@ class DparkContext(object):
         self.initialized = False
         self.started = False
         self.defaultParallelism = 2
+        self.web_port = None
 
     def init(self):
         if self.initialized:
@@ -59,6 +61,19 @@ class DparkContext(object):
 
         options = parse_options()
         self.options = options
+        try:
+            import dpark.web
+            from dpark.web.ui import create_app
+            app = create_app(self)
+            self.web_port = dpark.web.start(app)
+            self.options.webui_url = 'http://%s:%s' % (
+                socket.gethostname(),
+                self.web_port
+            )
+            logger.info('start listening on Web UI with port: %d' % self.web_port)
+        except ImportError as e:
+            self.options.webui_url = ''
+            logger.info('no web server created as %s', e)
 
         master = self.master or options.master
         if master == 'local':
@@ -315,6 +330,11 @@ class DparkContext(object):
             return
 
         env.stop()
+        try:
+            import dpark.web
+            dpark.web.stop(self.web_port)
+        except ImportError:
+            pass
         self.scheduler.stop()
         self.started = False
         close_mfs()

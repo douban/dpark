@@ -1,3 +1,5 @@
+recursive-include dpark/web/ui/static *
+recursive-include dpark/web/ui/templates *
 include dpark/porable_hash.pyx
 include README.rst
 include LICENSE

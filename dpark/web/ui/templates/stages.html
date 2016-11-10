@@ -1,0 +1,35 @@
+{% extends 'layout.html' %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/dag-viz.css')}}" type="text/css"/>
+<script src="{{ url_for('static', filename='js/d3.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dagre-d3.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/graphlib-dot.min.js') }}"></script>
+<script src="{{ url_for('static', filename='js/dag-viz.js') }}"></script>
+{% endblock %}
+{% block body %}
+<div class="container-fluid">
+    <div class="row-fluid">
+        <div class="span12">
+            <h3 style="vertical-align: bottom; display: inline-block;">The details for stage {{id}}</h3>
+        </div>
+    </div>
+    <div>
+        <span id = "job-dag-viz" class="expand-dag-viz" onclick="toggleDagViz(false);">
+            <span class="expand-dag-viz-arrow arrow-closed"></span>
+        </span>
+    </div>
+    <div id="dag-viz-graph"></div>
+    <div id="dag-viz-metadata" style="display:none">
+        {% for tuple in stage_tuples %}
+        <div class = "stage-metadata" stage-id="{{tuple[0][0]}}" skipped="{{tuple[0][1]}}">
+            <div class="dot-file">
+                {{ tuple[1]| safe }}
+            </div>
+            {% for edge in tuple[2]%}
+            <div class="incoming-edge">{{edge[0]}},{{edge[1]}}</div>
+            {% endfor %}
+        {% endfor %}
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,5 +1,5 @@
 import setuptools
-from setuptools import setup, Extension
+from setuptools import setup, Extension, find_packages
 
 setuptools_version = tuple(int(n) for n in setuptools.__version__.split('.'))
 assert setuptools_version >= (18, 0, 0), \
@@ -22,7 +22,7 @@ setup(name='DPark',
       author='Davies Liu',
       author_email='davies.liu@gmail.com',
       license='BSD License',
-      packages=['dpark', 'dpark.moosefs'],
+      packages=find_packages(exclude=('tests', 'tests.*')),
       include_package_data=True,
       zip_safe=False,
       setup_requires=['Cython >= 0.20'],

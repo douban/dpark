@@ -1,0 +1,31 @@
+{% extends 'layout.html' %}
+{% block body %}
+<h4 id="stages">Stage all</h4>
+<table class="table table-bordered table-striped table-condensed sortable">
+    <thead>
+    <th>Stage Id</th>
+    <th>Description</th>
+    <th>Dependencies</th>
+    </thead>
+    {% for stage_idx in stage_infos.keys() %}
+    <tr id="stage-{{stage_idx}}">
+        <td sorttable_customkey="0">
+            {% if stage_infos[stage_idx].is_final %}
+             <strong>
+            {% endif %}
+            {{stage_idx}}
+            {% if stage_infos[stage_idx].is_final %}
+             </strong>
+            {% endif %}
+        </td>
+        <td>
+            <span class="description-input"/>
+            <a href="/stages/{{stage_idx}}" class="name-link">DAG for stage_{{stage_idx}}</a>
+        </td>
+        <td>
+            {{ stage_infos[stage_idx]._depend_stages }}
+        </td>
+    </tr>
+    {% endfor %}
+</table>
+{% endblock %}

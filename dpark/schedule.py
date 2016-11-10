@@ -1,29 +1,30 @@
-import os
-import sys
-import zmq
-import time
 import Queue
-import random
-import socket
-import urllib
 import cPickle
 import marshal
+import multiprocessing
+import os
+import random
+import socket
+import sys
+import time
+import urllib
 import weakref
 import threading
 
+import zmq
 from addict import Dict
 from pymesos import MesosSchedulerDriver, encode_data, decode_data
 
+import dpark.conf as conf
+from dpark.accumulator import Accumulator
+from dpark.dependency import ShuffleDependency
+from dpark.env import env
+from dpark.job import SimpleJob
+from dpark.mutable_dict import MutableDict
+from dpark.task import ResultTask, ShuffleMapTask
 from dpark.util import (
     compress, decompress, spawn, getuser, mkdir_p, get_logger
 )
-from dpark.dependency import ShuffleDependency
-from dpark.accumulator import Accumulator
-from dpark.task import ResultTask, ShuffleMapTask
-from dpark.job import SimpleJob
-from dpark.env import env
-from dpark.mutable_dict import MutableDict
-import dpark.conf as conf
 
 logger = get_logger(__name__)
 
@@ -163,6 +164,7 @@ class DAGScheduler(Scheduler):
         self.idToStage = weakref.WeakValueDictionary()
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
+        self.idToRunJob = {}
         self._shutdown = False
 
     def check(self):
@@ -248,10 +250,28 @@ class DAGScheduler(Scheduler):
         walk_dependencies(stage.rdd, _)
         return list(missing)
 
+
     def runJob(self, finalRdd, func, partitions, allowLocal):
         outputParts = list(partitions)
         numOutputParts = len(partitions)
         finalStage = self.newStage(finalRdd, None)
+        try:
+            from dpark.web.ui.views.rddopgraph import StageInfo
+            stage_info = StageInfo()
+            stage_info.create_stage_info(finalStage)
+
+            def create_stage_info_recur(cur_stage, is_final=False):
+                if not cur_stage or cur_stage.id in self.idToRunJob:
+                    return
+                for par_stage in cur_stage.parents:
+                    create_stage_info_recur(par_stage)
+                if cur_stage.id not in self.idToRunJob:
+                    self.idToRunJob[cur_stage.id] = StageInfo.idToStageInfo[cur_stage.id]
+                    self.idToRunJob[cur_stage.id].is_final = is_final
+
+            create_stage_info_recur(finalStage, is_final=True)
+        except ImportError:
+            pass
         results = [None] * numOutputParts
         finished = [None] * numOutputParts
         lastFinished = 0
@@ -580,6 +600,7 @@ class MesosScheduler(DAGScheduler):
             raise Exception('dpark is not allowed to run as \'root\'')
         framework.name = name
         framework.hostname = socket.gethostname()
+        framework.webui_url = self.options.webui_url
 
         self.driver = MesosSchedulerDriver(
             self, framework, self.master, use_addict=True

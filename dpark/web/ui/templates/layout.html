@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css')}}" type="text/css"/>
+    <script src="{{ url_for('static', filename='js/jquery-1.11.1.min.js')}}"></script>
+    <script src="{{ url_for('static', filename='js/bootstrap-tooltip.js')}}"></script>
+    <title>DPark Web UI</title>
+    {% block extra_head %}
+    {% endblock %}
+</head>
+<body>
+<div class="navbar navbar-static-top">
+    <div class="navbar-inner">
+        <p class="navbar-text pull-right">
+            <strong title="Dpark">Dpark</strong> App UI
+        </p>
+        <ul class="nav">
+            <li class="active">
+                <a href="/stages/">Stages</a>
+            </li>
+        </ul>
+    </div>
+</div>
+{% block body %}
+{% endblock %}
+</body>
+</html>
