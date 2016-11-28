@@ -1087,9 +1087,17 @@ class CSVReaderRDD(DerivedRDD):
 
 
 class ParallelCollectionSplit:
-    def __init__(self, index, values):
+    def __init__(self, ctx, index, values):
         self.index = index
-        self.values = cPickle.dumps(values, -1)
+        _values = cPickle.dumps(values, -1)
+        length = len(_values)
+        data_limit = ctx.data_limit
+        if data_limit is None or length < data_limit:
+            self.values = _values
+            self.is_broadcast = False
+        else:
+            self.values = ctx.broadcast(_values)
+            self.is_broadcast = True
 
 class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices, taskMemory=None):
@@ -1098,13 +1106,18 @@ class ParallelCollection(RDD):
         if taskMemory:
             self.mem = taskMemory
         slices = self.slice(data, max(1, min(self.size, numSlices)))
-        self._splits = [ParallelCollectionSplit(i, slices[i])
+        self._splits = [ParallelCollectionSplit(ctx, i, slices[i])
                 for i in range(len(slices))]
         self._dependencies = []
         self.repr_name = '<ParallelCollection %d>' % self.size
 
     def compute(self, split):
-        return cPickle.loads(split.values)
+        if split.is_broadcast:
+            _values = split.values.value
+        else:
+            _values =split.values
+
+        return cPickle.loads(_values)
 
     @classmethod
     def slice(cls, data, numSlices):

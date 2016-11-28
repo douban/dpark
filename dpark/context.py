@@ -54,6 +54,7 @@ class DparkContext(object):
         self.started = False
         self.defaultParallelism = 2
         self.web_port = None
+        self.data_limit = None
 
     def init(self):
         if self.initialized:
@@ -97,6 +98,7 @@ class DparkContext(object):
             if ':' not in master:
                 master += ':5050'
             self.scheduler = MesosScheduler(master, options)
+            self.data_limit = 1024 * 1024 # 1MB
             self.isLocal = False
 
         self.master = master
