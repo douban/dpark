@@ -1089,7 +1089,7 @@ class CSVReaderRDD(DerivedRDD):
 class ParallelCollectionSplit:
     def __init__(self, index, values):
         self.index = index
-        self.values = values
+        self.values = cPickle.dumps(values, -1)
 
 class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices, taskMemory=None):
@@ -1104,7 +1104,7 @@ class ParallelCollection(RDD):
         self.repr_name = '<ParallelCollection %d>' % self.size
 
     def compute(self, split):
-        return split.values
+        return cPickle.loads(split.values)
 
     @classmethod
     def slice(cls, data, numSlices):
