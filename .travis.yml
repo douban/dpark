@@ -10,6 +10,7 @@ addons:
         packages:
             - libzmq3-dev
 install:
+    - pip install -U setuptools
     - pip install -r req.txt
     - pip install .
 
