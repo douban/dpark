@@ -35,7 +35,7 @@ setup(name='DPark',
           'pyzmq',
           'msgpack-python',
           'lz4',
-          'psutil',
+          'psutil>=2.0.0',
           'addict',
       ],
       tests_require=[

@@ -38,6 +38,7 @@ TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
 KILL_TIME_OUT = 0.1  # 0.1 sec
+CLEAN_ZOMBIE_TIME_OUT = 10
 Script = ''
 
 
@@ -332,10 +333,11 @@ class MyExecutor(Executor):
                         tids_to_pop.append(tid)
                         continue
 
-                    if p.status == psutil.STATUS_ZOMBIE or not p.is_running():
+                    if p.status() == psutil.STATUS_ZOMBIE or not p.is_running():
                         logger.error(
                             'worker process %d of task %s is zombie', pid, tid)
                         reply_status(driver, task_id, 'TASK_LOST')
+                        proc.join(CLEAN_ZOMBIE_TIME_OUT)
                         tids_to_pop.append(tid)
                         continue
 

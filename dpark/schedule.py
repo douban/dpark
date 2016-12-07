@@ -690,6 +690,16 @@ class MesosScheduler(DAGScheduler):
         if self.options.image:
             info.container.type = 'DOCKER'
             info.container.docker.image = self.options.image
+            info.container.docker.parameters = parameters = []
+            p = Dict()
+            p.key = 'memory-swap'
+            p.value = '-1'
+            parameters.append(p)
+
+            v = Dict()
+            variables.append(v)
+            v.name = 'CONTAINER_INFO'
+            v.value = 'docker_%s' % info.container.docker.image
 
             info.container.volumes = volumes = []
             for path in ['/etc/passwd', '/etc/group']:
