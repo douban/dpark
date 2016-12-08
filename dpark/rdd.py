@@ -24,7 +24,7 @@ from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
     AbortFileReplacement, get_logger
 )
-from dpark.shuffle import DiskMerger, CoGroupMerger
+from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark import moosefs
 from dpark.beansdb import BeansdbReader, BeansdbWriter
@@ -842,7 +842,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = DiskMerger(self)
+        merger = Merger(self)
         fetcher = env.shuffleFetcher
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
