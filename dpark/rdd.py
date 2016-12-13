@@ -1488,9 +1488,31 @@ class BZip2FileRDD(TextFileRDD):
             nd += t
             np = nd.find(magic)
         d += nd[:np] if np >= 0 else nd
+
+        last_line = ''
+        if split.index > 0:
+            cur = split.index * self.splitSize
+            skip = fp if fp >= 0 else d.find(magic)
+            if skip >= 0:
+                cur += skip
+            else:
+                cur += len(d)
+
+            for i in xrange(1, 100):
+                pos = cur - i * self.BLOCK_SIZE
+                if pos < 0:
+                    break
+
+                f.seek(pos)
+                nd = f.read(cur - pos)
+                np = nd.find(magic)
+                if np >= 0:
+                    nd = nd[np:]
+                    last_line = bz2.decompress(nd).split('\n')[-1]
+                    break
+
         f.close()
 
-        last_line = None if split.index > 0 else ''
         while d:
             try:
                 io = StringIO(bz2.decompress(d))
@@ -1498,14 +1520,10 @@ class BZip2FileRDD(TextFileRDD):
                 #bad position, skip it
                 pass
             else:
-                if last_line is None:
-                    io.readline() # skip the first line
+                last_line += io.readline()
+                if last_line.endswith('\n'):
+                    yield last_line[:-1]
                     last_line = ''
-                else:
-                    last_line += io.readline()
-                    if last_line.endswith('\n'):
-                        yield last_line[:-1]
-                        last_line = ''
 
                 for line in io:
                     if line.endswith('\n'): # drop last line
