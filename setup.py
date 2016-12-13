@@ -37,6 +37,7 @@ setup(name='DPark',
           'lz4',
           'psutil>=2.0.0',
           'addict',
+          'pyquicklz',
       ],
       tests_require=[
           'nose',
