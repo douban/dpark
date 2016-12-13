@@ -1,10 +1,16 @@
-import sys, os.path
+import os
+import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import bz2
+import gzip
 import unittest
 import random
 import operator
 import shutil
 import logging
+import binascii
+import tempfile
+import contextlib
 from dpark.context import *
 from dpark.rdd import *
 from dpark.beansdb import is_valid_key, restore_value
@@ -13,6 +19,44 @@ from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
+
+
+@contextlib.contextmanager
+def gen_big_text_file(block_size, file_size, ext='txt'):
+    if not ext.startswith('.'):
+        ext = '.' + ext
+
+    cnt = 0
+    with tempfile.NamedTemporaryFile(suffix=ext) as out:
+        while out.tell() < file_size:
+            with tempfile.NamedTemporaryFile() as tmp:
+                if ext == '.bz2':
+                    f = bz2.BZ2File(tmp.name, 'w')
+                elif ext == '.gz':
+                    f = gzip.GzipFile(tmp.name, 'w')
+                else:
+                    f = open(tmp.name, 'w+')
+
+                with contextlib.closing(f):
+                    while True:
+                        size = random.randint(0, 512)
+                        line = binascii.b2a_base64(os.urandom(size))
+                        f.write(line)
+                        cnt += 1
+                        if f.tell() > block_size:
+                            break
+
+                while True:
+                    r = tmp.read(4 << 20)
+                    if not r:
+                        break
+                    out.write(r)
+
+                out.flush()
+
+        out.cnt = cnt
+        yield out
+
 
 class TestRDD(unittest.TestCase):
     def setUp(self):
@@ -206,6 +250,34 @@ class TestRDD(unittest.TestCase):
         rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
         self.assertEqual(rd.count(), 100000)
         shutil.rmtree('/tmp/tout')
+
+    def test_large_txt_file(self):
+        with gen_big_text_file(64 << 10, 5 << 20, ext='txt') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
+
+        with gen_big_text_file(1 << 20, 5 << 20, ext='txt') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
+
+
+    def test_large_gzip_file(self):
+        with gen_big_text_file(64 << 10, 5 << 20, ext='gz') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
+
+        with gen_big_text_file(1 << 20, 5 << 20, ext='gz') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
+
+    def test_large_bz2_file(self):
+        with gen_big_text_file(64 << 10, 5 << 20, ext='bz2') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
+
+        with gen_big_text_file(1 << 20, 5 << 20, ext='bz2') as f:
+            rd = self.sc.textFile(f.name, splitSize=512 * 1024)
+            self.assertEqual(rd.count(), f.cnt)
 
     def test_binary_file(self):
         d = self.sc.makeRDD(range(100000), 1)
