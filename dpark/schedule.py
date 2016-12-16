@@ -738,13 +738,12 @@ class MesosScheduler(DAGScheduler):
                         raise Exception('cannot parse volume %s', volume)
 
                     mkdir_p(host_path)
-
-                v = Dict()
-                volumes.append(v)
-                v.container_path = container_path
-                v.mode = mode
-                if host_path:
-                    v.host_path = host_path
+                    v = Dict()
+                    volumes.append(v)
+                    v.container_path = container_path
+                    v.mode = mode
+                    if host_path:
+                        v.host_path = host_path
 
         info.resources = resources = []
 
