@@ -126,6 +126,17 @@ class BaseScheduler(object):
             execInfo.container.type = 'DOCKER'
             execInfo.container.docker.image = self.options.image
 
+            execInfo.container.docker.parameters = parameters = []
+            p = Dict()
+            p.key = 'memory-swap'
+            p.value = '-1'
+            parameters.append(p)
+
+            v = Dict()
+            variables.append(v)
+            v.name = 'CONTAINER_INFO'
+            v.value = 'docker_%s' % execInfo.container.docker.image
+
             execInfo.container.volumes = volumes = []
 
             for path in ['/etc/passwd', '/etc/group']:
@@ -161,13 +172,12 @@ class BaseScheduler(object):
                         os.makedirs(host_path)
                     except OSError:
                         pass
-
-                v = Dict()
-                volumes.append(v)
-                v.container_path = container_path
-                v.mode = mode
-                if host_path:
-                    v.host_path = host_path
+                    v = Dict()
+                    volumes.append(v)
+                    v.container_path = container_path
+                    v.mode = mode
+                    if host_path:
+                        v.host_path = host_path
 
         return execInfo
 
