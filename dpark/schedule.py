@@ -660,18 +660,6 @@ class MesosScheduler(DAGScheduler):
     def _get_container_image(self):
         return self.options.image
 
-    @staticmethod
-    def _mount_volume_mkdirs(volumes, host_path, container_path, mode):
-        if not os.path.exists(host_path) or \
-                os.path.isdir(host_path):
-            mkdir_p(host_path)
-        v = Dict()
-        volumes.append(v)
-        v.container_path = container_path
-        v.mode = mode
-        if host_path:
-            v.host_path = host_path
-
     @safe
     def getExecutorInfo(self, framework_id):
         info = Dict()
@@ -735,6 +723,14 @@ class MesosScheduler(DAGScheduler):
                 v.host_path = v.container_path = path
                 v.mode = 'RW'
 
+            def _mount_volume(volumes, host_path, container_path, mode):
+                v = Dict()
+                volumes.append(v)
+                v.container_path = container_path
+                v.mode = mode
+                if host_path:
+                    v.host_path = host_path
+
             if self.options.volumes:
                 for volume in self.options.volumes.split(','):
                     fields = volume.split(':')
@@ -751,8 +747,8 @@ class MesosScheduler(DAGScheduler):
                         mode = 'RW'
                     else:
                         raise Exception('cannot parse volume %s', volume)
-                    MesosScheduler._mount_volume_mkdirs(volumes, host_path,
-                                                        container_path, mode)
+                    _mount_volume(volumes, host_path,
+                                  container_path, mode)
 
         info.resources = resources = []
 
