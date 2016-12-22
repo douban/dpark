@@ -657,6 +657,21 @@ class MesosScheduler(DAGScheduler):
     def disconnected(self, driver):
         logger.debug('framework is disconnected')
 
+    def _get_container_image(self):
+        return self.options.image
+
+    @staticmethod
+    def _mount_volume_mkdirs(volumes, host_path, container_path, mode):
+        if not os.path.exists(host_path) or \
+                os.path.isdir(host_path):
+            mkdir_p(host_path)
+        v = Dict()
+        volumes.append(v)
+        v.container_path = container_path
+        v.mode = mode
+        if host_path:
+            v.host_path = host_path
+
     @safe
     def getExecutorInfo(self, framework_id):
         info = Dict()
@@ -687,7 +702,7 @@ class MesosScheduler(DAGScheduler):
         v.name = 'GID'
         v.value = str(os.getgid())
 
-        if self.options.image:
+        if self._get_container_image():
             info.container.type = 'DOCKER'
             info.container.docker.image = self.options.image
             info.container.docker.parameters = parameters = []
@@ -736,14 +751,8 @@ class MesosScheduler(DAGScheduler):
                         mode = 'RW'
                     else:
                         raise Exception('cannot parse volume %s', volume)
-
-                    mkdir_p(host_path)
-                    v = Dict()
-                    volumes.append(v)
-                    v.container_path = container_path
-                    v.mode = mode
-                    if host_path:
-                        v.host_path = host_path
+                    MesosScheduler._mount_volume_mkdirs(volumes, host_path,
+                                                        container_path, mode)
 
         info.resources = resources = []
 
