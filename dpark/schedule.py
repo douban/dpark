@@ -690,9 +690,10 @@ class MesosScheduler(DAGScheduler):
         v.name = 'GID'
         v.value = str(os.getgid())
 
-        if self._get_container_image():
+        container_image = self._get_container_image()
+        if container_image:
             info.container.type = 'DOCKER'
-            info.container.docker.image = self.options.image
+            info.container.docker.image = container_image
             info.container.docker.parameters = parameters = []
             p = Dict()
             p.key = 'memory-swap'
