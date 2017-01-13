@@ -2,6 +2,7 @@ import bisect
 
 from dpark.util import portable_hash
 from dpark.serialize import load_func, dump_func
+from dpark.heaponkey import HeapOnKey
 
 class Dependency:
     def __init__(self, rdd):
@@ -97,6 +98,39 @@ class MergeAggregator:
     def mergeCombiners(self, x, y):
         x.extend(y)
         return x
+
+
+class HeapAggregator:
+
+    def __init__(self, heap_limit, key=None, order_reverse=False):
+        self.heap = HeapOnKey(key=key, min_heap=order_reverse)
+        self.heap_limit = heap_limit
+        assert(heap_limit > 0)
+
+    def __getstate__(self):
+        return self.heap, self.heap_limit
+
+    def __setstate__(self, state):
+        self.heap, self.heap_limit = state
+
+    def createCombiner(self, x):
+        return [x]
+
+    def mergeValue(self, s, x):
+        if len(s) >= self.heap_limit:
+            self.heap.push_pop(s, x)
+        else:
+            self.heap.push(s, x)
+        return s
+
+    def mergeCombiners(self, x, y):
+        for item in y:
+            if len(x) < self.heap_limit:
+                self.heap.push(x, item)
+            else:
+                self.heap.push_pop(x, item)
+        return x
+
 
 class UniqAggregator:
     def createCombiner(self, x):

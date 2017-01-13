@@ -147,6 +147,30 @@ class TestRDD(unittest.TestCase):
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
                 (4,([],[3],[1])), (5,([],[],[2]))])
 
+        # group with top n per group
+        ks = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6]
+        ds = zip(ks, range(5, 26))
+        nums4 = self.sc.makeRDD(ds, 2)
+        self.assertEqual(nums4.topByKey(top_n=2).lookup(3),
+                         [8, 9])
+        self.assertEqual(nums4.topByKey(top_n=3, reverse=True).lookup(4),
+                         [14, 13, 12])
+
+        # test stable order
+
+        l = [(3, (1, 0)), (3, (2, 1)), (2, (2, 2)), (3, (3, 3)), (2, (2, 4)),
+             (1, (1, 5)), (3, (3, 6)), (1, (2, 7)), (1, (3, 8)), (3, (2, 9)),
+             (3, (1, 10)), (2, (2, 11)), (1, (3, 12)), (2, (2, 13)), (3, (1, 14)),
+             (2, (2, 15)), (1, (2, 16)), (3, (3, 17)), (1, (1, 18)), (2, (2, 19)),
+             (2, (3, 20)), (3, (1, 21)), (1, (2, 22)), (3, (2, 23)), (2, (2, 24)),
+             (2, (2, 25)), (2, (2, 26)), (3, (1, 27)), (2, (3, 28)), (1, (3, 29))]
+        nums5 = self.sc.makeRDD(l, 2)
+        val_rev = [(3, 8), (3, 12), (3, 29)]
+        val = [(1, 0), (1, 10)]
+        self.assertEqual(nums5.topByKey(top_n=3, reverse=True, order_func=lambda x: x[0]).lookup(1), val_rev)
+        self.assertEqual(nums5.topByKey(top_n=2, order_func=lambda x: x[0]).lookup(3), val)
+
+
         # update
         rdd4 = self.sc.makeRDD([('foo', 1), ('wtf', 233)])
         rdd5 = self.sc.makeRDD([('foo', 2), ('bar', 3), ('wtf', None)])

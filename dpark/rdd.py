@@ -461,6 +461,53 @@ class RDD(object):
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
         return self.combineByKey(aggregator, numSplits, taskMemory)
 
+    def topByKey(self, top_n, order_func=None,
+                 reverse=False,
+                 num_splits=None, task_memory=None):
+        ''' Base on groupByKey, return the top_n values in each group.
+            The values in a key are ordered by a function object order_func.
+            The result values in a key is order in inc order, if you want
+            dec order, reverse is needed.
+            We implement the top n function of values in heap. To keep stable in the input values,
+            we trans the value in the records of rdd into a 4-tuple and sort them on heap.
+            The values with same return under order function will be sorted by their order added to heap,
+            only oldest value will be reserve.
+            After call of combineByKey, we call the map to unpack the value from 4-tuple.
+        :param top_n: required, limit of values to reserve in each group of a key
+        :param order_func: optional, order function map a value to a comparable value, default None, when
+        None, the value itself
+        :param reverse: optional, bool, when True, the value is sorted in dec order, else inc order
+        :param num_splits: same with groupByKey
+        :param task_memory: same with groupByKey
+        :return: rdd
+        '''
+        # To keep stable in heap, topByKey func need to generate the 4-tuple  which is
+        # in the form of the
+        # (order_func(v), partition id, sequence id, v), in the end of the combineByKey
+        # return the v in the 4-th of the tuple
+        def get_tuple_list(s_id, it, rev):
+            return map(
+                lambda (i, (k, v)): (
+                    k,
+                    (order_func(v) if order_func else v,
+                     s_id if not rev else -s_id,
+                     i if not rev else -i,
+                     v)
+                ),
+                enumerate(it)
+            )
+        aggregator = HeapAggregator(top_n,
+                                    order_reverse=reverse)
+        rdd = EnumeratePartitionsRDD(self, lambda s_id, it: get_tuple_list(s_id, it, reverse))
+        return rdd.combineByKey(aggregator, num_splits, task_memory).map(
+            lambda (x, ls):
+            (x, sorted(ls, reverse=reverse))
+        ).map(
+            lambda (k, ls): (
+                k, map(lambda x: x[-1], ls)
+            )
+        )
+
     def partitionByKey(self, numSplits=None, taskMemory=None):
         return self.groupByKey(numSplits, taskMemory).flatMapValue(lambda x: x)
 
