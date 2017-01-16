@@ -2,6 +2,7 @@ import gc
 import os
 import sys
 import time
+import errno
 import fcntl
 import shutil
 import signal
@@ -152,7 +153,7 @@ def terminate(tid, proc):
         proc.join(KILL_TIME_OUT)
         existcode = proc.exitcode
         if proc.exitcode != - signal.SIGKILL:
-            logger.warn('%s terminate fail: %s', name, existcode)
+            logger.debug('%s terminate fail: %s', name, existcode)
         else:
             logger.debug('%s terminate ok', name)
     except Exception as e:
@@ -334,11 +335,17 @@ class MyExecutor(Executor):
                         continue
 
                     if p.status() == psutil.STATUS_ZOMBIE or not p.is_running():
-                        logger.error(
-                            'worker process %d of task %s is zombie', pid, tid)
                         reply_status(driver, task_id, 'TASK_LOST')
                         proc.join(CLEAN_ZOMBIE_TIME_OUT)
-                        tids_to_pop.append(tid)
+                        try:
+                            os.waitpid(proc.pid, os.WNOHANG)
+                        except OSError as e:
+                            if e.errno == errno.ECHILD:
+                                tids_to_pop.append(tid)
+                            else:
+                                logger.exception('process termination fail: ', e.message)
+                        else:
+                            logger.error('worker process %d of task %s is zombie', pid, tid)
                         continue
 
                     offered = get_task_memory(task)
