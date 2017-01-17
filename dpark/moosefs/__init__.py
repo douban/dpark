@@ -241,8 +241,12 @@ class ReadableFile(File):
                             chunk.addrs[0], chunk.addrs[i] = chunk.addrs[i], chunk.addrs[0]
                         break
             except Exception, e:
-                logger.warning("read chunk %d from local: %s", chunk.id, e)
+                logger.warning("fail to read chunk %d of %s from local, \
+                                exception: %s",
+                               chunk.id, self.path, e)
 
+        last_exception = None
+        last_host = None
         for host, port in chunk.addrs:
             # give up after two continuous errors
             nerror = 0
@@ -259,10 +263,21 @@ class ReadableFile(File):
                         nerror = 0
                     break
                 except IOError, e:
-                    # print 'read chunk error from ', host, port, chunk.id, chunk.version, offset, e
+                    last_exception = e
+                    last_host = host
+                    logger.debug("fail to read chunk %d of %s from %s, \
+                                    exception: %s",
+                                 chunk.id, self.path, host, e)
                     nerror += 1
 
-        raise Exception("unexpected error[%s]: %d %d %s < %s" % (self.path, roff, index, offset, length))
+        raise Exception("unexpected error[%s], \
+                        start_offset=%d, chunk=%d, \
+                        curr_offset_in_chunk=%d < length=%d: \
+                        last exception on %s: %s" %
+                        (self.path,
+                         roff, index,
+                         offset, length,
+                         last_host, last_exception))
 
     def __iter__(self):
         # TODO: speedup
