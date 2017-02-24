@@ -80,6 +80,7 @@ class Stage:
         self.parents = parents
         self.numPartitions = len(rdd)
         self.outputLocs = [[] for i in range(self.numPartitions)]
+        self.try_times = 0
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -393,11 +394,17 @@ class DAGScheduler(Scheduler):
                 elif isinstance(task, ShuffleMapTask):
                     stage = self.idToStage[task.stageId]
                     stage.addOutputLoc(task.partition, evt.result)
-                    if not pendingTasks[stage] and all(stage.outputLocs):
+                    if all(stage.outputLocs):
                         logger.debug(
                             '%s finished; looking for newly runnable stages',
                             stage
                         )
+                        if pendingTasks[stage]:
+                            logger.warn('dirty stage %d with %d tasks'
+                                        '(select at most 10 tasks:%s) not clean',
+                                        stage.id, len(pendingTasks[stage]),
+                                        str(list(pendingTasks[stage])[:10]))
+                            del pendingTasks[stage]
                         onStageFinished(stage)
                         running.remove(stage)
                         if stage.shuffleDep is not None:
@@ -418,6 +425,7 @@ class DAGScheduler(Scheduler):
             elif isinstance(reason, FetchFailed):
                 if stage in running:
                     waiting.add(stage)
+                    running.remove(stage)
                 mapStage = self.shuffleToMapStage[reason.shuffleId]
                 mapStage.removeHost(reason.serverUri)
                 failed.add(mapStage)
@@ -432,7 +440,7 @@ class DAGScheduler(Scheduler):
                 raise Exception(reason.message)
 
         onStageFinished(finalStage)
-        assert not any(results)
+        assert all(finished)
         return
 
     def getPreferredLocs(self, rdd, partition):
@@ -786,10 +794,22 @@ class MesosScheduler(DAGScheduler):
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
+        stage_scope = ''
+        try:
+            from dpark.web.ui.views.rddopgraph import StageInfo
+            stage_scope = StageInfo.idToRDDNode[tasks[0].rdd.id].scope.call_site
+        except:
+            pass
+        stage = self.idToStage[tasks[0].stageId]
+        stage.try_times += 1
         logger.info(
-            'Got job %d with %d tasks: %s',
+            'Got job %d with %d tasks for stage: %d(try %d times) '
+            'at scope[%s] and rdd:%s',
             job.id,
             len(tasks),
+            tasks[0].stageId,
+            stage.try_times,
+            stage_scope,
             tasks[0].rdd)
 
         need_revive = self.started
