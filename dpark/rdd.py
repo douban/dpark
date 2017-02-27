@@ -1403,10 +1403,9 @@ class GZipFileRDD(TextFileRDD):
                     f.seek(last_block)
                     d = f.read(start - last_block)
                     dz = zlib.decompressobj(-zlib.MAX_WBITS)
-                    last_line = dz.decompress(d).split('\n')[-1]
-                    if last_line.endswith('\n'):
-                        last_line = ''
-                    break
+                    _, sep, last_line = dz.decompress(d).rpartition('\n')
+                    if sep:
+                        break
 
         end = self.find_block(f, split.index * self.splitSize + self.splitSize)
         # TODO: speed up
