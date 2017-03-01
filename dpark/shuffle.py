@@ -12,6 +12,7 @@ import Queue
 import heapq
 import uuid
 import gc
+
 try:
     import cStringIO as StringIO
 except ImportError:
@@ -44,8 +45,8 @@ class LocalFileShuffle:
         path = os.path.join(cls.shuffleDir[0], str(shuffleId), str(inputId))
         mkdir_p(path)
         p = os.path.join(path, str(outputId))
-
         if datasize > 0 and len(cls.shuffleDir) > 1:
+            # datasize > 0 means its writing
             st = os.statvfs(path)
             free = st.f_bfree * st.f_bsize
             ratio = st.f_bfree * 1.0 / st.f_blocks
@@ -55,6 +56,8 @@ class LocalFileShuffle:
                     str(shuffleId), str(inputId))
                 mkdir_p(d2)
                 p2 = os.path.join(d2, str(outputId))
+                if os.path.exists(p):
+                    os.remove(p)
                 os.symlink(p2, p)
                 if os.path.islink(p2):
                     os.unlink(p2)  # p == p2
