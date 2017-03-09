@@ -494,8 +494,12 @@ class MPIScheduler(BaseScheduler):
             cpus, mem = self.getResource(offer)
             logger.debug('got resource offer %s: cpus:%s, mem:%s at %s',
                          offer.id.value, cpus, mem, offer.hostname)
-            if launched >= self.options.tasks or offer.hostname in used_hosts:
+            if launched >= self.options.tasks:
                 driver.declineOffer(offer.id, REFUSE_FILTER)
+                continue
+
+            if offer.hostname in used_hosts:
+                driver.declineOffer(offer.id)
                 continue
 
             attrs = self.getAttributes(offer)
