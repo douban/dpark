@@ -1010,12 +1010,12 @@ class MesosScheduler(DAGScheduler):
     def jobFinished(self, job):
         logger.debug('job %s finished', job.id)
         if job.id in self.activeJobs:
+            self.last_finish_time = time.time()
             del self.activeJobs[job.id]
             self.activeJobsQueue.remove(job)
             for tid in self.jobTasks[job.id]:
                 self.driver.killTask(Dict(value=tid))
             del self.jobTasks[job.id]
-            self.last_finish_time = time.time()
 
             if not self.activeJobs:
                 self.agentTasks.clear()
