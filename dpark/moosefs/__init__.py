@@ -270,11 +270,12 @@ class ReadableFile(File):
                                  chunk.id, self.path, host, e)
                     nerror += 1
 
-        raise Exception("unexpected error[%s], \
-                        start_offset=%d, chunk=%d, \
-                        curr_offset_in_chunk=%d < length=%d: \
-                        last exception on %s: %s" %
+        raise Exception("unexpected path=%s, addrs=%s, "
+                        "start_offset=%d, chunk=%d, "
+                        "curr_offset_in_chunk=%d < length = %d, "
+                        "last exception on host %s: %s" %
                         (self.path,
+                         chunk.addrs,
                          roff, index,
                          offset, length,
                          last_host, last_exception))
