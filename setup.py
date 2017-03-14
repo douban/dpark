@@ -31,7 +31,7 @@ setup(name='DPark',
           'https://github.com/douban/dpark/archive/%s.tar.gz' % version
       ),
       install_requires=[
-          'pymesos>=0.2.2',
+          'pymesos>=0.2.10',
           'pyzmq',
           'msgpack-python',
           'lz4',

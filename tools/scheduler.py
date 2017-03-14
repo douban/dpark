@@ -332,6 +332,13 @@ class SubmitScheduler(BaseScheduler):
         tpn = self.options.task_per_node
         random.shuffle(offers)
         self.last_offer_time = time.time()
+        if not self.total_tasks:
+            driver.suppressOffers()
+            for o in offers:
+                driver.declineOffer(o.id)
+
+            return
+
         for offer in offers:
             attrs = self.getAttributes(offer)
             group = attrs.get('group', 'None')
@@ -486,6 +493,14 @@ class MPIScheduler(BaseScheduler):
         self.last_offer_time = time.time()
         launched = 0
         used_hosts = set()
+
+        if self.started:
+            driver.suppressOffers()
+            for o in offers:
+                driver.declineOffer(o.id)
+
+            return
+
         for hostname, slots in self.used_tasks.itervalues():
             used_hosts.add(hostname)
             launched += slots

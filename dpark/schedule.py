@@ -831,6 +831,7 @@ class MesosScheduler(DAGScheduler):
     def resourceOffers(self, driver, offers):
         rf = Dict()
         if not self.activeJobs:
+            driver.suppressOffers()
             rf.refuse_seconds = 60 * 5
             for o in offers:
                 driver.declineOffer(o.id, rf)
