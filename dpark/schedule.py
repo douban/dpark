@@ -708,11 +708,6 @@ class MesosScheduler(DAGScheduler):
             p.value = '-1'
             parameters.append(p)
 
-            v = Dict()
-            variables.append(v)
-            v.name = 'CONTAINER_INFO'
-            v.value = 'docker_%s' % info.container.docker.image
-
             info.container.volumes = volumes = []
             for path in ['/etc/passwd', '/etc/group']:
                 v = Dict()

@@ -225,25 +225,26 @@ class ReadableFile(File):
         local_ip = socket.gethostbyname(socket.gethostname())
         if any(ip == local_ip for ip, port in chunk.addrs):
             try:
-                if _local_aware:
-                    for block in read_chunk_from_local(chunk.id,
-                                                       chunk.version,
-                                                       length-offset,
-                                                       offset):
-                        yield block
-                        offset += len(block)
-                        if offset >= length:
-                            return
-                for i in range(len(chunk.addrs)):
-                    ip, port = chunk.addrs[i]
-                    if ip == local_ip:
-                        if i != 0:
-                            chunk.addrs[0], chunk.addrs[i] = chunk.addrs[i], chunk.addrs[0]
-                        break
-            except Exception, e:
-                logger.warning("fail to read chunk %d of %s from local, \
-                                exception: %s",
-                               chunk.id, self.path, e)
+                for block in read_chunk_from_local(chunk.id,
+                                                   chunk.version,
+                                                   length-offset,
+                                                   offset):
+                    yield block
+                    offset += len(block)
+                    if offset >= length:
+                        return
+            except Exception as e:
+                logger.debug(
+                    "failed to read chunk %d of %s from local: ",
+                    chunk.id, self.path, exc_info=sys.exc_info()
+                )
+
+            for i in range(len(chunk.addrs)):
+                ip, port = chunk.addrs[i]
+                if ip == local_ip:
+                    if i != 0:
+                        chunk.addrs[0], chunk.addrs[i] = chunk.addrs[i], chunk.addrs[0]
+                    break
 
         last_exception = None
         last_host = None
@@ -324,11 +325,6 @@ _mfs = {}
 
 MFS_PREFIX = {
     }
-
-_local_aware = True
-if 'CONTAINER_INFO' in os.environ:
-    _local_aware = False
-
 
 def get_mfs(master, mountpoint=''):
     if master in _mfs:

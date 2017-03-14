@@ -132,11 +132,6 @@ class BaseScheduler(object):
             p.value = '-1'
             parameters.append(p)
 
-            v = Dict()
-            variables.append(v)
-            v.name = 'CONTAINER_INFO'
-            v.value = 'docker_%s' % execInfo.container.docker.image
-
             execInfo.container.volumes = volumes = []
 
             for path in ['/etc/passwd', '/etc/group']:
