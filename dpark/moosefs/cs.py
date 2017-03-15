@@ -62,7 +62,7 @@ def read_chunk_from_local(chunkid, version, size, offset=0):
             f.close()
             return
     else:
-        logger.warning("%s was not found", name)
+        logger.debug("%s was not found", name)
 
 
 def read_chunk(host, port, chunkid, version, size, offset=0):
