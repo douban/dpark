@@ -226,11 +226,6 @@ class SimpleJob(Job):
                         'avg=%.1fs, max=%.1fs, maxtry=%d',
                         self.id, time.time() - self.start,
                         min(ts), sum(ts) / len(ts), max(ts), max(tried))
-            from dpark.accumulator import LocalReadBytes, RemoteReadBytes
-            lb, rb = LocalReadBytes.reset(), RemoteReadBytes.reset()
-            if rb > 0:
-                logger.info('read %s (%d%% localized)',
-                            readable(lb + rb), lb * 100 / (rb + lb))
 
             self.sched.jobFinished(self)
 

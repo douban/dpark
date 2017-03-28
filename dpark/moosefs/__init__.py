@@ -4,7 +4,7 @@ from cStringIO import StringIO
 
 from consts import *
 from master import MasterConn
-from cs import read_chunk, read_chunk_from_local
+from cs import read_chunk
 
 from dpark.util import get_logger
 
@@ -223,28 +223,12 @@ class ReadableFile(File):
             return
 
         local_ip = socket.gethostbyname(socket.gethostname())
-        if any(ip == local_ip for ip, port in chunk.addrs):
-            try:
-                for block in read_chunk_from_local(chunk.id,
-                                                   chunk.version,
-                                                   length-offset,
-                                                   offset):
-                    yield block
-                    offset += len(block)
-                    if offset >= length:
-                        return
-            except Exception as e:
-                logger.debug(
-                    "failed to read chunk %d of %s from local: ",
-                    chunk.id, self.path, exc_info=sys.exc_info()
-                )
-
-            for i in range(len(chunk.addrs)):
-                ip, port = chunk.addrs[i]
-                if ip == local_ip:
-                    if i != 0:
-                        chunk.addrs[0], chunk.addrs[i] = chunk.addrs[i], chunk.addrs[0]
-                    break
+        for i in range(len(chunk.addrs)):
+            ip, port = chunk.addrs[i]
+            if ip == local_ip:
+                if i != 0:
+                    chunk.addrs[0], chunk.addrs[i] = chunk.addrs[i], chunk.addrs[0]
+                break
 
         last_exception = None
         last_host = None
