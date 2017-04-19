@@ -1,6 +1,10 @@
 DPark
 =====
 
+.. image:: https://badges.gitter.im/douban/dpark.svg
+   :alt: Join the chat at https://gitter.im/douban/dpark
+   :target: https://gitter.im/douban/dpark?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
+
 |pypi status| |travis-ci status|
 
 DPark is a Python clone of Spark, MapReduce(R) alike computing framework
