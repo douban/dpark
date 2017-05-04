@@ -1029,7 +1029,8 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def error(self, driver, message):
-        logger.warning('Mesos error message: %s', message)
+        logger.error('Mesos error message: %s', message)
+        raise RuntimeError(message)
 
     # @safe
     def stop(self):

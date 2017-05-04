@@ -264,6 +264,7 @@ class BaseScheduler(object):
     @safe
     def error(self, driver, message):
         logger.error('Error from Mesos: %s' % (message,))
+        self.stop(EXIT_EXCEPTION)
 
     @safe
     def check(self, driver):
