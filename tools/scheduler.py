@@ -72,6 +72,7 @@ class BaseScheduler(object):
         self.framework.name = name
         self.framework.hostname = socket.gethostname()
         self.cpus = options.cpus
+        self.gpus = options.gpus
         self.mem = memory_str_to_mb(options.mem)
         self.options = options
         self.command = command
@@ -199,13 +200,15 @@ class BaseScheduler(object):
         return t, 'tcp://%s:%d' % (host, port)
 
     def getResource(self, offer):
-        cpus, mem = 0, 0
+        cpus, mem, gpus = 0, 0, 0
         for r in offer.resources:
             if r.name == 'cpus':
                 cpus = float(r.scalar.value)
             elif r.name == 'mem':
                 mem = float(r.scalar.value)
-        return cpus, mem
+            elif r.name == 'gpus':
+                gpus = int(r.scalar.value)
+        return cpus, mem, gpus
 
     def getAttributes(self, offer):
         attrs = {}
@@ -343,13 +346,13 @@ class SubmitScheduler(BaseScheduler):
                 driver.declineOffer(offer.id, REFUSE_FILTER)
                 continue
 
-            cpus, mem = self.getResource(offer)
-            logger.debug('got resource offer %s: cpus:%s, mem:%s at %s',
-                         offer.id.value, cpus, mem, offer.hostname)
+            cpus, mem, gpus = self.getResource(offer)
+            logger.debug('got resource offer %s: cpus:%s, mem:%s, gpus:%s at %s',
+                         offer.id.value, cpus, mem, gpus, offer.hostname)
             sid = offer.agent_id.value
             tasks = []
             while (self.total_tasks and cpus >= self.cpus + EXECUTOR_CPUS and
-                   mem >= self.mem + EXECUTOR_MEMORY and (
+                   mem >= self.mem + EXECUTOR_MEMORY and gpus >= self.gpus and (
                        tpn == 0 or tpn > 0 and
                        len(self.agentTasks.get(sid, set())) < tpn
                    )):
@@ -364,6 +367,7 @@ class SubmitScheduler(BaseScheduler):
                 self.agentTasks.setdefault(sid, set()).add(t.id)
                 cpus -= self.cpus
                 mem -= self.mem
+                gpus -= self.gpus
                 if not self.total_tasks:
                     break
 
@@ -405,6 +409,14 @@ class SubmitScheduler(BaseScheduler):
         mem.name = 'mem'
         mem.type = 'SCALAR'
         mem.scalar.value = self.mem
+
+        if self.gpus > 0:
+            gpu = Dict()
+            resources.append(gpu)
+            gpu.name = 'gpus'
+            gpu.type = 'SCALAR'
+            gpu.scalar.value = self.gpus
+
         return task
 
     @safe
@@ -502,9 +514,9 @@ class MPIScheduler(BaseScheduler):
             launched += slots
 
         for offer in offers:
-            cpus, mem = self.getResource(offer)
-            logger.debug('got resource offer %s: cpus:%s, mem:%s at %s',
-                         offer.id.value, cpus, mem, offer.hostname)
+            cpus, mem, gpus = self.getResource(offer)
+            logger.debug('got resource offer %s: cpus:%s, mem:%s, gpus:%s at %s',
+                         offer.id.value, cpus, mem, gpus, offer.hostname)
             if launched >= self.options.tasks:
                 driver.declineOffer(offer.id, REFUSE_FILTER)
                 continue
@@ -522,6 +534,9 @@ class MPIScheduler(BaseScheduler):
 
             slots = int(min((cpus - EXECUTOR_CPUS) / self.cpus,
                             (mem - EXECUTOR_MEMORY) / self.mem))
+            if self.gpus > 0:
+                slots = int(min(slots, gpus / self.gpus))
+
             if self.options.task_per_node:
                 slots = min(slots, self.options.task_per_node)
             slots = min(slots, self.options.tasks - launched)
@@ -614,6 +629,14 @@ class MPIScheduler(BaseScheduler):
         mem.name = 'mem'
         mem.type = 'SCALAR'
         mem.scalar.value = self.mem * k
+
+        if self.gpus > 0:
+            gpu = Dict()
+            resources.append(gpu)
+            gpu.name = 'gpus'
+            gpu.type = 'SCALAR'
+            gpu.scalar.value = self.gpus * k
+
 
         return task
 
@@ -729,6 +752,8 @@ if __name__ == '__main__':
 
     parser.add_option('-c', '--cpus', type='float', default=1.0,
                       help='number of CPUs per task (default: 1)')
+    parser.add_option('-G', '--gpus', type='int', default=0,
+                      help='number of GPUs per task (default: 0)')
     parser.add_option('-m', '--mem', type='string', default='100m',
                       help='MB of memory per task (default: 100m)')
     parser.add_option('-g', '--group', type='string', default='',
