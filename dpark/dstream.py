@@ -20,6 +20,18 @@ from dpark.rdd import CoGroupedRDD, CheckpointRDD
 from dpark.moosefs import open_file
 from dpark.moosefs.utils import Error
 
+try:
+    from scribe.scribe import Iface, ResultCode, Processor
+    from thrift.protocol import TBinaryProtocol
+    from thrift.transport import TSocket
+    from thrift.server import TNonblockingServer
+    from collections import deque
+    from kazoo.client import KazooClient
+    WITH_SCRIBE = True
+except:
+    WITH_SCRIBE = False
+
+
 logger = get_logger(__name__)
 
 
@@ -158,6 +170,14 @@ class StreamingContext(object):
         ds = SocketInputDStream(self, hostname, port)
         self.registerInputStream(ds)
         return ds
+
+    def scribeTextStream(self, zk_address, zk_path):
+        if WITH_SCRIBE:
+            ds = ScribeInputDStream(self, zk_address, zk_path, category='default')
+            self.registerInputStream(ds)
+            return ds
+        else:
+            raise RuntimeError('No scribed env supported')
 
     def customStream(self, func):
         ds = NetworkInputDStream(self, func)
@@ -1153,3 +1173,72 @@ class SocketInputDStream(NetworkInputDStream):
                 f.close()
             if client:
                 client.close()
+
+if WITH_SCRIBE:
+    class ScribeHandler(Iface):
+        def __init__(self, buf_que):
+            self.buf_que = buf_que
+
+        def Log(self, messages):
+            try:
+                for m in messages:
+                    self.buf_que.append(m.message)
+            except:
+                logger.exception('push message failed')
+                raise
+            return ResultCode.OK
+
+
+    class ScribeInputDStream(NetworkInputDStream):
+        def __init__(self, ssc, zk_address, zk_path, category='default'):
+            NetworkInputDStream.__init__(self, ssc, self._receive)
+            self.zk_address = zk_address
+            self.zk_path = zk_path
+            self.category = category
+
+        def __getstate__(self):
+            d = InputDStream.__getstate__(self)
+            del d['func']
+            del d['_lock']
+
+        def __setstate__(self, state):
+            self.func = self._receive
+            self._lock = threading.RLock()
+            InputDStream.__setstate__(self, state)
+
+        def _createThriftServer(self):
+            buf_que = deque()
+            handler = ScribeHandler(buf_que)
+            protocol_factory = TBinaryProtocol.TBinaryProtocolFactory(False, False)
+            transport = TSocket.TServerSocket(host='0.0.0.0')
+            processor = Processor(handler)
+            server = TNonblockingServer.TNonblockingServer(processor, transport,
+                                                           protocol_factory)
+            server._stop = False
+            while True:
+                try:
+                    server.prepare()
+                    port = transport.handle.getsockname()[1]
+                    logger.info('get scribe port succeed: %d', port)
+                    break
+                except socket.error:
+                    pass
+            spawn(server.serve)
+            return server, port, buf_que
+
+        def _receive(self):
+            server, port, buf_que = self._createThriftServer()
+
+            kazoo_client = KazooClient(self.zk_address)
+            kazoo_client.start()
+            path = '%s/%s:%d' % (self.zk_path, socket.gethostname(), port)
+            kazoo_client.create(path, ephemeral=True, makepath=True)
+
+            while not server._stop:
+                try:
+                    message = buf_que.pop()
+                    yield message
+                except:
+                    time.sleep(0.1)
+            server.close()
+            kazoo_client.close()
