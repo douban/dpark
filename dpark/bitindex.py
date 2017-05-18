@@ -138,7 +138,7 @@ class Bloomfilter(object):
 
     '''
     we're using only two hash functions with different settings, as described
-    by Kirsch & Mitzenmacher: http://www.eecs.harvard.edu/~kirsch/pubs/bbbf/esa06.pdf
+    by Kirsch & Mitzenmacher: https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
     '''
     def _get_offsets(self, obj):
         hash_1 = portable_hash(obj)
