@@ -30,7 +30,10 @@ def compress(s):
     return _compress(s, 1)
 
 try:
-    from lz4 import compress, decompress
+    try:
+        from lz4.block import compress, decompress
+    except ImportError:
+        from lz4 import compress, decompress
     COMPRESS = 'lz4'
 except ImportError:
     try:

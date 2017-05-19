@@ -5,13 +5,16 @@ import socket
 import struct
 import marshal
 import cPickle
-from lz4 import compress, decompress
 from dpark.rdd import RDD, MultiSplit, TextFileRDD, Split, ParallelCollection, cached
 from dpark.util import chain, atomic_file
 from dpark.moosefs import walk
 from dpark.bitindex import Bloomfilter, BitIndex
 from dpark.serialize import dumps, loads
 from dpark.dependency import OneToOneDependency, OneToRangeDependency
+try:
+    from lz4.block import compress, decompress
+except ImportError:
+    from lz4 import compress, decompress
 
 '''
 Strip Format:
