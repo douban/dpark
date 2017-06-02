@@ -873,6 +873,16 @@ class ReducedWindowedDStream(DerivedDStream):
             return self.windowDuration + self.rememberDuration
         # persist
 
+    def __getstate__(self):
+        d = DerivedDStream.__getstate__(self)
+        del d['invfunc']
+        d['_invfunc'] = dump_func(self.func)
+        return d
+
+    def __setstate__(self, state):
+        self.invfunc = load_func(state.pop('_invfunc'))
+        DerivedDStream.__setstate__(self, state)
+
     def compute(self, t):
         if t <= self.zeroTime:
             return
