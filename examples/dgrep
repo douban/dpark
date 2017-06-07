@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
-import sys, os.path
+import os
 import time
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dpark import DparkContext, optParser
 
 optParser.set_usage("%prog [options] pattern filepath...")
@@ -33,15 +32,15 @@ def include_path(path):
         return '%s:%s' % (path, line)
     return _
 
-def echo(s):
-    sys.stdout.write(s+'\n')
-
 if len(filepaths) == 1:
     path = filepaths[0]
-    dpark.textFile(path).filter(match).foreach(echo)
+    rdd = dpark.textFile(path).filter(match)
 
 else:
-    rdd = dpark.union([dpark.textFile(path).filter(match)
-                        .map(include_path(path))
-                       for path in filepaths])
-    rdd.foreach(echo)
+    rdd = dpark.union([
+        dpark.textFile(path).filter(match).map(include_path(path))
+        for path in filepaths
+    ])
+
+for line in rdd:
+    print line
