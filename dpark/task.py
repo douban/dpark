@@ -111,14 +111,19 @@ class ShuffleMapTask(DAGTask):
         createCombiner = self.aggregator.createCombiner
 
         buckets = [{} for i in range(numOutputSplits)]
-        for k,v in rdd.iterator(split):
-            bucketId = getPartition(k)
-            bucket = buckets[bucketId]
-            r = bucket.get(k, None)
-            if r is not None:
-                bucket[k] = mergeValue(r, v)
-            else:
-                bucket[k] = createCombiner(v)
+        for item in rdd.iterator(split):
+            try:
+                k, v = item
+                bucketId = getPartition(k)
+                bucket = buckets[bucketId]
+                r = bucket.get(k, None)
+                if r is not None:
+                    bucket[k] = mergeValue(r, v)
+                else:
+                    bucket[k] = createCombiner(v)
+            except ValueError as e:
+                logger.exception('The ValueError exception: %s at %s', str(e), str(rdd.scope.call_site))
+                raise
 
         return enumerate(buckets)
 
