@@ -17,7 +17,7 @@ from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
 from dpark.rdd import CoGroupedRDD, CheckpointRDD
-from dpark.moosefs import open_file
+from dpark import file_manager
 from dpark.moosefs.utils import Error
 
 try:
@@ -1041,7 +1041,7 @@ class RotatingFilesInputDStream(InputDStream):
         for fn in self.files:
             try:
                 realname = os.path.realpath(fn)
-                f = open_file(realname)
+                f = file_manager.open_file(realname)
                 if f:
                     yield realname, (f.info.inode, f.info.length, f.info.mtime)
                 else:

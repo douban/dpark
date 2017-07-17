@@ -6,7 +6,6 @@ import time
 import struct
 import zlib
 import cPickle
-from dpark import moosefs
 from dpark.util import get_logger
 from dpark.serialize import load_func, dump_func
 
@@ -224,7 +223,7 @@ class BeansdbReader(object):
 
     def open_file(self):
         if self.fileinfo:
-            return moosefs.ReadableFile(self.fileinfo)
+            return self.fileinfo
         else:
             return open(self.path, 'r', 4096 * 1024)
 
