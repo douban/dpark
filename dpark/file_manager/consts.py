@@ -275,10 +275,10 @@ CLTOMA_FUSE_LINK = 426
 MATOCL_FUSE_LINK = 427
 # msgid:32 status:8
 # msgid:32 inode:32 attr:35B
-CLTOMA_FUSE_GETDIR = 428
+CLTOMA_FUSE_READDIR = 428
 # msgid:32 inode:32 uid:32 gid:32 - old version (works like new version with flags==0
 # msgid:32 inode:32 uid:32 gid:32 flags:8
-MATOCL_FUSE_GETDIR = 429
+MATOCL_FUSE_READDIR = 429
 # msgid:32 status:8
 # msgid:32 N*[ name:NAME inode:32 type:8 ] - when GETDIR_FLAG_WITHATTR in flags is not set
 # msgid:32 N*[ name:NAME inode:32 type:35B ]   - when GETDIR_FLAG_WITHATTR in flags is set
@@ -470,7 +470,7 @@ errtab = [
     "Unknown MFS error",
 ]
 
-def mfs_strerror(code):
+def strerror(code):
     if code > ERROR_MAX:
         code = ERROR_MAX
     return errtab[code]

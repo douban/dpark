@@ -8,7 +8,6 @@ from .consts import *
 from .mfs_proxy import ProxyConn
 from dpark.util import get_logger
 
-
 logger = get_logger(__name__)
 
 
@@ -49,6 +48,67 @@ class PosixFS(object):
 
 
 class MooseFS(PosixFS):
+
+    def __init__(self):
+        self.mount_list = []
+        self.proxy_map = {}
+
+    def _find_proxy(self, path):
+        path = os.path.realpath(path)
+        for mountpoint in self.proxy_map:
+            if mountpoint in path:
+                return self.proxy_map[mountpoint]
+        dir_path = path if os.path.isdir(path) else os.path.dirname(path)
+        mount = ''
+        while os.path.exists(os.path.join(dir_path, '.masterinfo')):
+            mount = dir_path
+            dir_path = os.path.dirname(dir_path)
+        if mount:
+            host, port, version = ProxyConn.get_masterinfo(os.path.join(mount, '.masterinfo'))
+            self.proxy_map[mount] = ProxyConn(host, port, version)
+            return self.proxy_map[mount]
+
+    def walk(self, path, followlinks=False):
+        ds = [path]
+        while ds:
+            root = ds.pop()
+            inode = os.lstat(root).st_ino
+            proxy = self._find_proxy(root)
+            cs = proxy.getdirplus(inode)
+            dirs, files = [], []
+            for name, info in cs.iteritems():
+                if name in '..':
+                    continue
+                while followlinks and info and info.ftype == TYPE_SYMLINK:
+                    target = proxy.readlink(info.inode)
+                    if target.startswith('/'):
+                        if not self.check_ok(target):
+                            if os.path.exists(target):
+                                if os.path.isdir(target):
+                                    dirs.append(target)
+                                else:
+                                    files.append(target)
+                            info = None
+                            break
+                        else:
+                            name = ('../' * len(filter(None, root.split('/')))) + target
+                    else:
+                        name = target
+                        target = os.path.join(root, target)
+                    inode = os.lstat(target).st_ino
+                    info = proxy.getattr(inode)
+                if info:
+                    if info.ftype == TYPE_DIRECTORY:
+                        if name not in dirs:
+                            dirs.append(name)
+                    elif info.ftype == TYPE_FILE:
+                        if name not in files:
+                            files.append(name)
+            yield root, dirs, files
+            for d in sorted(dirs, reverse=True):
+                if not d.startswith('/'):
+                    ds.append(os.path.join(root, d))
+
     def check_ok(self, path):
         if os.path.isdir(path):
             return os.path.exists(os.path.join(path, '.masterinfo'))

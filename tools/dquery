@@ -12,7 +12,7 @@ import new
 import time
 import atexit
 from itertools import chain, tee, islice, groupby
-from dpark.moosefs import walk
+from dpark.file_manager import walk
 from dpark import _ctx as dpark
 from dpark.dependency import Aggregator
 from math import log

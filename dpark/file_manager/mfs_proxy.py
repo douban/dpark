@@ -1,7 +1,9 @@
 from __future__ import absolute_import
 import os
+import grp
 import time
 import socket
+import getpass
 from .utils import unpack, pack, uint8, attrToFileInfo, uint64
 from .consts import *
 
@@ -34,8 +36,8 @@ class ProxyConn(object):
         self.port = port
         self.version = version
         self.uid = os.getuid()
-        self.gid = os.getgid()
-
+        self.gids = [g.gr_gid for g in grp.getgrall() if getpass.getuser() in g.gr_mem]
+        self.gids.insert(0, os.getgid())
         self.conn = None
         self.msgid = 0
 
@@ -126,24 +128,22 @@ class ProxyConn(object):
                 else:
                     time.sleep(2 ** i * 0.1)
 
-    def lookup(self, parent, name):
-        ans = self.sendAndReceive(CLTOMA_FUSE_LOOKUP, parent,
-                                  uint8(len(name)), name, self.uid, 1, self.gid)
-        if len(ans) == 1:
-            return None, ""
-
-        inode, = unpack('I', ans)
-        return attrToFileInfo(inode, ans[4: 39], name, self.version), None
-
     def terminate(self):
         self.conn.close()
         self.conn = None
 
-    def getdirplus(self, inode, max_entries=1024, nedgeid=0):
+    def getdirplus(self, inode, max_entries=0xFFFFFFFF, nedgeid=0):
         flag = GETDIR_FLAG_WITHATTR
-        ans = self.sendAndReceive(CLTOMA_FUSE_GETDIR, inode,
-                                  self.uid, 1, self.gid, uint8(flag),
-                                  max_entries, uint64(nedgeid))
+        if self.version < (2, 0, 0):
+            ans = self.sendAndReceive(CLTOMA_FUSE_READDIR, inode, self.uid, self.gids[0], uint8(flag))
+        else:
+            gidsize = len(self.gids)
+            l = [gid for gid in self.gids]
+            l.append(uint8(flag))
+            l.append(max_entries)
+            l.append(uint64(nedgeid))
+            ans = self.sendAndReceive(CLTOMA_FUSE_READDIR, inode,
+                                      self.uid, gidsize, *l)
         p = 0
         infos = {}
         rnedgeid, = unpack('Q', ans[p: p + 8])
@@ -160,9 +160,13 @@ class ProxyConn(object):
             p += 35
         return infos
 
-    def getattr(self, inode):
-        ans = self.sendAndReceive(CLTOMA_FUSE_GETATTR, inode,
-                                  self.uid, self.gid)
+    def getattr(self, inode, opened=0):
+        if self.version < (1, 6, 28):
+            ans = self.sendAndReceive(CLTOMA_FUSE_GETATTR, inode,
+                                      self.uid, self.gids[0])
+        else:
+            ans = self.sendAndReceive(CLTOMA_FUSE_GETATTR, inode,
+                                      uint8(opened), self.uid, self.gids[0])
         return attrToFileInfo(inode, ans[:35], version=self.version)
 
     def readlink(self, inode):
@@ -179,15 +183,18 @@ class ProxyConn(object):
             ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode,
                                       index, uint8(chunkopflags))
         n = len(ans)
-        if n < 20:
-            raise Exception('read chunk invalid length: %s' % n)
-        if (n - 20) % 6 == 0:
-            length, id, version = unpack("QQI", ans)
-            return Chunk(id, length, version, ans[20:])
-        elif (n - 21) % 10 == 0:
-            protocolid, length, id, version = unpack('BQQI', ans)
-            return Chunk(id, length, version, ans[21:], ele_width=10)
-        elif (n - 21) % 14 == 0:
-            protocolid, length, id, version = unpack('BQQI', ans)
-            return Chunk(id, length, version, ans[21:], ele_width=14)
-
+        if n % 2 == 0:
+            if n < 20:
+                raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
+            if (n - 20) % 6 == 0:
+                length, id, version = unpack("QQI", ans)
+                return Chunk(id, length, version, ans[20:])
+        else:
+            if n < 21:
+                raise Exception('read chunk invalid length: %s(expected 21 above)' % n)
+            if (n - 21) % 10 == 0:
+                protocolid, length, id, version = unpack('BQQI', ans)
+                return Chunk(id, length, version, ans[21:], ele_width=10)
+            elif (n - 21) % 14 == 0:
+                protocolid, length, id, version = unpack('BQQI', ans)
+                return Chunk(id, length, version, ans[21:], ele_width=14)

@@ -18,7 +18,7 @@ from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext
 from dpark.rdd import CoGroupedRDD, CheckpointRDD
 from dpark import file_manager
-from dpark.moosefs.utils import Error
+from dpark.file_manager.utils import Error
 
 try:
     from scribe.scribe import Iface, ResultCode, Processor

@@ -31,7 +31,6 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
-from dpark.moosefs import close_mfs
 
 logger = get_logger('dpark.executor@%s' % socket.gethostname())
 

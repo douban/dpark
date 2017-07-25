@@ -19,7 +19,7 @@ class Error(Exception):
         self.code = code
 
     def __str__(self):
-        return mfs_strerror(self.code)
+        return strerror(self.code)
 
 
 def pack(cmd, *args):
