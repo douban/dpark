@@ -99,7 +99,6 @@ def run_task(task_data):
         return 'TASK_FAILED', cPickle.dumps(
             (OtherFailure(msg), None, None), -1)
     finally:
-        close_mfs()
         gc.collect()
         gc.enable()
 

@@ -50,7 +50,6 @@ class PosixFS(object):
 class MooseFS(PosixFS):
 
     def __init__(self):
-        self.mount_list = []
         self.proxy_map = {}
 
     def _find_proxy(self, path):

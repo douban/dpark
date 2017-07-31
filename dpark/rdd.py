@@ -25,7 +25,7 @@ from dpark.util import (
 )
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
-from dpark import file_manager
+from dpark.file_manager import open_file, CHUNKSIZE
 from dpark.beansdb import BeansdbReader, BeansdbWriter
 
 logger = get_logger(__name__)
@@ -1228,7 +1228,7 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = file_manager.open_file(path)
+        self.fileinfo = open_file(path)
         self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
 
         if splitSize is None:
@@ -1246,9 +1246,9 @@ class TextFileRDD(RDD):
         self._preferred_locs = {}
         if self.fileinfo:
             for split in self._splits:
-                if self.splitSize != file_manager.CHUNKSIZE:
-                    start = split.begin / file_manager.CHUNKSIZE
-                    end = (split.end + file_manager.CHUNKSIZE - 1) / file_manager.CHUNKSIZE
+                if self.splitSize != CHUNKSIZE:
+                    start = split.begin / CHUNKSIZE
+                    end = (split.end + CHUNKSIZE - 1) / CHUNKSIZE
                     self._preferred_locs[split] = sum((self.fileinfo.locs(i) for i in range(start, end)), [])
                 else:
                     self._preferred_locs[split] = self.fileinfo.locs(split.begin / self.splitSize)
@@ -1324,7 +1324,7 @@ class PartialTextFileRDD(TextFileRDD):
     def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = file_manager.open_file(path)
+        self.fileinfo = open_file(path)
         self.firstPos = firstPos
         self.lastPos = lastPos
         self.size = size = lastPos - firstPos

@@ -17,7 +17,7 @@ from addict import Dict
 from optparse import OptionParser
 from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
-from dpark.util import getuser, memory_str_to_mba
+from dpark.util import getuser, memory_str_to_mb
 from dpark import moosefs
 
 logger = logging.getLogger('dpark.scheduler')

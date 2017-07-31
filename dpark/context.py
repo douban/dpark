@@ -10,7 +10,7 @@ from dpark.beansdb import restore_value
 from dpark.accumulator import Accumulator
 from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
-from dpark import file_manager
+from dpark.file_manager import walk
 from dpark.tabular import TabularRDD
 from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
 import dpark.conf as conf
@@ -145,7 +145,7 @@ class DparkContext(object):
 
         if os.path.isdir(path):
             paths = []
-            for root,dirs,names in file_manager.walk(path, followlinks=followLink):
+            for root,dirs,names in walk(path, followlinks=followLink):
                 if maxdepth > 0:
                     depth = len(filter(None, root[len(path):].split('/'))) + 1
                     if depth > maxdepth:
@@ -190,7 +190,7 @@ class DparkContext(object):
 
     def table(self, path, **kwargs):
         dpath = path[0] if isinstance(path, (list, tuple)) else path
-        for root, dirs, names in file_manager.walk(dpath):
+        for root, dirs, names in walk(dpath):
             if '.field_names' in names:
                 p = os.path.join(root, '.field_names')
                 fields = open(p).read().split('\t')
@@ -339,7 +339,6 @@ class DparkContext(object):
             pass
         self.scheduler.stop()
         self.started = False
-        #close_mfs()
 
     def __getstate__(self):
         raise ValueError("should not pickle ctx")
