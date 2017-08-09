@@ -67,35 +67,42 @@ class MooseFS(PosixFS):
             self.proxy_map[mount] = ProxyConn(host, port, version)
             return self.proxy_map[mount]
 
+    def _get_indeed_root(self, root):
+        cur_dir = root
+        proxy = self._find_proxy(root)
+        while os.path.islink(cur_dir):
+            target = os.readlink(cur_dir)
+            if target.startswith('/'):
+                cur_dir = target
+            else:
+                cur_dir = os.path.join(os.path.dirname(root), target)
+            proxy = self._find_proxy(cur_dir)
+        if os.path.exists(cur_dir):
+            return cur_dir, proxy
+        else:
+            return None, proxy
+
     def walk(self, path, followlinks=False):
         ds = [path]
         while ds:
             root = ds.pop()
-            inode = os.lstat(root).st_ino
-            proxy = self._find_proxy(root)
+            real_root, proxy = self._get_indeed_root(root)
+            if not real_root:
+                logger.warning('path not exists: %s', root)
+                continue
+            if not proxy and followlinks:
+                logger.warning('the path to walk is symlink to local: %s', root)
+                for sub_root, dirs, names in os.walk(real_root, followlinks=followlinks):
+                    rel_path = os.path.relpath(sub_root, real_root)
+                    rel_dir = rel_path if not rel_path.startswith('.') else ''
+                    yield os.path.join(root, rel_dir), dirs, names
+                continue
+            inode = os.lstat(real_root).st_ino
             cs = proxy.getdirplus(inode)
             dirs, files = [], []
             for name, info in cs.iteritems():
                 if name in '..':
                     continue
-                while followlinks and info and info.ftype == TYPE_SYMLINK:
-                    target = proxy.readlink(info.inode)
-                    if target.startswith('/'):
-                        if not self.check_ok(target):
-                            if os.path.exists(target):
-                                if os.path.isdir(target):
-                                    dirs.append(target)
-                                else:
-                                    files.append(target)
-                            info = None
-                            break
-                        else:
-                            name = ('../' * len(filter(None, root.split('/')))) + target
-                    else:
-                        name = target
-                        target = os.path.join(root, target)
-                    inode = os.lstat(target).st_ino
-                    info = proxy.getattr(inode)
                 if info:
                     if info.ftype == TYPE_DIRECTORY:
                         if name not in dirs:
@@ -103,9 +110,16 @@ class MooseFS(PosixFS):
                     elif info.ftype == TYPE_FILE:
                         if name not in files:
                             files.append(name)
+                    elif info.ftype == TYPE_SYMLINK:
+                        if os.path.isdir(os.path.join(root, name)):
+                            dirs.append(name)
+                        else:
+                            files.append(name)
             yield root, dirs, files
             for d in sorted(dirs, reverse=True):
                 if not d.startswith('/'):
+                    if not followlinks and os.path.islink(os.path.join(root, d)):
+                        continue
                     ds.append(os.path.join(root, d))
 
     def check_ok(self, path):
