@@ -75,7 +75,7 @@ class MooseFS(PosixFS):
             if target.startswith('/'):
                 cur_dir = target
             else:
-                cur_dir = os.path.join(os.path.dirname(root), target)
+                cur_dir = os.path.join(os.path.dirname(cur_dir), target)
             proxy = self._find_proxy(cur_dir)
         if os.path.exists(cur_dir):
             return cur_dir, proxy
