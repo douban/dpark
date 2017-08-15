@@ -4,6 +4,7 @@ from .consts import *
 from .mfs_proxy import ProxyConn
 from dpark.util import get_logger
 from .fs import MooseFS, PosixFS
+import os
 
 logger = get_logger(__name__)
 
@@ -22,6 +23,7 @@ class FileManager(object):
         return None
 
     def open_file(self, path):
+        path = os.path.realpath(path)
         fs = self._get_fs(path)
         return fs.open_file(path)
 

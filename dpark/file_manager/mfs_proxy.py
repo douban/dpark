@@ -183,6 +183,9 @@ class ProxyConn(object):
             ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode,
                                       index, uint8(chunkopflags))
         n = len(ans)
+        if n == 1:
+            from .utils import Error
+            raise Error(ord(ans))
         if n % 2 == 0:
             if n < 20:
                 raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
