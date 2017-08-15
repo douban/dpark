@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import os
 import stat
 import socket
+import threading
 from cStringIO import StringIO
 from .utils import FileInfo, read_chunk
 from .consts import *
@@ -50,7 +51,9 @@ class PosixFS(object):
 class MooseFS(PosixFS):
 
     def __init__(self):
-        self.proxy_map = {}
+        self._local = threading.local()
+        self._local.proxy_map = {}
+        self.proxy_map = self._local.proxy_map
 
     def _find_proxy(self, path):
         path = os.path.realpath(path)
@@ -130,7 +133,7 @@ class MooseFS(PosixFS):
                                                '.masterinfo'))
 
     def open_file(self, path):
-        return MooseFile(path)
+        return MooseFile(path, self)
 
 
 class ReadableFile(object):
@@ -233,16 +236,16 @@ class PosixFile(ReadableFile):
 
 
 class MooseFile(ReadableFile):
-    def __init__(self, path):
+    def __init__(self, path, fs):
         ReadableFile.__init__(self, path)
+        self.fs = fs
         self._load(path)
 
     def _load(self, path):
-        host, port, version = ProxyConn.get_masterinfo(path)
-        self.proxy = ProxyConn(host, port, version)
+        proxy = self.fs._find_proxy(path)
         st = os.lstat(path)
         self.inode = st.st_ino
-        self.info = self.proxy.getattr(self.inode)
+        self.info = proxy.getattr(self.inode)
         self.length = self.info.length
         self.cscache = {}
         self.roff = 0
@@ -253,7 +256,8 @@ class MooseFile(ReadableFile):
     def get_chunk(self, i):
         chunk = self.cscache.get(i)
         if not chunk:
-            chunk = self.proxy.readchunk(self.inode, i)
+            proxy = self.fs._find_proxy(self.path)
+            chunk = proxy.readchunk(self.inode, i)
             self.cscache[i] = chunk
         return chunk
 
@@ -261,7 +265,9 @@ class MooseFile(ReadableFile):
         return self.path
 
     def __setstate__(self, state):
-        path = state
+        from . import file_manager
+        self.path = path = state
+        self.fs = file_manager._get_fs(path)
         self._load(path)
 
     def locs(self, i=None):
