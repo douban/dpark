@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 import os
 import stat
+import errno
 import socket
 import threading
 from cStringIO import StringIO
@@ -56,7 +57,6 @@ class MooseFS(PosixFS):
         self.proxy_map = self._local.proxy_map
 
     def _find_proxy(self, path):
-        path = os.path.realpath(path)
         for mountpoint in self.proxy_map:
             if mountpoint in path:
                 return self.proxy_map[mountpoint]
@@ -71,25 +71,21 @@ class MooseFS(PosixFS):
             return self.proxy_map[mount]
 
     def _get_indeed_root(self, root):
-        cur_dir = root
+        root = os.path.realpath(root)
         proxy = self._find_proxy(root)
-        while os.path.islink(cur_dir):
-            target = os.readlink(cur_dir)
-            if target.startswith('/'):
-                cur_dir = target
-            else:
-                cur_dir = os.path.join(os.path.dirname(cur_dir), target)
-            proxy = self._find_proxy(cur_dir)
-        if os.path.exists(cur_dir):
-            return cur_dir, proxy
-        else:
-            return None, proxy
+        try:
+            st = os.lstat(root)
+            return root, proxy, st.st_ino
+        except OSError as e:
+            if e.errno == errno.ENOENT:
+                return None, proxy, None
+            raise e
 
     def walk(self, path, followlinks=False):
         ds = [path]
         while ds:
             root = ds.pop()
-            real_root, proxy = self._get_indeed_root(root)
+            real_root, proxy, inode = self._get_indeed_root(root)
             if not real_root:
                 logger.warning('path not exists: %s', root)
                 continue
@@ -100,7 +96,6 @@ class MooseFS(PosixFS):
                     rel_dir = rel_path if not rel_path.startswith('.') else ''
                     yield os.path.join(root, rel_dir), dirs, names
                 continue
-            inode = os.lstat(real_root).st_ino
             cs = proxy.getdirplus(inode)
             dirs, files = [], []
             for name, info in cs.iteritems():
