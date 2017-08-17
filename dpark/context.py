@@ -42,8 +42,6 @@ def setup_conf(options):
         options.mem = memory_str_to_mb(options.mem)
 
     conf.__dict__.update(os.environ)
-    import moosefs
-    moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
 
 @singleton
 class DparkContext(object):

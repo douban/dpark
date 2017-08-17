@@ -18,7 +18,6 @@ from optparse import OptionParser
 from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
 from dpark.util import getuser, memory_str_to_mb
-from dpark import moosefs
 
 logger = logging.getLogger('dpark.scheduler')
 
@@ -782,8 +781,6 @@ if __name__ == '__main__':
         conf.load_conf('/etc/dpark.conf')
 
     conf.__dict__.update(os.environ)
-    moosefs.MFS_PREFIX = conf.MOOSEFS_MOUNT_POINTS
-    moosefs.master.ENABLE_DCACHE = conf.MOOSEFS_DIR_CACHE
 
     if options.master == 'mesos':
         options.master = conf.MESOS_MASTER

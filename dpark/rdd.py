@@ -1228,8 +1228,8 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = open_file(path)
-        self.size = size = self.fileinfo.length if self.fileinfo else os.path.getsize(path)
+        file_ = open_file(path)
+        self.size = size = file_.length
 
         if splitSize is None:
             if numSplits is None:
@@ -1244,14 +1244,13 @@ class TextFileRDD(RDD):
                     for i in range(numSplits)]
 
         self._preferred_locs = {}
-        if self.fileinfo:
-            for split in self._splits:
-                if self.splitSize != CHUNKSIZE:
-                    start = split.begin / CHUNKSIZE
-                    end = (split.end + CHUNKSIZE - 1) / CHUNKSIZE
-                    self._preferred_locs[split] = sum((self.fileinfo.locs(i) for i in range(start, end)), [])
-                else:
-                    self._preferred_locs[split] = self.fileinfo.locs(split.begin / self.splitSize)
+        for split in self._splits:
+            if self.splitSize != CHUNKSIZE:
+                start = split.begin / CHUNKSIZE
+                end = (split.end + CHUNKSIZE - 1) / CHUNKSIZE
+                self._preferred_locs[split] = sum((file_.locs(i) for i in range(start, end)), [])
+            else:
+                self._preferred_locs[split] = file_.locs(split.begin / self.splitSize)
 
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
 
@@ -1273,16 +1272,10 @@ class TextFileRDD(RDD):
             super(TextFileRDD, self)._get_scope()
 
     def open_file(self):
-        if self.fileinfo:
-            return open_file(self.path)
-        else:
-            return open(self.path, 'r', 4096 * 1024)
+        return open_file(self.path)
 
     def compute(self, split):
         f = self.open_file()
-        #if len(self) == 1 and split.index == 0 and split.begin == 0:
-        #    return f
-
         start = split.begin
         end = split.end
         if start > 0:
@@ -1296,16 +1289,6 @@ class TextFileRDD(RDD):
 
         if start >= end:
             return []
-
-        #if self.fileinfo:
-        #    # cut by end
-        #    if end < self.fileinfo.length:
-        #        f.seek(end-1)
-        #        while f.read(1) not in ('', '\n'):
-        #            end += 1
-        #        f.length = end
-        #    f.seek(start)
-        #    return f
 
         return self.read(f, start, end)
 
@@ -1324,7 +1307,6 @@ class PartialTextFileRDD(TextFileRDD):
     def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
         RDD.__init__(self, ctx)
         self.path = path
-        self.fileinfo = open_file(path)
         self.firstPos = firstPos
         self.lastPos = lastPos
         self.size = size = lastPos - firstPos
@@ -1410,8 +1392,7 @@ class GZipFileRDD(TextFileRDD):
         end = self.find_block(f, split.index * self.splitSize + self.splitSize)
         # TODO: speed up
         f.seek(start)
-        if self.fileinfo:
-            f.length = end
+        f.length = end
         dz = zlib.decompressobj(-zlib.MAX_WBITS)
         skip_first = False
         while start < end:

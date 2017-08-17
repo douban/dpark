@@ -37,7 +37,7 @@ class PosixFS(object):
         return os.readlink(path)
 
     def open_file(self, path):
-        return None
+        return PosixFile(path)
 
     def listdir(self, path):
         return os.listdir(path)
