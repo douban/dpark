@@ -1,8 +1,10 @@
+from __future__ import absolute_import
 import bisect
 
 from dpark.util import portable_hash
 from dpark.serialize import load_func, dump_func
 from dpark.heaponkey import HeapOnKey
+from six.moves import range
 
 class Dependency:
     def __init__(self, rdd):
@@ -27,8 +29,8 @@ class OneToRangeDependency(NarrowDependency):
         self.length = length
 
     def getParents(self, pid):
-        return range(pid * self.splitSize,
-                min((pid+1) * self.splitSize, self.length))
+        return list(range(pid * self.splitSize,
+                min((pid+1) * self.splitSize, self.length)))
 
 class CartesianDependency(NarrowDependency):
     def __init__(self, rdd, first, numSplitsInRdd2):

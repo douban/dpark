@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import time
 import socket
@@ -7,8 +9,10 @@ import threading
 import random
 from functools import reduce
 from collections import deque
+import six
+from six.moves import range
 try:
-    import cPickle as pickle
+    import six.moves.cPickle as pickle
 except ImportError:
     import pickle
 
@@ -65,7 +69,7 @@ class Interval(object):
     def current(cls, duration):
         now = int(time.time())
         ss = int(duration)
-        begin = now / ss * ss
+        begin = now // ss * ss
         return cls(begin, begin + duration)
 
 
@@ -79,7 +83,7 @@ class DStreamGraph(object):
         self.rememberDuration = None
 
     def start(self, time):
-        self.zeroTime = int(time / self.batchDuration) * self.batchDuration
+        self.zeroTime = int(time // self.batchDuration) * self.batchDuration
         for out in self.outputStreams:
             out.remember(self.rememberDuration)
         for ins in self.inputStreams:
@@ -108,8 +112,8 @@ class DStreamGraph(object):
         self.outputStreams.append(output)
 
     def generateRDDs(self, time):
-        return filter(None, [out.generateJob(time)
-                             for out in self.outputStreams])
+        return [_f for _f in [out.generateJob(time)
+                             for out in self.outputStreams] if _f]
 
     def forgetOldRDDs(self, time):
         for out in self.outputStreams:
@@ -276,7 +280,7 @@ class Checkpoint(object):
     @classmethod
     def read(cls, path):
         filename = os.path.join(path, 'metadata')
-        with open(filename) as f:
+        with open(filename, 'rb') as f:
             return pickle.loads(f.read())
 
 
@@ -317,7 +321,7 @@ class RecurringTimer(object):
         self.stopped = False
 
     def start(self, start):
-        self.nextTime = (int(start / self.period) + 1) * self.period
+        self.nextTime = (int(start // self.period) + 1) * self.period
         self.stopped = False
         self.thread = spawn(self.run)
         logger.debug("RecurringTimer started, nextTime is %d", self.nextTime)
@@ -338,7 +342,7 @@ class RecurringTimer(object):
             else:
                 time.sleep(max(min(self.nextTime - now, 1), 0.01))
 
-_STOP, _EVENT = range(2)
+_STOP, _EVENT = list(range(2))
 
 
 class Scheduler(object):
@@ -447,14 +451,14 @@ class DStream(object):
             dep.setGraph(g)
 
     def remember(self, duration):
-        if duration and duration > self.rememberDuration:
+        if duration and (self.rememberDuration is None or duration > self.rememberDuration):
             self.rememberDuration = duration
         for dep in self.dependencies:
             dep.remember(self.parentRememberDuration)
 
     def isTimeValid(self, t):
         d = (t - self.zeroTime)
-        dd = d / self.slideDuration * self.slideDuration
+        dd = d // self.slideDuration * self.slideDuration
         return abs(d - dd) < 1e-3
 
     def compute(self, time):
@@ -480,7 +484,7 @@ class DStream(object):
 
     def forgetOldRDDs(self, time):
         oldest = time - (self.rememberDuration or 0)
-        for k in self.generatedRDDs.keys():
+        for k in list(self.generatedRDDs.keys()):
             if k < oldest:
                 self.generatedRDDs.pop(k)
         for dep in self.dependencies:
@@ -493,7 +497,7 @@ class DStream(object):
         if newRdds:
             oldRdds = self.checkpointData
             self.checkpointData = dict(newRdds)
-            for t, p in oldRdds.iteritems():
+            for t, p in six.iteritems(oldRdds):
                 if t not in self.checkpointData:
                     try:
                         shutil.rmtree(p)
@@ -509,7 +513,7 @@ class DStream(object):
             len(newRdds))
 
     def restoreCheckpointData(self):
-        for t, path in self.checkpointData.iteritems():
+        for t, path in six.iteritems(self.checkpointData):
             self.generatedRDDs[t] = CheckpointRDD(self.ssc.sc, path)
         for dep in self.dependencies:
             dep.restoreCheckpointData()
@@ -565,14 +569,14 @@ class DStream(object):
     def show(self):
         def forFunc(rdd, t):
             some = rdd.take(11)
-            print "-" * 80
-            print "Time:", time.asctime(time.localtime(t))
-            print "-" * 80
+            print("-" * 80)
+            print("Time:", time.asctime(time.localtime(t)))
+            print("-" * 80)
             for i in some[:10]:
-                print i
+                print(i)
             if len(some) > 10:
-                print '...'
-            print
+                print('...')
+            print()
         return self.foreach(forFunc)
 
     def window(self, duration, slideDuration=None):
@@ -797,7 +801,7 @@ class UnionDStream(DStream):
         self.slideDuration = parents[0].slideDuration
 
     def compute(self, t):
-        rdds = filter(None, [p.getOrCompute(t) for p in self.parents])
+        rdds = [_f for _f in [p.getOrCompute(t) for p in self.parents] if _f]
         if rdds:
             return self.ssc.sc.union(rdds)
 
@@ -835,7 +839,7 @@ class CoGroupedDStream(DStream):
         self.slideDuration = parents[0].slideDuration
 
     def compute(self, t):
-        rdds = filter(None, [p.getOrCompute(t) for p in self.parents])
+        rdds = [_f for _f in [p.getOrCompute(t) for p in self.parents] if _f]
         if rdds:
             return CoGroupedRDD(rdds, self.partitioner)
 
@@ -1067,7 +1071,7 @@ class RotatingFilesInputDStream(InputDStream):
 
             state[fn] = (inode, size, mtime)
 
-        for fn, (_inode, _size, _mtime) in self._state.iteritems():
+        for fn, (_inode, _size, _mtime) in six.iteritems(self._state):
             if fn not in state:
                 try:
                     st = os.stat(fn)
@@ -1082,7 +1086,7 @@ class RotatingFilesInputDStream(InputDStream):
 
         self._state = state
         return self.ssc.sc.union([self.ssc.sc.partialTextFile(path, begin, end)
-                                  for path, (begin, end) in offsets.iteritems()])
+                                  for path, (begin, end) in six.iteritems(offsets)])
 
 
 

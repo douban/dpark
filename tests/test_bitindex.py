@@ -1,6 +1,8 @@
+from __future__ import absolute_import
 import os, sys
 import unittest
 import random
+from six.moves import range
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark.bitindex import BitIndex, Bloomfilter
@@ -42,7 +44,7 @@ class TestBitIndex(unittest.TestCase):
 
     def test_gets(self):
         a = BitIndex()
-        pos = [random.randint(0, 1000) for i in xrange(100)]
+        pos = [random.randint(0, 1000) for i in range(100)]
         a.sets(pos)
         self.assertEqual(a.size, max(pos) + 1)
         self.assertEqual(len(a.array), (a.size + 7) >> 3)
@@ -53,13 +55,13 @@ class TestBitIndex(unittest.TestCase):
 
     def test_operations(self):
         a = BitIndex()
-        pos_a = set(random.randint(0, 1000) for i in xrange(100))
+        pos_a = set(random.randint(0, 1000) for i in range(100))
         a.sets(pos_a)
         b = BitIndex()
-        pos_b = set(random.randint(0, 1000) for i in xrange(100))
+        pos_b = set(random.randint(0, 1000) for i in range(100))
         b.sets(pos_b)
         c = BitIndex()
-        pos_c = set(random.randint(0, 1000) for i in xrange(100))
+        pos_c = set(random.randint(0, 1000) for i in range(100))
         c.sets(pos_c)
 
         self.assertEqual(list(a.intersect(b)), sorted(pos_a & pos_b))
@@ -76,10 +78,10 @@ class TestBitIndex(unittest.TestCase):
     def test_bloomfilter(self):
         m, k = Bloomfilter.calculate_parameters(100000, 0.01)
         b = Bloomfilter(m, k)
-        keys = [random.randint(0, 80000) for i in xrange(40000)]
+        keys = [random.randint(0, 80000) for i in range(40000)]
         b.add(keys)
         self.assertTrue(keys[0] in b)
         self.assertTrue(all(b.match(keys)))
-        self.assertTrue(len(filter(None, b.match(xrange(80000, 100000)))) < 100000 * 0.01)
+        self.assertTrue(len([_f for _f in b.match(range(80000, 100000)) if _f]) < 100000 * 0.01)
 
 

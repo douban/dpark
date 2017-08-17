@@ -1,9 +1,11 @@
+from __future__ import absolute_import
 import sys
 import time
 import socket
 from operator import itemgetter
 
 from dpark.util import get_logger
+from six.moves import range
 logger = get_logger(__name__)
 
 
@@ -63,7 +65,7 @@ class SimpleJob(Job):
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
-        self.blacklist = [[] for i in xrange(len(tasks))]
+        self.blacklist = [[] for i in range(len(tasks))]
         self.tidToIndex = {}
         self.numTasks = len(tasks)
         self.tasksLaunched = 0
@@ -118,7 +120,7 @@ class SimpleJob(Job):
         st = {}
         for t in tasks:
             st[t] = st.get(t, 0) + 1
-        ts = sorted(st.items(), key=itemgetter(1), reverse=True)
+        ts = sorted(list(st.items()), key=itemgetter(1), reverse=True)
         return [t for t, _ in ts]
 
     def findTaskFromList(self, l, host, cpus, mem):
@@ -286,7 +288,7 @@ class SimpleJob(Job):
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:
             self.sched.requestMoreResources()
-        for i in xrange(len(self.blacklist)):
+        for i in range(len(self.blacklist)):
             self.blacklist[i] = []
         self.tasksLaunched -= 1
 
@@ -304,7 +306,7 @@ class SimpleJob(Job):
                 n)
             self.tasksLaunched = n
 
-        for i in xrange(self.numTasks):
+        for i in range(self.numTasks):
             task = self.tasks[i]
             if (self.launched[i] and task.status == 'TASK_STAGING'
                     and task.start + WAIT_FOR_RUNNING < now):
@@ -340,7 +342,7 @@ class SimpleJob(Job):
 
     def abort(self, message):
         logger.error('abort the job: %s', message)
-        tasks = ' '.join(str(i) for i in xrange(len(self.finished))
+        tasks = ' '.join(str(i) for i in range(len(self.finished))
                          if not self.finished[i])
         logger.error('not finished tasks: %s', tasks)
         self.failed = True

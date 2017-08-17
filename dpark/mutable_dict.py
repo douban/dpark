@@ -1,7 +1,8 @@
+from __future__ import absolute_import
 import uuid
 import os
-import cPickle
-import urllib
+import six.moves.cPickle
+from six.moves import urllib
 import struct
 import glob
 import uuid
@@ -10,6 +11,7 @@ from dpark.util import compress, decompress, mkdir_p, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
 from collections import OrderedDict
+import six
 
 class LRUDict(object):
     def __init__(self, limit=None):
@@ -66,7 +68,7 @@ class MutableDict(object):
         _key = self._get_key(key)
         values = self.data.get((_key, key))
         if values is None:
-            for k, v in self._fetch_missing(_key).iteritems():
+            for k, v in six.iteritems(self._fetch_missing(_key)):
                 self.data.put((_key, k), v)
 
             values = self.data.get((_key, key))
@@ -111,7 +113,7 @@ class MutableDict(object):
 
             url = '%s/%s' % (server_uri, filename)
             with atomic_file(fn) as f:
-                data = compress(cPickle.dumps(new))
+                data = compress(six.moves.cPickle.dumps(new))
                 f.write(struct.pack('<I', len(data)+4) + data)
 
             env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
@@ -149,7 +151,7 @@ class MutableDict(object):
         result = {}
         urls = env.trackerClient.call(GetValueMessage('mutable_dict:%s' % key))
         for url in urls:
-            f = urllib.urlopen(url)
+            f = urllib.request.urlopen(url)
             if f.code is not None and f.code != 200:
                 raise IOError('Open %s failed:%s' % (url, f.code))
 
@@ -162,7 +164,7 @@ class MutableDict(object):
                 raise IOError('Transfer %s failed: %s received, %s expected' % (url,
                     len(data), length))
 
-            data = cPickle.loads(decompress(data[4:]))
+            data = six.moves.cPickle.loads(decompress(data[4:]))
             for k,v in data.items():
                 if k in result:
                     r = result[k]
@@ -203,7 +205,7 @@ class MutableDict(object):
             try:
                 os.makedirs(p)
                 os.symlink(p, path)
-            except OSError, e:
+            except OSError as e:
                 pass
 
             return path

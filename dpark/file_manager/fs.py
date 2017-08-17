@@ -4,11 +4,16 @@ import stat
 import errno
 import socket
 import threading
-from cStringIO import StringIO
 from .utils import FileInfo, read_chunk
 from .consts import *
 from .mfs_proxy import ProxyConn
 from dpark.util import get_logger
+import six
+from six.moves import range
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from six import BytesIO as StringIO
 
 logger = get_logger(__name__)
 
@@ -98,7 +103,7 @@ class MooseFS(PosixFS):
                 continue
             cs = proxy.getdirplus(inode)
             dirs, files = [], []
-            for name, info in cs.iteritems():
+            for name, info in six.iteritems(cs):
                 if name in '..':
                     continue
                 if info.ftype == TYPE_DIRECTORY:
@@ -149,17 +154,17 @@ class ReadableFile(object):
         raise NotImplementedError
 
     def __iter__(self):
-        line = ''
+        line = b''
         while True:
             data = self.read(-1)
             if not data:
                 break
             generator = StringIO(data)
-            assert '\n' not in line, line
+            assert b'\n' not in line, line
             line += next(generator)
-            if line.endswith('\n'):
+            if line.endswith(b'\n'):
                 yield line
-                line = ''
+                line = b''
                 ll = list(generator)
                 if not ll:
                     continue
@@ -167,9 +172,9 @@ class ReadableFile(object):
                 for line in ll[:-1]:
                     yield line
                 line = ll[-1]
-                if line.endswith('\n'):
+                if line.endswith(b'\n'):
                     yield line
-                    line = ''
+                    line = b''
         if line:
             yield line
 

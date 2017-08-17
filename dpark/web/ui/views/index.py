@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from flask import Blueprint, current_app as app, render_template as tmpl, abort
 
 bp = Blueprint('index', __name__)

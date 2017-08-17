@@ -1,4 +1,5 @@
 # util
+from __future__ import absolute_import
 import os
 import sys
 import threading
@@ -63,7 +64,7 @@ def izip(*its):
     its = [iter(it) for it in its]
     try:
         while True:
-            yield tuple([it.next() for it in its])
+            yield tuple([next(it) for it in its])
     except StopIteration:
         pass
 
@@ -134,7 +135,7 @@ def atomic_file(filename, mode='w+b', bufsize=-1):
 
         with tempfile.NamedTemporaryFile(
             mode=mode, suffix=suffix, prefix=prefix,
-            dir=path, delete=False, bufsize=bufsize) as f:
+            dir=path, delete=False) as f:
             tempname = f.name
             yield f
 

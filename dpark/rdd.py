@@ -1,13 +1,14 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
 import os, os.path
 import time
 import socket
 import csv
-from cStringIO import StringIO
 import itertools
 import collections
 import math
-import cPickle
+import six.moves.cPickle
 import random
 import bz2
 import gzip
@@ -18,6 +19,12 @@ import heapq
 import struct
 import traceback
 
+try:
+    from cStringIO import StringIO
+    BytesIO = StringIO
+except:
+    from six import BytesIO, StringIO
+
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
@@ -27,6 +34,14 @@ from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
 from dpark.beansdb import BeansdbReader, BeansdbWriter
+import six
+from six.moves import filter
+from six.moves import map
+from six.moves import range
+from six.moves import zip
+from functools import reduce
+if not six.PY2:
+    from io import TextIOWrapper
 
 logger = get_logger(__name__)
 
@@ -50,7 +65,7 @@ STACK_FUNC_NAME = 2
 
 class Scope(object):
     def __init__(self):
-        self.func_name = None
+        self.__name__ = None
         self.call_site = None
 
 
@@ -82,10 +97,10 @@ class RDD(object):
                 break
         for i in range(idx, -1, -1):
             if stack[i][STACK_FUNC_NAME] != '__init__':
-                self.scope.func_name = stack[i][STACK_FUNC_NAME]
+                self.scope.__name__ = stack[i][STACK_FUNC_NAME]
                 if i > 0:
                     self.scope.call_site = '%s at %s : %s ' % \
-                                           (self.scope.func_name,
+                                           (self.scope.__name__,
                                             stack[i - 1][STACK_FILE_NAME],
                                             str(stack[i - 1][STACK_LINE_NUM]))
                 else:
@@ -119,6 +134,14 @@ class RDD(object):
 
     def __getslice__(self, i,j):
         return SliceRDD(self, i, j)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, slice) and idx.step is None:
+            start = idx.start or 0
+            stop = idx.stop or sys.maxsize
+            return self.__getslice__(start, stop)
+
+        raise ValueError('Unsupported slicing!')
 
     def mergeSplit(self, splitSize=None, numSplits=None):
         return MergedRDD(self, splitSize, numSplits)
@@ -177,7 +200,7 @@ class RDD(object):
     def _do_checkpoint(self):
         if self.checkpoint_path:
             if not self._checkpoint_rdd:
-                _generated = map(int, CheckpointRDD.generated_files(self.checkpoint_path))
+                _generated = list(map(int, CheckpointRDD.generated_files(self.checkpoint_path)))
                 if len(_generated) != len(self):
                     missing = [sp.index for sp in self.splits if sp.index not in _generated]
                     sum(self.ctx.runJob(self, lambda x:list(x), missing), [])
@@ -201,7 +224,7 @@ class RDD(object):
                 p = os.path.join(self.checkpoint_path, str(split.index))
                 v = list(self.compute(split))
                 with atomic_file(p) as f:
-                    f.write(cPickle.dumps(v, -1))
+                    f.write(six.moves.cPickle.dumps(v, -1))
 
                 return v
             else:
@@ -232,12 +255,12 @@ class RDD(object):
             return self.mapPartitions(lambda it: sorted(it, key=key, reverse=reverse))
         if numSplits is None:
             numSplits = min(self.ctx.defaultMinSplits, len(self))
-        n = max(numSplits * 10 / len(self), 1)
+        n = max(numSplits * 10 // len(self), 1)
         samples = self.mapPartitions(lambda x:itertools.islice(x, n)).map(key).collect()
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
-        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter, taskMemory).flatMap(lambda (x,y):y)
+        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter, taskMemory).flatMap(lambda x_y:x_y[1])
         return parted.mapPartitions(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
@@ -276,7 +299,7 @@ class RDD(object):
         list(self.ctx.runJob(self, f))
 
     def enumeratePartition(self):
-        return EnumeratePartitionsRDD(self, lambda x,it: itertools.imap(lambda y:(x,y), it))
+        return EnumeratePartitionsRDD(self, lambda x,it: map(lambda y:(x,y), it))
 
     def enumerate(self):
         """
@@ -321,7 +344,7 @@ class RDD(object):
                         s = v
                     else:
                         s = f(s, v)
-                except Exception, e:
+                except Exception as e:
                     logger.warning("skip bad record %s: %s", v, e)
                     err += 1
                     if total > 100 and err > total * self.err * 10:
@@ -336,7 +359,7 @@ class RDD(object):
 
     def uniq(self, numSplits=None, taskMemory=None):
         g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory)
-        return g.map(lambda (x,y):x)
+        return g.map(lambda x_y1:x_y1[0])
 
     def top(self, n=10, key=None, reverse=False):
         if reverse:
@@ -426,7 +449,7 @@ class RDD(object):
         '''
         assert depth<=2, 'only support depth<=2 now'
         if len(self) >= 256:
-            self = self.mergeSplit(len(self) / 256 + 1)
+            self = self.mergeSplit(len(self) // 256 + 1)
         return OutputBeansdbRDD(self, path, depth, overwrite, compress,
                                 raw, valueWithMeta).collect()
 
@@ -437,10 +460,10 @@ class RDD(object):
     # Extra functions for (K,V) pairs RDD
     def reduceByKeyToDriver(self, func):
         def mergeMaps(m1, m2):
-            for k,v in m2.iteritems():
+            for k,v in six.iteritems(m2):
                 m1[k]=func(m1[k], v) if k in m1 else v
             return m1
-        return self.map(lambda (x,y):{x:y}).reduce(mergeMaps)
+        return self.map(lambda x_y2:{x_y2[0]:x_y2[1]}).reduce(mergeMaps)
 
     def combineByKey(self, aggregator, splits=None, taskMemory=None):
         if splits is None:
@@ -485,25 +508,22 @@ class RDD(object):
         # (order_func(v), partition id, sequence id, v), in the end of the combineByKey
         # return the v in the 4-th of the tuple
         def get_tuple_list(s_id, it, rev):
-            return map(
-                lambda (i, (k, v)): (
-                    k,
-                    (order_func(v) if order_func else v,
+            return [(
+                    i_k_v[1][0],
+                    (order_func(i_k_v[1][1]) if order_func else i_k_v[1][1],
                      s_id if not rev else -s_id,
-                     i if not rev else -i,
-                     v)
-                ),
-                enumerate(it)
-            )
+                     i_k_v[0] if not rev else -i_k_v[0],
+                     i_k_v[1][1])
+                ) for i_k_v in enumerate(it)]
         aggregator = HeapAggregator(top_n,
                                     order_reverse=reverse)
         rdd = EnumeratePartitionsRDD(self, lambda s_id, it: get_tuple_list(s_id, it, reverse))
         return rdd.combineByKey(aggregator, num_splits, task_memory).map(
-            lambda (x, ls):
-            (x, sorted(ls, reverse=reverse))
+            lambda x_ls:
+            (x_ls[0], sorted(x_ls[1], reverse=reverse))
         ).map(
-            lambda (k, ls): (
-                k, map(lambda x: x[-1], ls)
+            lambda k_ls: (
+                k_ls[0], [x[-1] for x in k_ls[1]]
             )
         )
 
@@ -519,9 +539,7 @@ class RDD(object):
                 lambda val: (val, 2)  # bin('10') for new rdd
             )
         ).reduceByKey(
-            lambda (val_a, rev_a), (val_b, rev_b): (
-                (val_b if rev_b > rev_a else val_a), (rev_a | rev_b)
-            ),
+            lambda x, y: (y[0] if y[1] > x[1] else x[0], x[1] | y[1]),
             numSplits,
             taskMemory
         )
@@ -531,10 +549,10 @@ class RDD(object):
         #   3(11): new updated value
         if replace_only:
             rdd = rdd.filter(
-                lambda (key, (val, rev)): rev != 2
+                lambda key_val_rev: key_val_rev[1][1] != 2
             )
         return rdd.mapValue(
-            lambda (val, rev): val
+            lambda val_rev: val_rev[0]
         )
 
     def innerJoin(self, smallRdd):
@@ -551,7 +569,8 @@ class RDD(object):
         for (k, v) in smallRdd:
             o[k].append(v)
         o_b = self.ctx.broadcast(o)
-        def do_join((k, v)):
+        def do_join(xxx_todo_changeme):
+            (k, v) = xxx_todo_changeme
             for v1 in o_b.value[k]:
                 yield (k, (v, v1))
         r = self.flatMap(do_join)
@@ -571,7 +590,8 @@ class RDD(object):
         return self._join(other, (1,2), numSplits, taskMemory)
 
     def _join(self, other, keeps, numSplits=None, taskMemory=None):
-        def dispatch((k,seq)):
+        def dispatch(xxx_todo_changeme3):
+            (k,seq) = xxx_todo_changeme3
             vbuf, wbuf = seq
             if not vbuf and 2 in keeps:
                 vbuf.append(None)
@@ -613,7 +633,7 @@ class RDD(object):
             return result[0] if result else None
         else:
             logger.warning("Too much time may be taken to lookup in a RDD without a partitioner!")
-            result = self.flatMap(lambda (k, v):[v] if k==key else []).take(1)
+            result = self.flatMap(lambda k_v:[k_v[1]] if k_v[0]==key else []).take(1)
             return result[0] if result else None
 
     def asTable(self, fields, name=''):
@@ -641,7 +661,7 @@ class RDD(object):
         try:
             from pyhll import HyperLogLog
         except ImportError:
-            from hyperloglog import HyperLogLog
+            from .hyperloglog import HyperLogLog
         def create(v):
             return HyperLogLog([v], 16)
         def combine(s, v):
@@ -689,7 +709,7 @@ class MappedRDD(DerivedRDD):
             try:
                 total += 1
                 yield self.func(v)
-            except Exception, e:
+            except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
@@ -709,7 +729,7 @@ class MappedRDD(DerivedRDD):
         try:
             self.func = load_func(code)
         except Exception:
-            print 'load failed', self.__class__, code[:1024]
+            print('load failed', self.__class__, code[:1024])
             raise
 
 class FlatMappedRDD(MappedRDD):
@@ -725,7 +745,7 @@ class FlatMappedRDD(MappedRDD):
                 total += 1
                 for k in self.func(v):
                     yield k
-            except Exception, e:
+            except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
@@ -748,7 +768,7 @@ class FilteredRDD(MappedRDD):
                 total += 1
                 if self.func(v):
                     yield v
-            except Exception, e:
+            except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
@@ -794,13 +814,13 @@ class PipedRDD(DerivedRDD):
                 else:
                     return
                 try:
-                    if isinstance(first, str) and first.endswith('\n'):
+                    if isinstance(first, six.binary_type) and first.endswith(b'\n'):
                         stdin.write(first)
                         stdin.writelines(it)
                     else:
-                        stdin.write("%s\n"%first)
-                        stdin.writelines("%s\n"%x for x in it)
-                except Exception, e:
+                        stdin.write(("%s\n"%first).encode('utf-8'))
+                        stdin.writelines(("%s\n"%x).encode('utf-8') for x in it)
+                except Exception as e:
                     if not (isinstance(e, IOError) and e.errno == 32): # Broken Pipe
                         self.error = e
                         p.kill()
@@ -839,7 +859,7 @@ class MappedValuesRDD(MappedRDD):
             try:
                 total += 1
                 yield (k,func(v))
-            except Exception, e:
+            except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
@@ -856,7 +876,7 @@ class FlatMappedValuesRDD(MappedValuesRDD):
                 total += 1
                 for vv in self.func(v):
                     yield k,vv
-            except Exception, e:
+            except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
                 if total > 100 and err > total * self.err * 10:
@@ -1008,7 +1028,7 @@ class SampleRDD(DerivedRDD):
         if self.withReplacement:
             olddata = list(self.prev.iterator(split))
             sampleSize = int(math.ceil(len(olddata) * self.frac))
-            for i in xrange(sampleSize):
+            for i in range(sampleSize):
                 yield rd.choice(olddata)
         else:
             for i in self.prev.iterator(split):
@@ -1073,8 +1093,8 @@ class MergedRDD(RDD):
     def __init__(self, rdd, splitSize=None, numSplits=None):
         RDD.__init__(self, rdd.ctx)
         if splitSize is None:
-            splitSize = (len(rdd) + numSplits - 1) / numSplits
-        numSplits = (len(rdd) + splitSize - 1) / splitSize
+            splitSize = (len(rdd) + numSplits - 1) // numSplits
+        numSplits = (len(rdd) + splitSize - 1) // splitSize
         self.rdd = rdd
         self.mem = rdd.mem
         self.splitSize = splitSize
@@ -1119,8 +1139,9 @@ class ZippedRDD(RDD):
         self.rdds = []
 
     def compute(self, split):
-        return itertools.izip(*[rdd.iterator(sp)
-            for rdd, sp in zip(self.rdds, split.splits)])
+        return zip(
+            *[rdd.iterator(sp) for rdd, sp in zip(self.rdds, split.splits)]
+        )
 
 
 class CSVReaderRDD(DerivedRDD):
@@ -1136,7 +1157,7 @@ class CSVReaderRDD(DerivedRDD):
 class ParallelCollectionSplit:
     def __init__(self, ctx, index, values):
         self.index = index
-        _values = cPickle.dumps(values, -1)
+        _values = six.moves.cPickle.dumps(values, -1)
         length = len(_values)
         data_limit = ctx.data_limit
         if data_limit is None or length < data_limit:
@@ -1164,7 +1185,7 @@ class ParallelCollection(RDD):
         else:
             _values =split.values
 
-        return cPickle.loads(_values)
+        return six.moves.cPickle.loads(_values)
 
     @classmethod
     def slice(cls, data, numSlices):
@@ -1173,17 +1194,17 @@ class ParallelCollection(RDD):
         m = len(data)
         if not m:
             return [[]]
-        n = m / numSlices
+        n = m // numSlices
         if m % numSlices != 0:
             n += 1
-        if isinstance(data, xrange):
+        if six.PY2 and isinstance(data, xrange):
             first = data[0]
             last = data[m-1]
-            step = (last - first) / (m-1)
+            step = (last - first) // (m-1)
             nstep = step * n
-            slices = [xrange(first+i*nstep, first+(i+1)*nstep, step)
+            slices = [range(first+i*nstep, first+(i+1)*nstep, step)
                 for i in range(numSlices-1)]
-            slices.append(xrange(first+(numSlices-1)*nstep,
+            slices.append(range(first+(numSlices-1)*nstep,
                 min(last+step, first+numSlices*nstep), step))
             return slices
         if not isinstance(data, list):
@@ -1199,7 +1220,7 @@ class CheckpointRDD(RDD):
             raise RuntimeError('Invalid checkpoint directory: %s' % path)
 
         self.files = files
-        self._splits = [Split(i) for i in xrange(len(files))]
+        self._splits = [Split(i) for i in range(len(files))]
 
     @classmethod
     def generated_files(cls, path):
@@ -1207,12 +1228,12 @@ class CheckpointRDD(RDD):
 
     def compute(self, split):
         try:
-            with open(os.path.join(self.path, self.files[split.index])) as f:
-                return cPickle.loads(f.read())
+            with open(os.path.join(self.path, self.files[split.index]), 'rb') as f:
+                return six.moves.cPickle.loads(f.read())
         except IOError:
             time.sleep(1)
-            with open(os.path.join(self.path, self.files[split.index])) as f:
-                return cPickle.loads(f.read())
+            with open(os.path.join(self.path, self.files[split.index]), 'rb') as f:
+                return six.moves.cPickle.loads(f.read())
 
 
 class PartialSplit(Split):
@@ -1235,8 +1256,8 @@ class TextFileRDD(RDD):
             if numSplits is None:
                 splitSize = self.DEFAULT_SPLIT_SIZE
             else:
-                splitSize = size / numSplits or self.DEFAULT_SPLIT_SIZE
-        numSplits = size / splitSize
+                splitSize = size // numSplits or self.DEFAULT_SPLIT_SIZE
+        numSplits = size // splitSize
         if size % splitSize > 0:
             numSplits += 1
         self.splitSize = splitSize
@@ -1246,11 +1267,11 @@ class TextFileRDD(RDD):
         self._preferred_locs = {}
         for split in self._splits:
             if self.splitSize != CHUNKSIZE:
-                start = split.begin / CHUNKSIZE
-                end = (split.end + CHUNKSIZE - 1) / CHUNKSIZE
+                start = split.begin // CHUNKSIZE
+                end = (split.end + CHUNKSIZE - 1) // CHUNKSIZE
                 self._preferred_locs[split] = sum((file_.locs(i) for i in range(start, end)), [])
             else:
-                self._preferred_locs[split] = file_.locs(split.begin / self.splitSize)
+                self._preferred_locs[split] = file_.locs(split.begin // self.splitSize)
 
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
 
@@ -1259,16 +1280,16 @@ class TextFileRDD(RDD):
         self.scope = Scope()
         for i in range(0, len(stack)):
             if 'dpark/context.py' in stack[i][STACK_FILE_NAME]:
-                self.scope.func_name = stack[i][STACK_FUNC_NAME]
+                self.scope.__name__ = stack[i][STACK_FUNC_NAME]
                 if i > 0:
                     self.scope.call_site = '%s in %s:%s' % \
-                                           (self.scope.func_name,
+                                           (self.scope.__name__,
                                             stack[i - 1][STACK_FILE_NAME],
                                             str(stack[i - 1][STACK_LINE_NUM]))
                 else:
                     self.scope.call_site = '<root>'
                 break
-        if not self.scope.func_name:
+        if not self.scope.__name__:
             super(TextFileRDD, self)._get_scope()
 
     def open_file(self):
@@ -1281,7 +1302,7 @@ class TextFileRDD(RDD):
         if start > 0:
             f.seek(start-1)
             byte = f.read(1)
-            while byte != '\n':
+            while byte != b'\n':
                 byte = f.read(1)
                 if not byte:
                     return []
@@ -1294,6 +1315,7 @@ class TextFileRDD(RDD):
 
     def read(self, f, start, end):
         for line in f:
+            line = line.decode('utf-8')
             if line.endswith('\n'):
                 yield line[:-1]
             else:
@@ -1315,14 +1337,14 @@ class PartialTextFileRDD(TextFileRDD):
             if numSplits is None:
                 splitSize = self.DEFAULT_SPLIT_SIZE
             else:
-                splitSize = size / numSplits or self.DEFAULT_SPLIT_SIZE
+                splitSize = size // numSplits or self.DEFAULT_SPLIT_SIZE
         self.splitSize = splitSize
         if size <= splitSize:
             self._splits = [PartialSplit(0, firstPos, lastPos)]
         else:
-            first_edge = firstPos / splitSize * splitSize + splitSize
-            last_edge = (lastPos-1) / splitSize * splitSize
-            ns = (last_edge - first_edge) / splitSize
+            first_edge = firstPos // splitSize * splitSize + splitSize
+            last_edge = (lastPos-1) // splitSize * splitSize
+            ns = (last_edge - first_edge) // splitSize
             self._splits = [PartialSplit(0, firstPos, first_edge)] + [
                 PartialSplit(i+1, first_edge + i*splitSize, first_edge + (i+1) * splitSize)
                     for i in  range(ns)
@@ -1344,7 +1366,7 @@ class GZipFileRDD(TextFileRDD):
         if len(block) < 4:
             f.seek(0, 2)
             return f.tell() # EOF
-        ENDING = '\x00\x00\xff\xff'
+        ENDING = b'\x00\x00\xff\xff'
         while True:
             p = block.find(ENDING)
             while p < 0:
@@ -1363,21 +1385,25 @@ class GZipFileRDD(TextFileRDD):
                 dz = zlib.decompressobj(-zlib.MAX_WBITS)
                 if dz.decompress(block) and len(dz.unused_data) <= 8:
                     return pos # FOUND
-            except Exception, e:
+            except Exception as e:
                 pass
 
     def compute(self, split):
         f = self.open_file()
         last_line = ''
         if split.index == 0:
-            zf = gzip.GzipFile(fileobj=f)
-            zf._read_gzip_header()
+            zf = gzip.GzipFile(mode='r', fileobj=f)
+            if hasattr(zf, '_buffer'):
+                zf._buffer.raw._read_gzip_header()
+            else:
+                zf._read_gzip_header()
+
             start = f.tell()
         else:
             start = self.find_block(f, split.index * self.splitSize)
             if start >= split.index * self.splitSize + self.splitSize:
                 return
-            for i in xrange(1, 100):
+            for i in range(1, 100):
                 if start - i * self.BLOCK_SIZE <= 4:
                     break
                 last_block = self.find_block(f, start - i * self.BLOCK_SIZE)
@@ -1401,8 +1427,10 @@ class GZipFileRDD(TextFileRDD):
             if not d: break
 
             try:
-                io = StringIO(dz.decompress(d))
-            except Exception, e:
+                io = BytesIO(dz.decompress(d))
+                if not six.PY2:
+                    io = TextIOWrapper(io)
+            except Exception as e:
                 if self.err < 1e-6:
                     logger.error("failed to decompress file: %s", self.path)
                     raise
@@ -1416,8 +1444,11 @@ class GZipFileRDD(TextFileRDD):
 
             if len(dz.unused_data) > 8 :
                 f.seek(-len(dz.unused_data)+8, 1)
-                zf = gzip.GzipFile(fileobj=f)
-                zf._read_gzip_header()
+                zf = gzip.GzipFile(mode='r', fileobj=f)
+                if hasattr(zf, '_buffer'):
+                    zf._buffer.raw._read_gzip_header()
+                else:
+                    zf._read_gzip_header()
                 dz = zlib.decompressobj(-zlib.MAX_WBITS)
                 start -= f.tell()
 
@@ -1482,7 +1513,7 @@ class TableFileRDD(TextFileRDD):
             assert len(d) == size, 'unexpected end'
             if compressed:
                 d = zlib.decompress(d)
-            for r in msgpack.Unpacker(StringIO(d)):
+            for r in msgpack.Unpacker(BytesIO(d)):
                 yield r
             start += len(magic) + hdr_size + size
         f.close()
@@ -1525,7 +1556,7 @@ class BZip2FileRDD(TextFileRDD):
             else:
                 cur += len(d)
 
-            for i in xrange(1, 100):
+            for i in range(1, 100):
                 pos = cur - i * self.BLOCK_SIZE
                 if pos < 0:
                     break
@@ -1535,15 +1566,20 @@ class BZip2FileRDD(TextFileRDD):
                 np = nd.find(magic)
                 if np >= 0:
                     nd = nd[np:]
-                    last_line = bz2.decompress(nd).split('\n')[-1]
+                    last_line = bz2.decompress(nd).decode('utf-8').split('\n')[-1]
                     break
 
         f.close()
 
         while d:
+            np = d.find(magic, len(magic))
+            if np <=0:
+                data = d
+            else:
+                data = d[:np]
             try:
-                io = StringIO(bz2.decompress(d))
-            except IOError, e:
+                io = StringIO(bz2.decompress(data).decode('utf-8'))
+            except IOError as e:
                 #bad position, skip it
                 pass
             else:
@@ -1558,7 +1594,6 @@ class BZip2FileRDD(TextFileRDD):
                     else:
                         last_line = line
 
-            np = d.find(magic, len(magic))
             if np <= 0:
                 break
             d = d[np:]
@@ -1574,7 +1609,7 @@ class BinaryFileRDD(TextFileRDD):
         if splitSize is None:
             splitSize = self.DEFAULT_SPLIT_SIZE
 
-        splitSize = max(splitSize / length, 1) * length
+        splitSize = max(splitSize // length, 1) * length
         TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
         self.repr_name = '<BinaryFileRDD(%s) %s>' % (fmt, path)
 
@@ -1586,7 +1621,7 @@ class BinaryFileRDD(TextFileRDD):
         f.seek(start)
         rlen = self.length
         fmt = self.fmt
-        for i in xrange((end - start) / rlen):
+        for i in range((end - start) // rlen):
             d = f.read(rlen)
             if len(d) < rlen: break
             if fmt:
@@ -1626,7 +1661,7 @@ class OutputTextFileRDD(DerivedRDD):
         if os.path.exists(path) and not self.overwrite:
             return
 
-        with atomic_file(path, mode='w', bufsize=4096 * 1024 * 16) as f:
+        with atomic_file(path, mode='wb', bufsize=4096 * 1024 * 16) as f:
             if self.compress:
                 have_data = self.write_compress_data(f, self.prev.iterator(split))
             else:
@@ -1639,9 +1674,12 @@ class OutputTextFileRDD(DerivedRDD):
             yield path
 
     def writedata(self, f, lines):
+        if not six.PY2:
+            f = TextIOWrapper(f)
+
         it = iter(lines)
         try:
-            line = it.next()
+            line = next(it)
         except StopIteration:
             return False
         f.write(line)
@@ -1658,6 +1696,8 @@ class OutputTextFileRDD(DerivedRDD):
     def write_compress_data(self, f, lines):
         empty = True
         f = gzip.GzipFile(filename='', mode='w', fileobj=f)
+        if not six.PY2:
+            f = TextIOWrapper(f)
         size = 0
         for line in lines:
             f.write(line)
@@ -1691,22 +1731,31 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
 
     def get_file(self, key):
         f = self.files.get(key)
-        if f is None or self.compress and f.fileobj is None:
+        fileobj = getattr(f, 'fileobj', None)
+        if hasattr(f, 'buffer'):
+            fileobj = f.buffer.fileobj
+    
+        if f is None or self.compress and fileobj is None:
             tpath = self.get_tpath(key)
             try:
-                nf = open(tpath,'a+', 4096 * 1024)
+                nf = open(tpath,'ab+', 4096 * 1024)
             except IOError:
                 time.sleep(1) # there are dir cache in mfs for 1 sec
-                nf = open(tpath,'a+', 4096 * 1024)
+                nf = open(tpath,'ab+', 4096 * 1024)
             if self.compress:
                 if f:
                     f.fileobj = nf
                 else:
                     f = gzip.GzipFile(filename='', mode='a+', fileobj=nf)
+
                 f.myfileobj = nf # force f.myfileobj.close() in f.close()
             else:
                 f = nf
+
+            if not six.PY2:
+                f = TextIOWrapper(f)
             self.files[key] = f
+
         return f
 
     def flush_file(self, key, f):
@@ -1778,6 +1827,9 @@ class OutputCSVFileRDD(OutputTextFileRDD):
         self.dialect = dialect
 
     def writedata(self, f, rows):
+        if not six.PY2:
+            f = TextIOWrapper(f)
+
         writer = csv.writer(f, self.dialect)
         empty = True
         for row in rows:
@@ -1790,6 +1842,8 @@ class OutputCSVFileRDD(OutputTextFileRDD):
     def write_compress_data(self, f, rows):
         empty = True
         f = gzip.GzipFile(filename='', mode='w', fileobj=f)
+        if not six.PY2:
+            f = TextIOWrapper(f)
         writer = csv.writer(f, self.dialect)
         last_flush = 0
         for row in rows:
@@ -1822,7 +1876,7 @@ class OutputBinaryFileRDD(OutputTextFileRDD):
         return not empty
 
 class OutputTableFileRDD(OutputTextFileRDD):
-    MAGIC = '\x00\xDE\x00\xAD\xFF\xBE\xFF\xEF'
+    MAGIC = b'\x00\xDE\x00\xAD\xFF\xBE\xFF\xEF'
     BLOCK_SIZE = 256 << 10 # 256K
 
     def __init__(self, rdd, path, overwrite=True, compress=True):
@@ -1839,13 +1893,13 @@ class OutputTableFileRDD(OutputTextFileRDD):
             f.write(struct.pack("III", self.compress, count, len(d)))
             f.write(d)
 
-        count, buf = 0, StringIO()
+        count, buf = 0, BytesIO()
         for row in rows:
             msgpack.pack(row, buf)
             count += 1
             if buf.tell() > self.BLOCK_SIZE:
                 flush(buf)
-                count, buf = 0, StringIO()
+                count, buf = 0, BytesIO()
 
         if count > 0:
             flush(buf)

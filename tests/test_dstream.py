@@ -1,5 +1,8 @@
+from __future__ import absolute_import
 import os, sys, logging
 import unittest
+from six.moves import range
+from functools import reduce
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tempfile import mkdtemp
@@ -16,7 +19,7 @@ class TestInputStream(InputDStream):
 
     def compute(self, t):
         self.index += 1
-        index = (t - self.zeroTime) / self.slideDuration - 1
+        index = (t - self.zeroTime) // self.slideDuration - 1
         if 0 <= index < len(self.input):
             d = self.input[index]
             if d is None:
@@ -94,24 +97,24 @@ class TestDStream(unittest.TestCase):
 
 class TestBasic(TestDStream):
     def test_map(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         r = [[str(i) for i in row] for row in d]
         self._testOperation(d, None, lambda x: x.map(str), r, 4, False)
-        r = [sum([range(x,x*2) for x in row], []) for row in d]
-        self._testOperation(d, None, lambda x: x.flatMap(lambda x:range(x, x*2)), r)
+        r = [sum([list(range(x,x*2)) for x in row], []) for row in d]
+        self._testOperation(d, None, lambda x: x.flatMap(lambda x:list(range(x, x*2))), r)
 
     def test_filter(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         self._testOperation(d, None, lambda x: x.filter(lambda y: y%2==0),
             [[i for i in row if i%2 ==0] for row in d])
 
     def test_glom(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         r = [[row[:2], row[2:]] for row in d]
         self._testOperation(d, None, lambda s: s.glom().map(lambda x:list(x)), r)
 
     def test_mapPartitions(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         r = [[sum(row[:2]), sum(row[2:])] for row in d]
         self._testOperation(d, None, lambda s: s.mapPartitions(lambda l: [reduce(lambda x,y:x+y, l)]), r)
 
@@ -126,7 +129,7 @@ class TestBasic(TestDStream):
         self._testOperation(d, None, lambda s: s.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y), r, useSet=True)
 
     def test_reduce(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         r = [[sum(row)] for row in d]
         self._testOperation(d, None, lambda s: s.reduce(lambda x,y:x+y), r)
 
@@ -260,30 +263,30 @@ class TestWindow(TestDStream):
     ]
     def _testWindow(self, input, expectedOutput, window=4, slide=2):
         self._testOperation(input, None, lambda s: s.window(window, slide), expectedOutput,
-            len(expectedOutput) * slide / 2, useSet=True)
+            len(expectedOutput) * slide // 2, useSet=True)
 
     def _testReduceByKeyAndWindow(self, input, expectedOutput, window=4, slide=2):
         self._testOperation(input, None, lambda s: s.reduceByKeyAndWindow(lambda x,y:x+y, None, window, slide),
-            expectedOutput, len(expectedOutput) * slide / 2, useSet=True)
+            expectedOutput, len(expectedOutput) * slide // 2, useSet=True)
 
     def _testReduceByKeyAndWindowInv(self, input, expectedOutput, window=4, slide=2):
         self._testOperation(input, None,
             lambda s: s.reduceByKeyAndWindow(lambda x,y: x+y, lambda x,y: x-y, window, slide),
-            expectedOutput, len(expectedOutput) * slide / 2, useSet=True)
+            expectedOutput, len(expectedOutput) * slide // 2, useSet=True)
 
     def test_window(self):
         # basic window
         self._testWindow([[i] for i in range(6)],
-            [range(max(i-1, 0), i+1) for i in range(6)])
+            [list(range(max(i-1, 0), i+1)) for i in range(6)])
         # tumbling window
         self._testWindow([[i] for i in range(6)],
-            [range(i*2, i*2+2) for i in range(3)], 4, 4)
+            [list(range(i*2, i*2+2)) for i in range(3)], 4, 4)
         # large window
         self._testWindow([[i] for i in range(6)],
-            [[0, 1], range(4), range(2, 6), range(4, 6)], 8, 4)
+            [[0, 1], list(range(4)), list(range(2, 6)), list(range(4, 6))], 8, 4)
         # non-overlapping window
         self._testWindow([[i] for i in range(6)],
-            [range(1, 3), range(4, 6)], 4, 6)
+            [list(range(1, 3)), list(range(4, 6))], 4, 6)
 
     def test_reduceByKeyAndWindow(self):
         # basic reduction
@@ -362,7 +365,7 @@ class TestWindow(TestDStream):
 
 class TestCheckpoint(TestDStream):
     def test_input_stream_serialize(self):
-        d = [range(i*4, i*4+4) for i in range(4)]
+        d = [list(range(i*4, i*4+4)) for i in range(4)]
         ssc = self._setupStreams(d, None, lambda x: x.map(str))
         ins = ssc.graph.inputStreams[0]
         ins_ = pickle.loads(pickle.dumps(ins))
@@ -370,7 +373,7 @@ class TestCheckpoint(TestDStream):
     def test_metadata_checkpoint_dump(self):
         checkpoint_path = mkdtemp()
         try:
-            d = [range(i*4, i*4+4) for i in range(4)]
+            d = [list(range(i*4, i*4+4)) for i in range(4)]
             r = [[str(i) for i in row] for row in d]
             ssc = self._setupStreams(d, None, lambda x: x.map(str))
             ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
@@ -383,14 +386,14 @@ class TestCheckpoint(TestDStream):
     def test_metadata_checkpoint_restore(self):
         checkpoint_path = mkdtemp()
         try:
-            d = [range(i*4, i*4+4) for i in range(4)]
+            d = [list(range(i*4, i*4+4)) for i in range(4)]
             r = [[str(i) for i in row] for row in d]
             ssc = self._setupStreams(d, None, lambda x: x.map(str))
             ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
             output = self._runStreams(ssc, 4, 4)
             self._verifyOutput(output, r, False)
             ssc, first = StreamingContext.load(checkpoint_path)
-            d = [range(i*4, i*4+4) for i in range(4, 6)]
+            d = [list(range(i*4, i*4+4)) for i in range(4, 6)]
             r = [[str(i) for i in row] for row in d]
             ssc.graph.inputStreams[0].input[:] = d
             output = self._runStreams(ssc, 2, 2, first=first)

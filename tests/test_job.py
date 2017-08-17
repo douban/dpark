@@ -1,8 +1,10 @@
+from __future__ import absolute_import
 import sys
 import unittest
 import logging
 
 from dpark.job import SimpleJob
+from six.moves import range
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
 

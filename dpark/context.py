@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import os
 import atexit
 import optparse
@@ -16,6 +17,7 @@ from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
 import dpark.conf as conf
 from math import ceil
 import socket
+from six.moves import range
 
 logger = get_logger(__name__)
 
@@ -145,7 +147,7 @@ class DparkContext(object):
             paths = []
             for root,dirs,names in walk(path, followlinks=followLink):
                 if maxdepth > 0:
-                    depth = len(filter(None, root[len(path):].split('/'))) + 1
+                    depth = len([_f for _f in root[len(path):].split('/') if _f]) + 1
                     if depth > maxdepth:
                         break
                 for n in sorted(names):
@@ -261,7 +263,7 @@ class DparkContext(object):
             rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2,
                                   int(ceil(len(rdd) / 4)))
         if not raw:
-            rdd = rdd.mapValue(lambda (v,ver,t): (restore_value(*v), ver, t))
+            rdd = rdd.mapValue(lambda v_ver_t: (restore_value(*v_ver_t[0]), v_ver_t[1], v_ver_t[2]))
         return rdd
 
     def union(self, rdds):
@@ -309,7 +311,7 @@ class DparkContext(object):
         self.start()
 
         if partitions is None:
-            partitions = range(len(rdd))
+            partitions = list(range(len(rdd)))
         try:
             gc.disable()
             for it in self.scheduler.runJob(rdd, func, partitions, allowLocal):

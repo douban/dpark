@@ -1,4 +1,8 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import operator
+import six
+from six.moves import range
 
 class HotCounter(object):
     def __init__(self, vs=[], limit=20):
@@ -19,7 +23,7 @@ class HotCounter(object):
             self._merge()
 
     def _merge(self):
-        for k,c in self.updates.iteritems():
+        for k,c in six.iteritems(self.updates):
             if c > 1:
                 self.total[k] = self.total.get(k, 0) + c
         self._max = 0
@@ -32,11 +36,11 @@ class HotCounter(object):
         self._merge()
         if isinstance(o, HotCounter):
             o._merge()
-        for k,c in o.total.iteritems():
+        for k,c in six.iteritems(o.total):
             self.total[k] = self.total.get(k,0) + c
 
     def top(self, limit):
-        return sorted(self.total.items(), key=operator.itemgetter(1), reverse=True)[:limit]
+        return sorted(list(self.total.items()), key=operator.itemgetter(1), reverse=True)[:limit]
 
 
 if __name__ == '__main__':
@@ -45,9 +49,9 @@ if __name__ == '__main__':
     t = HotCounter()
     for j in range(10):
         c = HotCounter()
-        for i in xrange(10000):
+        for i in range(10000):
             v = int(math.sqrt(random.randint(0, 1000000)))
             c.add(v)
         t.update(c)
     for k,v in t.top(20):
-        print k,v
+        print(k,v)

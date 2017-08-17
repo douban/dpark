@@ -14,14 +14,15 @@ cdef int64_t tuple_hash(tuple obj):
         value = -2
     return value
 
-cdef int64_t string_hash(bytes obj):
-    cdef int64_t l = len(obj), value, i = 0, v
+cdef int64_t string_hash(bytes obj_):
+    cdef int64_t l = len(obj_), value, i = 0, v
+    cdef char* obj = obj_
     if l == 0:
         return 0
-    v = ord(obj[0])
+    v = obj[0]
     value = v << 7
     while i < l:
-        v = ord(obj[i])
+        v = obj[i]
         value = (1000003 * value) ^ v
         i += 1
 

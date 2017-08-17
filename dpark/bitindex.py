@@ -1,7 +1,11 @@
-import itertools
+from __future__ import absolute_import
 import marshal
 import math
 from dpark.portable_hash import portable_hash
+from six.moves import range
+from functools import reduce
+from six.moves import zip as izip
+from six.moves import zip_longest as izip_longest
 
 BYTE_SHIFT = 3
 BYTE_SIZE = 1 << BYTE_SHIFT
@@ -95,20 +99,20 @@ class BitIndex(object):
 
     def intersect(self, *other):
         return self._bitwise(
-            itertools.izip(self.array, *[o.array for o in other]), lambda x, y: x & y)
+            izip(self.array, *[o.array for o in other]), lambda x, y: x & y)
 
     def union(self, *other):
         return self._bitwise(
-            itertools.izip_longest(self.array, *[o.array for o in other], fillvalue=0),
+            izip_longest(self.array, *[o.array for o in other], fillvalue=0),
             lambda x, y: x | y)
 
     def xor(self, other):
-        return self._bitwise(itertools.izip_longest(self.array, other.array, fillvalue=0),
+        return self._bitwise(izip_longest(self.array, other.array, fillvalue=0),
                         lambda x, y: x ^ y)
 
     def excepts(self, *other):
         return self._bitwise(
-            itertools.izip_longest(self.array, *[o.array for o in other], fillvalue=0),
+            izip_longest(self.array, *[o.array for o in other], fillvalue=0),
             lambda x, y: x & ~y)
 
     def positions(self):
@@ -144,7 +148,7 @@ class Bloomfilter(object):
         hash_1 = portable_hash(obj)
         hash_2 = portable_hash(marshal.dumps(obj))
 
-        for i in xrange(self.k):
+        for i in range(self.k):
             yield ((hash_1 + i * hash_2) & 0xFFFFFFFF) % self.m
 
     def add(self, objs):
@@ -159,5 +163,5 @@ class Bloomfilter(object):
         return list(self._match(objs))
 
     def __contains__(self, obj):
-        return self._match([obj]).next()
+        return next(self._match([obj]))
 

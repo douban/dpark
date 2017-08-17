@@ -1,10 +1,12 @@
+from __future__ import absolute_import
 import marshal
-import cPickle
+import six.moves.cPickle
 import struct
 
 from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle
+from six.moves import range
 
 logger = get_logger(__name__)
 
@@ -132,11 +134,11 @@ class ShuffleMapTask(DAGTask):
         for i, bucket in self._prepare_shuffle(self.rdd):
             try:
                 if marshalable(bucket):
-                    flag, d = 'm', marshal.dumps(bucket)
+                    flag, d = b'm', marshal.dumps(bucket)
                 else:
-                    flag, d = 'p', cPickle.dumps(bucket, -1)
+                    flag, d = b'p', six.moves.cPickle.dumps(bucket, -1)
             except ValueError:
-                flag, d = 'p', cPickle.dumps(bucket, -1)
+                flag, d = b'p', six.moves.cPickle.dumps(bucket, -1)
             cd = compress(d)
             for tried in range(1, 4):
                 try:
@@ -146,7 +148,7 @@ class ShuffleMapTask(DAGTask):
                         f.write(cd)
 
                     break
-                except IOError, e:
+                except IOError as e:
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
             else:
                 raise

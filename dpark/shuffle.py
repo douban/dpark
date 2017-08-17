@@ -1,22 +1,27 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import os.path
 import sys
 import random
-import urllib
+from six.moves import urllib
 import marshal
 import struct
 import time
-import cPickle
+import six.moves.cPickle
 import gzip
-import Queue
+import six.moves.queue
 import heapq
 import uuid
 import gc
+import six
+from six.moves import range
+from six.moves import zip
 
 try:
     import cStringIO as StringIO
 except ImportError:
-    import StringIO
+    from six import BytesIO as StringIO
 
 from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger
 from dpark.env import env
@@ -83,7 +88,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
     def fetch_one(self, uri, shuffleId, part, reduceId):
         if uri == LocalFileShuffle.getServerUri():
             # urllib can open local file
-            url = LocalFileShuffle.getOutputFile(shuffleId, part, reduceId)
+            url = 'file://' + LocalFileShuffle.getOutputFile(shuffleId, part, reduceId)
         else:
             url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
         logger.debug("fetch %s", url)
@@ -91,7 +96,7 @@ class SimpleShuffleFetcher(ShuffleFetcher):
         tries = 2
         while True:
             try:
-                f = urllib.urlopen(url)
+                f = urllib.request.urlopen(url)
                 if f.code == 404:
                     f.close()
                     raise IOError("not found")
@@ -105,10 +110,10 @@ class SimpleShuffleFetcher(ShuffleFetcher):
                         (length, len(d)))
                 d = decompress(d[5:])
                 f.close()
-                if flag == 'm':
+                if flag == b'm':
                     d = marshal.loads(d)
-                elif flag == 'p':
-                    d = cPickle.loads(d)
+                elif flag == b'p':
+                    d = six.moves.cPickle.loads(d)
                 else:
                     raise ValueError("invalid flag")
                 return d
@@ -130,11 +135,11 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             "Fetching outputs for shuffle %d, reduce %d",
             shuffleId, reduceId)
         serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        parts = zip(range(len(serverUris)), serverUris)
+        parts = list(zip(list(range(len(serverUris))), serverUris))
         random.shuffle(parts)
         for part, uri in parts:
             d = self.fetch_one(uri, shuffleId, part, reduceId)
-            func(d.iteritems())
+            func(six.iteritems(d))
 
 
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
@@ -144,8 +149,8 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self.start()
 
     def start(self):
-        self.requests = Queue.Queue()
-        self.results = Queue.Queue(self.nthreads)
+        self.requests = six.moves.queue.Queue()
+        self.results = six.moves.queue.Queue(self.nthreads)
         self.threads = [spawn(self._worker_thread)
                         for i in range(self.nthreads)]
 
@@ -171,13 +176,13 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         if not serverUris:
             return
 
-        parts = zip(range(len(serverUris)), serverUris)
+        parts = list(zip(list(range(len(serverUris))), serverUris))
         random.shuffle(parts)
         for part, uri in parts:
             self.requests.put((uri, shuffleId, part, reduceId))
 
         from dpark.schedule import FetchFailed
-        for i in xrange(len(serverUris)):
+        for i in range(len(serverUris)):
             r = self.results.get()
             if isinstance(r, FetchFailed):
                 self.stop()  # restart
@@ -185,7 +190,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
                 raise r
 
             sid, rid, part, d = r
-            func(d.iteritems())
+            func(six.iteritems(d))
 
     def stop(self):
         logger.debug("stop parallel shuffle fetcher ...")
@@ -213,7 +218,7 @@ class Merger(object):
             combined[k] = mergeCombiners(o, v) if o is not None else v
 
     def __iter__(self):
-        return self.combined.iteritems()
+        return six.iteritems(self.combined)
 
 
 class CoGroupMerger(object):
@@ -235,7 +240,7 @@ class CoGroupMerger(object):
             self.get_seq(k)[i].extend(v)
 
     def __iter__(self):
-        return self.combined.iteritems()
+        return six.iteritems(self.combined)
 
 
 def heap_merged(items_lists, combiner, max_memory):
@@ -243,7 +248,7 @@ def heap_merged(items_lists, combiner, max_memory):
 
     def pushback(it, i):
         try:
-            k, v = it.next()
+            k, v = next(it)
             # put i before value, so do not compare the value
             heapq.heappush(heap, (k, i, v))
         except StopIteration:
@@ -294,10 +299,10 @@ class SortedItems(object):
             except Exception:
                 f.rewind()
                 for i in items:
-                    s = cPickle.dumps(i)
+                    s = six.moves.cPickle.dumps(i)
                     f.write(struct.pack("I", len(s)))
                     f.write(s)
-                self.loads = cPickle.loads
+                self.loads = six.moves.cPickle.loads
             f.close()
 
     def set_bufsize(self, bufsize):
@@ -379,13 +384,13 @@ class DiskMerger(Merger):
             self.merged = 0
 
     def rotate(self):
-        self.archives.append(SortedItems(self.combined.iteritems()))
+        self.archives.append(SortedItems(six.iteritems(self.combined)))
         self.combined = {}
         gc.collect()
 
     def __iter__(self):
         if not self.archives:
-            return self.combined.iteritems()
+            return six.iteritems(self.combined)
 
         if self.combined:
             self.rotate()
@@ -428,15 +433,15 @@ def test():
 
     l = []
     for i in range(10):
-        d = zip(range(10000), range(10000))
+        d = list(zip(list(range(10000)), list(range(10000))))
         random.shuffle(d)
         l.append(SortedItems(d))
     hl = heap_merged(l, lambda x, y: x + y, MAX_SHUFFLE_MEMORY)
     for i in range(10):
-        print i, hl.next()
+        print(i, next(hl))
 
     path = LocalFileShuffle.getOutputFile(1, 0, 0)
-    d = compress(cPickle.dumps({'key': 'value'}, -1))
+    d = compress(six.moves.cPickle.dumps({'key': 'value'}, -1))
     f = open(path, 'w')
     f.write('p' + struct.pack('I', 5 + len(d)) + d)
     f.close()

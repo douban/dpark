@@ -1,15 +1,19 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import os
 import marshal
-import cPickle
+import six.moves.cPickle
 import shutil
 import struct
-import urllib
 
 import msgpack
 
 from dpark.env import env
 from dpark.util import mkdir_p, atomic_file, get_logger
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
+from six.moves import map
+from six.moves import range
+from six.moves import urllib
 
 logger = get_logger(__name__)
 
@@ -59,7 +63,7 @@ class DiskCache(Cache):
         serve_uri = locs[-1]
         uri = '%s/cache/%s' % (serve_uri, os.path.basename(p))
         try:
-            f = urllib.urlopen(uri)
+            f = urllib.request.urlopen(uri)
         except IOError:
             logger.warning('urlopen cache uri %s failed', uri)
             raise
@@ -80,19 +84,19 @@ class DiskCache(Cache):
     def clear(self):
         try:
             shutil.rmtree(self.root)
-        except OSError, e:
+        except OSError as e:
             pass
 
     def load(self, f):
         count, = struct.unpack("I", f.read(4))
         if not count: return
         unpacker = msgpack.Unpacker(f, use_list=False)
-        for i in xrange(count):
-            _type, data = unpacker.next()
+        for i in range(count):
+            _type, data = next(unpacker)
             if _type == 0:
                 yield marshal.loads(data)
             else:
-                yield cPickle.loads(data)
+                yield six.moves.cPickle.loads(data)
         f.close()
 
     def save(self, path, items):
@@ -106,10 +110,10 @@ class DiskCache(Cache):
                     try:
                         r = 0, marshal.dumps(v)
                     except Exception:
-                        r = 1, cPickle.dumps(v, -1)
+                        r = 1, six.moves.cPickle.dumps(v, -1)
                         try_marshal = False
                 else:
-                    r = 1, cPickle.dumps(v, -1)
+                    r = 1, six.moves.cPickle.dumps(v, -1)
                 f.write(msgpack.packb(r))
                 c += 1
                 yield v
@@ -182,7 +186,7 @@ class CacheTracker(BaseCacheTracker):
         result = {}
         for rdd_id, partitions in self.rdds.items():
             result[rdd_id] = [self.locs.get('cache:%s-%s' % (rdd_id, index), [])
-                    for index in xrange(partitions)]
+                    for index in range(partitions)]
 
         return result
 
@@ -192,7 +196,7 @@ class CacheTracker(BaseCacheTracker):
                 h = uri.split(':')[1].rsplit('/', 1)[-1]
                 return h
             return ''
-        return map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), []))
+        return list(map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), [])))
 
     def getCacheUri(self, rdd_id, index):
         return self.client.call(GetValueMessage('cache:%s-%s' % (rdd_id, index)))
@@ -230,13 +234,13 @@ def test():
     from dpark.context import DparkContext
     dc = DparkContext("local")
     dc.start()
-    nums = dc.parallelize(range(100), 10)
+    nums = dc.parallelize(list(range(100)), 10)
     tracker = CacheTracker(True)
     tracker.registerRDD(nums.id, len(nums))
     split = nums.splits[0]
-    print list(tracker.getOrCompute(nums, split))
-    print list(tracker.getOrCompute(nums, split))
-    print tracker.getLocationsSnapshot()
+    print(list(tracker.getOrCompute(nums, split)))
+    print(list(tracker.getOrCompute(nums, split)))
+    print(tracker.getLocationsSnapshot())
     tracker.stop()
 
 if __name__ == '__main__':

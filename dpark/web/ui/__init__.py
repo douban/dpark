@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 from flask import Flask
 from werkzeug.utils import import_string
 
@@ -19,5 +20,6 @@ def create_app(context):
 
 def init_blueprints(app, bps):
     for bp in bps:
-        import_name = '%s.views.%s:bp' % (__package__, bp)
+        package = __package__ or __name__
+        import_name = '%s.views.%s:bp' % (package, bp)
         app.register_blueprint(import_string(import_name))

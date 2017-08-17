@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import marshal
 import binascii
 import os
@@ -5,10 +7,13 @@ import socket
 import time
 import struct
 import zlib
-import cPickle
+import six.moves.cPickle
 from dpark.util import get_logger
 from dpark.file_manager import open_file
 from dpark.serialize import load_func, dump_func
+import six
+from six.moves import range
+from dpark.file_manager import open_file
 
 logger = get_logger(__name__)
 try:
@@ -28,8 +33,8 @@ except ImportError:
     FNV_32_INIT = 0x811c9dc5
     def fnv1a(d):
         h = FNV_32_INIT
-        for c in d:
-            h ^= ord(c)
+        for c in six.iterbytes(d):
+            h ^= c
             h *= FNV_32_PRIME
             h &= 0xffffffff
         return h
@@ -51,7 +56,7 @@ BEANSDB_MAX_KEY_LENGTH = 250
 def is_valid_key(key):
     if len(key) > BEANSDB_MAX_KEY_LENGTH:
         return False
-    invalid_chars = ' \r\n\0'
+    invalid_chars = b' \r\n\0'
     return not any(c in key for c in invalid_chars)
 
 
@@ -68,20 +73,20 @@ def restore_value(flag, val):
     elif flag & FLAG_MARSHAL:
         val = marshal.loads(val)
     elif flag & FLAG_PICKLE:
-        val = cPickle.loads(val)
+        val = six.moves.cPickle.loads(val)
     return val
 
 def prepare_value(val, compress):
     flag = 0
-    if isinstance(val, str):
+    if isinstance(val, six.binary_type):
         pass
     elif isinstance(val, (bool)):
         flag = FLAG_BOOL
-        val = str(int(val))
-    elif isinstance(val, (int, long)):
+        val = str(int(val)).encode('utf-8')
+    elif isinstance(val, six.integer_types):
         flag = FLAG_INTEGER
-        val = str(val)
-    elif isinstance(val, unicode):
+        val = str(val).encode('utf-8')
+    elif isinstance(val, six.text_type):
         flag = FLAG_MARSHAL
         val = marshal.dumps(val, 2)
     else:
@@ -89,7 +94,7 @@ def prepare_value(val, compress):
             val = marshal.dumps(val, 2)
             flag = FLAG_MARSHAL
         except ValueError:
-            val = cPickle.dumps(val, -1)
+            val = six.moves.cPickle.dumps(val, -1)
             flag = FLAG_PICKLE
 
     if compress and len(val) > 1024:
@@ -136,7 +141,7 @@ def write_record(f, key, flag, value, version, ts):
     f.write(value)
     rsize = 24 + len(key) + len(value)
     if rsize & 0xff:
-        f.write('\x00' * (PADDING - (rsize & 0xff)))
+        f.write(b'\x00' * (PADDING - (rsize & 0xff)))
         rsize = ((rsize >> 8) + 1) << 8
     return rsize
 
@@ -165,7 +170,7 @@ class BeansdbReader(object):
         try:
             self.key_filter = load_func(code)
         except Exception:
-            print 'load failed', self.__class__, code[:1024]
+            print('load failed', self.__class__, code[:1024])
             raise
 
     def read(self, begin, end):
@@ -180,18 +185,18 @@ class BeansdbReader(object):
         return self.full_scan(begin, end)
 
     def scan_hint(self, hint_path):
-        hint = open(hint_path).read()
+        hint = open(hint_path, 'rb').read()
         if hint_path.endswith('.qlz'):
             try:
                 hint = quicklz.decompress(hint)
-            except ValueError, e:
+            except ValueError as e:
                 msg = str(e.message)
                 if msg.startswith('compressed length not match'):
                     hint = hint[:int(msg.split('!=')[1])]
                     hint = quicklz.decompress(hint)
 
         key_filter = self.key_filter or (lambda x: True)
-        dataf = open(self.path)
+        dataf = open(self.path, 'rb')
         p = 0
         while p < len(hint):
             pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
@@ -324,20 +329,25 @@ class BeansdbWriter(object):
         p = [os.path.join(d, pname) for d in ds]
         tp = [os.path.join(d, tname) for d in ds]
         pos = [0] * N
-        f = [open(t, 'w', 1<<20) for t in tp]
+        f = [open(t, 'wb', 1<<20) for t in tp]
         now = int(time.time())
         hint = [[] for d in ds]
 
         bits = 32 - self.depth * 4
         for key, value in it:
-            key = str(key)
+            if not isinstance(key, (six.string_types, six.binary_type)):
+                key = str(key)
+
+            if isinstance(key, six.text_type):
+                key = key.encode('utf-8')
+
             if not is_valid_key(key):
                 logger.warning("ignored invalid key: %s", [key])
                 continue
 
             i = fnv1a(key) >> bits
 
-            hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, 0) + key + '\x00')
+            hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, 0) + key + b'\x00')
             pos[i] += self.write_record(f[i], key, value, now)
             if pos[i] > (4000<<20):
                 raise Exception("beansdb data file is larger than 4000M")
@@ -347,12 +357,12 @@ class BeansdbWriter(object):
         for i in range(N):
             if hint[i] and not os.path.exists(p[i]):
                 os.rename(tp[i], p[i])
-                hintdata = ''.join(hint[i])
+                hintdata = b''.join(hint[i])
                 hint_path = os.path.join(os.path.dirname(p[i]), '%03d.hint' % index)
                 if self.compress:
                     hintdata = quicklz.compress(hintdata)
                     hint_path += '.qlz'
-                open(hint_path, 'w').write(hintdata)
+                open(hint_path, 'wb').write(hintdata)
             else:
                 os.remove(tp[i])
 

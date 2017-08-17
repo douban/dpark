@@ -1,5 +1,6 @@
-import Queue
-import cPickle
+from __future__ import absolute_import
+import six.moves.queue
+import six.moves.cPickle
 import marshal
 import multiprocessing
 import os
@@ -7,7 +8,7 @@ import random
 import socket
 import sys
 import time
-import urllib
+from six.moves import urllib
 import weakref
 import threading
 
@@ -25,6 +26,9 @@ from dpark.task import ResultTask, ShuffleMapTask
 from dpark.util import (
     compress, decompress, spawn, getuser, mkdir_p, get_logger
 )
+import six
+from six.moves import map
+from six.moves import range
 
 logger = get_logger(__name__)
 
@@ -48,7 +52,7 @@ class Success(TaskEndReason):
     pass
 
 
-class FetchFailed(TaskEndReason):
+class FetchFailed(TaskEndReason, Exception):
 
     def __init__(self, serverUri, shuffleId, mapId, reduceId):
         self.serverUri = serverUri
@@ -161,7 +165,7 @@ def walk_dependencies(rdd, func):
 class DAGScheduler(Scheduler):
 
     def __init__(self):
-        self.completionEvents = Queue.Queue()
+        self.completionEvents = six.moves.queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
@@ -357,7 +361,7 @@ class DAGScheduler(Scheduler):
         while numFinished != numOutputParts:
             try:
                 evt = self.completionEvents.get(False)
-            except Queue.Empty:
+            except six.moves.queue.Empty:
                 self.check()
                 if self._shutdown:
                     sys.exit(1)
@@ -472,7 +476,7 @@ class LocalScheduler(DAGScheduler):
     def submitTasks(self, tasks):
         logger.debug('submit tasks %s in LocalScheduler', tasks)
         for task in tasks:
-            task_copy = cPickle.loads(cPickle.dumps(task, -1))
+            task_copy = six.moves.cPickle.loads(six.moves.cPickle.dumps(task, -1))
             _, reason, result, update = run_task(task_copy, self.nextAttempId())
             self.taskEnded(task, reason, result, update)
 
@@ -917,7 +921,7 @@ class MesosScheduler(DAGScheduler):
         task.task_id.value = tid
         task.agent_id.value = o.agent_id.value
         task.data = encode_data(
-            compress(cPickle.dumps((t, t.tried), -1))
+            compress(six.moves.cPickle.dumps((t, t.tried), -1))
         )
         task.executor = self.executor
         if len(task.data) > 1000 * 1024:
@@ -946,7 +950,7 @@ class MesosScheduler(DAGScheduler):
         logger.debug('status update: %s %s', tid, state)
 
         jid = self.taskIdToJobId.get(tid)
-        _, task_id, tried = map(int, tid.split(':'))
+        _, task_id, tried = list(map(int, tid.split(':')))
         if state == 'TASK_RUNNING':
             if jid in self.activeJobs:
                 job = self.activeJobs[jid]
@@ -975,22 +979,22 @@ class MesosScheduler(DAGScheduler):
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
             try:
-                reason, result, accUpdate = cPickle.loads(
+                reason, result, accUpdate = six.moves.cPickle.loads(
                     decode_data(data))
                 if result:
                     flag, data = result
                     if flag >= 2:
                         try:
-                            data = urllib.urlopen(data).read()
+                            data = urllib.request.urlopen(data).read()
                         except IOError:
                             # try again
-                            data = urllib.urlopen(data).read()
+                            data = urllib.request.urlopen(data).read()
                         flag -= 2
                     data = decompress(data)
                     if flag == 0:
                         result = marshal.loads(data)
                     else:
-                        result = cPickle.loads(data)
+                        result = six.moves.cPickle.loads(data)
             except Exception as e:
                 logger.warning(
                     'error when cPickle.loads(): %s, data:%s', e, len(data))
@@ -1017,7 +1021,7 @@ class MesosScheduler(DAGScheduler):
             if not self.activeJobs:
                 self.agentTasks.clear()
 
-        for tid, jid in self.taskIdToJobId.iteritems():
+        for tid, jid in six.iteritems(self.taskIdToJobId):
             if jid not in self.activeJobs:
                 logger.debug('kill task %s, because it is orphan', tid)
                 self.driver.killTask(Dict(value=tid))

@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
+from __future__ import absolute_import
 from dpark.rdd import ShuffleDependency
 from dpark.util import get_logger
+from six.moves import map
 
 logger = get_logger(__name__)
 
@@ -40,22 +42,22 @@ class StageInfo(object):
                 self._input_edges.add((dep.rdd.id, r.id))
                 return False
             if len(dep.rdd.dependencies) != 0 or \
-               dep.rdd.scope.func_name not in filter_set:
+               dep.rdd.scope.__name__ not in filter_set:
                 # 无下级依赖的rdd如果属于同一个 scope.func_name ，
                 # 则这些rdd只展示一次
                 self._internal_edges.add((dep.rdd.id, r.id))
-                filter_set.add(dep.rdd.scope.func_name)
+                filter_set.add(dep.rdd.scope.__name__)
                 return True
             return False
 
         StageInfo._walk_dependencies(stage.rdd, _, nodes)
         self._nodes = nodes
-        self._depend_stages = set(map(lambda st: st.id, stage.parents))
+        self._depend_stages = set([st.id for st in stage.parents])
         if len(stage.parents) != 0:
             def create_stage(st):
                 stage_info = StageInfo()
                 stage_info.create_stage_info(st)
-            map(lambda st: create_stage(st), stage.parents)
+            list(map(lambda st: create_stage(st), stage.parents))
 
     @staticmethod
     def _walk_dependencies(rdd, func, nodes):
@@ -90,7 +92,7 @@ class StageInfo(object):
         for node_id in self._nodes:
             inner_node = StageInfo.idToRDDNode[node_id]
             ret_str += 'subgraph cluster_node_%d{\n' % node_id
-            ret_str += 'label=%s\n' % inner_node.scope.func_name
+            ret_str += 'label=%s\n' % inner_node.scope.__name__
             ret_str += '%d [label="%s"]\n' % (node_id,
                                               (str(inner_node) + '\n' +
                                                inner_node.scope.call_site))

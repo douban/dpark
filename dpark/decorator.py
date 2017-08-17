@@ -13,7 +13,7 @@ class LazyJIT(object):
                 mod = __import__('numba', fromlist=[self.decorator])
                 d = getattr(mod, self.decorator)
                 self.this = d(*self.args, **self.kwargs)(self.f)
-            except ImportError, e:
+            except ImportError as e:
                 self.this = self.f
         return getattr(self.this, '__call__')(*args, **kwargs)
 

@@ -1,5 +1,8 @@
+from __future__ import absolute_import
+from __future__ import print_function
 from dpark.serialize import load_func, dump_func
 import sys
+from six.moves import range
 
 class HeapOnKey:
     def __init__(self, key=None, min_heap=False):
@@ -42,7 +45,7 @@ class HeapOnKey:
 
     def heapify(self, heap):
         n = len(heap)
-        for i in xrange(n//2 - 1, -1, -1):
+        for i in range(n//2 - 1, -1, -1):
             self._sift_up(heap, i)
 
     def _sift_down(self, heap, start_pos, pos):
@@ -76,19 +79,19 @@ if __name__ == '__main__':
     h = HeapOnKey()
     h.heapify(l)
     import sys
-    print >>sys.stderr, 'the list after heapify:', l
+    print('the list after heapify:', l, file=sys.stderr)
     l.pop()
     l[0] = 12
     h._sift_up(l, 0)
-    print >>sys.stderr, 'the list after sift up:', l
+    print('the list after sift up:', l, file=sys.stderr)
     h.push(l, 8)
-    print >>sys.stderr, 'the list after push:', l
+    print('the list after push:', l, file=sys.stderr)
     ret = h.pop(l)
-    print >>sys.stderr, 'the list after pop:', l, ' with value:', ret
+    print('the list after pop:', l, ' with value:', ret, file=sys.stderr)
     h = HeapOnKey(min_heap=True)
     h.heapify(l)
     h.push(l, 12)
-    print >>sys.stderr, 'the list after reverse:', l
+    print('the list after reverse:', l, file=sys.stderr)
 
     class Foo:
         def __init__(self, name='', age=0, score=None):
@@ -113,7 +116,7 @@ if __name__ == '__main__':
          Foo('eee', 30, (54, 53, 79)), Foo('fff', 10, (87, 73, 98))]
     h = HeapOnKey(key=key_func, min_heap=True)
     h.heapify(l)
-    print >>sys.stderr, 'the list after heapify:', l
+    print('the list after heapify:', l, file=sys.stderr)
 
     len_l = 100000
     top_n = 10
@@ -138,7 +141,7 @@ if __name__ == '__main__':
         else:
             h.push(top_l, i)
     top_l.sort(key=cnt_key)
-    print >>sys.stderr, 'after heap:', top_l, ' with elapsed:', time.time() - start, ' with cnt:', call_cnt / 2
+    print('after heap:', top_l, ' with elapsed:', time.time() - start, ' with cnt:', call_cnt / 2, file=sys.stderr)
     call_cnt = 0
 
     start = time.time()
@@ -149,4 +152,4 @@ if __name__ == '__main__':
         if len(top_l) > top_n:
             top_l.pop()
 
-    print >>sys.stderr, 'after sort:', top_l, ' with elapsed:', time.time() - start, ' with cnt:', call_cnt / 2
+    print('after sort:', top_l, ' with elapsed:', time.time() - start, ' with cnt:', call_cnt / 2, file=sys.stderr)

@@ -6,6 +6,7 @@ import socket
 import getpass
 from .utils import unpack, pack, uint8, attrToFileInfo, uint64
 from .consts import *
+from six.moves import range
 
 
 class ProtocolError(Exception):
@@ -24,7 +25,7 @@ class Chunk:
     def _parse(self, csdata):
         return [(socket.inet_ntoa(csdata[i:i + 4]),
                  unpack("H", csdata[i + 4:i + 6])[0])
-                for i in range(len(csdata))[::self.ele_width]]
+                for i in range(0, len(csdata), self.ele_width)]
 
     def __repr__(self):
         return "<Chunk(%d, %d, %d)>" % (self.id, self.version, self.length)

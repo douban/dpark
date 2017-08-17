@@ -1,6 +1,11 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import math
 from bisect import bisect_right
 import array
+from six.moves import map
+from six.moves import range
+from six.moves import zip
 
 try:
     import pyhash
@@ -27,9 +32,9 @@ class HyperLogLog(object):
         self.threshold = self.m / 20
         self.items = set(items)
         self.mask = (1<<b) -1
-        self.big = 1L << (HASH_LEN - b - 1)
-        self.big2 = 1L << (HASH_LEN - b - 2)
-        self.bitcount_arr = [1L << i for i in range(HASH_LEN - b + 1)]
+        self.big = 1 << (HASH_LEN - b - 1)
+        self.big2 = 1 << (HASH_LEN - b - 2)
+        self.bitcount_arr = [1 << i for i in range(HASH_LEN - b + 1)]
 
     @staticmethod
     def _get_alpha(b):
@@ -78,7 +83,7 @@ class HyperLogLog(object):
 
         if self.M is None:
             self.convert()
-        self.M = array.array('B', map(max, zip(self.M, other.M)))
+        self.M = array.array('B', list(map(max, list(zip(self.M, other.M)))))
 
     def __len__(self):
         if self.M is None:
@@ -89,21 +94,21 @@ class HyperLogLog(object):
         if E <= 2.5 * self.m: # small range correction
             V = self.M.count(0)
             return self.m * math.log(self.m / float(V)) if V > 0 else E
-        elif E <= float(1L << HASH_LEN) / 30.0: # intermidiate range correction -> No correction
+        elif E <= float(1 << HASH_LEN) / 30.0: # intermidiate range correction -> No correction
             return E
         else:
-            return -(1L << HASH_LEN) * math.log(1.0 - E / (1L << HASH_LEN))
+            return -(1 << HASH_LEN) * math.log(1.0 - E / (1 << HASH_LEN))
 
 def test(l, err=0.03):
     hll = HyperLogLog(err)
     for i in l:
         hll.add(str(i)+'ip')
     le = len(hll)
-    print err*100.0, len(hll.M), len(l), le, (le-len(l)) * 100.0 / len(l)
+    print(err*100.0, len(hll.M), len(l), le, (le-len(l)) * 100.0 / len(l))
 
 if __name__ == '__main__':
     for e in (0.005, 0.01, 0.03, 0.05, 0.1):
-        test(xrange(100), e)
-        test(xrange(10000), e)
-        test(xrange(100000), e)
+        test(range(100), e)
+        test(range(10000), e)
+        test(range(100000), e)
 #        test(xrange(1000000), e)

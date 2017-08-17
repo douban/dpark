@@ -1,3 +1,4 @@
+from __future__ import absolute_import
 import os
 import zmq
 import time
@@ -6,17 +7,20 @@ import binascii
 import random
 import socket
 import struct
-import cPickle
+import six.moves.cPickle
 import marshal
 
 from dpark.util import compress, decompress, spawn, get_logger
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
+import six
+from six.moves import map
+from six.moves import range
 
 logger = get_logger(__name__)
 
-MARSHAL_TYPE, PICKLE_TYPE = range(2)
+MARSHAL_TYPE, PICKLE_TYPE = list(range(2))
 BLOCK_SHIFT = 20
 BLOCK_SIZE = 1 << BLOCK_SHIFT
 
@@ -45,11 +49,11 @@ class BroadcastManager:
                 buf = marshal.dumps((uuid, obj))
                 type = MARSHAL_TYPE
             else:
-                buf = cPickle.dumps((uuid, obj), -1)
+                buf = six.moves.cPickle.dumps((uuid, obj), -1)
                 type = PICKLE_TYPE
 
         except Exception:
-            buf = cPickle.dumps((uuid, obj), -1)
+            buf = six.moves.cPickle.dumps((uuid, obj), -1)
             type = PICKLE_TYPE
 
         checksum = binascii.crc32(buf) & 0xFFFF
@@ -70,7 +74,7 @@ class BroadcastManager:
         if type == MARSHAL_TYPE:
             _uuid, value = marshal.loads(buf)
         elif type == PICKLE_TYPE:
-            _uuid, value = cPickle.loads(buf)
+            _uuid, value = six.moves.cPickle.loads(buf)
         else:
             raise RuntimeError('Unknown serialization type: %s' % type)
 
@@ -79,8 +83,8 @@ class BroadcastManager:
 
         return value
 
-GUIDE_STOP, GUIDE_INFO, GUIDE_SOURCES, GUIDE_REPORT_BAD = range(4)
-SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK = range(4)
+GUIDE_STOP, GUIDE_INFO, GUIDE_SOURCES, GUIDE_REPORT_BAD = list(range(4))
+SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK = list(range(4))
 
 class P2PBroadcastManager(BroadcastManager):
     def __init__(self):
@@ -181,23 +185,23 @@ class P2PBroadcastManager(BroadcastManager):
         while not all(bitmap):
             guide_sock.send_pyobj((GUIDE_SOURCES, (uuid, self.server_addr, bitmap)))
             sources = guide_sock.recv_pyobj()
-            logger.debug("received SourceInfo from master: %s", sources.keys())
+            logger.debug("received SourceInfo from master: %s", list(sources.keys()))
             local = []
             remote = []
-            for addr, _bitmap in sources.iteritems():
+            for addr, _bitmap in six.iteritems(sources):
                 if addr.startswith('tcp://%s:' % self.host):
                     local.append((addr, _bitmap))
                 else:
                     remote.append((addr, _bitmap))
 
             for addr, _bitmap in local:
-                indices = [i for i in xrange(block_num) if not bitmap[i] and _bitmap[i]]
+                indices = [i for i in range(block_num) if not bitmap[i] and _bitmap[i]]
                 if indices:
                     _fetch(addr, indices)
 
             random.shuffle(remote)
             for addr, _bitmap in remote:
-                indices = [i for i in xrange(block_num) if not bitmap[i] and _bitmap[i]]
+                indices = [i for i in range(block_num) if not bitmap[i] and _bitmap[i]]
                 if indices:
                     _fetch(addr, [random.choice(indices)])
 
@@ -234,7 +238,7 @@ class P2PBroadcastManager(BroadcastManager):
 
             sock.close()
             logger.debug("Sending stop notification to all servers ...")
-            for uuid, sources in self.guides.iteritems():
+            for uuid, sources in six.iteritems(self.guides):
                 for addr in sources:
                     self.stop_server(addr)
 
@@ -270,7 +274,7 @@ class P2PBroadcastManager(BroadcastManager):
 
             sock.close()
             logger.debug("stop Broadcast server %s", server_addr)
-            for uuid in self.published.keys():
+            for uuid in list(self.published.keys()):
                 self.clear(uuid)
 
         return server_addr, spawn(run)
