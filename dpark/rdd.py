@@ -1274,7 +1274,7 @@ class TextFileRDD(RDD):
 
     def open_file(self):
         if self.fileinfo:
-            return self.fileinfo
+            return open_file(self.path)
         else:
             return open(self.path, 'r', 4096 * 1024)
 
