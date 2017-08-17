@@ -101,18 +101,16 @@ class MooseFS(PosixFS):
             for name, info in cs.iteritems():
                 if name in '..':
                     continue
-                if info:
-                    if info.ftype == TYPE_DIRECTORY:
-                        if name not in dirs:
-                            dirs.append(name)
-                    elif info.ftype == TYPE_FILE:
-                        if name not in files:
-                            files.append(name)
-                    elif info.ftype == TYPE_SYMLINK:
-                        if os.path.isdir(os.path.join(root, name)):
-                            dirs.append(name)
-                        else:
-                            files.append(name)
+                if info.ftype == TYPE_DIRECTORY:
+                    dirs.append(name)
+                elif info.ftype == TYPE_FILE:
+                    files.append(name)
+                else:
+                    if os.path.isdir(os.path.join(root, name)):
+                        dirs.append(name)
+                    elif os.path.exists(os.path.join(path, name)):
+                        files.append(name)
+
             yield root, dirs, files
             for d in sorted(dirs, reverse=True):
                 if not d.startswith('/'):
