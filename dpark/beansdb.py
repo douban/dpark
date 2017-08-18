@@ -7,6 +7,7 @@ import struct
 import zlib
 import cPickle
 from dpark.util import get_logger
+from dpark.file_manager import open_file
 from dpark.serialize import load_func, dump_func
 
 logger = get_logger(__name__)
@@ -142,14 +143,13 @@ def write_record(f, key, flag, value, version, ts):
 
 class BeansdbReader(object):
 
-    def __init__(self, path, key_filter=None, fullscan=False, raw=False, fileinfo=None):
+    def __init__(self, path, key_filter=None, fullscan=False, raw=False):
         if key_filter is None:
             fullscan = True
         self.path = path
         self.key_filter = key_filter
         self.fullscan = fullscan
         self.raw = raw
-        self.fileinfo = fileinfo
         if not fullscan:
             hint = path[:-5] + '.hint'
             if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
@@ -222,10 +222,7 @@ class BeansdbReader(object):
         return value, err
 
     def open_file(self):
-        if self.fileinfo:
-            return self.fileinfo
-        else:
-            return open(self.path, 'r', 4096 * 1024)
+        return open_file(self.path)
 
     def full_scan(self, begin, end):
         f = self.open_file()
