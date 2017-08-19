@@ -126,7 +126,7 @@ def read_record(f, check_crc=False):
 
 
 def write_record(f, key, flag, value, version, ts):
-    header = struct.pack('IIIII', ts, flag, version, len(key), len(value))
+    header = struct.pack('IIiII', ts, flag, version, len(key), len(value))
     crc32 = binascii.crc32(header)
     crc32 = binascii.crc32(key, crc32)
     crc32 = binascii.crc32(value, crc32) & 0xffffffff
