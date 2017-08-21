@@ -192,7 +192,7 @@ class PosixFile(ReadableFile):
         self.info = FileInfo(st.st_ino, path, self._get_type(st.st_mode), st.st_mode,
                              st.st_uid, st.st_gid, st.st_atime, st.st_mtime,
                              st.st_ctime, st.st_nlink, st.st_size)
-        self.cur_off = 0
+        self.fp = open(self.path, 'rb', 4096 * 1024)
 
     def _get_type(self, st_mode):
         if stat.S_ISDIR(st_mode):
@@ -206,26 +206,17 @@ class PosixFile(ReadableFile):
         return []
 
     def seek(self, offset, whence=0):
-        if whence == 1:
-            offset = self.cur_off + offset
-        elif whence == 2:
-            offset = self.length + offset
-        assert offset >= 0, 'offset should greater than 0'
-        self.cur_off = offset
+        self.fp.seek(offset, whence)
 
     def tell(self):
-        return self.cur_off
+        return self.fp.tell()
 
     def read(self, n):
-        fp = open(self.path, 'rb', 4096 * 1024)
-        fp.seek(self.cur_off)
-        if n >= 0:
-            self.seek(n, whence=1)
-        return fp.read(n)
+        return self.fp.read(n)
 
     def close(self):
         self.info = None
-        self.cur_off = 0
+        self.fp.close()
 
 
 class MooseFile(ReadableFile):
