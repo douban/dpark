@@ -27,12 +27,12 @@ def pack(cmd, *args):
     for a in args:
         if isinstance(a, six.integer_types):
             msg.append(struct.pack("!I", a))
-        elif isinstance(a, str):
+        elif isinstance(a, bytes):
             msg.append(a)
         else:
             raise TypeError(str(type(a))+str(a))
     header = struct.pack("!II", cmd, sum(len(i) for i in msg))
-    return header + ''.join(msg)
+    return header + b''.join(msg)
 
 
 def unpack(fmt, buf):

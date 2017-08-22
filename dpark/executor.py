@@ -83,7 +83,7 @@ def run_task(task_data):
 
         if len(data) > TASK_RESULT_LIMIT:
             path = LocalFileShuffle.getOutputFile(0, ntry, task.id, len(data))
-            f = open(path, 'w')
+            f = open(path, 'wb')
             f.write(data)
             f.close()
             data = '/'.join(
@@ -132,7 +132,7 @@ def startWebServer(path):
                                        os.path.basename(path))
     try:
         data = urllib.request.urlopen(default_uri + '/' + 'test').read()
-        if data == path:
+        if data == path.encode('utf-8'):
             return default_uri
     except IOError:
         pass
@@ -214,8 +214,8 @@ class Redirect(object):
         self.origin_wfile = None
 
         self.pipe_rfd, self.pipe_wfd = os.pipe()
-        self.pipe_rfile = os.fdopen(self.pipe_rfd, 'r')
-        self.pipe_wfile = os.fdopen(self.pipe_wfd, 'w', 0)
+        self.pipe_rfile = os.fdopen(self.pipe_rfd, 'rb')
+        self.pipe_wfile = os.fdopen(self.pipe_wfd, 'wb', 0)
 
         os.close(self.fd)
         os.dup2(self.pipe_wfd, self.fd)
@@ -243,7 +243,7 @@ class Redirect(object):
             err = e
 
         os.dup2(self.fd_dup, self.fd)  # will close fd first
-        self.origin_wfile = os.fdopen(self.fd, 'w', 0)
+        self.origin_wfile = os.fdopen(self.fd, 'wb', 0)
 
         logger.debug('should see me in sandbox')
         if err:

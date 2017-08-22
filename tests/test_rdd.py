@@ -31,7 +31,7 @@ def gen_big_text_file(block_size, file_size, ext='txt'):
         ext = '.' + ext
 
     cnt = 0
-    with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as out:
+    with tempfile.NamedTemporaryFile(suffix=ext) as out:
         while out.tell() < file_size:
             with tempfile.NamedTemporaryFile() as tmp:
                 if ext == '.bz2':

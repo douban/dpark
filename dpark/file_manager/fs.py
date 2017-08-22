@@ -238,7 +238,7 @@ class MooseFile(ReadableFile):
         self.length = self.info.length
         self.cscache = {}
         self.roff = 0
-        self.rbuf = ''
+        self.rbuf = b''
         self.reader = None
         self.generator = None
 
@@ -261,7 +261,7 @@ class MooseFile(ReadableFile):
 
     def locs(self, i=None):
         if i is None:
-            n = (self.length - 1) / CHUNKSIZE + 1
+            n = (self.length - 1) // CHUNKSIZE + 1
             return [[host for host, _ in self.get_chunk(i).addrs]
                     for i in range(n)]
         return [host for host, _ in self.get_chunk(i).addrs]
@@ -276,7 +276,7 @@ class MooseFile(ReadableFile):
         if off > 0 and off < len(self.rbuf):
             self.rbuf = self.rbuf[off:]
         else:
-            self.rbuf = ''
+            self.rbuf = b''
             self.reader = None
 
         self.roff = offset
@@ -291,7 +291,7 @@ class MooseFile(ReadableFile):
                 self.fill_buffer()
             v = self.rbuf
             self.roff += len(v)
-            self.rbuf = ''
+            self.rbuf = b''
             return v
 
         buf = []
@@ -306,13 +306,13 @@ class MooseFile(ReadableFile):
             if nbuf > 0:
                 buf.append(self.rbuf)
                 n -= nbuf
-                self.rbuf = ''
+                self.rbuf = b''
                 self.roff += nbuf
 
             self.fill_buffer()
             if not self.rbuf:
                 break
-        return ''.join(buf)
+        return b''.join(buf)
 
     def fill_buffer(self):
         if self.reader is None:
@@ -327,7 +327,7 @@ class MooseFile(ReadableFile):
             self.fill_buffer()
 
     def chunk_reader(self, roff):
-        index = roff / CHUNKSIZE
+        index = roff // CHUNKSIZE
         offset = roff % CHUNKSIZE
         chunk = self.get_chunk(index)
         length = min(self.length - index * CHUNKSIZE, CHUNKSIZE)
@@ -378,6 +378,6 @@ class MooseFile(ReadableFile):
 
     def close(self):
         self.roff = 0
-        self.rbuf = ''
+        self.rbuf = b''
         self.reader = None
         self.generator = None

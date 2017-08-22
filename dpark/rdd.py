@@ -1390,7 +1390,7 @@ class GZipFileRDD(TextFileRDD):
 
     def compute(self, split):
         f = self.open_file()
-        last_line = ''
+        last_line = b''
         if split.index == 0:
             zf = gzip.GzipFile(mode='r', fileobj=f)
             if hasattr(zf, '_buffer'):
@@ -1411,7 +1411,7 @@ class GZipFileRDD(TextFileRDD):
                     f.seek(last_block)
                     d = f.read(start - last_block)
                     dz = zlib.decompressobj(-zlib.MAX_WBITS)
-                    _, sep, last_line = dz.decompress(d).rpartition('\n')
+                    _, sep, last_line = dz.decompress(d).rpartition(b'\n')
                     if sep:
                         break
 
@@ -1428,8 +1428,6 @@ class GZipFileRDD(TextFileRDD):
 
             try:
                 io = BytesIO(dz.decompress(d))
-                if not six.PY2:
-                    io = TextIOWrapper(io)
             except Exception as e:
                 if self.err < 1e-6:
                     logger.error("failed to decompress file: %s", self.path)
@@ -1455,19 +1453,28 @@ class GZipFileRDD(TextFileRDD):
             last_line += io.readline()
             if skip_first:
                 skip_first = False
-            elif last_line.endswith('\n'):
-                yield last_line[:-1]
-            last_line = ''
+            elif last_line.endswith(b'\n'):
+                line = last_line[:-1]
+                if not six.PY2:
+                    line = line.decode('utf-8')
+                yield line
+            last_line = b''
 
             ll = list(io)
             if not ll: continue
 
             last_line = ll.pop()
             for line in ll:
-                yield line[:-1]
-            if last_line.endswith('\n'):
-                yield last_line[:-1]
-                last_line = ''
+                line = line[:-1]
+                if not six.PY2:
+                    line = line.decode('utf-8')
+                yield line
+            if last_line.endswith(b'\n'):
+                line = last_line[:-1]
+                if not six.PY2:
+                    line = line.decode('utf-8')
+                yield line
+                last_line = b''
 
         f.close()
 
@@ -1547,7 +1554,7 @@ class BZip2FileRDD(TextFileRDD):
             np = nd.find(magic)
         d += nd[:np] if np >= 0 else nd
 
-        last_line = ''
+        last_line = b''
         if split.index > 0:
             cur = split.index * self.splitSize
             skip = fp if fp >= 0 else d.find(magic)
@@ -1566,7 +1573,7 @@ class BZip2FileRDD(TextFileRDD):
                 np = nd.find(magic)
                 if np >= 0:
                     nd = nd[np:]
-                    last_line = bz2.decompress(nd).decode('utf-8').split('\n')[-1]
+                    last_line = bz2.decompress(nd).split(b'\n')[-1]
                     break
 
         f.close()
@@ -1578,19 +1585,25 @@ class BZip2FileRDD(TextFileRDD):
             else:
                 data = d[:np]
             try:
-                io = StringIO(bz2.decompress(data).decode('utf-8'))
+                io = BytesIO(bz2.decompress(data))
             except IOError as e:
                 #bad position, skip it
                 pass
             else:
                 last_line += io.readline()
-                if last_line.endswith('\n'):
-                    yield last_line[:-1]
-                    last_line = ''
+                if last_line.endswith(b'\n'):
+                    line = last_line[:-1]
+                    if not six.PY2:
+                        line = line.decode('utf-8')
+                    yield line
+                    last_line = b''
 
                 for line in io:
-                    if line.endswith('\n'): # drop last line
-                        yield line[:-1]
+                    if line.endswith(b'\n'): # drop last line
+                        line = line[:-1]
+                        if not six.PY2:
+                            line = line.decode('utf-8')
+                        yield line
                     else:
                         last_line = line
 

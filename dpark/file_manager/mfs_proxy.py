@@ -153,6 +153,9 @@ class ProxyConn(object):
             length, = unpack('B', ans[p: p + 1])
             p += 1
             name = ans[p: p + length]
+            if not six.PY2:
+                name = name.decode('utf-8')
+
             p += length
             i, = unpack("I", ans[p: p + 4])
             p += 4
