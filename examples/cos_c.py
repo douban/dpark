@@ -29,8 +29,8 @@ def convert(it):
             s.setdefault(k, {})[u] = r
     return s
 
-def cos(xxx_todo_changeme):
-    (l1, l2) = xxx_todo_changeme
+def cos(l1_l2):
+    (l1, l2) = l1_l2
     import map_sim
     r = map_sim.map_sim([], convert(l1), convert(l2), 10)
     for k in r:

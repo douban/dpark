@@ -570,8 +570,8 @@ class RDD(object):
         for (k, v) in smallRdd:
             o[k].append(v)
         o_b = self.ctx.broadcast(o)
-        def do_join(xxx_todo_changeme):
-            (k, v) = xxx_todo_changeme
+        def do_join(k_v):
+            (k, v) = k_v
             for v1 in o_b.value[k]:
                 yield (k, (v, v1))
         r = self.flatMap(do_join)
@@ -591,8 +591,8 @@ class RDD(object):
         return self._join(other, (1,2), numSplits, taskMemory)
 
     def _join(self, other, keeps, numSplits=None, taskMemory=None):
-        def dispatch(xxx_todo_changeme3):
-            (k,seq) = xxx_todo_changeme3
+        def dispatch(k_seq):
+            (k,seq) = k_seq
             vbuf, wbuf = seq
             if not vbuf and 2 in keeps:
                 vbuf.append(None)

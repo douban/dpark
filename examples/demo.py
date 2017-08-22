@@ -49,8 +49,8 @@ def dot(a, b):
     return sum(i*j for i,j in zip(a,b))
 
 def incm(w):
-    def inc(xxx_todo_changeme):
-        (x, y) = xxx_todo_changeme
+    def inc(x_y):
+        (x, y) = x_y
         wx = dot(w,x)
         if wx < -500:
             wx = -500

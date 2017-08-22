@@ -94,8 +94,8 @@ class Bagel(object):
     def comp(cls, ctx, grouped, compute, checkpointDir=None):
         numMsgs = ctx.accumulator(0)
         numActiveVerts = ctx.accumulator(0)
-        def proc(xxx_todo_changeme):
-            (vs, cs) = xxx_todo_changeme
+        def proc(vs_cs):
+            (vs, cs) = vs_cs
             if not vs:
                 return []
             newVert, newMsgs = compute(vs[0], cs)

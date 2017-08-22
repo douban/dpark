@@ -31,8 +31,8 @@ W = MutableDict(d)
 H = MutableDict(d)
 
 ori_b = dpark.broadcast(ori)
-def sgd(xxx_todo_changeme):
-    (i, j) = xxx_todo_changeme
+def sgd(i_j):
+    (i, j) = i_j
     Wi = W.get(i)
     if Wi is None:
         Wi = numpy.random.rand(m, k)
@@ -62,8 +62,8 @@ def sgd(xxx_todo_changeme):
 rdd = dpark.makeRDD(list(range(d)))
 rdd = rdd.cartesian(rdd).cache()
 
-def calc_err(xxx_todo_changeme1):
-    (i, j) = xxx_todo_changeme1
+def calc_err(i_j):
+    (i, j) = i_j
     Wi = W.get(i)
     Hj = H.get(j)
 

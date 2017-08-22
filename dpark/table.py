@@ -84,8 +84,8 @@ def table_join(f):
 
         ln = [n for n in self.fields if n not in left_keys]
         rn = [n for n in other.fields if n not in right_keys]
-        def conv(xxx_todo_changeme):
-            (k, (v1, v2)) = xxx_todo_changeme
+        def conv(t):
+            (k, (v1, v2)) = t
             return list(k) + (v1 or [None]*len(ln)) + (v2 or [None]*len(rn))
         return joined.map(conv).asTable(left_keys + ln + rn, self.name)
 
