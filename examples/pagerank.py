@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+from __future__ import absolute_import
+from __future__ import print_function
 import sys, os.path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -37,5 +39,5 @@ if __name__ == '__main__':
     result = Bagel.run(dpark, vertices, messages,
         gen_compute(numVertex, epsilon))
 
-    for id, v in result.filter(lambda (id, v): v.value>threshold).collect():
-        print id, v
+    for id, v in result.filter(lambda id_v: id_v[1].value>threshold).collect():
+        print(id, v)

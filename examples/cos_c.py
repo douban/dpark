@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import logging
 from context import SparkContext
 import gc
@@ -17,7 +19,7 @@ def parse(line):
         return (int(sid), (int(uid), float(r)))
     except Exception:
         return (int(sid), (int(uid), 0))
-rating = spark.textFile(name, numSplits=32).map(parse).groupByKey(16).filter(lambda (x,y):len(y)>10)#.cache()
+rating = spark.textFile(name, numSplits=32).map(parse).groupByKey(16).filter(lambda x_y:len(x_y[1])>10)#.cache()
 #print 'us', rating.first()
 
 def convert(it):
@@ -27,7 +29,8 @@ def convert(it):
             s.setdefault(k, {})[u] = r
     return s
 
-def cos((l1, l2)):
+def cos(xxx_todo_changeme):
+    (l1, l2) = xxx_todo_changeme
     import map_sim
     r = map_sim.map_sim([], convert(l1), convert(l2), 10)
     for k in r:
@@ -36,4 +39,4 @@ def cos((l1, l2)):
 final = rating.glom().cartesion(rating.glom()).flatMap(cos)
 #print 'sim', final.first()
 final = final.reduceByKey(lambda x,y:x+y).mapValue(lambda x:sorted(x,reverse=True)[:5])
-print 'final',final.count()
+print('final',final.count())

@@ -1,3 +1,5 @@
+from __future__ import absolute_import
+from __future__ import print_function
 import sys
 sys.path.append('../')
 import logging
@@ -13,7 +15,7 @@ def parse(line):
     return (sid, (uid, float(r)))
 rating = dpark.textFile(name, numSplits=2).map(parse).groupByKey(2)#.cache()
 #print 'us', rating.first()
-print rating.count()
+print(rating.count())
 
 def reverse(it):
     s = {}
@@ -33,7 +35,8 @@ def vsum(a, b):
     return s
 
 # should replace this function with c extension for best performance.
-def cos((l1, l2)):
+def cos(l1_l2):
+    (l1, l2) = l1_l2
     l1 = list(l1)
     l2 = list(l2)
     d2 = dict(l2)
@@ -45,14 +48,14 @@ def cos((l1, l2)):
                 for sid2 in u2[u]:
                     if sid2 not in s:
                         s[sid2] = (vsum(us1, d2[sid2]),sid2)
-        sim = sorted(s.values(), reverse=True)[:5]
+        sim = sorted(list(s.values()), reverse=True)[:5]
 #        sim = sorted([(vsum(us1, us2),sid2) for sid2,us2 in l2
 #            if sid2!=sid1], reverse=True)[:5]
         yield sid1, sim
 
 final = rating.glom().cartesian(rating.glom())
-print final.count()
+print(final.count())
 final = final.flatMap(cos)
 #print 'sim', final.first()
 final = final.reduceByKey(lambda x,y:x+y).mapValue(lambda x:sorted(x,reverse=True)[:5])
-print 'final',final.count()
+print('final',final.count())
