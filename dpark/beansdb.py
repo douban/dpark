@@ -11,9 +11,9 @@ import six.moves.cPickle
 from dpark.util import get_logger
 from dpark.file_manager import open_file
 from dpark.serialize import load_func, dump_func
+from contextlib import closing
 import six
 from six.moves import range
-from dpark.file_manager import open_file
 
 logger = get_logger(__name__)
 try:
@@ -185,7 +185,9 @@ class BeansdbReader(object):
         return self.full_scan(begin, end)
 
     def scan_hint(self, hint_path):
-        hint = open(hint_path, 'rb').read()
+        with open(hint_path, 'rb') as f:
+            hint = f.read()
+
         if hint_path.endswith('.qlz'):
             try:
                 hint = quicklz.decompress(hint)
@@ -196,25 +198,25 @@ class BeansdbReader(object):
                     hint = quicklz.decompress(hint)
 
         key_filter = self.key_filter or (lambda x: True)
-        dataf = open(self.path, 'rb')
-        p = 0
-        while p < len(hint):
-            pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
-            p += 10
-            ksz = pos & 0xff
-            key = hint[p: p+ksz]
-            if key_filter(key):
-                dataf.seek(pos & 0xffffff00)
-                r, err = read_record(dataf)
-                if err is not None:
-                    logger.error("read failed from %s at %d",
-                                 self.path, pos & 0xffffff00)
-                else:
-                    rsize, key, value = r
-                    value, err = self.restore(value)
-                    if not err:
-                        yield key, value
-            p += ksz + 1 # \x00
+        with open(self.path, 'rb') as dataf:
+            p = 0
+            while p < len(hint):
+                pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
+                p += 10
+                ksz = pos & 0xff
+                key = hint[p: p+ksz]
+                if key_filter(key):
+                    dataf.seek(pos & 0xffffff00)
+                    r, err = read_record(dataf)
+                    if err is not None:
+                        logger.error("read failed from %s at %d",
+                                     self.path, pos & 0xffffff00)
+                    else:
+                        rsize, key, value = r
+                        value, err = self.restore(value)
+                        if not err:
+                            yield key, value
+                p += ksz + 1 # \x00
 
     def restore(self, value):
         err = None
@@ -230,43 +232,43 @@ class BeansdbReader(object):
         return open_file(self.path)
 
     def full_scan(self, begin, end):
-        f = self.open_file()
-
-        # try to find first record
-        while True:
-            f.seek(begin)
-            r, err = read_record(f, check_crc=True)
-            if err is None:
-                break
-            begin += PADDING
-            if begin >= end:
-                break
-        if begin >= end:
-            return
-
-        f.seek(begin)
-        key_filter = self.key_filter or (lambda x: True)
-        while begin < end:
-            r, err = read_record(f)
-            if err:
-                logger.error('read error at %s pos: %d err: %s',
-                            self.path, begin, err)
-                if err == "EOF":
-                    return
+        with closing(self.open_file()) as f:
+            # try to find first record
+            while True:
+                f.seek(begin)
+                r, err = read_record(f, check_crc=True)
+                if err is None:
+                    break
                 begin += PADDING
-                while begin < end:
-                    f.seek(begin)
-                    r, err = read_record(f, check_crc=True)
-                    if err is not None:
-                        break
+                if begin >= end:
+                    break
+            if begin >= end:
+                return
+
+            f.seek(begin)
+            key_filter = self.key_filter or (lambda x: True)
+            while begin < end:
+                r, err = read_record(f)
+                if err:
+                    logger.error('read error at %s pos: %d err: %s',
+                                self.path, begin, err)
+                    if err == "EOF":
+                        return
                     begin += PADDING
-                continue
-            size, key, value = r
-            if key_filter(key):
-                value, err = self.restore(value)
-                if not err:
-                    yield key, value
-            begin += size
+                    while begin < end:
+                        f.seek(begin)
+                        r, err = read_record(f, check_crc=True)
+                        if err is not None:
+                            break
+                        begin += PADDING
+                    continue
+                size, key, value = r
+                if key_filter(key):
+                    value, err = self.restore(value)
+                    if not err:
+                        yield key, value
+                begin += size
+
 
 
 class BeansdbWriter(object):
@@ -362,7 +364,8 @@ class BeansdbWriter(object):
                 if self.compress:
                     hintdata = quicklz.compress(hintdata)
                     hint_path += '.qlz'
-                open(hint_path, 'wb').write(hintdata)
+                with open(hint_path, 'wb') as f:
+                    f.write(hintdata)
             else:
                 os.remove(tp[i])
 

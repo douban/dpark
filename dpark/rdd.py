@@ -34,6 +34,7 @@ from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
 from dpark.beansdb import BeansdbReader, BeansdbWriter
+from contextlib import closing
 import six
 from six.moves import filter
 from six.moves import map
@@ -838,6 +839,7 @@ class PipedRDD(DerivedRDD):
         if self.error:
             raise self.error
         ret = p.wait()
+        p.stdout.close()
         #if ret:
         #    raise Exception('Subprocess exited with status %d' % ret)
 
@@ -1249,29 +1251,29 @@ class TextFileRDD(RDD):
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         RDD.__init__(self, ctx)
         self.path = path
-        file_ = open_file(path)
-        self.size = size = file_.length
+        with closing(open_file(path)) as file_:
+            self.size = size = file_.length
 
-        if splitSize is None:
-            if numSplits is None:
-                splitSize = self.DEFAULT_SPLIT_SIZE
-            else:
-                splitSize = size // numSplits or self.DEFAULT_SPLIT_SIZE
-        numSplits = size // splitSize
-        if size % splitSize > 0:
-            numSplits += 1
-        self.splitSize = splitSize
-        self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize))
-                    for i in range(numSplits)]
+            if splitSize is None:
+                if numSplits is None:
+                    splitSize = self.DEFAULT_SPLIT_SIZE
+                else:
+                    splitSize = size // numSplits or self.DEFAULT_SPLIT_SIZE
+            numSplits = size // splitSize
+            if size % splitSize > 0:
+                numSplits += 1
+            self.splitSize = splitSize
+            self._splits = [PartialSplit(i, i*splitSize, min(size, (i+1) * splitSize))
+                        for i in range(numSplits)]
 
-        self._preferred_locs = {}
-        for split in self._splits:
-            if self.splitSize != CHUNKSIZE:
-                start = split.begin // CHUNKSIZE
-                end = (split.end + CHUNKSIZE - 1) // CHUNKSIZE
-                self._preferred_locs[split] = sum((file_.locs(i) for i in range(start, end)), [])
-            else:
-                self._preferred_locs[split] = file_.locs(split.begin // self.splitSize)
+            self._preferred_locs = {}
+            for split in self._splits:
+                if self.splitSize != CHUNKSIZE:
+                    start = split.begin // CHUNKSIZE
+                    end = (split.end + CHUNKSIZE - 1) // CHUNKSIZE
+                    self._preferred_locs[split] = sum((file_.locs(i) for i in range(start, end)), [])
+                else:
+                    self._preferred_locs[split] = file_.locs(split.begin // self.splitSize)
 
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
 
@@ -1296,22 +1298,23 @@ class TextFileRDD(RDD):
         return open_file(self.path)
 
     def compute(self, split):
-        f = self.open_file()
-        start = split.begin
-        end = split.end
-        if start > 0:
-            f.seek(start-1)
-            byte = f.read(1)
-            while byte != b'\n':
+        with closing(self.open_file()) as f:
+            start = split.begin
+            end = split.end
+            if start > 0:
+                f.seek(start-1)
                 byte = f.read(1)
-                if not byte:
-                    return []
-                start += 1
+                while byte != b'\n':
+                    byte = f.read(1)
+                    if not byte:
+                        return
+                    start += 1
 
-        if start >= end:
-            return []
+            if start >= end:
+                return
 
-        return self.read(f, start, end)
+            for l in self.read(f, start, end):
+                yield l
 
     def read(self, f, start, end):
         for line in f:
@@ -1322,7 +1325,6 @@ class TextFileRDD(RDD):
                 yield line
             start += len(line)
             if start >= end: break
-        f.close()
 
 
 class PartialTextFileRDD(TextFileRDD):
@@ -1389,94 +1391,95 @@ class GZipFileRDD(TextFileRDD):
                 pass
 
     def compute(self, split):
-        f = self.open_file()
-        last_line = b''
-        if split.index == 0:
-            zf = gzip.GzipFile(mode='r', fileobj=f)
-            if hasattr(zf, '_buffer'):
-                zf._buffer.raw._read_gzip_header()
-            else:
-                zf._read_gzip_header()
-
-            start = f.tell()
-        else:
-            start = self.find_block(f, split.index * self.splitSize)
-            if start >= split.index * self.splitSize + self.splitSize:
-                return
-            for i in range(1, 100):
-                if start - i * self.BLOCK_SIZE <= 4:
-                    break
-                last_block = self.find_block(f, start - i * self.BLOCK_SIZE)
-                if last_block < start:
-                    f.seek(last_block)
-                    d = f.read(start - last_block)
-                    dz = zlib.decompressobj(-zlib.MAX_WBITS)
-                    _, sep, last_line = dz.decompress(d).rpartition(b'\n')
-                    if sep:
-                        break
-
-        end = self.find_block(f, split.index * self.splitSize + self.splitSize)
-        # TODO: speed up
-        f.seek(start)
-        f.length = end
-        dz = zlib.decompressobj(-zlib.MAX_WBITS)
-        skip_first = False
-        while start < end:
-            d = f.read(min(64<<10, end-start))
-            start += len(d)
-            if not d: break
-
-            try:
-                io = BytesIO(dz.decompress(d))
-            except Exception as e:
-                if self.err < 1e-6:
-                    logger.error("failed to decompress file: %s", self.path)
-                    raise
-                old = start
-                start = self.find_block(f, start)
-                f.seek(start)
-                logger.error("drop corrupted block (%d bytes) in %s",
-                        start - old + len(d), self.path)
-                skip_first = True
-                continue
-
-            if len(dz.unused_data) > 8 :
-                f.seek(-len(dz.unused_data)+8, 1)
+        with closing(self.open_file()) as f:
+            last_line = b''
+            if split.index == 0:
                 zf = gzip.GzipFile(mode='r', fileobj=f)
                 if hasattr(zf, '_buffer'):
                     zf._buffer.raw._read_gzip_header()
                 else:
                     zf._read_gzip_header()
-                dz = zlib.decompressobj(-zlib.MAX_WBITS)
-                start -= f.tell()
 
-            last_line += io.readline()
-            if skip_first:
-                skip_first = False
-            elif last_line.endswith(b'\n'):
-                line = last_line[:-1]
-                if not six.PY2:
-                    line = line.decode('utf-8')
-                yield line
-            last_line = b''
+                zf.close()
 
-            ll = list(io)
-            if not ll: continue
+                start = f.tell()
+            else:
+                start = self.find_block(f, split.index * self.splitSize)
+                if start >= split.index * self.splitSize + self.splitSize:
+                    return
+                for i in range(1, 100):
+                    if start - i * self.BLOCK_SIZE <= 4:
+                        break
+                    last_block = self.find_block(f, start - i * self.BLOCK_SIZE)
+                    if last_block < start:
+                        f.seek(last_block)
+                        d = f.read(start - last_block)
+                        dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                        _, sep, last_line = dz.decompress(d).rpartition(b'\n')
+                        if sep:
+                            break
 
-            last_line = ll.pop()
-            for line in ll:
-                line = line[:-1]
-                if not six.PY2:
-                    line = line.decode('utf-8')
-                yield line
-            if last_line.endswith(b'\n'):
-                line = last_line[:-1]
-                if not six.PY2:
-                    line = line.decode('utf-8')
-                yield line
+            end = self.find_block(f, split.index * self.splitSize + self.splitSize)
+            # TODO: speed up
+            f.seek(start)
+            f.length = end
+            dz = zlib.decompressobj(-zlib.MAX_WBITS)
+            skip_first = False
+            while start < end:
+                d = f.read(min(64<<10, end-start))
+                start += len(d)
+                if not d: break
+
+                try:
+                    io = BytesIO(dz.decompress(d))
+                except Exception as e:
+                    if self.err < 1e-6:
+                        logger.error("failed to decompress file: %s", self.path)
+                        raise
+                    old = start
+                    start = self.find_block(f, start)
+                    f.seek(start)
+                    logger.error("drop corrupted block (%d bytes) in %s",
+                            start - old + len(d), self.path)
+                    skip_first = True
+                    continue
+
+                if len(dz.unused_data) > 8 :
+                    f.seek(-len(dz.unused_data)+8, 1)
+                    zf = gzip.GzipFile(mode='r', fileobj=f)
+                    if hasattr(zf, '_buffer'):
+                        zf._buffer.raw._read_gzip_header()
+                    else:
+                        zf._read_gzip_header()
+                    zf.close()
+                    dz = zlib.decompressobj(-zlib.MAX_WBITS)
+                    start -= f.tell()
+
+                last_line += io.readline()
+                if skip_first:
+                    skip_first = False
+                elif last_line.endswith(b'\n'):
+                    line = last_line[:-1]
+                    if not six.PY2:
+                        line = line.decode('utf-8')
+                    yield line
                 last_line = b''
 
-        f.close()
+                ll = list(io)
+                if not ll: continue
+
+                last_line = ll.pop()
+                for line in ll:
+                    line = line[:-1]
+                    if not six.PY2:
+                        line = line.decode('utf-8')
+                    yield line
+                if last_line.endswith(b'\n'):
+                    line = last_line[:-1]
+                    if not six.PY2:
+                        line = line.decode('utf-8')
+                    yield line
+                    last_line = b''
 
 
 class TableFileRDD(TextFileRDD):
@@ -1502,28 +1505,27 @@ class TableFileRDD(TextFileRDD):
 
     def compute(self, split):
         import msgpack
-        f = self.open_file()
-        magic = f.read(8)
-        start = split.index * self.splitSize
-        end = (split.index + 1) * self.splitSize
-        start = self.find_magic(f, start, magic)
-        if start < 0:
-            return
-        f.seek(start)
-        hdr_size = 12
-        while start < end:
-            m = f.read(len(magic))
-            if m != magic:
-                break
-            compressed, count, size = struct.unpack("III", f.read(hdr_size))
-            d = f.read(size)
-            assert len(d) == size, 'unexpected end'
-            if compressed:
-                d = zlib.decompress(d)
-            for r in msgpack.Unpacker(BytesIO(d)):
-                yield r
-            start += len(magic) + hdr_size + size
-        f.close()
+        with closing(self.open_file()) as f:
+            magic = f.read(8)
+            start = split.index * self.splitSize
+            end = (split.index + 1) * self.splitSize
+            start = self.find_magic(f, start, magic)
+            if start < 0:
+                return
+            f.seek(start)
+            hdr_size = 12
+            while start < end:
+                m = f.read(len(magic))
+                if m != magic:
+                    break
+                compressed, count, size = struct.unpack("III", f.read(hdr_size))
+                d = f.read(size)
+                assert len(d) == size, 'unexpected end'
+                if compressed:
+                    d = zlib.decompress(d)
+                for r in msgpack.Unpacker(BytesIO(d)):
+                    yield r
+                start += len(magic) + hdr_size + size
 
 
 class BZip2FileRDD(TextFileRDD):
@@ -1536,47 +1538,46 @@ class BZip2FileRDD(TextFileRDD):
         TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
 
     def compute(self, split):
-        f = self.open_file()
-        magic = f.read(10)
-        f.seek(split.index * self.splitSize)
-        d = f.read(self.splitSize)
-        fp = d.find(magic)
-        if fp > 0:
-            d = d[fp:] # drop end of last block
+        with closing(self.open_file()) as f:
+            magic = f.read(10)
+            f.seek(split.index * self.splitSize)
+            d = f.read(self.splitSize)
+            fp = d.find(magic)
+            if fp > 0:
+                d = d[fp:] # drop end of last block
 
-        # real all the block
-        nd = f.read(self.BLOCK_SIZE)
-        np = nd.find(magic)
-        while nd and np < 0:
-            t = f.read(len(nd))
-            if not t: break
-            nd += t
+            # real all the block
+            nd = f.read(self.BLOCK_SIZE)
             np = nd.find(magic)
-        d += nd[:np] if np >= 0 else nd
-
-        last_line = b''
-        if split.index > 0:
-            cur = split.index * self.splitSize
-            skip = fp if fp >= 0 else d.find(magic)
-            if skip >= 0:
-                cur += skip
-            else:
-                cur += len(d)
-
-            for i in range(1, 100):
-                pos = cur - i * self.BLOCK_SIZE
-                if pos < 0:
-                    break
-
-                f.seek(pos)
-                nd = f.read(cur - pos)
+            while nd and np < 0:
+                t = f.read(len(nd))
+                if not t: break
+                nd += t
                 np = nd.find(magic)
-                if np >= 0:
-                    nd = nd[np:]
-                    last_line = bz2.decompress(nd).split(b'\n')[-1]
-                    break
+            d += nd[:np] if np >= 0 else nd
 
-        f.close()
+            last_line = b''
+            if split.index > 0:
+                cur = split.index * self.splitSize
+                skip = fp if fp >= 0 else d.find(magic)
+                if skip >= 0:
+                    cur += skip
+                else:
+                    cur += len(d)
+
+                for i in range(1, 100):
+                    pos = cur - i * self.BLOCK_SIZE
+                    if pos < 0:
+                        break
+
+                    f.seek(pos)
+                    nd = f.read(cur - pos)
+                    np = nd.find(magic)
+                    if np >= 0:
+                        nd = nd[np:]
+                        last_line = bz2.decompress(nd).split(b'\n')[-1]
+                        break
+
 
         while d:
             np = d.find(magic, len(magic))
@@ -1630,16 +1631,16 @@ class BinaryFileRDD(TextFileRDD):
         start = split.index * self.splitSize
         end = min(start + self.splitSize, self.size)
 
-        f = self.open_file()
-        f.seek(start)
-        rlen = self.length
-        fmt = self.fmt
-        for i in range((end - start) // rlen):
-            d = f.read(rlen)
-            if len(d) < rlen: break
-            if fmt:
-                d = struct.unpack(fmt, d)
-            yield d
+        with closing(self.open_file()) as f:
+            f.seek(start)
+            rlen = self.length
+            fmt = self.fmt
+            for i in range((end - start) // rlen):
+                d = f.read(rlen)
+                if len(d) < rlen: break
+                if fmt:
+                    d = struct.unpack(fmt, d)
+                yield d
 
 
 class OutputTextFileRDD(DerivedRDD):
@@ -1704,27 +1705,32 @@ class OutputTextFileRDD(DerivedRDD):
             if s:
                 f.write(s)
                 f.write('\n')
+        if not six.PY2:
+            f.close()
         return True
 
     def write_compress_data(self, f, lines):
         empty = True
-        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
-        if not six.PY2:
-            f = TextIOWrapper(f)
-        size = 0
-        for line in lines:
-            f.write(line)
-            if not line.endswith('\n'):
-                f.write('\n')
-            size += len(line) + 1
-            if size >= 256 << 10:
+        with gzip.GzipFile(filename='', mode='w', fileobj=f) as f:
+            if not six.PY2:
+                f = TextIOWrapper(f)
+            size = 0
+            for line in lines:
+                f.write(line)
+                if not line.endswith('\n'):
+                    f.write('\n')
+                size += len(line) + 1
+                if size >= 256 << 10:
+                    f.flush()
+                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                    size = 0
+                empty = False
+            if not empty:
                 f.flush()
-                f.compress = zlib.compressobj(9, zlib.DEFLATED,
-                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
-                size = 0
-            empty = False
-        if not empty:
-            f.flush()
+            if not six.PY2:
+                f.close()
+
         return not empty
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
@@ -1850,27 +1856,31 @@ class OutputCSVFileRDD(OutputTextFileRDD):
                 row = (row,)
             writer.writerow(row)
             empty = False
+        if not six.PY2:
+            f.close()
         return not empty
 
     def write_compress_data(self, f, rows):
         empty = True
-        f = gzip.GzipFile(filename='', mode='w', fileobj=f)
-        if not six.PY2:
-            f = TextIOWrapper(f)
-        writer = csv.writer(f, self.dialect)
-        last_flush = 0
-        for row in rows:
-            if not isinstance(row, (tuple, list)):
-                row = (row,)
-            writer.writerow(row)
-            empty = False
-            if f.tell() - last_flush >= 256 << 10:
+        with gzip.GzipFile(filename='', mode='w', fileobj=f) as f:
+            if not six.PY2:
+                f = TextIOWrapper(f)
+            writer = csv.writer(f, self.dialect)
+            last_flush = 0
+            for row in rows:
+                if not isinstance(row, (tuple, list)):
+                    row = (row,)
+                writer.writerow(row)
+                empty = False
+                if f.tell() - last_flush >= 256 << 10:
+                    f.flush()
+                    f.compress = zlib.compressobj(9, zlib.DEFLATED,
+                        -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
+                    last_flush = f.tell()
+            if not empty:
                 f.flush()
-                f.compress = zlib.compressobj(9, zlib.DEFLATED,
-                    -zlib.MAX_WBITS, zlib.DEF_MEM_LEVEL, 0)
-                last_flush = f.tell()
-        if not empty:
-            f.flush()
+            if not six.PY2:
+                f.close()
         return not empty
 
 class OutputBinaryFileRDD(OutputTextFileRDD):

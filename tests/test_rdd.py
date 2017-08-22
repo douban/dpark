@@ -248,7 +248,9 @@ class TestRDD(unittest.TestCase):
     def test_text_file(self):
         path = 'tests/test_rdd.py'
         f = self.sc.textFile(path, splitSize=1000).mergeSplit(numSplits=1)
-        n = len(open(path).read().split())
+        with open(path) as f_:
+            n = len(f_.read().split())
+
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['class'], 1)
@@ -258,7 +260,9 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(f.map(lambda x:('test', prefix+x)).saveAsTextFileByKey('/tmp/tout'),
             ['/tmp/tout/test/0000'])
         d = self.sc.textFile('/tmp/tout')
-        n = len(open(path).readlines())
+        with open(path) as f:
+            n = len(f.readlines())
+
         self.assertEqual(d.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
             ).saveAsCSVFile('/tmp/tout'),
@@ -300,7 +304,6 @@ class TestRDD(unittest.TestCase):
 
     def test_large_bz2_file(self):
         with gen_big_text_file(64 << 10, 5 << 20, ext='bz2') as f:
-            print(f.name)
             rd = self.sc.textFile(f.name, splitSize=512 * 1024)
             self.assertEqual(rd.count(), f.cnt)
 
@@ -339,7 +342,8 @@ class TestRDD(unittest.TestCase):
     def test_partial_file(self):
         p = 'tests/test_rdd.py'
         l = 300
-        d = open(p).read(l+50)
+        with open(p) as f:
+            d = f.read(l+50)
         start = 100
         while d[start-1] != '\n':
             start += 1

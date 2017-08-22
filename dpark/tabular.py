@@ -12,6 +12,7 @@ from dpark.file_manager import walk
 from dpark.bitindex import Bloomfilter, BitIndex
 from dpark.serialize import dumps, loads
 from dpark.dependency import OneToOneDependency, OneToRangeDependency
+from contextlib import closing
 import six
 from six.moves import map
 from six.moves import range
@@ -289,7 +290,7 @@ class TabularFileRDD(TextFileRDD):
         self.fields = list(map(str, fields)) if fields is not None else None
 
     def compute(self, split):
-        with self.open_file() as f:
+        with closing(self.open_file()) as f:
             f.seek(-8,2)
             footer_fields_size, footer_indices_size = struct.unpack('II', f.read(8))
             footer_offset = self.size - 8 - footer_fields_size - footer_indices_size

@@ -9,6 +9,7 @@ import threading
 import random
 from functools import reduce
 from collections import deque
+from contextlib import closing
 import six
 from six.moves import range
 try:
@@ -1045,12 +1046,12 @@ class RotatingFilesInputDStream(InputDStream):
         for fn in self.files:
             try:
                 realname = os.path.realpath(fn)
-                f = open_file(realname)
-                if f:
-                    yield realname, (f.info.inode, f.info.length, f.info.mtime)
-                else:
-                    st = os.stat(realname)
-                    yield realname, (st.st_ino, st.st_size, st.st_mtime)
+                with closing(open_file(realname)) as f:
+                    if f:
+                        yield realname, (f.info.inode, f.info.length, f.info.mtime)
+                    else:
+                        st = os.stat(realname)
+                        yield realname, (st.st_ino, st.st_size, st.st_mtime)
 
             except (OSError, Error):
                 pass

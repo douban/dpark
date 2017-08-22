@@ -193,7 +193,9 @@ class DparkContext(object):
         for root, dirs, names in walk(dpath):
             if '.field_names' in names:
                 p = os.path.join(root, '.field_names')
-                fields = open(p).read().split('\t')
+                with open(p) as f:
+                    fields = f.read().split('\t')
+
                 break
         else:
             raise Exception("no .field_names found in %s" % path)

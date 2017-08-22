@@ -391,7 +391,9 @@ class TableRDD(DerivedRDD):
     def save(self, path, overwrite=True, compress=True):
         r = OutputTableFileRDD(self.prev, path,
             overwrite=overwrite, compress=compress).collect()
-        open(os.path.join(path, '.field_names'), 'w').write('\t'.join(self.fields))
+
+        with open(os.path.join(path, '.field_names'), 'w') as f:
+            f.write('\t'.join(self.fields))
         return r
 
 
