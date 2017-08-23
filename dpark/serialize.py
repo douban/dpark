@@ -30,6 +30,8 @@ logger = get_logger(__name__)
 class LazySave(object):
     '''Out of band marker for lazy saves among lazy writes.'''
 
+    __slots__ = ['obj']
+
     def __init__(self, obj):
         self.obj = obj
 
@@ -278,6 +280,10 @@ internal_fields = {
     '__slots__': True,
 }
 
+member_descripter_types = (
+    types.MemberDescriptorType,
+    type(LazySave.obj)
+)
 
 def dump_local_class(cls):
     name = cls.__name__
@@ -307,7 +313,7 @@ def dump_local_class(cls):
                 k = ('method', k)
                 v = dump_closure(v, skip=set(keys))
 
-            if not isinstance(v, types.MemberDescriptorType):
+            if not isinstance(v, member_descripter_types):
                 external[k] = v
 
         elif internal_fields[k]:

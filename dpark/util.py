@@ -8,6 +8,7 @@ import uuid
 import time
 import tempfile
 import logging
+import platform
 from contextlib import contextmanager
 from zlib import compress as _compress, decompress
 try:
@@ -31,10 +32,7 @@ def compress(s):
     return _compress(s, 1)
 
 try:
-    try:
-        from lz4.block import compress, decompress
-    except ImportError:
-        from lz4 import compress, decompress
+    from dpark.lz4wrapper import compress, decompress
     COMPRESS = 'lz4'
 except ImportError:
     try:

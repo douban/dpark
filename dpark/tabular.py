@@ -17,10 +17,7 @@ import six
 from six.moves import map
 from six.moves import range
 from six.moves import zip
-try:
-    from lz4.block import compress, decompress
-except ImportError:
-    from lz4 import compress, decompress
+from dpark.lz4wrapper import compress, decompress
 
 '''
 Strip Format:

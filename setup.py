@@ -1,3 +1,4 @@
+import platform
 import setuptools
 from setuptools import setup, Extension, find_packages
 
@@ -7,6 +8,19 @@ assert setuptools_version >= (18, 0, 0), \
 
 ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
 version = '0.4.1'
+req = [
+    'pymesos>=0.2.10',
+    'pyzmq',
+    'msgpack-python',
+    'psutil>=2.0.0',
+    'addict',
+    'pyquicklz',
+]
+
+if platform.python_implementation() != 'PyPy':
+    req.append('lz4')
+else:
+    req.append('lz4-cffi')
 
 setup(name='DPark',
       version=version,
@@ -30,15 +44,7 @@ setup(name='DPark',
       download_url=(
           'https://github.com/douban/dpark/archive/%s.tar.gz' % version
       ),
-      install_requires=[
-          'pymesos>=0.2.10',
-          'pyzmq',
-          'msgpack-python',
-          'lz4',
-          'psutil>=2.0.0',
-          'addict',
-          'pyquicklz',
-      ],
+      install_requires=req,
       tests_require=[
           'nose',
       ],
