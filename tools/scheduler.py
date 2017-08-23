@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+from __future__ import absolute_import
 import os
 import sys
 import time
@@ -11,6 +12,9 @@ import threading
 import subprocess
 
 import zmq
+import six
+from six.moves import range
+from six.moves import zip
 ctx = zmq.Context()
 
 from addict import Dict
@@ -191,6 +195,8 @@ class BaseScheduler(object):
                         break
                     continue
                 line = sock.recv()
+                if not six.PY2:
+                    line = line.decode('utf-8')
                 output.write(line)
 
         t = threading.Thread(target=redirect, name="redirect")
@@ -508,7 +514,7 @@ class MPIScheduler(BaseScheduler):
 
             return
 
-        for hostname, slots in self.used_tasks.itervalues():
+        for hostname, slots in six.itervalues(self.used_tasks):
             used_hosts.add(hostname)
             launched += slots
 
@@ -642,7 +648,7 @@ class MPIScheduler(BaseScheduler):
     def start_mpi(self):
         try:
             commands = self.try_to_start_mpi(
-                self.command, self.options.tasks, self.used_tasks.values())
+                self.command, self.options.tasks, list(self.used_tasks.values()))
         except Exception:
             logger.exception('Failed to start mpi, retry')
             self.broadcast_command({})
@@ -654,7 +660,7 @@ class MPIScheduler(BaseScheduler):
 
     def broadcast_command(self, command):
         def repeat_pub():
-            for i in xrange(10):
+            for i in range(10):
                 self.publisher.send(pickle.dumps(command))
                 time.sleep(1)
                 if self.stopped:
@@ -677,7 +683,7 @@ class MPIScheduler(BaseScheduler):
         logger.debug('choosed hosts: %s', hosts)
         info = subprocess.check_output(['mpirun', '--version'])
         for line in info.splitlines():
-            if 'Launchers available' in line and ' none ' in line:
+            if b'Launchers available' in line and b' none ' in line:
                 # MPICH2 1.x
                 cmd = ['mpirun', '-prepend-rank', '-launcher', 'none',
                        '-hosts', hosts, '-np', str(tasks)] + command
@@ -691,14 +697,14 @@ class MPIScheduler(BaseScheduler):
 
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         agents = []
-        prefix = 'HYDRA_LAUNCH: '
+        prefix = b'HYDRA_LAUNCH: '
         while True:
             line = p.stdout.readline()
             if not line:
                 break
             if line.startswith(prefix):
                 agents.append(line[len(prefix):-1].strip())
-            if line == 'HYDRA_LAUNCH_END\n':
+            if line == b'HYDRA_LAUNCH_END\n':
                 break
         if len(agents) != len(items):
             logger.error('hosts: %s, agents: %s', items, agents)
@@ -709,13 +715,16 @@ class MPIScheduler(BaseScheduler):
                 line = f.readline()
                 if not line:
                     break
+                if not six.PY2:
+                    line = line.decode('utf-8')
+
                 sys.stdout.write(line)
         self.mpiout_t = t = threading.Thread(target=output,
                                              args=[p.stdout],
                                              name="collect_mpirun_out")
         t.deamon = True
         t.start()
-        return dict(zip((hostname for hostname, slots in items), agents))
+        return dict(list(zip((hostname for hostname, slots in items), agents)))
 
     def cleanup(self):
         if self.started:
