@@ -6,6 +6,7 @@ import socket
 import getpass
 from .utils import unpack, pack, uint8, attrToFileInfo, uint64
 from .consts import *
+import six
 from six.moves import range
 
 
