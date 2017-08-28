@@ -971,6 +971,7 @@ class MesosScheduler(DAGScheduler):
             return
 
         job = self.activeJobs[jid]
+        reason = status.get('message')
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
             try:
@@ -1001,7 +1002,7 @@ class MesosScheduler(DAGScheduler):
                                         reason, result, accUpdate)
 
         # killed, lost, load failed
-        job.statusUpdate(task_id, tried, state, data)
+        job.statusUpdate(task_id, tried, state, reason or data)
 
     def jobFinished(self, job):
         logger.debug('job %s finished', job.id)
