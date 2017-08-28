@@ -1,5 +1,7 @@
 #!/usr/bin/env python
 
+from __future__ import absolute_import
+from __future__ import print_function
 import re
 import datetime
 import operator
@@ -16,6 +18,11 @@ from dpark.file_manager import walk
 from dpark import _ctx as dpark
 from dpark.dependency import Aggregator
 from math import log
+import six
+from six.moves import map
+from six.moves import range
+from six.moves import zip
+from six.moves import input
 
 ########## Combinators ########## 
 def result(v):
@@ -27,7 +34,7 @@ def zero():
 def item():
     def _(tokens):
         tokens = iter(tokens)
-        yield tokens.next(), tokens
+        yield next(tokens), tokens
     return _
 
 def bind(p, f):
@@ -56,7 +63,7 @@ def sat(p):
                )
 
 def plus(p, q):
-    return lambda tokens: chain.from_iterable(map(lambda (f,k):f(k), zip((p, q), tee(tokens))))
+    return lambda tokens: chain.from_iterable([f_k[0](f_k[1]) for f_k in zip((p, q), tee(tokens))])
 
 def pluses(*args):
     if not args:
@@ -140,7 +147,7 @@ class Identity(Token):
         return 'Identity %s' % self.value
 
 class Type(Token):
-    STR, INT, FLOAT = range(3)
+    STR, INT, FLOAT = list(range(3))
     mappping = {
         'varchar':STR,
         'char':STR,
@@ -260,7 +267,7 @@ class PartialTable(Table):
         else:
             path = expr.file_path
 
-        if use_limit and isinstance(path, basestring):
+        if use_limit and isinstance(path, six.string_types):
             for root, _, names in walk(path, followlinks=True):
                 if names:
                     path = [os.path.join(root, name) for name in names]
@@ -271,7 +278,7 @@ class PartialTable(Table):
             rdd = eval('rdd.' + expr.expr, global_env, {'rdd':rdd})
 
         row = rdd.first()
-        if isinstance(row, basestring):
+        if isinstance(row, six.string_types):
             if '\t' in row:
                 rdd = rdd.fromCsv('excel-tab')
             elif ',' in row:
@@ -347,7 +354,7 @@ class InnerJoinTable(Table):
         y_index = y_columns.index(self.y[1])
         x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
         y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
-        return x_rdd.join(y_rdd).map(lambda (_,(x,y)): x+y)
+        return x_rdd.join(y_rdd).map(lambda __x_y: __x_y[1][0]+__x_y[1][1])
 
 class LeftJoinTable(Table):
     def __init__(self, x, y):
@@ -372,7 +379,7 @@ class LeftJoinTable(Table):
         x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
         y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
         return x_rdd.leftOuterJoin(y_rdd)\
-                .map(lambda (_,(x,y)): x + (y if y is not None else ([None] * y_c_len)))
+                .map(lambda __x_y2: __x_y2[1][0] + (__x_y2[1][1] if __x_y2[1][1] is not None else ([None] * y_c_len)))
 
 class RightJoinTable(Table):
     def __init__(self, x, y):
@@ -397,7 +404,7 @@ class RightJoinTable(Table):
         x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
         y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
         return x_rdd.rightOuterJoin(y_rdd)\
-                .map(lambda (_,(x,y)): (x if x is not None else ([None] * x_c_len)) + y)
+                .map(lambda __x_y3: (__x_y3[1][0] if __x_y3[1][0] is not None else ([None] * x_c_len)) + __x_y3[1][1])
 
 
 class OuterJoinTable(Table):
@@ -423,8 +430,8 @@ class OuterJoinTable(Table):
         x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
         y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
         return x_rdd.outerJoin(y_rdd)\
-                .map(lambda (_,(x,y)): (x if x is not None else ([None] * x_c_len)) +
-                     (y if y is not None else ([None] * y_c_len)))
+                .map(lambda __x_y4: (__x_y4[1][0] if __x_y4[1][0] is not None else ([None] * x_c_len)) +
+                     (__x_y4[1][1] if __x_y4[1][1] is not None else ([None] * y_c_len)))
 
 
 class Schema(object):
@@ -504,7 +511,7 @@ class CombineExpr(Expr):
     def __repr__(self):
         if len(self.args) == 2:
             return '(%s %s %s)' % (self.args[0], self.rep, self.args[1])
-        return '(%s)' % ' '.join([self.rep] + map(str, self.args))
+        return '(%s)' % ' '.join([self.rep] + list(map(str, self.args)))
 
     def get_subexpr(self):
         return self.args
@@ -817,7 +824,7 @@ def value_expression():
 
 def select_sublist():
     return seq(value_expression(), plus(
-        bind(seq(Keyword.sat('AS'), Identity.sat()), lambda (_, x):result(x.value)),
+        bind(seq(Keyword.sat('AS'), Identity.sat()), lambda __x:result(__x[1].value)),
         result(None)
     ))
 
@@ -840,12 +847,12 @@ def partial_table():
             ),
             plus(
                 bind(seq(Keyword.sat('AS'), Identity.sat()),
-                     lambda (_, alias): result(alias.value)),
+                     lambda __alias: result(__alias[1].value)),
                 result(None)
             )
         ),
-        lambda (x, s, alias): result(
-            PartialTable(x, alias, [ss.value for ss in s if ss.value])
+        lambda x_s_alias: result(
+            PartialTable(x_s_alias[0], x_s_alias[2], [ss.value for ss in x_s_alias[1] if ss.value])
         )
     )
 
@@ -883,8 +890,8 @@ def join_table(word, cls):
                               SpecialChar.sat(','),
                               Identity.sat(),
                               SpecialChar.sat(')'),
-                          ), lambda (_, _1, x_c, _2, y_c, _3):
-                              result(cls((x, x_c.value), (y, y_c.value)))
+                          ), lambda ___1_x_c__2_y_c__3:
+                              result(cls((x, ___1_x_c__2_y_c__3[2].value), (y, ___1_x_c__2_y_c__3[4].value)))
                           ))
                     )
                )
@@ -920,10 +927,38 @@ def comparison_predicate():
                     )
                )
 
+
+def like_predicate():
+    return bind(string_value_expression(), lambda x:
+                bind(seq(plus(Keyword.sat('NOT'), result(None)),Keyword.sat('LIKE')), lambda n__:
+                    bind(String.sat(), lambda y:
+                         result(x.like(LiteralExpr(y.value)))
+                         if n__[0] is None else
+                         result(x.like(LiteralExpr(y.value)).not_())
+                        )
+                    )
+               )
+
+def in_predicate():
+    return bind(value_expression(), lambda x:
+                bind(seq(plus(Keyword.sat('NOT'), result(None)),Keyword.sat('IN')), lambda n__1:
+                    bind(bracket(
+                        value_expression(),
+                        SpecialChar.sat(','),
+                        SpecialChar.sat('('),
+                        SpecialChar.sat(')')), lambda values:
+                            result(x.in_(values) if n__1[0] is None else x.in_(values).not_())
+                        )
+                    )
+                )
+
+
 def predict():
     return pluses(
         comparison_predicate(),
         bind(Expression.sat(), lambda x:result(NativeExpr(x.value))),
+        like_predicate(),
+        in_predicate(),
     )
 
 def boolean_primary():
@@ -940,7 +975,7 @@ def boolean_primary():
 def boolean_factor():
     return bind(seq(plus(Keyword.sat('NOT'), result(None)),
                     boolean_primary()),
-                lambda (n, x): result(x if n is None else x.not_()))
+                lambda n_x: result(n_x[1] if n_x[0] is None else n_x[1].not_()))
 
 def boolean_term():
     return chainl1(boolean_factor(),
@@ -951,7 +986,7 @@ def search_condition():
                    bind(Keyword.sat('OR'), lambda _:result(lambda x,y:x.or_(y))))
 
 def where_clause():
-    return bind(seq(Keyword.sat('WHERE'), search_condition()), lambda (_,x): result(x))
+    return bind(seq(Keyword.sat('WHERE'), search_condition()), lambda __x5: result(__x5[1]))
 
 def group_by_clause():
     return bind(seq(Keyword.sat('GROUP'), Keyword.sat('BY')), lambda _:
@@ -961,7 +996,7 @@ def group_by_clause():
                )
 
 def having_clause():
-    return bind(seq(Keyword.sat('HAVING'), search_condition()), lambda (_,x): result(x))
+    return bind(seq(Keyword.sat('HAVING'), search_condition()), lambda __x6: result(__x6[1]))
 
 def table_expression():
     return seqs(from_clause(),
@@ -983,27 +1018,27 @@ def select_statement():
                           result(None)
                       )
                      ),
-                lambda (_,__,r, s):result((r, s.value if s else 'ASC'))),
+                lambda _____r_s:result((_____r_s[2], _____r_s[3].value if _____r_s[3] else 'ASC'))),
             result(None),
         ),
         plus(
-            bind(seq(Keyword.sat('LIMIT'), Number.sat()), lambda (_,l):result(l.value)),
+            bind(seq(Keyword.sat('LIMIT'), Number.sat()), lambda __l:result(__l[1].value)),
             result(None),
         ),
         plus(
             bind(seqs(Keyword.sat('INTO'), Keyword.sat('OUTFILE'), String.sat()),
-                 lambda (_,__,f):result(f.value)),
+                 lambda _____f:result(_____f[2].value)),
             result(None),
         ),
-    ), lambda (_, select_list, table_expression, order, limit, outfile):
-        result(SelectSt(select_list, table_expression, order, limit, outfile))
+    ), lambda __select_list_table_expression_order_limit_outfile:
+        result(SelectSt(__select_list_table_expression_order_limit_outfile[1], __select_list_table_expression_order_limit_outfile[2], __select_list_table_expression_order_limit_outfile[3], __select_list_table_expression_order_limit_outfile[4], __select_list_table_expression_order_limit_outfile[5]))
     )
 
 
 def textfile_expr():
     return bind(seqs(Keyword.sat('FROM'), String.sat(),
                      plus(Expression.sat(), result(None))),
-                lambda (_, textFile, expr): result(TextFileExpr(textFile,expr)))
+                lambda __textFile_expr: result(TextFileExpr(__textFile_expr[1],__textFile_expr[2])))
 
 def create_table_statement():
     return bind(seqs(
@@ -1011,15 +1046,15 @@ def create_table_statement():
         Keyword.sat('TABLE'), 
         plus(seqs(Keyword.sat('IF'), Keyword.sat('NOT'), Keyword.sat('EXISTS')), result(None)),
         Identity.sat(),
-    ), lambda (_, __, exists, table_name):
+    ), lambda _____exists_table_name:
         bind(bracket(
             seq(Identity.sat(), plus(Type.sat(),result(Type()))),
             SpecialChar.sat(','),
             SpecialChar.sat('('), 
             SpecialChar.sat(')')), lambda columns:
             bind(textfile_expr(), lambda expr:
-                 result(CreateTableSt(table_name, columns,
-                                      expr, exists is not None))
+                 result(CreateTableSt(_____exists_table_name[3], columns,
+                                      expr, _____exists_table_name[2] is not None))
                 )
         )
     )
@@ -1095,7 +1130,7 @@ def take(rdd, n):
 
     r = take_(n, [0])
     if len(r) < n:
-        for _, splits in groupby(xrange(1, len(rdd)), lambda x:int(log(x + 15)/log(4))):
+        for _, splits in groupby(range(1, len(rdd)), lambda x:int(log(x + 15)/log(4))):
             splits = list(splits)
             r.extend(take_(n - len(r), splits))
             if len(r) >= n:
@@ -1123,7 +1158,7 @@ class SQLStatement(object):
     def execute(self):
         start_time = time.time()
         self.do_execute()
-        print 'OK. (%.2f sec)' % (time.time() - start_time)
+        print('OK. (%.2f sec)' % (time.time() - start_time))
 
 class CreateTableSt(SQLStatement):
     def __init__(self, table_name, columns, expr, check_exists):
@@ -1221,7 +1256,7 @@ class SelectSt(SQLStatement):
                 )
                 rdd = rdd.map(lambda x:(key(x), x)).combineByKey(agg)\
                         .mapValue(lambda r:[m(r[i]) for i, m in enumerate(mappers)])\
-                        .map(lambda (k,v): v[0] + v[1:])
+                        .map(lambda k_v: k_v[1][0] + k_v[1][1:])
             else:
                 def fun(split):
                     r = None
@@ -1300,9 +1335,9 @@ class ShowTablesSt(SQLStatement):
         return 'SHOW TABLES%s' % ('' if self.pattern is None else ' LIKE %s' % self.pattern)
 
     def do_execute(self):
-        t = tables.keys()
+        t = list(tables.keys())
         if self.pattern is not None:
-            t = filter(lambda x: re.match('^%s$' % self.pattern, x), t)
+            t = [x for x in t if re.match('^%s$' % self.pattern, x)]
 
         t = [[x] for x in t]
         pprint(['Tables'], t)
@@ -1319,7 +1354,7 @@ class ShowCreateTablesSt(SQLStatement):
 
 def first(it):
     def _():
-        yield it.next()
+        yield next(it)
     return list(_())
 
 def pprint(fields, table):
@@ -1336,14 +1371,14 @@ def pprint(fields, table):
             l = width[i] - len(s)
             pr.append(''.join([' ']*l+[s]))
 
-        print '|%s|' % '|'.join(pr)
-    print splitter
+        print('|%s|' % '|'.join(pr))
+    print(splitter)
     print_row(fields)
-    print splitter
+    print(splitter)
     for row in table:
         print_row(row)
 
-    print splitter
+    print(splitter)
 
 class Console(object):
     CMDS = ['help', 'quit',]
@@ -1402,7 +1437,7 @@ class Console(object):
                     self.do_complete = self._complete
 
             return self.do_complete(text, state)
-        except Exception, e:
+        except Exception as e:
             import traceback; traceback.print_exc()
 
     def _complete(self, text, state):
@@ -1433,7 +1468,7 @@ class Console(object):
 \t$"python statement blocks";
 Use Python expression:
 \tPython expressions can be used as a sql expression with $"..." wrapped around'''
-        print usage
+        print(usage)
 
     def quit(self, args):
         sys.exit(0)
@@ -1474,15 +1509,15 @@ Use Python expression:
             s.execute()
 
     def run(self):
-        print "Welcome to DQuery 1.0, enjoy SQL and DPark! type 'help' for help."
+        print("Welcome to DQuery 1.0, enjoy SQL and DPark! type 'help' for help.")
         while True:
             try:
                 if self.sql:
-                    self.sql += '\n' + raw_input('... ')
+                    self.sql += '\n' + input('... ')
                 else:
-                    self.sql  = raw_input('>>> ')
+                    self.sql  = input('>>> ')
             except EOFError:
-                print 'quit'
+                print('quit')
                 break
             
             try:
@@ -1498,7 +1533,7 @@ Use Python expression:
                     continue
 
                 self.run_sql()
-            except Exception, e:
+            except Exception as e:
                 import traceback; traceback.print_exc()
             self.sql = ''
 

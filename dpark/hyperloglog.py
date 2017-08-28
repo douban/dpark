@@ -111,4 +111,4 @@ if __name__ == '__main__':
         test(range(100), e)
         test(range(10000), e)
         test(range(100000), e)
-#        test(xrange(1000000), e)
+#        test(range(1000000), e)

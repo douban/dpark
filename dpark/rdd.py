@@ -1199,7 +1199,7 @@ class ParallelCollection(RDD):
         n = m // numSlices
         if m % numSlices != 0:
             n += 1
-        if six.PY2 and isinstance(data, xrange):
+        if isinstance(data, range):
             first = data[0]
             last = data[m-1]
             step = (last - first) // (m-1)
