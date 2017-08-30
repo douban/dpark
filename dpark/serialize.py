@@ -38,6 +38,16 @@ class LazySave(object):
     def __repr__(self):
         return '<LazySave %s>' % repr(self.obj)
 
+class LazyMemo(object):
+    '''Out of band marker for lazy memos among lazy writes.'''
+
+    __slots__ = ['obj']
+
+    def __init__( self, obj ):
+        self.obj = obj
+
+    def __repr__( self ):
+        return '<LazyMemo %s>' % repr(self.obj)
 
 class MyPickler(Pickler):
     def __init__(self, file, protocol=None):
@@ -59,6 +69,17 @@ class MyPickler(Pickler):
 
     realsave = Pickler.save
 
+    def lazymemoize( self, obj ):
+        """Store an object in the memo."""
+        if self.lazywrites:
+            self.lazywrites.append(LazyMemo(obj))
+        else:
+            self.realmemoize(obj)
+
+    memoize = lazymemoize
+
+    realmemoize = Pickler.memoize
+
     def dump(self, obj):
         """Write a pickled representation of obj to the open file."""
         if self.proto >= 2:
@@ -75,6 +96,8 @@ class MyPickler(Pickler):
                     if self.lazywrites:
                         queues.appendleft(self.lazywrites)
                         break
+                elif isinstance(lw, LazyMemo):
+                    self.realmemoize(lw.obj)
                 else:
                     self.realwrite(*lw)
             else:
@@ -97,7 +120,7 @@ class MyPickler(Pickler):
 
 def dumps(o):
     io = StringIO()
-    MyPickler(io, 2).dump(o)
+    MyPickler(io, -1).dump(o)
     return io.getvalue()
 
 
