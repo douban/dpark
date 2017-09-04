@@ -158,7 +158,7 @@ def marshalable(o):
     if o is None:
         return True
     t = type(o)
-    if t in (str, six.text_type, bool, int, int, float, complex):
+    if t in (six.binary_type, six.text_type, bool, int, int, float, complex):
         return True
     if t in (tuple, list, set):
         for i in itertools.islice(o, 100):
