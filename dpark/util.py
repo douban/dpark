@@ -8,9 +8,8 @@ import uuid
 import time
 import tempfile
 import logging
-import platform
 from contextlib import contextmanager
-from zlib import compress as _compress, decompress
+from zlib import compress as _compress
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:

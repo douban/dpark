@@ -6,6 +6,7 @@ import multiprocessing
 import os
 import random
 import socket
+import signal
 import sys
 import time
 from six.moves import urllib
@@ -33,7 +34,7 @@ from six.moves import range
 logger = get_logger(__name__)
 
 EXECUTOR_CPUS = 0.01
-EXECUTOR_MEMORY = 64  # cache
+EXECUTOR_MEMORY = 128 # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
@@ -481,12 +482,22 @@ class LocalScheduler(DAGScheduler):
             self.taskEnded(task, reason, result, update)
 
 
-def run_task_in_process(task, tid, environ):
+def run_task_in_process(task, tid, environ, sig_dict=None):
     from dpark.env import env
     workdir = environ.get('WORKDIR')
     environ['SERVER_URI'] = 'file://%s' % workdir[0]
+    environ['broadcast_task'] = 1
     env.start(False, environ)
-
+    import signal
+    if sig_dict:
+        if 'SIGTERM' in sig_dict:
+            signal.signal(signal.SIGTERM, sig_dict['SIGTERM'])
+        if 'SIGHUP' in sig_dict:
+            signal.signal(signal.SIGHUP, sig_dict['SIGHUP'])
+        if 'SIGABRT' in sig_dict:
+            signal.signal(signal.SIGABRT, sig_dict['SIGABRT'])
+        if 'SIGQUIT' in sig_dict:
+            signal.signal(signal.SIGQUIT, sig_dict['SIGQUIT'])
     logger.debug('run task in process %s %s', task, tid)
     try:
         return run_task(task, tid)
@@ -500,7 +511,11 @@ class MultiProcessScheduler(LocalScheduler):
         LocalScheduler.__init__(self)
         self.threads = threads
         self.tasks = {}
-        self.pool = multiprocessing.Pool(self.threads or 2)
+        self.pool = None
+        self.sig_dict = {'SIGTERM': signal.getsignal(signal.SIGTERM),
+                         'SIGHUP': signal.getsignal(signal.SIGHUP),
+                         'SIGABRT': signal.getsignal(signal.SIGABRT),
+                         'SIGQUIT': signal.getsignal(signal.SIGQUIT)}
 
     def submitTasks(self, tasks):
         if not tasks:
@@ -526,13 +541,16 @@ class MultiProcessScheduler(LocalScheduler):
         for task in tasks:
             logger.debug('put task async: %s', task)
             self.tasks[task.id] = task
+            if not self.pool:
+                self.pool = multiprocessing.Pool(self.threads or 2)
             self.pool.apply_async(run_task_in_process,
-                                  [task, self.nextAttempId(), env.environ],
+                                  [task, self.nextAttempId(), env.environ, self.sig_dict],
                                   callback=callback)
 
     def stop(self):
-        self.pool.terminate()
-        self.pool.join()
+        if self.pool:
+            self.pool.terminate()
+            self.pool.join()
         logger.debug('process pool stopped')
 
 

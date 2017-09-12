@@ -1,5 +1,4 @@
 from __future__ import absolute_import
-import os
 import atexit
 import optparse
 import signal
@@ -279,7 +278,7 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        from dpark.broadcast import Broadcast
+        from dpark.new_broadcast import Broadcast
         return Broadcast(v)
 
     def start(self):

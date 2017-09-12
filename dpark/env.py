@@ -74,8 +74,14 @@ class DparkEnv:
         from dpark.shuffle import ParallelShuffleFetcher
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
-        from dpark.broadcast import start_manager
-        start_manager(isMaster)
+        from dpark.new_broadcast import start_manager
+        if isMaster:
+            start_manager(has_guide=True, has_download=True, in_task=True)
+        else:
+            if 'broadcast_executor' in environ:
+                start_manager(has_guide=False, has_download=True, in_task=False)
+            if 'broadcast_task' in environ:
+                start_manager(has_guide=False, has_download=False, in_task=True)
 
         self.started = True
         logger.debug("env started")
@@ -89,7 +95,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         if self.isMaster:
             self.trackerServer.stop()
-        from dpark.broadcast import stop_manager
+        from dpark.new_broadcast import stop_manager
         stop_manager()
 
         logger.debug("cleaning workdir ...")

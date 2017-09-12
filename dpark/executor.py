@@ -106,6 +106,7 @@ def run_task(task_data):
 
 
 def init_env(args):
+    args['broadcast_task'] = 1
     env.start(False, args)
 
 
@@ -445,6 +446,11 @@ class MyExecutor(Executor):
             spawn(self.check_memory, driver)
             spawn(self.replier, driver)
 
+            env.environ.update(self.init_args)
+            from dpark.new_broadcast import start_manager
+            start_manager(has_guide=False, has_download=True, in_task=False)
+            self.init_args.update(env.environ)
+
             logger.debug('executor started at %s', agent_info.hostname)
 
         except Exception as e:
@@ -512,6 +518,8 @@ class MyExecutor(Executor):
             terminate(tid, proc)
         self.tasks = {}
         self.result_queue.put(None)
+        from dpark.new_broadcast import stop_manager
+        stop_manager()
 
         # clean work files
         for fd in self._fd_for_locks:
