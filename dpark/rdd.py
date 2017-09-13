@@ -1318,12 +1318,15 @@ class TextFileRDD(RDD):
 
     def read(self, f, start, end):
         for line in f:
-            line = line.decode('utf-8')
+            size = len(line)
+            if not six.PY2:
+                line = line.decode('utf-8')
+
             if line.endswith('\n'):
                 yield line[:-1]
             else:
                 yield line
-            start += len(line)
+            start += size
             if start >= end: break
 
 
