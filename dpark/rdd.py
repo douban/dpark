@@ -545,6 +545,7 @@ class RDD(object):
 
         >>> x = dpark.parallelize([("a", 1), ("b", 4)])
         >>> y = dpark.parallelize([("a", 2), ("a", 3)])
+        >>> x.innerJoin(y).collect()
         [('a', (1, 2)), ('a', (1, 3))]
         """
         o = collections.defaultdict(list)
