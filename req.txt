@@ -14,7 +14,7 @@ MarkupSafe==1.0
 msgpack-python==0.4.8
 packaging==16.8
 psutil==5.2.0
-pymesos==0.2.11
+pymesos==0.2.15
 pyparsing==2.2.0
 pyquicklz==1.4.1
 pyzmq==16.0.2
