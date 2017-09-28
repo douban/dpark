@@ -2,13 +2,19 @@ language: python
 cache:
     directories:
         $HOME/.cache/pip
-python:
-    - 2.7
 sudo: false
 addons:
     apt:
         packages:
             - libzmq3-dev
+matrix:
+    include:
+        - python: 2.7
+          env: TOX_ENV=py27
+        - python: 3.5
+          env: TOX_ENV=py35
+        - python: pypy
+          env: TOX_ENV=pypy
 install:
     - pip install -U setuptools
     - pip install -r req.txt
