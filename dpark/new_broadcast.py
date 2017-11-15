@@ -247,8 +247,8 @@ class DownloadManager:
                 elif type == REGISTER_BLOCKS:
                     uuid, broadcast_path, block_map = msg
                     self.uuid_state_dict[uuid] = broadcast_path, True
-                    self.shared_uuid_fn_dict[uuid] = broadcast_path
                     self.shared_uuid_map_dict[uuid] = block_map
+                    self.shared_uuid_fn_dict[uuid] = broadcast_path
                     self.uuid_map_dict[uuid] = block_map
                     sock.send_pyobj(REGISTER_BLOCKS_OK)
                 else:
@@ -357,8 +357,8 @@ class DownloadManager:
             sources = self._get_sources(uuid, guide_sock)
         write_mmap_handler.flush()
         write_mmap_handler.close()
-        self.shared_uuid_fn_dict[uuid] = self.uuid_state_dict[uuid][0]
         self.shared_uuid_map_dict[uuid] = bitmap
+        self.shared_uuid_fn_dict[uuid] = self.uuid_state_dict[uuid][0]
         self.uuid_state_dict[uuid] = self.uuid_state_dict[uuid][0], True
         with download_cond:
             download_cond.notify_all()
