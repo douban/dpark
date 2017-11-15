@@ -498,9 +498,11 @@ class BroadcastManager:
         while uuid not in self.shared_uuid_fn_dict:
             with download_cond:
                 download_cond.wait()
-            if uuid in self.shared_uuid_fn_dict:
-                return self._get_blocks_by_filename(self.shared_uuid_fn_dict[uuid],
-                                                    self.shared_uuid_map_dict[uuid])
+        if uuid in self.shared_uuid_fn_dict:
+            return self._get_blocks_by_filename(self.shared_uuid_fn_dict[uuid],
+                                                self.shared_uuid_map_dict[uuid])
+        else:
+            raise RuntimeError('get blocks failed')
 
     def to_blocks(self, uuid, obj):
         try:
