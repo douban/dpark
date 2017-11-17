@@ -366,6 +366,7 @@ class DownloadManager:
         self.shared_uuid_map_dict[uuid] = bitmap
         self.shared_uuid_fn_dict[uuid] = self.uuid_state_dict[uuid][0]
         self.uuid_state_dict[uuid] = self.uuid_state_dict[uuid][0], True
+        download_guide_sock.close()
         with download_cond:
             download_cond.notify_all()
 
