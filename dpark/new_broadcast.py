@@ -95,6 +95,7 @@ class GuideManager:
                     sock.send_pyobj(None)
                 else:
                     logger.error('Unknown guide message: %s %s', type, msg)
+                    sock.send_pyobj(None)
             sock.close()
 
         return guide_addr, spawn(run)
@@ -233,8 +234,7 @@ class DownloadManager:
                                 sock.send_pyobj(DATA_GET_FAIL)
                                 continue
                             self.download_threads[uuid] = spawn(self._download_blocks,
-                                                                *[sources, uuid, compressed_size,
-                                                                  guide_sock])
+                                                                *[sources, uuid, compressed_size])
                             sock.send_pyobj(DATA_DOWNLOADING)
                         else:
                             sock.send_pyobj(DATA_DOWNLOADING)
@@ -253,6 +253,7 @@ class DownloadManager:
                     sock.send_pyobj(REGISTER_BLOCKS_OK)
                 else:
                     logger.error('Unknown server message: %s %s', type, msg)
+                    sock.send_pyobj(None)
 
             sock.close()
             logger.debug("stop Broadcast server %s", server_addr)
@@ -261,34 +262,37 @@ class DownloadManager:
 
         return server_addr, spawn(run)
 
-    def _get_sources(self, uuid, guide_sock):
+    def _get_sources(self, uuid, source_sock):
         try:
-            guide_sock.send_pyobj((GUIDE_GET_SOURCES,
+            source_sock.send_pyobj((GUIDE_GET_SOURCES,
                                    uuid))
-            sources = guide_sock.recv_pyobj()
+            sources = source_sock.recv_pyobj()
         except:
             logger.warning('GET sources failed for addr %s with ZMQ ERR',
                            self.server_addr)
             sources = {}
         return sources
 
-    def _update_sources(self, uuid, bitmap, guide_sock):
+    def _update_sources(self, uuid, bitmap, source_sock):
         try:
-            guide_sock.send_pyobj((GUIDE_SET_SOURCES,
+            source_sock.send_pyobj((GUIDE_SET_SOURCES,
                                    (uuid, self.server_addr, bitmap)))
-            guide_sock.recv_pyobj()
+            source_sock.recv_pyobj()
         except:
             pass
 
-    def _download_blocks(self, sources, uuid, compressed_size, guide_sock):
+    def _download_blocks(self, sources, uuid, compressed_size):
         block_num = 0
         bitmap = [0]
         write_mmap_handler = None
+        download_guide_sock = self.ctx.socket(zmq.REQ)
+        download_guide_sock.setsockopt(zmq.LINGER, 0)
+        download_guide_sock.connect(self.guide_addr)
 
         def _report_bad(addr):
             logger.debug('fetch blocks failed from server %s', addr)
-            guide_sock.send_pyobj((GUIDE_REPORT_BAD, (uuid, addr)))
-            guide_sock.recv_pyobj()
+            download_guide_sock.send_pyobj((GUIDE_REPORT_BAD, (uuid, addr)))
+            download_guide_sock.recv_pyobj()
 
         def _fetch(addr, indices, bit_map):
             sock = self.ctx.socket(zmq.REQ)
@@ -297,6 +301,7 @@ class DownloadManager:
                 sock.connect(addr)
                 sock.send_pyobj((SERVER_FETCH, (uuid, indices, self.server_addr)))
                 avail = sock.poll(1 * 1000, zmq.POLLIN)
+                check_sock = None
                 if not avail:
                     try:
                         check_sock = socket.socket()
@@ -311,7 +316,8 @@ class DownloadManager:
                         logger.debug("%s recv broadcast %s from %s timeout",
                                      self.server_addr, str(indices), addr)
                     finally:
-                        check_sock.close()
+                        if check_sock:
+                            check_sock.close()
                     return
                 result, msg = sock.recv_pyobj()
                 if result == SERVER_FETCH_FAIL:
@@ -353,8 +359,8 @@ class DownloadManager:
                 if indices:
                     self.random_inst.shuffle(indices)
                     _fetch(addr, indices[:BATCHED_BLOCKS], _bitmap)
-                    self._update_sources(uuid, bitmap, guide_sock)
-            sources = self._get_sources(uuid, guide_sock)
+                    self._update_sources(uuid, bitmap, download_guide_sock)
+            sources = self._get_sources(uuid, download_guide_sock)
         write_mmap_handler.flush()
         write_mmap_handler.close()
         self.shared_uuid_map_dict[uuid] = bitmap
