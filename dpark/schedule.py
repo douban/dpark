@@ -66,6 +66,10 @@ class FetchFailed(TaskEndReason, Exception):
             self.serverUri, self.shuffleId, self.mapId, self.reduceId
         )
 
+    def __reduce__(self):
+        return FetchFailed, (self.serverUri, self.shuffleId,
+                             self.mapId, self.reduceId)
+
 
 class OtherFailure(TaskEndReason):
 
