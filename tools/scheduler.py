@@ -98,7 +98,7 @@ class BaseScheduler(object):
         execInfo = Dict()
         execInfo.executor_id.value = 'default'
 
-        execInfo.command.value = executorPath
+        execInfo.command.value = '%s %s' % (sys.executable, executorPath)
         execInfo.command.environment.variables = variables = []
 
         v = Dict()
@@ -672,40 +672,73 @@ class MPIScheduler(BaseScheduler):
         return t
 
     def try_to_start_mpi(self, command, tasks, items):
+        MPI_MPICH_OLD, MPI_MPICH, MPI_OPENMPI = range(3)
+
+        def guess_mpi_impl():
+            info = subprocess.check_output(['mpirun', '--version'])
+            for line in info.splitlines():
+                if b'Launchers available' in line:
+                    if b' none ' in line:
+                        return MPI_MPICH_OLD
+                    elif b' manual ' in line:
+                        return MPI_MPICH
+                elif  b'Open MPI' in line:
+                    return MPI_OPENMPI
+
+            else:
+                raise RuntimeError('Unknown MPI implementation')
+
         if self.p:
             try:
                 self.p.kill()
             except:
                 pass
 
-        hosts = ','.join('%s:%d' % (hostname, slots)
-                         for hostname, slots in items)
-        logger.debug('choosed hosts: %s', hosts)
-        info = subprocess.check_output(['mpirun', '--version'])
-        for line in info.splitlines():
-            if b'Launchers available' in line and b' none ' in line:
-                # MPICH2 1.x
-                cmd = ['mpirun', '-prepend-rank', '-launcher', 'none',
-                       '-hosts', hosts, '-np', str(tasks)] + command
-                break
+        mpi_impl = guess_mpi_impl()
+        hosts = ','.join('__DUMMY__%s:%d' % (i, slots)
+                         for i, (hostname, slots) in enumerate(items))
 
-        else:
-            # MPICH2 3.x
+        if mpi_impl == MPI_MPICH_OLD:
+            # MPICH 1.x
+            prefix = b'HYDRA_LAUNCH: '
+            postfix = b'HYDRA_LAUNCH_END\n'
+            cmd = ['mpirun', '-prepend-rank', '-launcher', 'none',
+                   '-hosts', hosts, '-np', str(tasks)] + command
+        elif mpi_impl == MPI_MPICH:
+            # MPICH 3.x
+            prefix = b'HYDRA_LAUNCH: '
+            postfix = b'HYDRA_LAUNCH_END\n'
             cmd = ['mpirun', '-prepend-rank', '-launcher', 'manual',
                    '-rmk', 'user', '-hosts', hosts, '-np', str(tasks)] \
-                + command
+                   + command
+        elif mpi_impl == MPI_OPENMPI:
+            # OpenMPI
+            prefix = b'__DUMMY__'
+            postfix = None
+            cmd  = ['mpirun', '-tag-output', '-mca', 'plm_rsh_agent', 'echo',
+                    '-host', hosts, '-np', str(tasks)] + command
+
+        else:
+            assert False
+
 
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         agents = []
-        prefix = b'HYDRA_LAUNCH: '
         while True:
             line = p.stdout.readline()
             if not line:
                 break
+
             if line.startswith(prefix):
-                agents.append(line[len(prefix):-1].strip())
-            if line == b'HYDRA_LAUNCH_END\n':
+                agent = line[len(prefix):-1].split(b'; ')[-1].strip()
+                agents.append(agent)
+
+            if postfix is None and len(agents) == len(items):
                 break
+
+            if line == postfix:
+                break
+
         if len(agents) != len(items):
             logger.error('hosts: %s, agents: %s', items, agents)
             raise Exception('agents not match with hosts')
