@@ -4,6 +4,7 @@ import six
 import sys
 import unittest
 import timeit
+from flaky import flaky
 from dpark.serialize import dump_closure, load_closure, dumps, loads
 from contextlib import contextmanager
 
@@ -32,6 +33,7 @@ class TestSerialize(unittest.TestCase):
         self.assertRaises(NameError, func)
         x = 10
 
+    @flaky
     def test_big_object_performance(self):
         t1 = max(timeit.repeat('dumps(d)',
                                'from dpark.serialize import dumps;'

@@ -152,19 +152,27 @@ class Partitioner:
         raise NotImplementedError
 
 class HashPartitioner(Partitioner):
-    def __init__(self, partitions):
+    def __init__(self, partitions, thresholds=None):
         self.partitions = max(1, int(partitions))
+        self.thresholds = thresholds
+        assert self.partitions != 0
+        assert self.thresholds is None or \
+            len(self.thresholds) == self.partitions - 1
 
     @property
     def numPartitions(self):
         return self.partitions
 
     def getPartition(self, key):
-        return portable_hash(key) % self.partitions
+        if self.thresholds is None:
+            return portable_hash(key) % self.partitions
+        else:
+            return bisect.bisect(self.thresholds, portable_hash(key))
 
     def __eq__(self, other):
-        if isinstance(other, Partitioner):
-            return other.numPartitions == self.numPartitions
+        if isinstance(other, HashPartitioner):
+            return other.numPartitions == self.numPartitions and \
+                other.thresholds == self.thresholds
         return False
 
 class RangePartitioner(Partitioner):

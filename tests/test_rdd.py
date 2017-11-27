@@ -116,6 +116,17 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey().collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
+        d = list(zip(range(10), range(10))) + [(10, 10)] * 5
+        nums_skew = self.sc.makeRDD(d, 10)
+        self.assertEqual(
+            list(map(sorted, nums_skew.groupByKey(3, fixSkew=1).glom().collect())),
+            [
+                [(0, [0]), (1, [1]), (2, [2]), (3, [3]), (4, [4])],
+                [(5, [5]), (6, [6]), (7, [7]), (8, [8]), (9, [9])],
+                [(10, [10, 10, 10, 10, 10])]
+            ]
+        )
+
         # join
         nums2 = self.sc.makeRDD(list(zip([2,3,4], [1,2,3])), 2)
         self.assertEqual(nums.join(nums2).collect(),
@@ -126,6 +137,15 @@ class TestRDD(unittest.TestCase):
                 [(2, (5,1)), (3, (6,2)), (3, (7,2)), (4,(None,3))])
         self.assertEqual(nums.innerJoin(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
+
+        self.assertEqual(
+            list(map(sorted, nums_skew.cogroup(nums, 3, fixSkew=0.5).glom().collect())),
+            [
+                [(0, ([0], [])), (1, ([1], [4])), (2, ([2], [5]))],
+                [(3, ([3], [6, 7])), (4, ([4], [])), (5, ([5], [])), (6, ([6], [])), (7, ([7], []))],
+                [(8, ([8], [])), (9, ([9], [])), (10, ([10, 10, 10, 10, 10], []))]
+            ]
+        )
 
         # join - data contains duplicate key
         numsDup = self.sc.makeRDD(list(zip([2,2,4], [1,2,3])), 2)
@@ -209,6 +229,31 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(dct2.get('foo'), 5)
         self.assertTrue(dct2.get('duq') in {3, 4})
         self.assertEqual(dct2.get('bar'), 10)
+
+
+
+    def test_percentiles(self):
+        d = list(random.gauss(0, 1) for _ in range(10000))
+        rdd = self.sc.makeRDD(d, 10)
+        p = [-1.282, -0.842, -0.524, -0.253, 0, 0.253, 0.524, 0.842, 1.282]
+        assert all(map(
+            lambda x, y: abs(x - y) < 0.8,
+            rdd.percentiles(range(10, 100, 10), sampleRate=0.1),
+            p
+        ))
+
+        d = list((i, random.gauss(i, 1)) for i in range(10) for _ in range(10000))
+        rdd = self.sc.makeRDD(d, 10)
+        assert all(map(
+            lambda x, y: x[0] == y[0] and all(map(
+                lambda l, r: abs(l - r) < 0.8,
+                x[1], y[1]
+            )),
+            sorted(rdd.percentilesByKey(range(10, 100, 10), sampleRate=0.1).collect()),
+            [(i, [pp + i for pp in p]) for i in range(10)]
+        ))
+
+
 
     def test_accumulater(self):
         d = list(range(4))

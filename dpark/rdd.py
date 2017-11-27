@@ -28,7 +28,7 @@ except:
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
-    AbortFileReplacement, get_logger
+    AbortFileReplacement, get_logger, portable_hash
 )
 from dpark.shuffle import Merger, CoGroupMerger
 from dpark.env import env
@@ -246,8 +246,8 @@ class RDD(object):
     def sample(self, faction, withReplacement=False, seed=12345):
         return SampleRDD(self, faction, withReplacement, seed)
 
-    def union(self, rdd):
-        return UnionRDD(self.ctx, [self, rdd])
+    def union(self, *args):
+        return UnionRDD(self.ctx, [self] + list(args))
 
     def sort(self, key=lambda x:x, reverse=False, numSplits=None, taskMemory=None):
         if not len(self):
@@ -466,27 +466,53 @@ class RDD(object):
             return m1
         return self.map(lambda x_y2:{x_y2[0]:x_y2[1]}).reduce(mergeMaps)
 
-    def combineByKey(self, aggregator, splits=None, taskMemory=None):
+    def combineByKey(self, aggregator, splits=None, taskMemory=None, fixSkew=-1):
         if splits is None:
             splits = min(self.ctx.defaultMinSplits, len(self))
         if type(splits) is int:
-            splits = HashPartitioner(splits)
+            _thresh = None
+            if fixSkew > 0 and splits > 1:
+                _step = 100. / splits
+                _offsets = [_step * i for i in range(1, splits)]
+                _percentiles = self.percentiles(
+                    _offsets, sampleRate=fixSkew, func=lambda t: portable_hash(t[0])
+                )
+
+                if _percentiles:
+                    _thresh = []
+                    for p in _percentiles:
+                        if math.isnan(p):
+                            continue
+
+                        p = int(math.ceil(p))
+                        if not _thresh or p > _thresh[-1]:
+                            _thresh.append(p)
+
+                    if len(_thresh) + 1 < splits:
+                        logger.warning('Highly skewed dataset detected!')
+
+                    splits = len(_thresh) + 1
+
+                else:
+                    _thresh = None
+
+            splits = HashPartitioner(splits, thresholds=_thresh)
+
         return ShuffledRDD(self, aggregator, splits, taskMemory)
 
-    def reduceByKey(self, func, numSplits=None, taskMemory=None):
+    def reduceByKey(self, func, numSplits=None, taskMemory=None, fixSkew=-1):
         aggregator = Aggregator(lambda x:x, func, func)
-        return self.combineByKey(aggregator, numSplits, taskMemory)
+        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew)
 
-    def groupByKey(self, numSplits=None, taskMemory=None):
+    def groupByKey(self, numSplits=None, taskMemory=None, fixSkew=-1):
         createCombiner = lambda x: [x]
         mergeValue = lambda x,y:x.append(y) or x
         mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
-        return self.combineByKey(aggregator, numSplits, taskMemory)
+        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew)
 
     def topByKey(self, top_n, order_func=None,
-                 reverse=False,
-                 num_splits=None, task_memory=None):
+                 reverse=False, num_splits=None, task_memory=None, fixSkew=-1):
         ''' Base on groupByKey, return the top_n values in each group.
             The values in a key are ordered by a function object order_func.
             The result values in a key is order in inc order, if you want
@@ -518,15 +544,14 @@ class RDD(object):
                 ) for i_k_v in enumerate(it)]
         aggregator = HeapAggregator(top_n,
                                     order_reverse=reverse)
-        rdd = EnumeratePartitionsRDD(self, lambda s_id, it: get_tuple_list(s_id, it, reverse))
-        return rdd.combineByKey(aggregator, num_splits, task_memory).map(
-            lambda x_ls:
-            (x_ls[0], sorted(x_ls[1], reverse=reverse))
-        ).map(
-            lambda k_ls: (
-                k_ls[0], [x[-1] for x in k_ls[1]]
-            )
+        rdd = EnumeratePartitionsRDD(
+            self, lambda s_id, it: get_tuple_list(s_id, it, reverse)
         )
+        return rdd.combineByKey(
+                aggregator, num_splits, task_memory, fixSkew=fixSkew
+            ) \
+            .map(lambda x_ls: (x_ls[0], sorted(x_ls[1], reverse=reverse))) \
+            .map(lambda k_ls: (k_ls[0], [x[-1] for x in k_ls[1]]))
 
     def partitionByKey(self, numSplits=None, taskMemory=None):
         return self.groupByKey(numSplits, taskMemory).flatMapValue(lambda x: x)
@@ -578,19 +603,19 @@ class RDD(object):
         r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
         return r
 
-    def join(self, other, numSplits=None, taskMemory=None):
-        return self._join(other, (), numSplits, taskMemory)
+    def join(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
+        return self._join(other, (), numSplits, taskMemory, fixSkew=fixSkew)
 
-    def leftOuterJoin(self, other, numSplits=None, taskMemory=None):
-        return self._join(other, (1,), numSplits, taskMemory)
+    def leftOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
+        return self._join(other, (1,), numSplits, taskMemory, fixSkew=fixSkew)
 
-    def rightOuterJoin(self, other, numSplits=None, taskMemory=None):
-        return self._join(other, (2,), numSplits, taskMemory)
+    def rightOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
+        return self._join(other, (2,), numSplits, taskMemory, fixSkew=fixSkew)
 
-    def outerJoin(self, other, numSplits=None, taskMemory=None):
-        return self._join(other, (1,2), numSplits, taskMemory)
+    def outerJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
+        return self._join(other, (1,2), numSplits, taskMemory, fixSkew=fixSkew)
 
-    def _join(self, other, keeps, numSplits=None, taskMemory=None):
+    def _join(self, other, keeps, numSplits=None, taskMemory=None, fixSkew=-1):
         def dispatch(k_seq):
             (k,seq) = k_seq
             vbuf, wbuf = seq
@@ -601,7 +626,8 @@ class RDD(object):
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
-        return self.cogroup(other, numSplits, taskMemory).flatMap(dispatch)
+        return self.cogroup(other, numSplits, taskMemory, fixSkew=fixSkew) \
+            .flatMap(dispatch)
 
     def collectAsMap(self):
         d = {}
@@ -615,10 +641,44 @@ class RDD(object):
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, others, numSplits=None, taskMemory=None):
+    def groupWith(self, others, numSplits=None, taskMemory=None, fixSkew=-1):
         if isinstance(others, RDD):
             others = [others]
-        part = self.partitioner or HashPartitioner(numSplits or self.ctx.defaultParallelism)
+
+        _numSplits = numSplits
+        if _numSplits is None:
+            if self.partitioner is not None:
+                _numSplits = self.partitioner.numPartitions
+            else:
+                _numSplits = self.ctx.defaultParallelism
+
+        _thresh = None
+        if fixSkew > 0 and _numSplits > 1:
+            _step = 100. / _numSplits
+            _offsets = [_step * i for i in range(1, _numSplits)]
+            _percentiles = self.union(*others) \
+                .percentiles(
+                    _offsets, sampleRate=fixSkew, func=lambda t: portable_hash(t[0])
+                )
+
+            if _percentiles:
+                _thresh = []
+                for p in _percentiles:
+                    if math.isnan(p):
+                        continue
+
+                    p = int(math.ceil(p))
+                    if not _thresh or p > _thresh[-1]:
+                        _thresh.append(p)
+
+                if len(_thresh) + 1 < _numSplits:
+                    logger.warning('Highly skewed dataset detected!')
+
+                _numSplits = len(_thresh) + 1
+            else:
+                _thresh = None
+
+        part = HashPartitioner(_numSplits, thresholds=_thresh)
         return CoGroupedRDD([self]+others, part, taskMemory)
 
     cogroup = groupWith
@@ -658,7 +718,7 @@ class RDD(object):
         r = self.map(lambda x:(1, x)).adcountByKey(1).collectAsMap()
         return r and r[1] or 0
 
-    def adcountByKey(self, splits=None, taskMemory=None):
+    def adcountByKey(self, splits=None, taskMemory=None, fixSkew=-1):
         try:
             from pyhll import HyperLogLog
         except ImportError:
@@ -670,7 +730,70 @@ class RDD(object):
         def merge(s1, s2):
             return s1.update(s2) or s1
         agg = Aggregator(create, combine, merge)
-        return self.combineByKey(agg, splits, taskMemory).mapValue(len)
+        return self.combineByKey(agg, splits, taskMemory, fixSkew=fixSkew) \
+            .mapValue(len)
+
+
+    def percentiles(self, p, sampleRate=1.0, func=None):
+        def _(it):
+            from dpark.tdigest import TDigest
+            digest = TDigest()
+            for k in it:
+                digest.add(k)
+
+            digest.compress()
+            yield digest
+
+        if sampleRate <= 0:
+            raise ValueError('Sample Rate should be positive.')
+
+        if sampleRate >= 1.0:
+            rdd = self
+        else:
+            rdd = self.sample(sampleRate)
+
+        if func:
+            rdd = rdd.map(func)
+
+        _digest = rdd.mapPartitions(_).reduce(lambda x, y: x + y)
+        _digest.compress()
+        return [_digest.quantile(pp / 100.) for pp in p]
+
+
+    def percentilesByKey(self, p, sampleRate=1.0, func=None,
+                         numSplits=None, taskMemory=None, fixSkew=-1):
+        def _create(x):
+            from dpark.tdigest import TDigest
+            digest = TDigest()
+            digest.add(x)
+            return digest
+
+        def _update(d, x):
+            d.add(x)
+            return d
+
+        def _merge(d1, d2):
+            d = d1 + d2
+            d.compress()
+            return d
+
+        def _(d):
+            return [d.quantile(pp / 100.) for pp in p]
+
+        if sampleRate <= 0:
+            raise ValueError('Sample Rate should be positive.')
+
+        if sampleRate >= 1.0:
+            rdd = self
+        else:
+            rdd = self.sample(sampleRate)
+
+        if func:
+            rdd = rdd.mapValue(func)
+
+        aggregator = Aggregator(_create, _update, _merge)
+        return rdd.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew) \
+            .mapValue(_)
 
 
 class DerivedRDD(RDD):
@@ -1756,7 +1879,7 @@ class MultiOutputTextFileRDD(OutputTextFileRDD):
         fileobj = getattr(f, 'fileobj', None)
         if hasattr(f, 'buffer'):
             fileobj = f.buffer.fileobj
-    
+
         if f is None or self.compress and fileobj is None:
             tpath = self.get_tpath(key)
             try:

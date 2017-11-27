@@ -46,7 +46,7 @@ setup(name='DPark',
       ),
       install_requires=req,
       tests_require=[
-          'nose',
+          'nose', 'flaky'
       ],
       test_suite='nose.collector',
       ext_modules=ext_modules,
