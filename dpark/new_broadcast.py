@@ -33,8 +33,7 @@ DOWNLOAD_ADDR = 'NewDownloadAddr'
 BATCHED_BLOCKS = 3
 GUIDE_STOP, GUIDE_GET_SOURCES, GUIDE_SET_SOURCES, GUIDE_REPORT_BAD = list(range(4))
 SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK, \
-    DATA_GET, DATA_GET_OK, DATA_GET_FAIL, DATA_DOWNLOADING, SERVER_CLEAR_ITEM, \
-    REGISTER_BLOCKS, REGISTER_BLOCKS_OK, REGISTER_BLOCKS_FAILED = list(range(12))
+    DATA_GET, DATA_GET_OK, DATA_GET_FAIL, DATA_DOWNLOADING, SERVER_CLEAR_ITEM = list(range(9))
 
 
 class GuideManager:
@@ -164,6 +163,7 @@ class DownloadManager:
         self.ctx = None
         self.random_inst = None
         self.work_dirs = []
+        self.master_broadcast_blocks = {}
 
     def start(self):
         global shared_uuid_fn_dict, shared_uuid_map_dict
@@ -177,6 +177,7 @@ class DownloadManager:
         self.shared_uuid_map_dict = shared_uuid_map_dict
         self.uuid_map_dict = {}
         self.work_dirs = env.get('WORKDIR')
+        self.master_broadcast_blocks = {}
         env.register(DOWNLOAD_ADDR, self.server_addr)
 
     def start_server(self):
@@ -199,7 +200,19 @@ class DownloadManager:
                     break
                 elif type == SERVER_FETCH:
                     uuid, indices, client_addr = msg
-                    if uuid in self.uuid_state_dict:
+                    if uuid in self.master_broadcast_blocks:
+                        block_num = len(self.master_broadcast_blocks[uuid])
+                        bls = []
+                        for index in indices:
+                            if index >= block_num:
+                                logger.warning('input index too big %s for '
+                                               'len of blocks  %d from host %s',
+                                               str(indices), block_num, client_addr)
+                                sock.send_pyobj((SERVER_FETCH_FAIL, None))
+                            else:
+                                bls.append(self.master_broadcast_blocks[uuid][index])
+                        sock.send_pyobj((SERVER_FETCH_OK, (indices, bls)))
+                    elif uuid in self.uuid_state_dict:
                         fd = os.open(self.uuid_state_dict[uuid][0], os.O_RDONLY)
                         mmfp = mmap.mmap(fd, 0, access=ACCESS_READ)
                         os.close(fd)
@@ -244,13 +257,6 @@ class DownloadManager:
                     uuid = msg
                     self.clear(uuid)
                     sock.send_pyobj(None)
-                elif type == REGISTER_BLOCKS:
-                    uuid, broadcast_path, block_map = msg
-                    self.uuid_state_dict[uuid] = broadcast_path, True
-                    self.shared_uuid_map_dict[uuid] = block_map
-                    self.shared_uuid_fn_dict[uuid] = broadcast_path
-                    self.uuid_map_dict[uuid] = block_map
-                    sock.send_pyobj(REGISTER_BLOCKS_OK)
                 else:
                     logger.error('Unknown server message: %s %s', type, msg)
                     sock.send_pyobj(None)
@@ -261,6 +267,16 @@ class DownloadManager:
                 self.clear(uuid)
 
         return server_addr, spawn(run)
+
+    def get_blocks(self, uuid):
+        if uuid in self.master_broadcast_blocks:
+            return self.master_broadcast_blocks[uuid]
+
+    def register_blocks(self, uuid, blocks):
+        if uuid in self.master_broadcast_blocks:
+            logger.warning('the block uuid %s exists in dict', uuid)
+            return
+        self.master_broadcast_blocks[uuid] = blocks
 
     def _get_sources(self, uuid, source_sock):
         try:
@@ -371,6 +387,8 @@ class DownloadManager:
             download_cond.notify_all()
 
     def clear(self, uuid):
+        if uuid in self.master_broadcast_blocks:
+            del self.master_broadcast_blocks[uuid]
         if uuid in self.uuid_state_dict:
             del self.uuid_state_dict[uuid]
         if uuid in self.shared_uuid_fn_dict:
@@ -430,28 +448,10 @@ class BroadcastManager:
         if uuid in self.shared_uuid_fn_dict:
             raise RuntimeError('broadcast %s has already registered' % uuid)
         blocks, size, block_map = self.to_blocks(uuid, value)
-        self._dump_blocks_to_file(blocks, uuid, block_map)
+        _download_manager.register_blocks(uuid, blocks)
         self._update_sources(uuid, block_map)
         self.cache.put(uuid, value)
         return size
-
-    def _dump_blocks_to_file(self, blocks, uuid, block_map):
-        broadcast_path = gen_broadcast_path(self.work_dirs, uuid)
-        fp = open(broadcast_path, 'wb')
-        for block in blocks:
-            fp.write(block)
-        fp.close()
-        download_sock = self.ctx.socket(zmq.REQ)
-        try:
-            download_sock.setsockopt(zmq.LINGER, 0)
-            download_sock.connect(self.download_addr)
-            download_sock.send_pyobj((REGISTER_BLOCKS, (uuid, broadcast_path, block_map)))
-            result = download_sock.recv_pyobj()
-        finally:
-            download_sock.close()
-        if result == REGISTER_BLOCKS_FAILED:
-            raise RuntimeError('Register the broadcast failed')
-        return broadcast_path
 
     def _update_sources(self, uuid, bitmap):
         guide_sock = self.ctx.socket(zmq.REQ)
@@ -476,8 +476,9 @@ class BroadcastManager:
         value = self.cache.get(uuid)
         if value is not None:
             return value
-
-        blocks = self.fetch_blocks(uuid, compressed_size)
+        blocks = _download_manager.get_blocks(uuid)
+        if blocks is None:
+            blocks = self.fetch_blocks(uuid, compressed_size)
         value = self.from_blocks(uuid, blocks)
         return value
 
