@@ -113,6 +113,7 @@ class GuideManager:
 download_cond = None
 shared_uuid_fn_dict = None
 shared_uuid_map_dict = None
+shared_master_blocks = None
 
 
 def check_memory(location):
@@ -128,10 +129,12 @@ def check_memory(location):
 
 
 def init_dict():
-    global download_cond, shared_uuid_fn_dict, shared_uuid_map_dict
+    global download_cond, shared_uuid_fn_dict, \
+        shared_uuid_map_dict, shared_master_blocks
     manager = Manager()
     shared_uuid_fn_dict = manager.dict()
     shared_uuid_map_dict = manager.dict()
+    shared_master_blocks = manager.dict()
     download_cond = Condition()
 
 
@@ -164,9 +167,10 @@ class DownloadManager:
         self.random_inst = None
         self.work_dirs = []
         self.master_broadcast_blocks = {}
+        self.shared_master_blocks = {}
 
     def start(self):
-        global shared_uuid_fn_dict, shared_uuid_map_dict
+        global shared_uuid_fn_dict, shared_uuid_map_dict, shared_master_blocks
         self.ctx = zmq.Context()
         self.host = socket.gethostname()
         self.guide_addr = env.get(GUIDE_ADDR)
@@ -178,6 +182,7 @@ class DownloadManager:
         self.uuid_map_dict = {}
         self.work_dirs = env.get('WORKDIR')
         self.master_broadcast_blocks = {}
+        self.shared_master_blocks = shared_master_blocks
         env.register(DOWNLOAD_ADDR, self.server_addr)
 
     def start_server(self):
@@ -271,12 +276,15 @@ class DownloadManager:
     def get_blocks(self, uuid):
         if uuid in self.master_broadcast_blocks:
             return self.master_broadcast_blocks[uuid]
+        if uuid in self.shared_master_blocks:
+            return self.shared_master_blocks[uuid]
 
     def register_blocks(self, uuid, blocks):
         if uuid in self.master_broadcast_blocks:
             logger.warning('the block uuid %s exists in dict', uuid)
             return
         self.master_broadcast_blocks[uuid] = blocks
+        self.shared_master_blocks[uuid] = blocks
 
     def _get_sources(self, uuid, source_sock):
         try:
@@ -389,6 +397,7 @@ class DownloadManager:
     def clear(self, uuid):
         if uuid in self.master_broadcast_blocks:
             del self.master_broadcast_blocks[uuid]
+            del self.shared_master_blocks[uuid]
         if uuid in self.uuid_state_dict:
             del self.uuid_state_dict[uuid]
         if uuid in self.shared_uuid_fn_dict:
