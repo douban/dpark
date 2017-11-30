@@ -695,7 +695,7 @@ class MPIScheduler(BaseScheduler):
                 pass
 
         mpi_impl = guess_mpi_impl()
-        hosts = ','.join('__DUMMY__%s:%d' % (i, slots)
+        hosts = ','.join('%s:%d' % (hostname, slots)
                          for i, (hostname, slots) in enumerate(items))
 
         if mpi_impl == MPI_MPICH_OLD:
@@ -713,6 +713,8 @@ class MPIScheduler(BaseScheduler):
                    + command
         elif mpi_impl == MPI_OPENMPI:
             # OpenMPI
+            hosts = ','.join('__DUMMY__%s:%d' % (i, slots)
+                             for i, (hostname, slots) in enumerate(items))
             prefix = b'__DUMMY__'
             postfix = None
             cmd  = ['mpirun', '-tag-output', '-mca', 'plm_rsh_agent', 'echo',
