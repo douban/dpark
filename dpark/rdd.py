@@ -1396,7 +1396,15 @@ class TextFileRDD(RDD):
                     self._preferred_locs[split] = sum((file_.locs(i) for i in range(start, end)), [])
                 else:
                     self._preferred_locs[split] = file_.locs(split.begin // self.splitSize)
-
+                hostnames = []
+                for loc in self._preferred_locs[split]:
+                    host = loc
+                    try:
+                        host = socket.gethostbyaddr(loc)[0]
+                    except IOError as e:
+                        logger.warning('get hostname exec %s for loc %s', e.message, loc)
+                    hostnames.append(host)
+                self._preferred_locs[split] = hostnames
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
 
     def _get_scope(self):

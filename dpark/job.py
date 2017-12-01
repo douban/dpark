@@ -5,6 +5,7 @@ import socket
 from operator import itemgetter
 
 from dpark.util import get_logger
+from dpark.hostatus import TaskHostManager
 from six.moves import range
 logger = get_logger(__name__)
 
@@ -25,6 +26,10 @@ class Job:
         self.start = time.time()
 
     def slaveOffer(self, s, availableCpus):
+        raise NotImplementedError
+
+    def taskOffer(self, host_offers,
+                  cpuAvailableArray, memAvailableArray):
         raise NotImplementedError
 
     def statusUpdate(self, t):
@@ -50,12 +55,13 @@ MAX_TASK_MEMORY = 15 << 10  # 15GB
 
 class SimpleJob(Job):
 
-    def __init__(self, sched, tasks, cpus=1, mem=100):
+    def __init__(self, sched, tasks, cpus=1, mem=100,
+                 task_host_manager=None):
         Job.__init__(self)
         self.sched = sched
         self.tasks = tasks
 
-        for t in tasks:
+        for t in self.tasks:
             t.status = None
             t.tried = 0
             t.used = 0
@@ -65,7 +71,7 @@ class SimpleJob(Job):
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
-        self.blacklist = [[] for i in range(len(tasks))]
+        self.running_hosts = [[] for i in range(len(tasks))]
         self.tidToIndex = {}
         self.numTasks = len(tasks)
         self.tasksLaunched = 0
@@ -86,6 +92,10 @@ class SimpleJob(Job):
         for i in range(len(tasks)):
             self.addPendingTask(i)
         self.host_cache = {}
+        self.task_host_manager = task_host_manager if task_host_manager is not None\
+            else TaskHostManager()
+        self.id_retry_host = {}
+        self.task_local_set = set()
 
     @property
     def taskEverageTime(self):
@@ -127,9 +137,12 @@ class SimpleJob(Job):
         for i in l:
             if self.launched[i] or self.finished[i]:
                 continue
-            if host in self.blacklist[i]:
+            if host in self.running_hosts[i]:
                 continue
             t = self.tasks[i]
+            if self.task_host_manager.\
+                    task_failed_on_host(t.id, host):
+                continue
             if t.cpus <= cpus + 1e-4 and t.mem <= mem:
                 return i
 
@@ -145,8 +158,6 @@ class SimpleJob(Job):
         if not localOnly:
             return self.findTaskFromList(
                 self.allPendingTasks, host, cpus, mem), False
-#        else:
-#            print repr(host), self.pendingTasksForHost
         return None, False
 
     # Respond to an offer of a single slave from the scheduler by finding a
@@ -162,17 +173,69 @@ class SimpleJob(Job):
             task.start = now
             task.host = host
             task.tried += 1
+            self.id_retry_host[(task.id, task.tried)] = host
             prefStr = preferred and 'preferred' or 'non-preferred'
             logger.debug('Starting task %d:%d as TID %s on slave %s (%s)',
                          self.id, i, task, host, prefStr)
             self.tidToIndex[task.id] = i
             self.launched[i] = True
             self.tasksLaunched += 1
-            self.blacklist[i].append(host)
+            self.running_hosts[i].append(host)
             if preferred:
                 self.lastPreferredLaunchTime = now
             return task
         logger.debug('no task found %s', localOnly)
+
+    def taskOffer(self, host_offers,
+                  cpuAvailableArray, memAvailableArray):
+        prefer_list = []
+        for host in host_offers:
+            i, o = host_offers[host]
+            local_task = self.findTaskFromList(
+                self.getPendingTasksForHost(host), host,
+                cpuAvailableArray[i], memAvailableArray[i])
+            if local_task is not None and not self.task_host_manager.\
+                    task_failed_on_host(self.tasks[local_task].id, host):
+                result_tuple = self._try_update_task_offer(local_task, i, o, cpuAvailableArray,
+                                                           memAvailableArray)
+                if result_tuple is None:
+                    continue
+                prefer_list.append(result_tuple)
+        if prefer_list:
+            return prefer_list
+        for idx in range(len(self.tasks)):
+            if not self.launched[idx] and not self.finished[idx]:
+                i, o = self.task_host_manager.offer_choice(self.tasks[idx].id, host_offers,
+                                                           self.running_hosts[idx])
+                if i is None:
+                    continue
+                result_tuple = self._try_update_task_offer(idx, i, o, cpuAvailableArray,
+                                                           memAvailableArray)
+                if result_tuple:
+                    return [result_tuple]
+        return []
+
+    def _try_update_task_offer(self, task_idx, i, o, cpu, mem):
+        t = self.tasks[task_idx]
+        if t.cpus <= cpu[i] + 1e-4 and \
+                        t.mem <= mem[i]:
+            t.status = 'TASK_STAGING'
+            t.start = time.time()
+            t.host = o.hostname
+            t.tried += 1
+            self.id_retry_host[(t.id, t.tried)] = o.hostname
+            logger.debug('Starting task %d:%d as TID %s on slave %s',
+                         self.id, task_idx, t, o.hostname)
+            self.tidToIndex[t.id] = task_idx
+            self.launched[task_idx] = True
+            self.tasksLaunched += 1
+            self.running_hosts[task_idx].append(o.hostname)
+            host_set = set(self.tasks[task_idx].preferredLocations())
+            if o.hostname in host_set:
+                self.task_local_set.add(t.id)
+            return i, o, t
+        return None
+
 
     def statusUpdate(self, tid, tried, status, reason=None,
                      result=None, update=None):
@@ -204,6 +267,8 @@ class SimpleJob(Job):
         self.finished[i] = True
         self.tasksFinished += 1
         task = self.tasks[i]
+        hostname = self.id_retry_host[(task.id, tried)] \
+            if (task.id, tried) in self.id_retry_host else task.host
         task.used += time.time() - task.start
         self.total_used += task.used
         if getattr(sys.stderr, 'isatty', lambda: False)():
@@ -216,6 +281,9 @@ class SimpleJob(Job):
 
         from dpark.schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
+        self.running_hosts[i] = []
+        self.task_host_manager.task_succeed(task.id, hostname,
+                                            Success())
 
         for t in range(task.tried):
             if t + 1 != tried:
@@ -228,7 +296,8 @@ class SimpleJob(Job):
                         'avg=%.1fs, max=%.1fs, maxtry=%d',
                         self.id, time.time() - self.start,
                         min(ts), sum(ts) / len(ts), max(ts), max(tried))
-
+            logger.info('the ratio of local task is %f',
+                        len(self.task_local_set) * 1.0 / len(self.tasks))
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
@@ -254,6 +323,8 @@ class SimpleJob(Job):
             return
 
         task = self.tasks[index]
+        hostname = self.id_retry_host[(task.id, tried)] \
+            if (task.id, tried) in self.id_retry_host else task.host
         if status == 'TASK_KILLED':
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
             for i, t in enumerate(self.tasks):
@@ -267,12 +338,12 @@ class SimpleJob(Job):
                 _logger(
                     'task %s failed @ %s: %s\n%s',
                     task.id,
-                    task.host,
+                    hostname,
                     task,
                     reason)
                 self.reasons.add(reason)
             else:
-                _logger('task %s failed @ %s: %s', task.id, task.host, task)
+                _logger('task %s failed @ %s: %s', task.id, hostname, task)
 
         elif status == 'TASK_LOST':
             logger.warning('Lost Task %d (task %d:%d:%s) %s at %s',
@@ -284,12 +355,11 @@ class SimpleJob(Job):
                          self.tasks[index].id, MAX_TASK_FAILURES)
             self.abort('Task %d failed more than %d times'
                        % (self.tasks[index].id, MAX_TASK_FAILURES))
-
+        self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:
             self.sched.requestMoreResources()
-        for i in range(len(self.blacklist)):
-            self.blacklist[i] = []
+        self.running_hosts[index] = []
         self.tasksLaunched -= 1
 
     def check_task_timeout(self):

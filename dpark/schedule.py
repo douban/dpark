@@ -4,7 +4,6 @@ import six.moves.cPickle
 import marshal
 import multiprocessing
 import os
-import random
 import socket
 import signal
 import sys
@@ -24,6 +23,7 @@ from dpark.env import env
 from dpark.job import SimpleJob
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask
+from dpark.hostatus import TaskHostManager
 from dpark.util import (
     compress, decompress, spawn, getuser, mkdir_p, get_logger
 )
@@ -477,12 +477,12 @@ def run_task(task, aid):
         result = task.run(aid)
         accumUpdates = Accumulator.values()
         MutableDict.flush()
-        return (task.id, Success(), result, accumUpdates)
+        return task.id, Success(), result, accumUpdates
     except Exception as e:
         logger.error('error in task %s', task)
         import traceback
         traceback.print_exc()
-        return (task.id, OtherFailure('exception:' + str(e)), None, None)
+        return task.id, OtherFailure('exception:' + str(e)), None, None
 
 
 class LocalScheduler(DAGScheduler):
@@ -613,6 +613,7 @@ class MesosScheduler(DAGScheduler):
         self.out_logger = None
         self.err_logger = None
         self.lock = threading.RLock()
+        self.task_host_manager = TaskHostManager()
         self.init_job()
 
     def init_job(self):
@@ -816,7 +817,8 @@ class MesosScheduler(DAGScheduler):
         if not tasks:
             return
 
-        job = SimpleJob(self, tasks, self.cpus, tasks[0].rdd.mem or self.mem)
+        job = SimpleJob(self, tasks, self.cpus, tasks[0].rdd.mem or self.mem,
+                        self.task_host_manager)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
@@ -864,7 +866,6 @@ class MesosScheduler(DAGScheduler):
             return
 
         start = time.time()
-        random.shuffle(offers)
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem')
                 - (o.agent_id.value not in self.agentTasks
@@ -876,7 +877,7 @@ class MesosScheduler(DAGScheduler):
         tasks = {}
         for job in self.activeJobsQueue:
             while True:
-                launchedTask = False
+                host_offers = {}
                 for i, o in enumerate(offers):
                     sid = o.agent_id.value
                     group = (
@@ -887,28 +888,32 @@ class MesosScheduler(DAGScheduler):
                             '_')) and group not in self.group:
                         continue
                     if self.agentTasks.get(sid, 0) >= self.task_per_node:
+                        logger.debug('the task limit exceeded at host %s',
+                                     o.hostname)
                         continue
                     if (mems[i] < self.mem + EXECUTOR_MEMORY
                             or cpus[i] < self.cpus + EXECUTOR_CPUS):
                         continue
-                    t = job.slaveOffer(str(o.hostname), cpus[i], mems[i])
-                    if not t:
+                    if self.task_host_manager.is_unhealthy_host(o.hostname):
+                        logger.debug('the host %s is unhealthy so skip it', o.hostname)
                         continue
+                    self.task_host_manager.register_host(o.hostname)
+                    host_offers[o.hostname] = (i, o)
+                assigned_list = job.taskOffer(host_offers, cpus, mems)
+                if not assigned_list:
+                    break
+                for i, o, t in assigned_list:
                     task = self.createTask(o, job, t)
                     tasks.setdefault(o.id.value, []).append(task)
-
                     logger.debug('dispatch %s into %s', t, o.hostname)
                     tid = task.task_id.value
+                    sid = o.agent_id.value
                     self.jobTasks[job.id].add(tid)
                     self.taskIdToJobId[tid] = job.id
                     self.taskIdToAgentId[tid] = sid
                     self.agentTasks[sid] = self.agentTasks.get(sid, 0) + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
-                    launchedTask = True
-
-                if not launchedTask:
-                    break
 
         used = time.time() - start
         if used > 10:
@@ -1027,7 +1032,7 @@ class MesosScheduler(DAGScheduler):
                     'error when cPickle.loads(): %s, data:%s', e, len(data))
                 state = 'TASK_FAILED'
                 return job.statusUpdate(
-                    task_id, tried, 'TASK_FAILED', 'load failed: %s' % e)
+                    task_id, tried, state, 'load failed: %s' % e)
             else:
                 return job.statusUpdate(task_id, tried, state,
                                         reason, result, accUpdate)
