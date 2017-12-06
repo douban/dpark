@@ -853,7 +853,6 @@ class MappedRDD(DerivedRDD):
         try:
             self.func = load_func(code)
         except Exception:
-            print('load failed', self.__class__, code[:1024])
             raise
 
 class FlatMappedRDD(MappedRDD):

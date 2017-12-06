@@ -170,7 +170,6 @@ class BeansdbReader(object):
         try:
             self.key_filter = load_func(code)
         except Exception:
-            print('load failed', self.__class__, code[:1024])
             raise
 
     def read(self, begin, end):
