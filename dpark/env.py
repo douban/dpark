@@ -3,6 +3,7 @@ import os
 import socket
 import shutil
 import uuid
+import tempfile
 
 import zmq
 
@@ -25,6 +26,21 @@ class DparkEnv:
 
     def __init__(self):
         self.started = False
+        roots = conf.DPARK_WORK_DIR
+        if isinstance(roots, str):
+            roots = roots.split(',')
+
+        if not roots:
+            logger.warning('Cannot get WORKDIR, use temp dir instead.')
+            roots = [tempfile.gettempdir()]
+
+        name = os.environ.get('DPARK_ID')
+        if name is None:
+            name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
+            os.environ['DPARK_ID'] = name
+
+        self.workdir = [os.path.join(root, name) for root in roots]
+        self.environ['WORKDIR'] = self.workdir
 
     def start(self, isMaster, environ={}):
         if self.started:
@@ -32,11 +48,6 @@ class DparkEnv:
         logger.debug("start env in %s: %s %s", os.getpid(), isMaster, environ)
         self.isMaster = isMaster
         if isMaster:
-            roots = conf.DPARK_WORK_DIR
-            if isinstance(roots, str):
-                roots = roots.split(',')
-            name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
-            self.workdir = [os.path.join(root, name) for root in roots]
             try:
                 for d in self.workdir:
                     util.mkdir_p(d)
@@ -45,7 +56,6 @@ class DparkEnv:
                     raise e
 
             self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
-            self.environ['WORKDIR'] = self.workdir
             self.environ['COMPRESS'] = util.COMPRESS
         else:
             self.environ.update(environ)
@@ -68,20 +78,10 @@ class DparkEnv:
         from dpark.cache import CacheTracker
         self.cacheTracker = CacheTracker()
 
-        from dpark.shuffle import LocalFileShuffle, MapOutputTracker
-        LocalFileShuffle.initialize(isMaster)
+        from dpark.shuffle import MapOutputTracker
         self.mapOutputTracker = MapOutputTracker()
         from dpark.shuffle import ParallelShuffleFetcher
         self.shuffleFetcher = ParallelShuffleFetcher(2)
-
-        from dpark.new_broadcast import start_manager
-        if isMaster:
-            start_manager(has_guide=True, has_download=True, in_task=True)
-        else:
-            if 'broadcast_executor' in environ:
-                start_manager(has_guide=False, has_download=True, in_task=False)
-            if 'broadcast_task' in environ:
-                start_manager(has_guide=False, has_download=False, in_task=True)
 
         self.started = True
         logger.debug("env started")
@@ -95,7 +95,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         if self.isMaster:
             self.trackerServer.stop()
-        from dpark.new_broadcast import stop_manager
+        from dpark.broadcast import stop_manager
         stop_manager()
 
         logger.debug("cleaning workdir ...")

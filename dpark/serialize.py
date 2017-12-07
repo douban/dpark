@@ -176,10 +176,10 @@ OBJECT_SIZE_LIMIT = 100 << 10
 
 
 def create_broadcast(name, obj, func_name):
-    import dpark
+    from dpark.broadcast import Broadcast
     logger.info("use broadcast for object %s %s (used in function %s)",
                 name, type(obj), func_name)
-    return dpark._ctx.broadcast(obj)
+    return Broadcast(obj)
 
 
 def dump_obj(f, name, obj):

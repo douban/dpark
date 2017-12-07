@@ -1,5 +1,5 @@
 from __future__ import absolute_import
-import os.path
+import os
 from dpark.util import get_logger
 
 
@@ -26,8 +26,8 @@ MEM_PER_TASK = 200.0
 
 def load_conf(path):
     if not os.path.exists(path):
-        logger.error("conf %s do not exists", path)
-        raise Exception("conf %s do not exists" % path)
+        logger.warning("conf %s do not exists, use default config", path)
+        return
 
     try:
         data = open(path).read()
@@ -35,3 +35,5 @@ def load_conf(path):
     except Exception as e:
         logger.error("error while load conf from %s: %s", path, e)
         raise
+
+load_conf(os.environ.get('DPARK_CONF', '/etc/dpark.conf'))

@@ -29,21 +29,6 @@ def singleton(cls):
         return instances[key]
     return getinstance
 
-def setup_conf(options):
-    if options.conf:
-        conf.load_conf(options.conf)
-    elif 'DPARK_CONF' in os.environ:
-        conf.load_conf(os.environ['DPARK_CONF'])
-    elif os.path.exists('/etc/dpark.conf'):
-        conf.load_conf('/etc/dpark.conf')
-
-    if options.mem is None:
-        options.mem = conf.MEM_PER_TASK
-    else:
-        options.mem = memory_str_to_mb(options.mem)
-
-    conf.__dict__.update(os.environ)
-
 @singleton
 class DparkContext(object):
     nextShuffleId = 0
@@ -278,7 +263,7 @@ class DparkContext(object):
 
     def broadcast(self, v):
         self.start()
-        from dpark.new_broadcast import Broadcast
+        from dpark.broadcast import Broadcast
         return Broadcast(v)
 
     def start(self):
@@ -394,14 +379,8 @@ def add_default_options():
     group.add_option("--checkpoint_dir", type="string", default="",
             help="shared dir to keep checkpoint of RDDs")
 
-    group.add_option("--conf", type="string",
-            help="path for configuration file")
-    group.add_option("--self", action="store_true",
-            help="user self as exectuor")
     group.add_option("--profile", action="store_true",
             help="do profiling")
-    group.add_option("--keep-order", action="store_true",
-            help="deprecated, always keep order")
 
     group.add_option("-I","--image", type="string",
                      help="image name for Docker")
@@ -418,7 +397,10 @@ add_default_options()
 
 def parse_options():
     options, args = parser.parse_args()
-    setup_conf(options)
+    if options.mem is None:
+        options.mem = conf.MEM_PER_TASK
+    else:
+        options.mem = memory_str_to_mb(options.mem)
 
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)

@@ -488,9 +488,8 @@ class LocalScheduler(DAGScheduler):
 
 def run_task_in_process(task, tid, environ, sig_dict=None):
     from dpark.env import env
-    workdir = environ.get('WORKDIR')
+    workdir = env.get('WORKDIR')
     environ['SERVER_URI'] = 'file://%s' % workdir[0]
-    environ['broadcast_task'] = 1
     env.start(False, environ)
     import signal
     if sig_dict:
@@ -588,7 +587,6 @@ class MesosScheduler(DAGScheduler):
     def __init__(self, master, options):
         DAGScheduler.__init__(self)
         self.master = master
-        self.use_self_as_exec = options.self
         self.cpus = options.cpus
         self.mem = options.mem
         self.task_per_node = options.parallel or multiprocessing.cpu_count()
@@ -698,20 +696,14 @@ class MesosScheduler(DAGScheduler):
     def getExecutorInfo(self, framework_id):
         info = Dict()
         info.framework_id.value = framework_id
-
-        if self.use_self_as_exec:
-            info.command.value = os.path.abspath(sys.argv[0])
-            info.executor_id.value = sys.argv[0]
-        else:
-            info.command.value = '%s %s' % (
-                sys.executable,
-                os.path.abspath(
-                    os.path.join(
-                        os.path.dirname(__file__),
-                        'executor.py'))
-            )
-            info.executor_id.value = 'default'
-
+        info.command.value = '%s %s' % (
+            sys.executable,
+            os.path.abspath(
+                os.path.join(
+                    os.path.dirname(__file__),
+                    'executor.py'))
+        )
+        info.executor_id.value = 'default'
         info.command.environment.variables = variables = []
 
         v = Dict()

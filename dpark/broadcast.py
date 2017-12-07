@@ -36,8 +36,9 @@ SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK, \
     DATA_GET, DATA_GET_OK, DATA_GET_FAIL, DATA_DOWNLOADING, SERVER_CLEAR_ITEM = list(range(9))
 
 
-class GuideManager:
+class GuideManager(object):
     def __init__(self):
+        self._started = False
         self.guides = {}
         self.host = socket.gethostname()
         self.guide_addr = None
@@ -46,6 +47,10 @@ class GuideManager:
         self.ctx = None
 
     def start(self):
+        if self._started:
+            return
+
+        self._started=True
         self.ctx = zmq.Context()
         self.guide_addr, self.guide_thread = self.start_guide()
         env.register(GUIDE_ADDR, self.guide_addr)
@@ -100,6 +105,10 @@ class GuideManager:
         return guide_addr, spawn(run)
 
     def shutdown(self):
+        if not self._started:
+            return
+
+        self._started = False
         if self.guide_thread and self.guide_addr.\
                 startswith('tcp://%s:' % socket.gethostname()):
             sock = self.ctx.socket(zmq.REQ)
@@ -151,8 +160,9 @@ def gen_broadcast_path(work_dirs, uuid):
     return broadcast_path
 
 
-class DownloadManager:
+class DownloadManager(object):
     def __init__(self):
+        self._started = False
         self.server_thread = None
         self.download_threads = {}
         self.uuid_state_dict = None
@@ -169,6 +179,11 @@ class DownloadManager:
         self.shared_master_blocks = {}
 
     def start(self):
+        if self._started:
+            return
+
+        init_dict()
+        self._started = True
         global shared_uuid_fn_dict, shared_uuid_map_dict, shared_master_blocks
         self.ctx = zmq.Context()
         self.host = socket.gethostname()
@@ -404,6 +419,10 @@ class DownloadManager:
             del self.shared_uuid_map_dict[uuid]
 
     def shutdown(self):
+        if not self._started:
+            return
+
+        self._started = False
         if self.server_thread and self.server_addr.\
                 startswith('tcp://%s:' % socket.gethostname()):
             req = self.ctx.socket(zmq.REQ)
@@ -429,30 +448,37 @@ def accumulate_list(l):
     return acc_l
 
 
-class BroadcastManager:
+class BroadcastManager(object):
     header_fmt = '>BI'
     header_len = struct.calcsize(header_fmt)
 
     def __init__(self):
+        self._started = False
         self.guide_addr = None
         self.download_addr = None
         self.cache = None
         self.shared_uuid_fn_dict = None
         self.shared_uuid_map_dict = None
         self.ctx = None
-        self.work_dirs = None
 
     def start(self):
+        if self._started:
+            return
+
+        self._started = True
         global shared_uuid_fn_dict, shared_uuid_map_dict
         self.guide_addr = env.get(GUIDE_ADDR)
         self.download_addr = env.get(DOWNLOAD_ADDR)
         self.cache = Cache()
         self.ctx = zmq.Context()
-        self.work_dirs = env.get('WORKDIR')
         self.shared_uuid_fn_dict = shared_uuid_fn_dict
         self.shared_uuid_map_dict = shared_uuid_map_dict
 
     def register(self, uuid, value):
+        _guide_manager.start()
+        _download_manager.start()
+        self.start()
+
         if uuid in self.shared_uuid_fn_dict:
             raise RuntimeError('broadcast %s has already registered' % uuid)
         blocks, size, block_map = self.to_blocks(uuid, value)
@@ -473,6 +499,7 @@ class BroadcastManager:
             guide_sock.close()
 
     def clear(self, uuid):
+        assert self._started
         self.cache.put(uuid, None)
         sock = self.ctx.socket(zmq.REQ)
         sock.connect(self.download_addr)
@@ -481,6 +508,8 @@ class BroadcastManager:
         sock.close()
 
     def fetch(self, uuid, compressed_size):
+        _download_manager.start()
+        self.start()
         value = self.cache.get(uuid)
         if value is not None:
             return value
@@ -563,27 +592,27 @@ class BroadcastManager:
 
         return value
 
+    def shutdown(self):
+        if not self._started:
+            return
+
+        self._started = False
+
 _manager = BroadcastManager()
 _download_manager = DownloadManager()
 _guide_manager = GuideManager()
 
 
-def start_manager(has_guide=False, has_download=False, in_task=False):
-    if has_guide:
-        _guide_manager.start()
-    if has_download:
-        init_dict()
-        _download_manager.start()
-    if in_task:
-        _manager.start()
-
+def start_download_manager():
+    _download_manager.start()
 
 def stop_manager():
-    _guide_manager.shutdown()
+    _manager.shutdown()
     _download_manager.shutdown()
+    _guide_manager.shutdown()
 
 
-class Broadcast:
+class Broadcast(object):
     def __init__(self, value):
         assert value is not None, 'broadcast object should not been None'
         self.uuid = str(uuid.uuid4())

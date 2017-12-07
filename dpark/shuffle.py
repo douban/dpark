@@ -34,30 +34,21 @@ logger = get_logger(__name__)
 
 class LocalFileShuffle:
     serverUri = None
-    shuffleDir = None
-
-    @classmethod
-    def initialize(cls, isMaster):
-        cls.shuffleDir = [p for p in env.get('WORKDIR')
-                          if os.path.exists(os.path.dirname(p))]
-        if not cls.shuffleDir:
-            return
-        cls.serverUri = env.get('SERVER_URI')
-        logger.debug("shuffle dir: %s", cls.shuffleDir)
 
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
-        path = os.path.join(cls.shuffleDir[0], str(shuffleId), str(inputId))
+        shuffleDir = env.get('WORKDIR')
+        path = os.path.join(shuffleDir[0], str(shuffleId), str(inputId))
         mkdir_p(path)
         p = os.path.join(path, str(outputId))
-        if datasize > 0 and len(cls.shuffleDir) > 1:
+        if datasize > 0 and len(shuffleDir) > 1:
             # datasize > 0 means its writing
             st = os.statvfs(path)
             free = st.f_bfree * st.f_bsize
             ratio = st.f_bfree * 1.0 / st.f_blocks
             if free < max(datasize, 1 << 30) or ratio < 0.66:
                 d2 = os.path.join(
-                    random.choice(cls.shuffleDir[1:]),
+                    random.choice(shuffleDir[1:]),
                     str(shuffleId), str(inputId))
                 mkdir_p(d2)
                 p2 = os.path.join(d2, str(outputId))
@@ -282,7 +273,7 @@ class SortedItems(object):
         self.bufsize = 4096 * 1024
         self.buf = None
         self.offset = 0
-        dirs = LocalFileShuffle.shuffleDir
+        dirs = env.get('WORKDIR')
         self.path = path = os.path.join(
             random.choice(dirs[1:]) if dirs[1:] else dirs[0],
             'shuffle-%s.tmp.gz' % uuid.uuid4().hex)
