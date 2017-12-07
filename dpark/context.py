@@ -29,7 +29,9 @@ def singleton(cls):
                 logger.error('Too many DparkContext created!')
 
             instances[key] = cls(*a, **kw)
+
         return instances[key]
+    getinstance._instances = instances
     return getinstance
 
 @singleton
