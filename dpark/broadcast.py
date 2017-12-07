@@ -576,7 +576,7 @@ class BroadcastManager(object):
         return blocks, size_l[-1], block_map
 
     def from_blocks(self, uuid, blocks):
-        stream = ''.join(map(decompress,  blocks))
+        stream = b''.join(map(decompress,  blocks))
         type, checksum = struct.unpack(self.header_fmt, stream[:self.header_len])
         buf = stream[self.header_len:]
         _checksum = binascii.crc32(buf) & 0xFFFF
