@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 import socket
 import struct
+from contextlib import closing
 
 from .consts import *
 import six
@@ -105,64 +106,64 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
     conn.settimeout(10)
     conn.connect((host, port))
 
-    msg = pack(CLTOCS_READ, uint64(chunkid), version, offset, size)
-    n = conn.send(msg)
-    while n < len(msg):
-        if not n:
-            raise IOError("write failed")
-        msg = msg[n:]
+    with closing(conn):
+        msg = pack(CLTOCS_READ, uint64(chunkid), version, offset, size)
         n = conn.send(msg)
+        while n < len(msg):
+            if not n:
+                raise IOError("write failed")
+            msg = msg[n:]
+            n = conn.send(msg)
 
-    def recv(n):
-        d = conn.recv(n)
-        while len(d) < n:
-            nd = conn.recv(n-len(d))
-            if not nd:
-                raise IOError("not enough data")
-            d += nd
-        return d
+        def recv(n):
+            d = conn.recv(n)
+            while len(d) < n:
+                nd = conn.recv(n-len(d))
+                if not nd:
+                    raise IOError("not enough data")
+                d += nd
+            return d
 
-    while size > 0:
-        cmd, l = unpack("II", recv(8))
+        while size > 0:
+            cmd, l = unpack("II", recv(8))
 
-        if cmd == CSTOCL_READ_STATUS:
-            if l != 9:
-                raise Exception("readblock: READ_STATUS incorrect message size")
-            cid, code = unpack("QB", recv(l))
-            if cid != chunkid:
-                raise Exception("readblock; READ_STATUS incorrect chunkid")
-            conn.close()
-            return
+            if cmd == CSTOCL_READ_STATUS:
+                if l != 9:
+                    raise Exception("readblock: READ_STATUS incorrect message size")
+                cid, code = unpack("QB", recv(l))
+                if cid != chunkid:
+                    raise Exception("readblock; READ_STATUS incorrect chunkid")
+                conn.close()
+                return
 
-        elif cmd == CSTOCL_READ_DATA:
-            if l < 20 :
-                raise Exception("readblock; READ_DATA incorrect message size")
-            cid, bid, boff, bsize, crc = unpack("QHHII", recv(20))
-            if cid != chunkid:
-                raise Exception("readblock; READ_STATUS incorrect chunkid")
-            if l != 20 + bsize:
-                raise Exception("readblock; READ_DATA incorrect message size ")
-            if bsize == 0 : # FIXME
-                raise Exception("readblock; empty block")
-            if bid != offset >> 16:
-                raise Exception("readblock; READ_DATA incorrect block number")
-            if boff != offset & 0xFFFF:
-                raise Exception("readblock; READ_DATA incorrect block offset")
-            breq = 65536 - boff
-            if size < breq:
-                breq = size
-            if bsize != breq:
-                raise Exception("readblock; READ_DATA incorrect block size")
+            elif cmd == CSTOCL_READ_DATA:
+                if l < 20 :
+                    raise Exception("readblock; READ_DATA incorrect message size")
+                cid, bid, boff, bsize, crc = unpack("QHHII", recv(20))
+                if cid != chunkid:
+                    raise Exception("readblock; READ_STATUS incorrect chunkid")
+                if l != 20 + bsize:
+                    raise Exception("readblock; READ_DATA incorrect message size ")
+                if bsize == 0 : # FIXME
+                    raise Exception("readblock; empty block")
+                if bid != offset >> 16:
+                    raise Exception("readblock; READ_DATA incorrect block number")
+                if boff != offset & 0xFFFF:
+                    raise Exception("readblock; READ_DATA incorrect block offset")
+                breq = 65536 - boff
+                if size < breq:
+                    breq = size
+                if bsize != breq:
+                    raise Exception("readblock; READ_DATA incorrect block size")
 
-            while breq > 0:
-                data = conn.recv(breq)
-                if not data:
-                    raise IOError("unexpected ending: need %d" % breq)
-                yield data
-                breq -= len(data)
+                while breq > 0:
+                    data = conn.recv(breq)
+                    if not data:
+                        raise IOError("unexpected ending: need %d" % breq)
+                    yield data
+                    breq -= len(data)
 
-            offset += bsize
-            size -= bsize
-        else:
-            raise Exception("readblock; unknown message: %s" % cmd)
-    conn.close()
+                offset += bsize
+                size -= bsize
+            else:
+                raise Exception("readblock; unknown message: %s" % cmd)
