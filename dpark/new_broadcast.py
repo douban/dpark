@@ -12,7 +12,7 @@ import mmap
 from multiprocessing import Manager, Condition
 from mmap import ACCESS_WRITE, ACCESS_READ
 
-from dpark.util import compress, decompress, spawn, get_logger
+from dpark.util import compress, decompress, spawn, get_logger, mkdir_p
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
@@ -145,8 +145,7 @@ def decide_dir(work_dirs):
 def gen_broadcast_path(work_dirs, uuid):
     work_dir = decide_dir(work_dirs)
     broadcast_dir = os.path.join(work_dir, 'broadcast')
-    if not os.path.exists(broadcast_dir):
-        os.makedirs(broadcast_dir)
+    mkdir_p(broadcast_dir)
     uuid_path = '%s_%d' % (uuid, os.getpid())
     broadcast_path = os.path.join(broadcast_dir, uuid_path)
     return broadcast_path
