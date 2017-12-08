@@ -135,9 +135,13 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
     def __init__(self, nthreads):
         self.nthreads = nthreads
-        self.start()
+        self._started = False
 
     def start(self):
+        if self._started:
+            return
+
+        self._started = True
         self.requests = six.moves.queue.Queue()
         self.results = six.moves.queue.Queue(self.nthreads)
         self.threads = [spawn(self._worker_thread)
@@ -158,6 +162,8 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
                 self.results.put(e)
 
     def fetch(self, shuffleId, reduceId, func):
+        self.start()
+
         logger.debug(
             "Fetching outputs for shuffle %d, reduce %d",
             shuffleId, reduceId)
@@ -175,14 +181,17 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             r = self.results.get()
             if isinstance(r, FetchFailed):
                 self.stop()  # restart
-                self.start()
                 raise r
 
             sid, rid, part, d = r
             func(six.iteritems(d))
 
     def stop(self):
+        if not self._started:
+            return
+
         logger.debug("stop parallel shuffle fetcher ...")
+        self._started = False
         while not self.requests.empty():
             self.requests.get_nowait()
         while not self.results.empty():

@@ -3,7 +3,6 @@ import socket
 import zmq
 import time
 
-from dpark.env import env
 from dpark.util import spawn, get_logger
 
 logger = get_logger(__name__)
@@ -38,6 +37,7 @@ class TrackerServer(object):
     def __init__(self):
         self.addr = None
         self.thread = None
+        self.ctx = zmq.Context()
 
     def start(self):
         self.thread = spawn(self.run)
@@ -45,7 +45,7 @@ class TrackerServer(object):
             time.sleep(0.01)
 
     def stop(self):
-        sock = env.ctx.socket(zmq.REQ)
+        sock = self.ctx.socket(zmq.REQ)
         sock.connect(self.addr)
         sock.send_pyobj(StopTrackerMessage())
         confirm_msg = sock.recv_pyobj()
@@ -74,7 +74,7 @@ class TrackerServer(object):
 
     def run(self):
         locs = self.locs
-        sock = env.ctx.socket(zmq.REP)
+        sock = self.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("TrackerServer started at %s", self.addr)
@@ -105,10 +105,14 @@ class TrackerServer(object):
 class TrackerClient(object):
     def __init__(self, addr):
         self.addr = addr
+        self.ctx = None
 
     def call(self, msg):
+        if self.ctx is None:
+            self.ctx = zmq.Context()
+
         try:
-            sock = env.ctx.socket(zmq.REQ)
+            sock = self.ctx.socket(zmq.REQ)
             sock.connect(self.addr)
             sock.send_pyobj(msg)
             return sock.recv_pyobj()

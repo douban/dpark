@@ -63,7 +63,6 @@ class DparkEnv:
             util.mkdir_p(d)
 
         self.environ.update(environ)
-        self.ctx = zmq.Context()
 
         from dpark.tracker import TrackerServer, TrackerClient
         if isMaster:
