@@ -12,6 +12,7 @@ import random
 import operator
 import shutil
 import logging
+from math import ceil
 import binascii
 import tempfile
 import contextlib
@@ -22,7 +23,25 @@ from dpark.accumulator import *
 from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
 
+# to see task fail reason, have to set logging level
+# logging.getLogger('dpark').setLevel(logging.INFO)
 logging.getLogger('dpark').setLevel(logging.ERROR)
+
+dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
+# to test on mesos,
+# export TEST_DPARK_MASTER=mesos
+# export TMPDIR=/path/on/moosefs
+print("test with dpark_master=%s, tempdir=%s" % (dpark_master, tempfile.gettempdir()))
+
+
+@contextlib.contextmanager
+def temppath(name):
+    path = os.path.join(tempfile.gettempdir(), name)
+    try:
+        yield path
+    finally:
+        if os.path.exists(path):
+            shutil.rmtree(path)
 
 
 @contextlib.contextmanager
@@ -59,15 +78,18 @@ def gen_big_text_file(block_size, file_size, ext='txt'):
                 out.flush()
 
         out.cnt = cnt
+        out.file.close()
         yield out
 
 
 class TestRDD(unittest.TestCase):
+
     def setUp(self):
-        self.sc = DparkContext("local")
+        self.sc = DparkContext(dpark_master)
 
     def tearDown(self):
         self.sc.stop()
+        DparkContext._instances.clear()
 
     def test_parallel_collection(self):
         slices = ParallelCollection.slice(range(5), 3)
@@ -102,8 +124,8 @@ class TestRDD(unittest.TestCase):
 
     def test_ignore_bad_record(self):
         d = list(range(100))
-        self.sc.options.err = 0.02
         nums = self.sc.makeRDD(d, 2)
+        self.sc.options.err = 0.02
         self.assertEqual(nums.filter(lambda x:1.0/x).count(), 99)
         self.assertEqual(nums.map(lambda x:1//x).count(), 99)
         self.assertEqual(nums.flatMap(lambda x:[1//x]).count(), 99)
@@ -111,6 +133,7 @@ class TestRDD(unittest.TestCase):
 
     def test_pair_operation(self):
         d = list(zip([1,2,3,3], list(range(4,8))))
+
         nums = self.sc.makeRDD(d, 2)
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
@@ -171,6 +194,7 @@ class TestRDD(unittest.TestCase):
                 [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
                 (4,([],[3],[1])), (5,([],[],[2]))])
 
+    def test_top_by_key(self):
         # group with top n per group
         ks = [1, 2, 2, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 5, 6, 6, 6, 6, 6, 6]
         ds = list(zip(ks, list(range(5, 26))))
@@ -180,8 +204,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums4.topByKey(top_n=3, reverse=True).lookup(4),
                          [14, 13, 12])
 
-        # test stable order
-
+    def test_stable_order(self):
         l = [(3, (1, 0)), (3, (2, 1)), (2, (2, 2)), (3, (3, 3)), (2, (2, 4)),
              (1, (1, 5)), (3, (3, 6)), (1, (2, 7)), (1, (3, 8)), (3, (2, 9)),
              (3, (1, 10)), (2, (2, 11)), (1, (3, 12)), (2, (2, 13)), (3, (1, 14)),
@@ -194,8 +217,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums5.topByKey(top_n=3, reverse=True, order_func=lambda x: x[0]).lookup(1), val_rev)
         self.assertEqual(nums5.topByKey(top_n=2, order_func=lambda x: x[0]).lookup(3), val)
 
-
-        # update
+    def test_update(self):
         rdd4 = self.sc.makeRDD([('foo', 1), ('wtf', 233)])
         rdd5 = self.sc.makeRDD([('foo', 2), ('bar', 3), ('wtf', None)])
         rdd6 = self.sc.makeRDD([('dup', 1), ('dup', 2), ('duq', 3), ('duq', 4),
@@ -291,42 +313,44 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(rdd.sort().collect(), [])
 
     def test_text_file(self):
-        path = 'tests/test_rdd.py'
-        f = self.sc.textFile(path, splitSize=1000).mergeSplit(numSplits=1)
-        with open(path) as f_:
+        srcpath = 'tests/test_rdd.py'
+        f = self.sc.textFile(srcpath, splitSize=1000).mergeSplit(numSplits=1)
+        with open(srcpath) as f_:
             n = len(f_.read().split())
 
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
         self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['class'], 1)
         prefix = 'prefix:'
-        self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile('/tmp/tout'),
-            ['/tmp/tout/0000'])
-        self.assertEqual(f.map(lambda x:('test', prefix+x)).saveAsTextFileByKey('/tmp/tout'),
-            ['/tmp/tout/test/0000'])
-        d = self.sc.textFile('/tmp/tout')
-        with open(path) as f:
-            n = len(f.readlines())
+        with temppath('toup') as path:
+            self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile(path),
+                [os.path.join(path, '0000')])
+            key = 'test'
+            self.assertEqual(f.map(lambda x:('test', prefix+x)).saveAsTextFileByKey(path),
+                [os.path.join(path, key, '0000')])
+            d = self.sc.textFile(path)
+            with open(srcpath) as f:
+                n = len(f.readlines())
 
-        self.assertEqual(d.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
-            ).saveAsCSVFile('/tmp/tout'),
-            ['/tmp/tout/0000.csv'])
-        shutil.rmtree('/tmp/tout')
+            self.assertEqual(d.count(), n)
+            self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(operator.add
+                ).saveAsCSVFile(path),
+                [os.path.join(path, '0000.csv')])
 
     def test_compressed_file(self):
         # compress
         d = self.sc.makeRDD(list(range(100000)), 1)
-        self.assertEqual(d.map(str).saveAsTextFile('/tmp/tout', compress=True),
-            ['/tmp/tout/0000.gz'])
-        rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
-        self.assertEqual(rd.count(), 100000)
+        with temppath('tout') as path:
+            self.assertEqual(d.map(str).saveAsTextFile(path, compress=True),
+                [os.path.join(path, '0000.gz')])
+            rd = self.sc.textFile(path, splitSize=10<<10)
+            self.assertEqual(rd.count(), 100000)
 
-        self.assertEqual(d.map(lambda i:('x', str(i))).saveAsTextFileByKey('/tmp/tout', compress=True),
-            ['/tmp/tout/x/0000.gz'])
-        rd = self.sc.textFile('/tmp/tout', splitSize=10<<10)
-        self.assertEqual(rd.count(), 100000)
-        shutil.rmtree('/tmp/tout')
+        with temppath('tout') as path:
+            self.assertEqual(d.map(lambda i:('x', str(i))).saveAsTextFileByKey(path, compress=True),
+                [os.path.join(path, 'x/0000.gz')])
+            rd = self.sc.textFile(path, splitSize=10<<10)
+            self.assertEqual(rd.count(), 100000)
 
     def test_large_txt_file(self):
         with gen_big_text_file(64 << 10, 5 << 20, ext='txt') as f:
@@ -336,7 +360,6 @@ class TestRDD(unittest.TestCase):
         with gen_big_text_file(1 << 20, 5 << 20, ext='txt') as f:
             rd = self.sc.textFile(f.name, splitSize=512 * 1024)
             self.assertEqual(rd.count(), f.cnt)
-
 
     def test_large_gzip_file(self):
         with gen_big_text_file(64 << 10, 5 << 20, ext='gz') as f:
@@ -358,27 +381,26 @@ class TestRDD(unittest.TestCase):
 
     def test_binary_file(self):
         d = self.sc.makeRDD(list(range(100000)), 1)
-        self.assertEqual(d.saveAsBinaryFile('/tmp/tout', fmt="I"),
-            ['/tmp/tout/0000.bin'])
-        rd = self.sc.binaryFile('/tmp/tout', fmt="I", splitSize=10<<10)
-        self.assertEqual(rd.count(), 100000)
-        shutil.rmtree('/tmp/tout')
+        with temppath("bout") as path:
+            self.assertEqual(d.saveAsBinaryFile(path, fmt="I"),
+                [os.path.join(path,'0000.bin')])
+            rd = self.sc.binaryFile(path, fmt="I", splitSize=10<<10)
+            self.assertEqual(rd.count(), 100000)
 
     def test_table_file(self):
         N = 100000
         d = self.sc.makeRDD(list(zip(list(range(N)), list(range(N)))), 1)
-        self.assertEqual(d.saveAsTableFile('/tmp/tout'), ['/tmp/tout/0000.tab',])
-        rd = self.sc.tableFile('/tmp/tout', splitSize=64<<10)
-        self.assertEqual(rd.count(), N)
-        self.assertEqual(rd.map(lambda x:x[0]).reduce(lambda x,y:x+y), sum(range(N)))
+        with temppath("tout") as path:
+            self.assertEqual(d.saveAsTableFile(path), [os.path.join(path,'0000.tab')])
+            rd = self.sc.tableFile(path, splitSize=64<<10)
+            self.assertEqual(rd.count(), N)
+            self.assertEqual(rd.map(lambda x:x[0]).reduce(lambda x,y:x+y), sum(range(N)))
 
-        d.asTable(['f1', 'f2']).save('/tmp/tout')
-        rd = self.sc.table('/tmp/tout')
-        self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(range(N)))
-        shutil.rmtree('/tmp/tout')
+            d.asTable(['f1', 'f2']).save(path)
+            rd = self.sc.table(path)
+            self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(range(N)))
 
     def test_batch(self):
-        from math import ceil
         d = list(range(1234))
         rdd = self.sc.makeRDD(d, 10).batch(100)
         self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
@@ -406,38 +428,36 @@ class TestRDD(unittest.TestCase):
         d = list(zip(list(map(lambda x: str(x).encode('utf-8'), l)), l))
         num_splits = 10
         rdd = self.sc.makeRDD(d, num_splits)
-        root = '/tmp/beansdb'
+        with temppath('beansdb') as root:
 
-        def newpath(c):
-            return  os.path.join(root, str(c))
+            def newpath(c):
+                return  os.path.join(root, str(c))
 
-        def check_rdd(_rdd, files, num_w, num_r):
-            self.assertEqual(files,
-                ['%s/%03d.data' % (path, i) for i in range(num_w)])
-            self.assertEqual(len(_rdd), num_r)
-            self.assertEqual(_rdd.count(), N)
-            self.assertEqual(sorted(_rdd.map(lambda k_v:(k_v[0],k_v[1][0])).collect()), sorted(d))
-            s = _rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
-            self.assertEqual(s, sum(l))
+            def check_rdd(_rdd, files, num_w, num_r):
+                self.assertEqual(files,
+                    ['%s/%03d.data' % (path, i) for i in range(num_w)])
+                self.assertEqual(len(_rdd), num_r)
+                self.assertEqual(_rdd.count(), N)
+                self.assertEqual(sorted(_rdd.map(lambda k_v:(k_v[0],k_v[1][0])).collect()), sorted(d))
+                s = _rdd.map(lambda x:x[1][0]).reduce(lambda x,y:x+y)
+                self.assertEqual(s, sum(l))
 
-        path = newpath(0)
-        files = rdd.saveAsBeansdb(path)
-        rdd = self.sc.beansdb(path, depth=0, filter=lambda x: x!="")
-        check_rdd(rdd, files, num_splits, num_splits)
+            path = newpath(0)
+            files = rdd.saveAsBeansdb(path)
+            rdd = self.sc.beansdb(path, depth=0, filter=lambda x: x!="")
+            check_rdd(rdd, files, num_splits, num_splits)
 
-        path = newpath(1)
-        files = rdd.saveAsBeansdb(path, valueWithMeta=True)
-        rdd = self.sc.beansdb(path, depth=0, fullscan=True, only_latest=True)
-        num_splits_reduce = int(ceil(num_splits/4))
-        check_rdd(rdd, files, num_splits, num_splits_reduce)
+            path = newpath(1)
+            files = rdd.saveAsBeansdb(path, valueWithMeta=True)
+            rdd = self.sc.beansdb(path, depth=0, fullscan=True, only_latest=True)
+            num_splits_reduce = int(ceil(num_splits/4))
+            check_rdd(rdd, files, num_splits, num_splits_reduce)
 
-        path = newpath(num_splits_reduce)
-        files = rdd.map(lambda k_v1:(k_v1[0],k_v1[1][0])).saveAsBeansdb(path)
-        rdd = self.sc.beansdb(path, raw=True, depth=0, fullscan=True)
-        rdd = rdd.mapValue(lambda v:(restore_value(*v[0]), v[1], v[2]))
-        check_rdd(rdd, files, num_splits_reduce, num_splits_reduce)
-
-        shutil.rmtree(root)
+            path = newpath(num_splits_reduce)
+            files = rdd.map(lambda k_v1:(k_v1[0],k_v1[1][0])).saveAsBeansdb(path)
+            rdd = self.sc.beansdb(path, raw=True, depth=0, fullscan=True)
+            rdd = rdd.mapValue(lambda v:(restore_value(*v[0]), v[1], v[2]))
+            check_rdd(rdd, files, num_splits_reduce, num_splits_reduce)
 
     def test_beansdb_invalid_key(self):
         func = is_valid_key
@@ -466,8 +486,7 @@ class TestRDD(unittest.TestCase):
     def test_tabular(self):
         d = list(range(10000))
         d = list(zip(d, list(map(str, d)), list(map(float, d))))
-        path = '/tmp/tabular-%s' % os.getpid()
-        try:
+        with temppath('tabular-%s' % os.getpid()) as path:
             self.sc.makeRDD(d).saveAsTabular(path, 'f_int, f_str, f_float', indices=['f_str', 'f_float'])
             r = self.sc.tabular(path, fields=['f_float', 'f_str']).collect()
             for f, s in r:
@@ -484,11 +503,6 @@ class TestRDD(unittest.TestCase):
                 self.assertTrue(hash(f) % 2)
 
             self.assertEqual(sorted(x.f_int for x in r), sorted(x[0] for x in d if hash(x[2]) %2))
-        finally:
-            try:
-                shutil.rmtree(path)
-            except OSError:
-                pass
 
     def test_iter(self):
         d = list(range(1000))
@@ -552,10 +566,6 @@ class TestRDD(unittest.TestCase):
         expected = set([(2, (12, 44)), (1, (11, 33))])
         self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
         self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
-
-#class TestRDDInProcess(TestRDD):
-#    def setUp(self):
-#        self.sc = DparkContext("process")
 
 
 if __name__ == "__main__":
