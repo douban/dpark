@@ -348,4 +348,4 @@ class SimpleJob(Job):
         self.failed = True
         self.causeOfFailure = message
         self.sched.jobFinished(self)
-        self.sched.shutdown()
+        self.sched.abort()

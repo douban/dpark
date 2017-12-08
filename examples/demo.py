@@ -8,7 +8,8 @@ from six.moves import map
 from six.moves import range
 from six.moves import zip
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-import dpark
+from dpark import DparkContext
+dpark = DparkContext()
 
 # range
 nums = dpark.parallelize(list(range(100)), 4)

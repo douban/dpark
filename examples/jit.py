@@ -5,9 +5,11 @@
 '''
 from __future__ import absolute_import
 from __future__ import print_function
-from dpark import _ctx as dpark, jit
+from dpark import DparkContext, jit
 import numpy
 from six.moves import range
+
+dpark = DparkContext()
 
 @jit('f8(f8[:])')
 def add1(x):

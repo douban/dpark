@@ -3,7 +3,8 @@ from __future__ import print_function
 import sys
 sys.path.append('../')
 import logging
-import dpark
+from dpark import DparkContext
+dpark = DparkContext()
 
 name = 'rating.txt'
 

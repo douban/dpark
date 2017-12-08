@@ -80,6 +80,11 @@ class OtherFailure(TaskEndReason):
         return '<OtherFailure %s>' % self.message
 
 
+
+class SchedulerShutdown(SystemExit):
+    code = 1
+
+
 class Stage:
 
     def __init__(self, rdd, shuffleDep, parents):
@@ -207,6 +212,9 @@ class DAGScheduler(Scheduler):
                 reason,
                 result,
                 accumUpdates))
+
+    def abort(self):
+        self.completionEvents.put(None)
 
     def getCacheLocs(self, rdd):
         return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd))])
@@ -369,7 +377,7 @@ class DAGScheduler(Scheduler):
             except six.moves.queue.Empty:
                 self.check()
                 if self._shutdown:
-                    sys.exit(1)
+                    raise SchedulerShutdown()
 
                 if (failed and
                         time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT):
@@ -381,6 +389,12 @@ class DAGScheduler(Scheduler):
                 else:
                     time.sleep(0.1)
                 continue
+
+            if evt is None: # aborted
+                for job in list(self.activeJobsQueue):
+                    self.jobFinished(job)
+
+                raise RuntimeError('Job aborted!')
 
             task, reason = evt.task, evt.reason
             stage = self.idToStage[task.stageId]

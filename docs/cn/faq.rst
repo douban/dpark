@@ -1,10 +1,10 @@
 =========
 Dpark FAQ
 =========
-                
+
 FAQ
 ===
-                           
+
 1. 为什么我指定了'-m mesos'参数，但dpark似乎还是在单机模式运行？
 ---------------------------------------------------------------------
 
@@ -49,10 +49,11 @@ FAQ
 
 
      # wc.py
-     import dpark
+     from dpark import DparkContext
      import random
 
-     rdd = dpark.parallelize([random.randint(0, 10) for _ in range(100)], 5)
+     ctx = DparkContext()
+     rdd = ctx.parallelize([random.randint(0, 10) for _ in range(100)], 5)
      print rdd.map(lambda x: (x, 1)).reduceByKey(lambda x, y: x + y).collect()
 
 8. 让人挠头的幽灵文件

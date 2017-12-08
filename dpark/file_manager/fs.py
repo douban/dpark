@@ -58,27 +58,30 @@ class MooseFS(PosixFS):
 
     def __init__(self):
         self._local = threading.local()
-        self._local.proxy_map = {}
-        self._local.pid = None
-        self.proxy_map = self._local.proxy_map
 
     def _find_proxy(self, path):
+        pid = getattr(self._local, 'pid', None)
+        if pid != os.getpid():
+            self._local.proxy_map = {}
+            self._local.pid = os.getpid()
+            self.proxy_map = self._local.proxy_map
+
         for mountpoint in self.proxy_map:
-            if mountpoint in path and self._local.pid == os.getpid():
+            if mountpoint in path:
                 return self.proxy_map[mountpoint]
-            elif self._local.pid != os.getpid():
-                self.proxy_map.clear()
-                self._local.pid = os.getpid()
-                break
+
         dir_path = path if os.path.isdir(path) else os.path.dirname(path)
         mount = ''
         while os.path.exists(os.path.join(dir_path, '.masterinfo')):
             mount = dir_path
             dir_path = os.path.dirname(dir_path)
-        if mount:
-            host, port, version = ProxyConn.get_masterinfo(os.path.join(mount, '.masterinfo'))
-            self.proxy_map[mount] = ProxyConn(host, port, version)
-            return self.proxy_map[mount]
+
+        if not mount:
+            raise OSError('Can not find mount for %s' % path)
+
+        host, port, version = ProxyConn.get_masterinfo(os.path.join(mount, '.masterinfo'))
+        self.proxy_map[mount] = ProxyConn(host, port, version)
+        return self.proxy_map[mount]
 
     def _get_indeed_root(self, root):
         root = os.path.realpath(root)

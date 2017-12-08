@@ -15,7 +15,7 @@ import time
 import atexit
 from itertools import chain, tee, islice, groupby
 from dpark.file_manager import walk
-from dpark import _ctx as dpark
+from dpark import DparkContext
 from dpark.dependency import Aggregator
 from math import log
 import six
@@ -23,6 +23,8 @@ from six.moves import map
 from six.moves import range
 from six.moves import zip
 from six.moves import input
+
+dpark = DparkContext()
 
 ########## Combinators ########## 
 def result(v):

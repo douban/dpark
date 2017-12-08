@@ -1,13 +1,15 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from __future__ import print_function
-from dpark import _ctx as dpark
+from dpark import DparkContext
 from dpark.mutable_dict import MutableDict
 from random import shuffle
 import six.moves.cPickle
 import numpy
 from six.moves import range
 from six.moves import zip
+
+dpark = DparkContext()
 
 with open('ab.mat') as f:
     ori = six.moves.cPickle.loads(f.read())

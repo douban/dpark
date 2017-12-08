@@ -6,8 +6,10 @@ from six.moves import map
 from six.moves import range
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import random
-import dpark
+from dpark import DparkContext
 from vector import Vector
+
+dpark = DparkContext()
 
 def parseVector(line):
     return Vector(list(map(float, line.strip().split(' '))))

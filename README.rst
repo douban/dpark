@@ -14,8 +14,9 @@ Example for word counting (``wc.py``):
 
 .. code:: python
 
-     import dpark
-     file = dpark.textFile("/tmp/words.txt")
+     from dpark import DparkContext
+     ctx = DparkContext()
+     file = ctx.textFile("/tmp/words.txt")
      words = file.flatMap(lambda x:x.split()).map(lambda x:(x,1))
      wc = words.reduceByKey(lambda x,y:x+y).collectAsMap()
      print wc

@@ -25,6 +25,9 @@ def singleton(cls):
     def getinstance(*a, **kw):
         key = (cls, tuple(a), tuple(sorted(kw.items())))
         if key not in instances:
+            if len(instances) >= 1:
+                logger.error('Too many DparkContext created!')
+
             instances[key] = cls(*a, **kw)
         return instances[key]
     return getinstance
@@ -32,6 +35,7 @@ def singleton(cls):
 @singleton
 class DparkContext(object):
     nextShuffleId = 0
+    options = None
     def __init__(self, master=None):
         self.master = master
         self.initialized = False
@@ -44,20 +48,23 @@ class DparkContext(object):
         if self.initialized:
             return
 
-        options = parse_options()
-        self.options = options
+        cls = self.__class__
+        options = cls.options
+        if options is None:
+            options = cls.options = parse_options()
+
         try:
             import dpark.web
             from dpark.web.ui import create_app
             app = create_app(self)
             self.web_port = dpark.web.start(app)
-            self.options.webui_url = 'http://%s:%s' % (
+            options.webui_url = 'http://%s:%s' % (
                 socket.gethostname(),
                 self.web_port
             )
             logger.info('start listening on Web UI with port: %d' % self.web_port)
         except ImportError as e:
-            self.options.webui_url = ''
+            options.webui_url = ''
             logger.info('no web server created as %s', e)
 
         master = self.master or options.master
