@@ -26,42 +26,43 @@ class DparkEnv:
 
     def __init__(self):
         self.started = False
-        roots = conf.DPARK_WORK_DIR
-        if isinstance(roots, str):
-            roots = roots.split(',')
-
-        if not roots:
-            logger.warning('Cannot get WORKDIR, use temp dir instead.')
-            roots = [tempfile.gettempdir()]
-
-        name = os.environ.get('DPARK_ID')
+        name = self.environ.get('DPARK_ID')
         if name is None:
             name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
-            os.environ['DPARK_ID'] = name
+            self.environ['DPARK_ID'] = name
 
-        self.workdir = [os.path.join(root, name) for root in roots]
-        self.environ['WORKDIR'] = self.workdir
+        self.workdir = self.environ.get('WORKDIR')
+        if self.workdir is None:
+            roots = conf.DPARK_WORK_DIR
+            if isinstance(roots, str):
+                roots = roots.split(',')
+
+            if not roots:
+                logger.warning('Cannot get WORKDIR, use temp dir instead.')
+                roots = [tempfile.gettempdir()]
+
+            self.workdir = [os.path.join(root, name) for root in roots]
+            self.environ['WORKDIR'] = self.workdir
+
+        if 'SERVER_URI' not in self.environ:
+            self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
+
+        compress = self.environ.get('COMPRESS')
+        if compress is None:
+            compress = self.environ['COMPRESS'] = util.COMPRESS
+
+        if self.environ['COMPRESS'] != util.COMPRESS:
+            raise Exception("no %s available" % self.environ['COMPRESS'])
 
     def start(self, isMaster, environ={}):
         if self.started:
             return
         logger.debug("start env in %s: %s %s", os.getpid(), isMaster, environ)
         self.isMaster = isMaster
-        if isMaster:
-            try:
-                for d in self.workdir:
-                    util.mkdir_p(d)
-            except OSError as e:
-                if environ.get('is_local', False):
-                    raise e
+        for d in self.workdir:
+            util.mkdir_p(d)
 
-            self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
-            self.environ['COMPRESS'] = util.COMPRESS
-        else:
-            self.environ.update(environ)
-            if self.environ['COMPRESS'] != util.COMPRESS:
-                raise Exception("no %s available" % self.environ['COMPRESS'])
-
+        self.environ.update(environ)
         self.ctx = zmq.Context()
 
         from dpark.tracker import TrackerServer, TrackerClient

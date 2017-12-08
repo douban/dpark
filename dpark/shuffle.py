@@ -33,8 +33,6 @@ logger = get_logger(__name__)
 
 
 class LocalFileShuffle:
-    serverUri = None
-
     @classmethod
     def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
         shuffleDir = env.get('WORKDIR')
@@ -62,7 +60,7 @@ class LocalFileShuffle:
 
     @classmethod
     def getServerUri(cls):
-        return cls.serverUri
+        return env.get('SERVER_URI')
 
 
 class ShuffleFetcher:

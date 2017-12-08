@@ -41,28 +41,27 @@ class GuideManager(object):
         self._started = False
         self.guides = {}
         self.host = socket.gethostname()
-        self.guide_addr = None
         self.guide_thread = None
         self.register_addr = {}
-        self.ctx = None
+        self.ctx = zmq.Context()
+        self.sock = self.ctx.socket(zmq.REP)
+        port = self.sock.bind_to_random_port('tcp://0.0.0.0')
+        self.guide_addr = 'tcp://%s:%d' % (self.host, port)
+        env.register(GUIDE_ADDR, self.guide_addr)
+
 
     def start(self):
         if self._started:
             return
 
         self._started=True
-        self.ctx = zmq.Context()
-        self.guide_addr, self.guide_thread = self.start_guide()
-        env.register(GUIDE_ADDR, self.guide_addr)
+        self.guide_thread = self.start_guide()
 
     def start_guide(self):
-        sock = self.ctx.socket(zmq.REP)
-        port = sock.bind_to_random_port('tcp://0.0.0.0')
-        guide_addr = 'tcp://%s:%d' % (self.host, port)
-
         def run():
-            logger.debug("guide start at %s", guide_addr)
+            logger.debug("guide start at %s", self.guide_addr)
 
+            sock = self.sock
             while True:
                 type, msg = sock.recv_pyobj()
                 if type == GUIDE_STOP:
@@ -102,7 +101,7 @@ class GuideManager(object):
                     sock.send_pyobj(None)
             sock.close()
 
-        return guide_addr, spawn(run)
+        return spawn(run)
 
     def shutdown(self):
         if not self._started:

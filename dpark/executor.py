@@ -105,8 +105,8 @@ def run_task(task_data):
         gc.enable()
 
 
-def init_env(args):
-    env.start(False, args)
+def init_env():
+    env.start(False)
 
 
 class LocalizedHTTP(six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler):
@@ -403,7 +403,6 @@ class MyExecutor(Executor):
                 out_logger, err_logger, logLevel, args
             ) = marshal.loads(decode_data(executorInfo.data))
 
-            self.init_args = args
             sys.path = python_path
             os.environ.update(osenv)
             setproctitle('[Executor]' + Script)
@@ -445,10 +444,9 @@ class MyExecutor(Executor):
             spawn(self.check_memory, driver)
             spawn(self.replier, driver)
 
-            env.environ.update(self.init_args)
+            env.environ.update(args)
             from dpark.broadcast import start_download_manager
             start_download_manager()
-            self.init_args.update(env.environ)
 
             logger.debug('executor started at %s', agent_info.hostname)
 
@@ -481,9 +479,9 @@ class MyExecutor(Executor):
         reply_status(driver, task_id, 'TASK_RUNNING')
         logger.debug('launch task %s', task.task_id.value)
 
-        def worker(name, q, task_id_value, task_data, init_args):
+        def worker(name, q, task_id_value, task_data):
             setproctitle(name)
-            init_env(init_args)
+            init_env()
             q.put((task_id_value, run_task(task_data)))
 
         try:
@@ -492,8 +490,7 @@ class MyExecutor(Executor):
                                            args=(name,
                                                  self.result_queue,
                                                  task.task_id.value,
-                                                 decode_data(task.data),
-                                                 self.init_args))
+                                                 decode_data(task.data),))
             proc.name = name
             proc.daemon = True
             proc.start()

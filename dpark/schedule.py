@@ -703,7 +703,7 @@ class MesosScheduler(DAGScheduler):
                     os.path.dirname(__file__),
                     'executor.py'))
         )
-        info.executor_id.value = 'default'
+        info.executor_id.value = env.get('DPARK_ID', 'default')
         info.command.environment.variables = variables = []
 
         v = Dict()
