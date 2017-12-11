@@ -59,12 +59,17 @@ class MooseFS(PosixFS):
     def __init__(self):
         self._local = threading.local()
         self._local.proxy_map = {}
+        self._local.pid = None
         self.proxy_map = self._local.proxy_map
 
     def _find_proxy(self, path):
         for mountpoint in self.proxy_map:
-            if mountpoint in path:
+            if mountpoint in path and self._local.pid == os.getpid():
                 return self.proxy_map[mountpoint]
+            elif self._local.pid != os.getpid():
+                self.proxy_map.clear()
+                self._local.pid = os.getpid()
+                break
         dir_path = path if os.path.isdir(path) else os.path.dirname(path)
         mount = ''
         while os.path.exists(os.path.join(dir_path, '.masterinfo')):
