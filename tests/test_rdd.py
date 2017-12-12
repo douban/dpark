@@ -22,6 +22,7 @@ from dpark.beansdb import is_valid_key, restore_value
 from dpark.accumulator import *
 from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
+from dpark.nested_groupby import GroupByNestedIter, list_values, list_value
 
 # to see task fail reason, have to set logging level
 # logging.getLogger('dpark').setLevel(logging.INFO)
@@ -134,17 +135,18 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.reduce(lambda x,y:x+100//y), 431)
 
     def test_pair_operation(self):
+
         d = list(zip([1,2,3,3], list(range(4,8))))
 
         nums = self.sc.makeRDD(d, 2)
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
-        self.assertEqual(nums.groupByKey().collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
+        self.assertEqual(nums.groupByKey().map(list_value).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
         d = list(zip(range(10), range(10))) + [(10, 10)] * 5
         nums_skew = self.sc.makeRDD(d, 10)
         self.assertEqual(
-            list(map(sorted, nums_skew.groupByKey(3, fixSkew=1).glom().collect())),
+            list(map(sorted, nums_skew.groupByKey(3, fixSkew=1).map(list_value).glom().collect())),
             [
                 [(0, [0]), (1, [1]), (2, [2]), (3, [3]), (4, [4])],
                 [(5, [5]), (6, [6]), (7, [7]), (8, [8]), (9, [9])],
@@ -156,6 +158,7 @@ class TestRDD(unittest.TestCase):
         nums2 = self.sc.makeRDD(list(zip([2,3,4], [1,2,3])), 2)
         self.assertEqual(nums.join(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
+
         self.assertEqual(sorted(nums.leftOuterJoin(nums2).collect()),
                 [(1, (4,None)), (2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
         self.assertEqual(sorted(nums.rightOuterJoin(nums2).collect()),
@@ -163,14 +166,13 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.innerJoin(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
-        self.assertEqual(
-            list(map(sorted, nums_skew.cogroup(nums, 3, fixSkew=0.5).glom().collect())),
-            [
-                [(0, ([0], [])), (1, ([1], [4])), (2, ([2], [5]))],
-                [(3, ([3], [6, 7])), (4, ([4], [])), (5, ([5], [])), (6, ([6], [])), (7, ([7], []))],
-                [(8, ([8], [])), (9, ([9], [])), (10, ([10, 10, 10, 10, 10], []))]
-            ]
-        )
+        res = nums_skew.cogroup(nums, 3, fixSkew=0.5).map(list_values).glom().collect()
+        res = list(map(sorted, res))
+        exp = [[(0, ([0], [])), (1, ([1], [4])), (2, ([2], [5]))],
+            [(3, ([3], [6, 7])), (4, ([4], [])), (5, ([5], [])), (6, ([6], [])), (7, ([7], []))],
+            [(8, ([8], [])), (9, ([9], [])), (10, ([10, 10, 10, 10, 10], []))]
+        ]
+        self.assertEqual(res, exp)
 
         # join - data contains duplicate key
         numsDup = self.sc.makeRDD(list(zip([2,2,4], [1,2,3])), 2)
@@ -182,19 +184,36 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
         self.assertEqual(nums.flatMapValue(lambda x:list(range(x))).count(), 22)
-        self.assertEqual(nums.groupByKey().lookup(3), [6,7])
+        self.assertEqual(nums.groupByKey().map(list_value).lookup(3), [6,7])
         self.assertEqual(nums.partitionByKey().lookup(2), 5)
         self.assertEqual(nums.partitionByKey().lookup(4), None)
         self.assertEqual(nums.lookup(2), 5)
         self.assertEqual(nums.lookup(4), None)
 
         # group with
-        self.assertEqual(sorted(nums.groupWith(nums2).collect()),
-                [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))])
-        nums3 = self.sc.makeRDD(list(zip([4,5,1], [1,2,3])), 1).groupByKey(2).flatMapValue(lambda x:x)
-        self.assertEqual(sorted(nums.groupWith([nums2, nums3]).collect()),
-                [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
-                (4,([],[3],[1])), (5,([],[],[2]))])
+        res = nums.groupWith(nums2).map(list_values).collect()
+        res = sorted(res)
+        exp = [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))]
+        self.assertEqual(res, exp)
+
+        nums3 = self.sc.makeRDD(list(zip([4,5,1], [1,2,3])), 1).groupByKey(2).map(list_value).flatMapValue(lambda x:x)
+        res = sorted(nums.groupWith([nums2, nums3]).map(list_values).collect())
+        exp = [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
+                (4,([],[3],[1])), (5,([],[],[2]))]
+
+        self.assertEqual(res, exp)
+
+        rdds = []
+
+        for j in range(3):
+            data = list([(i, i+j) for i in range(3) if i != j])
+            data.extend(data)
+            rdds.append(self.sc.makeRDD(data, 2))
+
+        exp = [(0, ([], [1, 1], [2, 2])), (1, ([1, 1], [], [3, 3])), (2, ([2, 2], [3, 3], []))]
+        res = rdds[0].groupWith([rdds[1], rdds[2]]).map(list_values).collect()
+        res = sorted(res, key=lambda x: x[0])
+        self.assertEqual(res, exp)
 
     def test_top_by_key(self):
         # group with top n per group
@@ -254,8 +273,6 @@ class TestRDD(unittest.TestCase):
         self.assertTrue(dct2.get('duq') in {3, 4})
         self.assertEqual(dct2.get('bar'), 10)
 
-
-
     def test_percentiles(self):
         d = list(random.gauss(0, 1) for _ in range(10000))
         rdd = self.sc.makeRDD(d, 10)
@@ -276,8 +293,6 @@ class TestRDD(unittest.TestCase):
             sorted(rdd.percentilesByKey(range(10, 100, 10), sampleRate=0.1).collect()),
             [(i, [pp + i for pp in p]) for i in range(10)]
         ))
-
-
 
     def test_accumulater(self):
         d = list(range(4))
@@ -322,7 +337,7 @@ class TestRDD(unittest.TestCase):
 
         fs = f.flatMap(lambda x:x.split()).cache()
         self.assertEqual(fs.count(), n)
-        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['class'], 1)
+        self.assertEqual(fs.map(lambda x:(x,1)).reduceByKey(lambda x,y: x+y).collectAsMap()['__name__'], 1)
         prefix = 'prefix:'
         with temppath('toup') as path:
             self.assertEqual(f.map(lambda x:prefix+x).saveAsTextFile(path),
@@ -569,6 +584,19 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
         self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
 
+
+class TestRDDSortShuffle(TestRDD):
+
+    def setUp(self):
+        self.sc = DparkContext(dpark_master)
+        self.sc.init()
+        self.sc.options.sort_shuffle = True
+        GroupByNestedIter.NO_CACHE = True
+
+    def tearDown(self):
+        self.sc.stop()
+        DparkContext._instances.clear()
+        GroupByNestedIter.NO_CACHE = False
 
 if __name__ == "__main__":
     unittest.main()
