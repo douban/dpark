@@ -641,3 +641,21 @@ class Broadcast(object):
             raise RuntimeError("fetch broadcast failed")
         self.value = value
         return value
+
+    def __len__(self):
+        return len(self.value)
+
+    def __iter__(self):
+        return self.value.__iter__()
+
+    def __getitem__(self, key):
+        return self.value.__getitem__(key)
+
+    def __contains__(self, item):
+        return self.value.__contains__(item)
+
+    def __missing__(self, key):
+        return self.value.__missing__(key)
+
+    def __reversed__(self):
+        return self.value.__reversed__()
