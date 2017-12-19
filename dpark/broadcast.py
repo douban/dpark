@@ -539,9 +539,12 @@ class BroadcastManager(object):
                                                 self.shared_uuid_map_dict[uuid])
         if res == DATA_GET_FAIL:
             raise RuntimeError('Data GET failed for uuid:%s' % uuid)
-        while uuid not in self.shared_uuid_fn_dict:
+        while True:
             with download_cond:
-                download_cond.wait()
+                if uuid not in self.shared_uuid_fn_dict:
+                    download_cond.wait()
+                else:
+                    break
         if uuid in self.shared_uuid_fn_dict:
             return self._get_blocks_by_filename(self.shared_uuid_fn_dict[uuid],
                                                 self.shared_uuid_map_dict[uuid])
