@@ -99,6 +99,7 @@ class DparkEnv:
         self.mapOutputTracker.stop()
         if self.trackerServer is not None:
             self.trackerServer.stop()
+            self.environ.pop('TRACKER_ADDR', None)
 
         from dpark.broadcast import stop_manager
         stop_manager()
