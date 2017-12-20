@@ -427,7 +427,7 @@ def test():
     import logging
     logging.basicConfig(level=logging.DEBUG)
     from dpark.env import env
-    env.start(True)
+    env.start()
 
     l = []
     for i in range(10):

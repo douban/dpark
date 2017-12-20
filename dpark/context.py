@@ -272,7 +272,7 @@ class DparkContext(object):
 
         self.init()
 
-        env.start(True, environ={'is_local': self.isLocal})
+        env.start()
         self.scheduler.start()
         self.started = True
         atexit.register(self.stop)

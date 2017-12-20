@@ -105,10 +105,6 @@ def run_task(task_data):
         gc.enable()
 
 
-def init_env():
-    env.start(False)
-
-
 class LocalizedHTTP(six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
 
@@ -481,7 +477,7 @@ class MyExecutor(Executor):
 
         def worker(name, q, task_id_value, task_data):
             setproctitle(name)
-            init_env()
+            env.start()
             q.put((task_id_value, run_task(task_data)))
 
         try:

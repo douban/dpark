@@ -47,7 +47,6 @@ class GuideManager(object):
         self.sock = self.ctx.socket(zmq.REP)
         port = self.sock.bind_to_random_port('tcp://0.0.0.0')
         self.guide_addr = 'tcp://%s:%d' % (self.host, port)
-        env.register(GUIDE_ADDR, self.guide_addr)
 
 
     def start(self):
@@ -56,6 +55,7 @@ class GuideManager(object):
 
         self._started=True
         self.guide_thread = self.start_guide()
+        env.register(GUIDE_ADDR, self.guide_addr)
 
     def start_guide(self):
         def run():
@@ -601,6 +601,8 @@ _manager = BroadcastManager()
 _download_manager = DownloadManager()
 _guide_manager = GuideManager()
 
+def start_guide_manager():
+    _guide_manager.start()
 
 def start_download_manager():
     _download_manager.start()

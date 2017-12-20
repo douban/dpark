@@ -488,9 +488,7 @@ class LocalScheduler(DAGScheduler):
 
 def run_task_in_process(task, tid, environ, sig_dict=None):
     from dpark.env import env
-    workdir = env.get('WORKDIR')
-    environ['SERVER_URI'] = 'file://%s' % workdir[0]
-    env.start(False, environ)
+    env.start()
     import signal
     if sig_dict:
         if 'SIGTERM' in sig_dict:

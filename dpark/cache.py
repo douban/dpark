@@ -175,7 +175,7 @@ class CacheTracker(BaseCacheTracker):
         cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
         self.cache = DiskCache(self, cachedir)
         self.client = env.trackerClient
-        if env.isMaster:
+        if env.trackerServer is not None:
             self.locs = env.trackerServer.locs
         self.rdds = {}
 

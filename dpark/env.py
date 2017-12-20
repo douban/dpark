@@ -15,6 +15,7 @@ logger = util.get_logger(__name__)
 
 class DparkEnv:
     environ = {}
+    trackerServer = None
 
     @classmethod
     def register(cls, name, value):
@@ -26,12 +27,12 @@ class DparkEnv:
 
     def __init__(self):
         self.started = False
-        name = self.environ.get('DPARK_ID')
+        name = self.get('DPARK_ID')
         if name is None:
             name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
-            self.environ['DPARK_ID'] = name
+            self.register('DPARK_ID', name)
 
-        self.workdir = self.environ.get('WORKDIR')
+        self.workdir = self.get('WORKDIR')
         if self.workdir is None:
             roots = conf.DPARK_WORK_DIR
             if isinstance(roots, str):
@@ -42,37 +43,36 @@ class DparkEnv:
                 roots = [tempfile.gettempdir()]
 
             self.workdir = [os.path.join(root, name) for root in roots]
-            self.environ['WORKDIR'] = self.workdir
+            self.register('WORKDIR', self.workdir)
 
         if 'SERVER_URI' not in self.environ:
-            self.environ['SERVER_URI'] = 'file://' + self.workdir[0]
+            self.register('SERVER_URI', 'file://' + self.workdir[0])
 
-        compress = self.environ.get('COMPRESS')
+        compress = self.get('COMPRESS')
         if compress is None:
-            compress = self.environ['COMPRESS'] = util.COMPRESS
+            self.register('COMPRESS', util.COMPRESS)
+            compress = self.get('COMPRESS')
 
-        if self.environ['COMPRESS'] != util.COMPRESS:
-            raise Exception("no %s available" % self.environ['COMPRESS'])
 
-    def start(self, isMaster, environ={}):
+        if compress != util.COMPRESS:
+            raise Exception("no %s available" % compress)
+
+    def start(self):
         if self.started:
             return
-        logger.debug("start env in %s: %s %s", os.getpid(), isMaster, environ)
-        self.isMaster = isMaster
+        self.started = True
+        logger.debug("start env in %s", os.getpid())
         for d in self.workdir:
             util.mkdir_p(d)
 
-        self.environ.update(environ)
-
-        from dpark.tracker import TrackerServer, TrackerClient
-        if isMaster:
-            self.trackerServer = TrackerServer()
+        if 'TRACKER_ADDR' not in self.environ:
+            from dpark.tracker import TrackerServer
+            trackerServer = self.trackerServer = TrackerServer()
             self.trackerServer.start()
-            addr = self.trackerServer.addr
-            env.register('TrackerAddr', addr)
-        else:
-            addr = env.get('TrackerAddr')
+            self.register('TRACKER_ADDR', trackerServer.addr)
 
+        from dpark.tracker import TrackerClient
+        addr = self.get('TRACKER_ADDR')
         self.trackerClient = TrackerClient(addr)
 
         from dpark.cache import CacheTracker
@@ -83,18 +83,23 @@ class DparkEnv:
         from dpark.shuffle import ParallelShuffleFetcher
         self.shuffleFetcher = ParallelShuffleFetcher(2)
 
-        self.started = True
+        from dpark.broadcast import start_guide_manager, GUIDE_ADDR
+        if GUIDE_ADDR not in self.environ:
+            start_guide_manager()
+
         logger.debug("env started")
 
     def stop(self):
         if not getattr(self, 'started', False):
             return
+        self.started = False
         logger.debug("stop env in %s", os.getpid())
         self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
-        if self.isMaster:
+        if self.trackerServer is not None:
             self.trackerServer.stop()
+
         from dpark.broadcast import stop_manager
         stop_manager()
 
@@ -103,6 +108,5 @@ class DparkEnv:
             shutil.rmtree(d, True)
         logger.debug("done.")
 
-        self.started = False
 
 env = DparkEnv()
