@@ -1072,6 +1072,7 @@ class MesosScheduler(DAGScheduler):
         self.started = False
         self.isRegistered = False
         self.driver.stop(False)
+        self.driver.join()
         self.driver = None
 
     def defaultParallelism(self):
