@@ -42,12 +42,9 @@ class GuideManager(object):
         self.guides = {}
         self.host = socket.gethostname()
         self.guide_thread = None
+        self.guide_addr = None
         self.register_addr = {}
         self.ctx = zmq.Context()
-        self.sock = self.ctx.socket(zmq.REP)
-        port = self.sock.bind_to_random_port('tcp://0.0.0.0')
-        self.guide_addr = 'tcp://%s:%d' % (self.host, port)
-
 
     def start(self):
         if self._started:
@@ -58,10 +55,12 @@ class GuideManager(object):
         env.register(GUIDE_ADDR, self.guide_addr)
 
     def start_guide(self):
+        sock = self.ctx.socket(zmq.REP)
+        port = sock.bind_to_random_port('tcp://0.0.0.0')
+        self.guide_addr = 'tcp://%s:%d' % (self.host, port)
+
         def run():
             logger.debug("guide start at %s", self.guide_addr)
-
-            sock = self.sock
             while True:
                 type, msg = sock.recv_pyobj()
                 if type == GUIDE_STOP:
@@ -99,7 +98,6 @@ class GuideManager(object):
                 else:
                     logger.error('Unknown guide message: %s %s', type, msg)
                     sock.send_pyobj(None)
-            sock.close()
 
         return spawn(run)
 
@@ -117,6 +115,8 @@ class GuideManager(object):
             sock.recv_pyobj()
             sock.close()
             self.guide_thread.join()
+            self.guide_addr = None
+
 
 download_cond = None
 shared_uuid_fn_dict = None
@@ -186,6 +186,9 @@ class DownloadManager(object):
         global shared_uuid_fn_dict, shared_uuid_map_dict, shared_master_blocks
         self.ctx = zmq.Context()
         self.host = socket.gethostname()
+        if GUIDE_ADDR not in env.environ:
+            start_guide_manager()
+
         self.guide_addr = env.get(GUIDE_ADDR)
         self.random_inst = random.SystemRandom()
         self.server_addr, self.server_thread = self.start_server()
@@ -466,6 +469,7 @@ class BroadcastManager(object):
 
         self._started = True
         global shared_uuid_fn_dict, shared_uuid_map_dict
+        start_download_manager()
         self.guide_addr = env.get(GUIDE_ADDR)
         self.download_addr = env.get(DOWNLOAD_ADDR)
         self.cache = Cache()
@@ -474,8 +478,6 @@ class BroadcastManager(object):
         self.shared_uuid_map_dict = shared_uuid_map_dict
 
     def register(self, uuid, value):
-        _guide_manager.start()
-        _download_manager.start()
         self.start()
 
         if uuid in self.shared_uuid_fn_dict:
@@ -507,7 +509,7 @@ class BroadcastManager(object):
         sock.close()
 
     def fetch(self, uuid, compressed_size):
-        _download_manager.start()
+        start_download_manager()
         self.start()
         value = self.cache.get(uuid)
         if value is not None:
@@ -614,6 +616,8 @@ def stop_manager():
     _manager.shutdown()
     _download_manager.shutdown()
     _guide_manager.shutdown()
+    env.environ.pop(GUIDE_ADDR, None)
+    env.environ.pop(DOWNLOAD_ADDR, None)
 
 
 class Broadcast(object):
