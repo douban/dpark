@@ -1035,6 +1035,7 @@ class MesosScheduler(DAGScheduler):
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, reason or data)
 
+    @safe
     def jobFinished(self, job):
         logger.debug('job %s finished', job.id)
         if job.id in self.activeJobs:
