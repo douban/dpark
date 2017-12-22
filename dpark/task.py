@@ -153,10 +153,9 @@ class ShuffleMapTask(DAGTask):
                 except IOError as e:
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
             else:
-                raise
+                raise e
 
         return LocalFileShuffle.getServerUri()
-
 
     def run_with_sorted(self, attempId):
         serializer = AutoBatchedSerializer()
@@ -172,10 +171,9 @@ class ShuffleMapTask(DAGTask):
                 except IOError as e:
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
             else:
-                raise
+                raise e
 
         return LocalFileShuffle.getServerUri()
-
 
     def run(self, attempId):
         if not self.sort_shuffle:
