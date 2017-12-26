@@ -67,7 +67,38 @@ class MyPickler(Pickler):
     def save(self, obj):
         self.lazywrites.append(LazySave(obj))
 
-    realsave = Pickler.save
+    def realsave(self, obj):
+        def _name(obj):
+            try:
+                name = getattr(obj, '__name__', None)
+                if name is not None:
+                    return ': %s' % name
+            except Exception:
+                pass
+
+            return ''
+
+        def _loc(obj):
+            try:
+                fn = getattr(obj, '__file__', None)
+                if fn is not None:
+                    return ' @%s' % (fn,)
+
+                obj = getattr(obj, 'im_func', obj)
+                code = getattr(obj, '__code__', None)
+                if code is not None:
+                    return ' @%s:%s' % (code.co_filename, code.co_firstlineno)
+            except Exception:
+                pass
+
+            return ''
+
+        try:
+            Pickler.save(self, obj)
+        except TypeError:
+            logger.error('Failed to serialize %s%s%s',
+                type(obj), _name(obj), _loc(obj))
+            raise
 
     def lazymemoize( self, obj ):
         """Store an object in the memo."""
