@@ -444,6 +444,7 @@ def add_default_options():
                      help="volumes to mount into Docker")
 
     parser.add_option("--sort_shuffle", action="store_true")
+    parser.add_option("--iter_values", action="store_true")
 
     parser.add_option_group(group)
 

@@ -61,12 +61,13 @@ class RangeDependency(NarrowDependency):
 class ShuffleDependency(Dependency):
     isShuffle = True
 
-    def __init__(self, shuffleId, rdd, aggregator, partitioner, sort_shuffle):
+    def __init__(self, shuffleId, rdd, aggregator, partitioner, sort_shuffle, iter_values):
         Dependency.__init__(self, rdd)
         self.shuffleId = shuffleId
         self.aggregator = aggregator
         self.partitioner = partitioner
         self.sort_shuffle = sort_shuffle
+        self.iter_values = iter_values
 
 
 class AggregatorBase(object):
@@ -96,6 +97,20 @@ class AggregatorBase(object):
                 curr_value = merge(curr_value, v)
         if i is not None:
             yield curr_key, curr_value
+
+
+class GroupByAggregator(AggregatorBase):
+
+    def createCombiner(self, x):
+        return [x]
+
+    def mergeValue(self, c, x):
+        c.append(x)
+        return c
+
+    def mergeCombiners(self, x, y):
+        x.extend(y)
+        return x
 
 
 class Aggregator(object):

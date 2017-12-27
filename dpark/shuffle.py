@@ -30,6 +30,7 @@ from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.heaponkey import HeapOnKey
 from dpark.dependency import AggregatorBase
+from dpark.nested_groupby import GroupByNestedIter, cogroup_no_dup
 
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
@@ -342,7 +343,7 @@ class SortMergeAggregator(AggregatorBase):
         return v
 
 
-class SortedMerger(object):
+class SortedMerger(Merger):
     def __init__(self, rdd):
         self.aggregator = SortMergeAggregator(rdd.aggregator.mergeCombiners)
         self.combined = iter([])
@@ -350,6 +351,20 @@ class SortedMerger(object):
     def merge(self, iters):
         heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
         self.combined = self.aggregator.aggregate_sorted(heap.merge(iters))
+
+    def __iter__(self):
+        return self.combined
+
+
+class SortedGroupMerger(Merger):
+
+    def __init__(self, rdd_name):
+        self.rdd_name = rdd_name
+        self.combined = None
+
+    def merge(self, iters):
+        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
+        self.combined = GroupByNestedIter(heap.merge(iters), self.rdd_name)
 
     def __iter__(self):
         return self.combined
@@ -363,7 +378,7 @@ class CoGroupMerger(object):
 
     def get_seq(self, k):
         return self.combined.setdefault(
-            k, tuple([[] for i in range(self.size)]))
+            k, tuple([[] for _ in range(self.size)]))
 
     def append(self, i, items):
         for k, v in items:
@@ -396,6 +411,19 @@ class CoGroupSortedMerger(SortedMerger):
     def __init__(self, size):
         self.aggregator = CoGroupSortMergeAggregator(size)
         self.combined = iter([])
+
+
+class StreamCoGroupSortedMerger(SortedMerger):
+
+    def __init__(self):
+        self.combined = None
+
+    def merge(self, iters):
+        # each item like <key, values>
+        self.combined = cogroup_no_dup(list(map(iter, iters)))
+
+    def __iter__(self):
+        return self.combined
 
 
 def heap_merged(items_lists, combiner, max_memory):
