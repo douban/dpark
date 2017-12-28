@@ -274,6 +274,15 @@ class DparkContext(object):
         return Broadcast(v)
 
     def start(self):
+        def shutdown():
+            try:
+                import dpark.web
+                dpark.web.stop(self.web_port)
+            except ImportError:
+                pass
+            self.scheduler.shutdown()
+            self.stop()
+
         if self.started:
             return
 
@@ -282,11 +291,11 @@ class DparkContext(object):
         env.start()
         self.scheduler.start()
         self.started = True
-        atexit.register(self.stop)
+        atexit.register(shutdown)
 
         def handler(signm, frame):
             logger.error("got signal %d, exit now", signm)
-            self.scheduler.shutdown()
+            shutdown()
         try:
             signal.signal(signal.SIGTERM, handler)
             signal.signal(signal.SIGHUP, handler)
@@ -325,11 +334,6 @@ class DparkContext(object):
             return
 
         env.stop()
-        try:
-            import dpark.web
-            dpark.web.stop(self.web_port)
-        except ImportError:
-            pass
         self.scheduler.stop()
         self.started = False
 

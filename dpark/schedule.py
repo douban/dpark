@@ -182,9 +182,6 @@ class DAGScheduler(Scheduler):
         self.idToRunJob = {}
         self._shutdown = False
 
-    def check(self):
-        pass
-
     def clear(self):
         self.idToStage.clear()
         self.shuffleToMapStage.clear()
@@ -193,6 +190,7 @@ class DAGScheduler(Scheduler):
 
     def shutdown(self):
         self._shutdown = True
+        self.stop()
 
     @property
     def cacheTracker(self):
@@ -375,7 +373,6 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except six.moves.queue.Empty:
-                self.check()
                 if self._shutdown:
                     raise SchedulerShutdown()
 
@@ -629,6 +626,7 @@ class MesosScheduler(DAGScheduler):
         self.init_job()
 
     def start(self):
+        assert not self._shutdown
         if not self.out_logger:
             self.out_logger = self.start_logger(sys.stdout)
         if not self.err_logger:
@@ -658,13 +656,18 @@ class MesosScheduler(DAGScheduler):
 
         def check():
             while self.started:
-                now = time.time()
-                if (not self.activeJobs and
-                        now - self.last_finish_time > MAX_IDLE_TIME):
-                    logger.info('stop mesos scheduler after %d seconds idle',
-                                now - self.last_finish_time)
-                    self.stop()
-                    break
+                with self.lock:
+                    now = time.time()
+                    if (not self.activeJobs and
+                            now - self.last_finish_time > MAX_IDLE_TIME):
+                        logger.info('stop mesos scheduler after %d seconds idle',
+                                    now - self.last_finish_time)
+                        self.stop()
+                        break
+
+                    for job in self.activeJobs.values():
+                        if job.check_task_timeout():
+                            self.requestMoreResources()
                 time.sleep(1)
 
         spawn(check)
@@ -1063,12 +1066,6 @@ class MesosScheduler(DAGScheduler):
             if jid not in self.activeJobs:
                 logger.debug('kill task %s, because it is orphan', tid)
                 self.driver.killTask(Dict(value=tid))
-
-    @safe
-    def check(self):
-        for job in self.activeJobs.values():
-            if job.check_task_timeout():
-                self.requestMoreResources()
 
     @safe
     def error(self, driver, message):
