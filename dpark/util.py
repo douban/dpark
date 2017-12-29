@@ -89,27 +89,52 @@ def memory_str_to_mb(str):
     }
     return number * scale_factors[unit]
 
-MIN_REMAIN_RECURSION_LIMIT = 100
+MIN_REMAIN_RECURSION_LIMIT = 60
 def recurion_limit_breaker(f):
     def _(*a, **kw):
-        depth = 0
-        frame = sys._getframe()
-        while frame is not None:
-            frame = frame.f_back
-            depth += 1
+        try:
+            sys._getframe(sys.getrecursionlimit() - MIN_REMAIN_RECURSION_LIMIT)
+        except ValueError:
+            return f(*a, **kw)
 
-        if depth < sys.getrecursionlimit() - MIN_REMAIN_RECURSION_LIMIT:
-            result = f(*a, **kw)
-        else:
+        def __():
             result = []
+            finished = []
+            cond = threading.Condition(threading.Lock())
             def _run():
-                for r in f(*a, **kw):
-                    result.append(r)
+                it = iter(f(*a, **kw))
+                with cond:
+                    while True:
+                        while result:
+                            cond.wait()
+                        try:
+                            result.append(next(it))
+                            cond.notify()
+                        except StopIteration:
+                            break
 
-            spawn(_run).join()
+                    finished.append(1)
+                    cond.notify()
 
-        for r in result:
-            yield r
+
+            t = spawn(_run)
+
+            with cond:
+                while True:
+                    while not finished and not result:
+                        cond.wait()
+
+                    if result:
+                        yield result.pop()
+                        cond.notify()
+
+                    if finished:
+                        assert not result
+                        break
+
+            t.join()
+
+        return __()
 
     return _
 
