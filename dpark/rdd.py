@@ -30,7 +30,7 @@ from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
     AbortFileReplacement, get_logger, portable_hash
 )
-from dpark.shuffle import Merger, CoGroupMerger
+from dpark.shuffle import Merger, CoGroupMerger, SortedShuffleFetcher, SortedMerger, CoGroupSortedMerger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
 from dpark.beansdb import BeansdbReader, BeansdbWriter
@@ -46,9 +46,11 @@ if not six.PY2:
 
 logger = get_logger(__name__)
 
+
 class Split(object):
     def __init__(self, idx):
         self.index = idx
+
 
 def cached(func):
     def getstate(self):
@@ -58,6 +60,7 @@ def cached(func):
             self._pickle_cache = d
         return d
     return getstate
+
 
 STACK_FILE_NAME = 0
 STACK_LINE_NUM = 1
@@ -358,8 +361,8 @@ class RDD(object):
 
         return reduce(f, chain(self.ctx.runJob(self, reducePartition)))
 
-    def uniq(self, numSplits=None, taskMemory=None):
-        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory)
+    def uniq(self, numSplits=None, taskMemory=None, sort_shuffle=None):
+        g = self.map(lambda x:(x,None)).reduceByKey(lambda x,y:None, numSplits, taskMemory, sort_shuffle)
         return g.map(lambda x_y1:x_y1[0])
 
     def top(self, n=10, key=None, reverse=False):
@@ -371,8 +374,8 @@ class RDD(object):
                 return heapq.nlargest(n, it, key)
         return topk(sum(self.ctx.runJob(self, topk), []))
 
-    def hot(self, n=10, numSplits=None, taskMemory=None):
-        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits, taskMemory)
+    def hot(self, n=10, numSplits=None, taskMemory=None, sort_shuffle=None):
+        st = self.map(lambda x:(x,1)).reduceByKey(lambda x,y:x+y, numSplits, taskMemory, sort_shuffle=sort_shuffle)
         return st.top(n, key=lambda x:x[1])
 
     def fold(self, zero, f):
@@ -466,7 +469,7 @@ class RDD(object):
             return m1
         return self.map(lambda x_y2:{x_y2[0]:x_y2[1]}).reduce(mergeMaps)
 
-    def combineByKey(self, aggregator, splits=None, taskMemory=None, fixSkew=-1):
+    def combineByKey(self, aggregator, splits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
         if splits is None:
             splits = min(self.ctx.defaultMinSplits, len(self))
         if type(splits) is int:
@@ -492,24 +495,22 @@ class RDD(object):
                         logger.warning('Highly skewed dataset detected!')
 
                     splits = len(_thresh) + 1
-
                 else:
                     _thresh = None
 
             splits = HashPartitioner(splits, thresholds=_thresh)
+        return ShuffledRDD(self, aggregator, splits, taskMemory, sort_shuffle=sort_shuffle)
 
-        return ShuffledRDD(self, aggregator, splits, taskMemory)
-
-    def reduceByKey(self, func, numSplits=None, taskMemory=None, fixSkew=-1):
+    def reduceByKey(self, func, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
         aggregator = Aggregator(lambda x:x, func, func)
-        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew)
+        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
-    def groupByKey(self, numSplits=None, taskMemory=None, fixSkew=-1):
+    def groupByKey(self, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
         createCombiner = lambda x: [x]
         mergeValue = lambda x,y:x.append(y) or x
         mergeCombiners = lambda x,y: x.extend(y) or x
         aggregator = Aggregator(createCombiner, mergeValue, mergeCombiners)
-        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew)
+        return self.combineByKey(aggregator, numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
     def topByKey(self, top_n, order_func=None,
                  reverse=False, num_splits=None, task_memory=None, fixSkew=-1):
@@ -557,7 +558,7 @@ class RDD(object):
         return self.groupByKey(numSplits, taskMemory).flatMapValue(lambda x: x)
 
     def update(self, other, replace_only=False, numSplits=None,
-               taskMemory=None):
+               taskMemory=None, fixSkew=-1,  sort_shuffle=None):
         rdd = self.mapValue(
             lambda val: (val, 1)  # bin('01') for old rdd
         ).union(
@@ -567,7 +568,9 @@ class RDD(object):
         ).reduceByKey(
             lambda x, y: (y[0] if y[1] > x[1] else x[0], x[1] | y[1]),
             numSplits,
-            taskMemory
+            taskMemory,
+            fixSkew=fixSkew,
+            sort_shuffle=sort_shuffle
         )
         # rev:
         #   1(01): old value
@@ -603,19 +606,20 @@ class RDD(object):
         r.mem += (o_b.bytes * 10) >> 20 # memory used by broadcast obj
         return r
 
-    def join(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
-        return self._join(other, (), numSplits, taskMemory, fixSkew=fixSkew)
+    def join(self, other, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
+        return self._join(other, (), numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
-    def leftOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
-        return self._join(other, (1,), numSplits, taskMemory, fixSkew=fixSkew)
+    def leftOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
+        return self._join(other, (1,), numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
-    def rightOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
-        return self._join(other, (2,), numSplits, taskMemory, fixSkew=fixSkew)
+    def rightOuterJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
+        return self._join(other, (2,), numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
-    def outerJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1):
-        return self._join(other, (1,2), numSplits, taskMemory, fixSkew=fixSkew)
+    def outerJoin(self, other, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
+        return self._join(other, (1,2), numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle)
 
-    def _join(self, other, keeps, numSplits=None, taskMemory=None, fixSkew=-1):
+    def _join(self, other, keeps, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
+
         def dispatch(k_seq):
             (k,seq) = k_seq
             vbuf, wbuf = seq
@@ -626,7 +630,7 @@ class RDD(object):
             for vv in vbuf:
                 for ww in wbuf:
                     yield (k, (vv, ww))
-        return self.cogroup(other, numSplits, taskMemory, fixSkew=fixSkew) \
+        return self.cogroup(other, numSplits, taskMemory, fixSkew=fixSkew, sort_shuffle=sort_shuffle) \
             .flatMap(dispatch)
 
     def collectAsMap(self):
@@ -641,7 +645,7 @@ class RDD(object):
     def flatMapValue(self, f):
         return FlatMappedValuesRDD(self, f)
 
-    def groupWith(self, others, numSplits=None, taskMemory=None, fixSkew=-1):
+    def groupWith(self, others, numSplits=None, taskMemory=None, fixSkew=-1, sort_shuffle=None):
         if isinstance(others, RDD):
             others = [others]
 
@@ -679,7 +683,7 @@ class RDD(object):
                 _thresh = None
 
         part = HashPartitioner(_numSplits, thresholds=_thresh)
-        return CoGroupedRDD([self]+others, part, taskMemory)
+        return CoGroupedRDD([self]+others, part, taskMemory, sort_shuffle=sort_shuffle)
 
     cogroup = groupWith
 
@@ -1014,17 +1018,18 @@ class ShuffledRDDSplit(Split):
         return self.index
 
 class ShuffledRDD(RDD):
-    def __init__(self, parent, aggregator, part, taskMemory=None):
+    def __init__(self, parent, aggregator, part, taskMemory=None, sort_shuffle=None):
         RDD.__init__(self, parent.ctx)
         self.numParts = len(parent)
         self.aggregator = aggregator
+        self.sort_shuffle = sort_shuffle if sort_shuffle is not None else self.ctx.options.sort_shuffle
         self._partitioner = part
         if taskMemory:
             self.mem = taskMemory
         self._splits = [ShuffledRDDSplit(i) for i in range(part.numPartitions)]
         self.shuffleId = self.ctx.newShuffleId()
         self._dependencies = [ShuffleDependency(self.shuffleId,
-                parent, aggregator, part)]
+                parent, aggregator, part, sort_shuffle=self.sort_shuffle)]
         self.repr_name = '<ShuffledRDD %s>' % parent
 
     @cached
@@ -1033,8 +1038,13 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = Merger(self)
-        fetcher = env.shuffleFetcher
+        if not self.sort_shuffle:
+            merger = Merger(self)
+            fetcher = env.shuffleFetcher
+        else:
+            merger = SortedMerger(self)
+            fetcher = SortedShuffleFetcher()
+
         fetcher.fetch(self.shuffleId, split.index, merger.merge)
         return merger
 
@@ -1094,7 +1104,9 @@ class CoGroupSplit(Split):
     def __hash__(self):
         return self.index
 
-class CoGroupAggregator:
+
+class CoGroupAggregator(AggregatorBase):
+
     def createCombiner(self, v):
         return [v]
     def mergeValue(self, c, v):
@@ -1102,18 +1114,20 @@ class CoGroupAggregator:
     def mergeCombiners(self, c, v):
         return c + v
 
+
 class CoGroupedRDD(RDD):
-    def __init__(self, rdds, partitioner, taskMemory=None):
+    def __init__(self, rdds, partitioner, taskMemory=None, sort_shuffle=None):
         RDD.__init__(self, rdds[0].ctx)
         self.size = len(rdds)
         if taskMemory:
             self.mem = taskMemory
         self.aggregator = CoGroupAggregator()
         self._partitioner = partitioner
+        self.sort_shuffle = sort_shuffle if sort_shuffle is not None else self.ctx.options.sort_shuffle
         self._dependencies = dep = [rdd.partitioner == partitioner
                 and OneToOneDependency(rdd)
                 or ShuffleDependency(self.ctx.newShuffleId(),
-                    rdd, self.aggregator, partitioner)
+                    rdd, self.aggregator, partitioner, sort_shuffle=self.sort_shuffle)
                 for i,rdd in enumerate(rdds)]
         self._splits = [CoGroupSplit(j,
                           [isinstance(dep[i],ShuffleDependency)
@@ -1127,9 +1141,9 @@ class CoGroupedRDD(RDD):
             self._preferred_locs[split] = sum([dep.rdd.preferredLocations(dep.split) for dep in split.deps
                                                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
-    def compute(self, split):
+    def _compute_hash_merge(self, split):
         m = CoGroupMerger(self)
-        for i,dep in enumerate(split.deps):
+        for i, dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))
             elif isinstance(dep, ShuffleCoGroupSplitDep):
@@ -1137,6 +1151,33 @@ class CoGroupedRDD(RDD):
                     m.extend(i, items)
                 env.shuffleFetcher.fetch(dep.shuffleId, split.index, merge)
         return m
+
+    def _compute_sort_merge(self, split):
+
+        def _enum_value(items, n):
+            for k, v in items:
+                yield k, (n, v)
+
+        iters = []
+        fetcher = SortedShuffleFetcher()
+        for i, dep in enumerate(split.deps):
+            if isinstance(dep, NarrowCoGroupSplitDep):
+                it = sorted(dep.rdd.iterator(dep.split), key=lambda x: x[0])
+                it = self.aggregator.aggregate_sorted(it)
+                it = _enum_value(it, i)
+                iters.append(it)
+            elif isinstance(dep, ShuffleCoGroupSplitDep):
+                its = fetcher.get_iters(dep.shuffleId, split.index)
+                iters.extend([_enum_value(it, i) for it in its])
+        merger = CoGroupSortedMerger(self.size)
+        merger.merge(iters)
+        return merger
+
+    def compute(self, split):
+        if not self.sort_shuffle:
+            return self._compute_hash_merge(split)
+        else:
+            return self._compute_sort_merge(split)
 
 
 class SampleRDD(DerivedRDD):
@@ -1291,6 +1332,7 @@ class ParallelCollectionSplit:
             self.values = ctx.broadcast(_values)
             self.is_broadcast = True
 
+
 class ParallelCollection(RDD):
     def __init__(self, ctx, data, numSlices, taskMemory=None):
         RDD.__init__(self, ctx)
@@ -1335,6 +1377,7 @@ class ParallelCollection(RDD):
             data = list(data)
         return [data[i*n : i*n+n] for i in range(numSlices)]
 
+
 class CheckpointRDD(RDD):
     def __init__(self, ctx, path):
         RDD.__init__(self, ctx)
@@ -1365,6 +1408,7 @@ class PartialSplit(Split):
         self.index = index
         self.begin = begin
         self.end = end
+
 
 class TextFileRDD(RDD):
 

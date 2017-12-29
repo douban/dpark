@@ -8,13 +8,15 @@ from six.moves import urllib
 import marshal
 import struct
 import time
-import six.moves.cPickle
+import six.moves.cPickle as pickle
 import gzip
+import zlib
 import six.moves.queue
 import heapq
 import uuid
 import gc
 import six
+import itertools
 from six.moves import range
 from six.moves import zip
 
@@ -26,6 +28,9 @@ except ImportError:
 from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
+from dpark.heaponkey import HeapOnKey
+from dpark.dependency import AggregatorBase
+
 
 MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
@@ -34,11 +39,11 @@ logger = get_logger(__name__)
 
 class LocalFileShuffle:
     @classmethod
-    def getOutputFile(cls, shuffleId, inputId, outputId, datasize=0):
+    def getOutputFile(cls, shuffle_id, input_id, output_id, datasize=0):
         shuffleDir = env.get('WORKDIR')
-        path = os.path.join(shuffleDir[0], str(shuffleId), str(inputId))
+        path = os.path.join(shuffleDir[0], str(shuffle_id), str(input_id))
         mkdir_p(path)
-        p = os.path.join(path, str(outputId))
+        p = os.path.join(path, str(output_id))
         if datasize > 0 and len(shuffleDir) > 1:
             # datasize > 0 means its writing
             st = os.statvfs(path)
@@ -47,9 +52,9 @@ class LocalFileShuffle:
             if free < max(datasize, 1 << 30) or ratio < 0.66:
                 d2 = os.path.join(
                     random.choice(shuffleDir[1:]),
-                    str(shuffleId), str(inputId))
+                    str(shuffle_id), str(input_id))
                 mkdir_p(d2)
-                p2 = os.path.join(d2, str(outputId))
+                p2 = os.path.join(d2, str(output_id))
                 if os.path.exists(p):
                     os.remove(p)
                 os.symlink(p2, p)
@@ -63,9 +68,171 @@ class LocalFileShuffle:
         return env.get('SERVER_URI')
 
 
-class ShuffleFetcher:
+class BadShuffleStreamException(Exception):
+    pass
 
-    def fetch(self, shuffleId, reduceId, func):
+
+def write_buf(stream, buf):
+    buf = zlib.compress(buf, 1)
+    size = len(buf)
+    stream.write(struct.pack("!I", size))
+    stream.write(buf)
+
+
+class AutoBatchedSerializer(object):
+    """
+    Choose the size of batch automatically based on the size of object
+    """
+
+    def __init__(self, best_size=1 << 16):
+        self.best_size = best_size
+
+    def load_stream(self, stream):
+        while True:
+            length = stream.read(4)
+            if not length:
+                return
+            length = struct.unpack("!I", length)[0]
+            buf = stream.read(length)
+            if len(buf) < length:
+                raise BadShuffleStreamException
+            vs = pickle.loads(zlib.decompress(buf))
+            for v in vs:
+                yield v
+
+    def dump_stream(self, iterator, stream):
+        batch_size, best_size = 1, self.best_size
+        iterator = iter(iterator)
+
+        while True:
+            vs = list(itertools.islice(iterator, batch_size))
+            if not vs:
+                break
+
+            buf = pickle.dumps(vs, -1)
+            mem_size = len(buf)
+            write_buf(stream, buf)
+
+            if mem_size < best_size:
+                batch_size *= 2
+            elif mem_size > best_size * 10 and batch_size > 1:
+                batch_size //= 2
+
+
+class RemoteFile(object):
+
+    num_open = 0
+
+    def __init__(self, uri, shuffle_id, map_id, reduce_id):
+        self.uri = uri
+        self.sid = shuffle_id
+        self.mid = map_id
+        self.rid = reduce_id
+        if uri == LocalFileShuffle.getServerUri():
+            # urllib can open local file
+            self.url = 'file://' + LocalFileShuffle.getOutputFile(shuffle_id, map_id, reduce_id)
+        else:
+            self.url = "%s/%d/%d/%d" % (uri, shuffle_id, map_id, reduce_id)
+        logger.debug("fetch %s", self.url)
+        self.max_retry = 3
+        self.num_retry = 0
+
+    def _fetch_dct(self):
+        f = urllib.request.urlopen(self.url)
+        if f.code == 404:
+            f.close()
+            raise IOError("not found")
+
+        d = f.read()
+        flag = d[:1]
+        length, = struct.unpack("I", d[1:5])
+        if length != len(d):
+            raise ValueError(
+                "length not match: expected %d, but got %d" %
+                (length, len(d)))
+        d = decompress(d[5:])
+        f.close()
+        if flag == b'm':
+            d = marshal.loads(d)
+        elif flag == b'p':
+            d = pickle.loads(d)
+        else:
+            raise ValueError("invalid flag")
+        return d
+
+    def fetch_dct(self):
+        while True:
+            try:
+                return self._fetch_dct()
+            except Exception as e:
+                self.on_fail(e)
+
+    def iter_sorted(self):
+        n_skip = 0
+        while True:
+            try:
+                i = 0
+                for i, obj in enumerate(self._iter_sorted()):
+                    if i < n_skip:
+                        continue
+                    yield obj
+                return
+            except BadShuffleStreamException:
+                raise
+            except Exception as e:
+                n_skip = max(i, n_skip)
+                self.on_fail(e)  # may raise exception
+
+    def _iter_sorted(self):
+        f = urllib.request.urlopen(self.url)
+        if f.code == 404:
+            f.close()
+            raise IOError("not found")
+
+        self.num_open += 1
+        serializer = AutoBatchedSerializer()
+        try:
+            for obj in serializer.load_stream(f):
+                yield obj
+        finally:
+            # rely on GC to close if generator not exhausted
+            # so Fetcher must not be an attr of RDD
+            f.close()
+            self.num_open -= 1
+
+    def on_fail(self, e):
+        self.num_retry += 1
+        msg = "Fetch failed for url %s, %d/%d. exception: %s. " % (self.url, self.num_retry, self.max_retry, e)
+        fail_fast = False
+        if isinstance(e, IOError) and str(e).find("many open file") >= 0:
+            fail_fast = True
+        if fail_fast or self.num_retry >= self.max_retry:
+            msg += "GIVE UP!"
+            logger.warning(msg)
+            from dpark.schedule import FetchFailed
+            raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
+        else:
+            logger.debug("Fetch failed for shuffle %d,"
+                         " reduce %d, %d, %s, %s, tried",
+                         self.url, self.num_retry, e)
+            time.sleep(2 ** self.num_retry * 0.1)
+
+
+class ShuffleFetcher(object):
+
+    @classmethod
+    def _get_uris(cls, shuffle_id):
+        uris = env.mapOutputTracker.getServerUris(shuffle_id)
+        mapid_uris = list(zip(list(range(len(uris))), uris))
+        random.shuffle(mapid_uris)
+        return mapid_uris
+
+    @classmethod
+    def get_remote_files(cls, shuffle_id, reduce_id):
+        uris = cls._get_uris(shuffle_id)
+        return [RemoteFile(uri, shuffle_id, map_id, reduce_id) for map_id, uri in uris]
+
+    def fetch(self, shuffle_id, reduce_id, merge_func):
         raise NotImplementedError
 
     def stop(self):
@@ -74,61 +241,12 @@ class ShuffleFetcher:
 
 class SimpleShuffleFetcher(ShuffleFetcher):
 
-    def fetch_one(self, uri, shuffleId, part, reduceId):
-        if uri == LocalFileShuffle.getServerUri():
-            # urllib can open local file
-            url = 'file://' + LocalFileShuffle.getOutputFile(shuffleId, part, reduceId)
-        else:
-            url = "%s/%d/%d/%d" % (uri, shuffleId, part, reduceId)
-        logger.debug("fetch %s", url)
-
-        tries = 2
-        while True:
-            try:
-                f = urllib.request.urlopen(url)
-                if f.code == 404:
-                    f.close()
-                    raise IOError("not found")
-
-                d = f.read()
-                flag = d[:1]
-                length, = struct.unpack("I", d[1:5])
-                if length != len(d):
-                    raise ValueError(
-                        "length not match: expected %d, but got %d" %
-                        (length, len(d)))
-                d = decompress(d[5:])
-                f.close()
-                if flag == b'm':
-                    d = marshal.loads(d)
-                elif flag == b'p':
-                    d = six.moves.cPickle.loads(d)
-                else:
-                    raise ValueError("invalid flag")
-                return d
-            except Exception as e:
-                logger.debug("Fetch failed for shuffle %d,"
-                             " reduce %d, %d, %s, %s, try again",
-                             shuffleId, reduceId, part, url, e)
-                tries -= 1
-                if not tries:
-                    logger.warning("Fetch failed for shuffle %d,"
-                                   " reduce %d, %d, %s, %s",
-                                   shuffleId, reduceId, part, url, e)
-                    from dpark.schedule import FetchFailed
-                    raise FetchFailed(uri, shuffleId, part, reduceId)
-                time.sleep(2 ** (2 - tries) * 0.1)
-
-    def fetch(self, shuffleId, reduceId, func):
+    def fetch(self, shuffle_id, reduce_id, merge_func):
         logger.debug(
             "Fetching outputs for shuffle %d, reduce %d",
-            shuffleId, reduceId)
-        serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        parts = list(zip(list(range(len(serverUris))), serverUris))
-        random.shuffle(parts)
-        for part, uri in parts:
-            d = self.fetch_one(uri, shuffleId, part, reduceId)
-            func(six.iteritems(d))
+            shuffle_id, reduce_id)
+        for f in self.get_remote_files():
+            merge_func(six.iteritems(f.fetch_dct()))
 
 
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
@@ -150,41 +268,28 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
     def _worker_thread(self):
         from dpark.schedule import FetchFailed
         while True:
-            r = self.requests.get()
-            if r is None:
+            f = self.requests.get()
+            if f is None:
                 break
-
-            uri, shuffleId, part, reduceId = r
             try:
-                d = self.fetch_one(*r)
-                self.results.put((shuffleId, reduceId, part, d))
+                self.results.put(f.fetch_dct())
             except FetchFailed as e:
                 self.results.put(e)
 
-    def fetch(self, shuffleId, reduceId, func):
+    def fetch(self, shuffle_id, reduce_id, func):
         self.start()
-
-        logger.debug(
-            "Fetching outputs for shuffle %d, reduce %d",
-            shuffleId, reduceId)
-        serverUris = env.mapOutputTracker.getServerUris(shuffleId)
-        if not serverUris:
-            return
-
-        parts = list(zip(list(range(len(serverUris))), serverUris))
-        random.shuffle(parts)
-        for part, uri in parts:
-            self.requests.put((uri, shuffleId, part, reduceId))
+        files = self.get_remote_files(shuffle_id, reduce_id)
+        for f in files:
+            self.requests.put(f)
 
         from dpark.schedule import FetchFailed
-        for i in range(len(serverUris)):
+        for i in range(len(files)):
             r = self.results.get()
             if isinstance(r, FetchFailed):
                 self.stop()  # restart
                 raise r
 
-            sid, rid, part, d = r
-            func(six.iteritems(d))
+            func(six.iteritems(r))
 
     def stop(self):
         if not self._started:
@@ -202,6 +307,15 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             t.join()
 
 
+class SortedShuffleFetcher(ShuffleFetcher):
+
+    def get_iters(self, shuffle_id, reduce_id):
+        return [f.iter_sorted() for f in self.get_remote_files(shuffle_id, reduce_id)]
+
+    def fetch(self, shuffle_id, reduce_id, merge_func):
+        merge_func(self.get_iters(shuffle_id, reduce_id))
+
+
 class Merger(object):
 
     def __init__(self, rdd):
@@ -217,6 +331,28 @@ class Merger(object):
 
     def __iter__(self):
         return six.iteritems(self.combined)
+
+
+class SortMergeAggregator(AggregatorBase):
+
+    def __init__(self, mergeCombiners):
+        self.mergeValue = mergeCombiners
+
+    def createCombiner(self, v):
+        return v
+
+
+class SortedMerger(object):
+    def __init__(self, rdd):
+        self.aggregator = SortMergeAggregator(rdd.aggregator.mergeCombiners)
+        self.combined = iter([])
+
+    def merge(self, iters):
+        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
+        self.combined = self.aggregator.aggregate_sorted(heap.merge(iters))
+
+    def __iter__(self):
+        return self.combined
 
 
 class CoGroupMerger(object):
@@ -239,6 +375,27 @@ class CoGroupMerger(object):
 
     def __iter__(self):
         return six.iteritems(self.combined)
+
+
+class CoGroupSortMergeAggregator(AggregatorBase):
+    def __init__(self, size):
+        self.size = size
+
+    def createCombiner(self, v):
+        values = tuple([[] for _ in range(self.size)])
+        values[v[0]].extend(v[1])
+        return values
+
+    def mergeValue(self, c, v):
+        c[v[0]].extend(v[1])
+        return c
+
+
+class CoGroupSortedMerger(SortedMerger):
+
+    def __init__(self, size):
+        self.aggregator = CoGroupSortMergeAggregator(size)
+        self.combined = iter([])
 
 
 def heap_merged(items_lists, combiner, max_memory):
@@ -333,8 +490,7 @@ class SortedItems(object):
                     os.remove(self.path)
             except Exception:
                 pass
-
-            raise StopIteration
+            return
 
         sz, = struct.unpack("I", b)
         return self.loads(self.read(sz))
@@ -397,7 +553,7 @@ class DiskMerger(Merger):
 
 class BaseMapOutputTracker(object):
 
-    def registerMapOutputs(self, shuffleId, locs):
+    def registerMapOutputs(self, shuffle_id, locs):
         pass
 
     def getServerUris(self):
@@ -413,11 +569,11 @@ class MapOutputTracker(BaseMapOutputTracker):
         self.client = env.trackerClient
         logger.debug("MapOutputTracker started")
 
-    def registerMapOutputs(self, shuffleId, locs):
-        self.client.call(SetValueMessage('shuffle:%s' % shuffleId, locs))
+    def registerMapOutputs(self, shuffle_id, locs):
+        self.client.call(SetValueMessage('shuffle:%s' % shuffle_id, locs))
 
-    def getServerUris(self, shuffleId):
-        locs = self.client.call(GetValueMessage('shuffle:%s' % shuffleId))
+    def getServerUris(self, shuffle_id):
+        locs = self.client.call(GetValueMessage('shuffle:%s' % shuffle_id))
         logger.debug("Fetch done: %s", locs)
         return locs
 
@@ -458,6 +614,7 @@ def test():
     tracker.registerMapOutputs(2, [None, uri, None, None, None])
     assert tracker.getServerUris(2) == [None, uri, None, None, None]
     tracker.stop()
+
 
 if __name__ == '__main__':
     from dpark.shuffle import test

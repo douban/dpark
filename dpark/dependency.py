@@ -44,6 +44,7 @@ class CartesianDependency(NarrowDependency):
         else:
             return [pid % self.numSplitsInRdd2]
 
+
 class RangeDependency(NarrowDependency):
     def __init__(self, rdd, inStart, outStart, length):
         Dependency.__init__(self, rdd)
@@ -52,20 +53,52 @@ class RangeDependency(NarrowDependency):
         self.length = length
 
     def getParents(self, pid):
-        if pid >= self.outStart and pid < self.outStart + self.length:
+        if self.outStart <= pid < self.outStart + self.length:
             return [pid - self.outStart + self.inStart]
         return []
 
+
 class ShuffleDependency(Dependency):
     isShuffle = True
-    def __init__(self, shuffleId, rdd, aggregator, partitioner):
+
+    def __init__(self, shuffleId, rdd, aggregator, partitioner, sort_shuffle):
         Dependency.__init__(self, rdd)
         self.shuffleId = shuffleId
         self.aggregator = aggregator
         self.partitioner = partitioner
+        self.sort_shuffle = sort_shuffle
 
 
-class Aggregator:
+class AggregatorBase(object):
+
+    def createCombiner(self, x):
+        raise NotImplementedError
+
+    def mergeValue(self, s, x):
+        raise NotImplementedError
+
+    def mergeCombiners(self, x, y):
+        raise NotImplementedError
+
+    def aggregate_sorted(self, items):
+        create = self.createCombiner
+        merge = self.mergeValue
+        i = None
+        for i, (k, v) in enumerate(items):
+            if i == 0:
+                curr_key = k
+                curr_value = create(v)
+            elif k != curr_key:
+                yield curr_key, curr_value
+                curr_key = k
+                curr_value = create(v)
+            else:
+                curr_value = merge(curr_value, v)
+        if i is not None:
+            yield curr_key, curr_value
+
+
+class Aggregator(object):
     def __init__(self, createCombiner, mergeValue,
             mergeCombiners):
         self.createCombiner = createCombiner
@@ -83,6 +116,7 @@ class Aggregator:
         self.mergeValue = load_func(c2)
         self.mergeCombiners = load_func(c3)
 
+
 class AddAggregator:
     def createCombiner(self, x):
         return x
@@ -90,6 +124,7 @@ class AddAggregator:
         return s + x
     def mergeCombiners(self, x, y):
         return x + y
+
 
 class MergeAggregator:
     def createCombiner(self, x):

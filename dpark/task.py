@@ -2,10 +2,11 @@ from __future__ import absolute_import
 import marshal
 import six.moves.cPickle
 import struct
+import gzip
 
 from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
-from dpark.shuffle import LocalFileShuffle
+from dpark.shuffle import LocalFileShuffle, AutoBatchedSerializer
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -80,6 +81,7 @@ class ShuffleMapTask(DAGTask):
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator
         self.partitioner = dep.partitioner
+        self.sort_shuffle = dep.sort_shuffle
         self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
@@ -129,7 +131,7 @@ class ShuffleMapTask(DAGTask):
 
         return enumerate(buckets)
 
-    def run(self, attempId):
+    def run_without_sorted(self, attempId):
         logger.debug("shuffling %d of %s", self.partition, self.rdd)
         for i, bucket in self._prepare_shuffle(self.rdd):
             try:
@@ -154,3 +156,29 @@ class ShuffleMapTask(DAGTask):
                 raise
 
         return LocalFileShuffle.getServerUri()
+
+
+    def run_with_sorted(self, attempId):
+        serializer = AutoBatchedSerializer()
+        logger.debug("sorted shuffling %d of %s", self.partition, self.rdd)
+        for i, bucket in self._prepare_shuffle(self.rdd):
+            for tried in range(1, 4):
+                try:
+                    path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
+                    with atomic_file(path, bufsize=1024*4096) as f:
+                        items = sorted(bucket.items(), key=lambda x: x[0])
+                        serializer.dump_stream(items, f)
+                    break
+                except IOError as e:
+                    logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
+            else:
+                raise
+
+        return LocalFileShuffle.getServerUri()
+
+
+    def run(self, attempId):
+        if not self.sort_shuffle:
+            return self.run_without_sorted(attempId)
+        else:
+            return self.run_with_sorted(attempId)
