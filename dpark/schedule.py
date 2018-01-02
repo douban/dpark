@@ -810,6 +810,8 @@ class MesosScheduler(DAGScheduler):
                 self.logLevel, env.environ
             )
         ))
+        assert len(info.data) < (50 << 20), \
+                'Info data too large: %s' % (len(info.data),)
         return info
 
     @safe
@@ -959,6 +961,9 @@ class MesosScheduler(DAGScheduler):
         if len(task.data) > 1000 * 1024:
             logger.warning('task too large: %s %d',
                            t, len(task.data))
+
+        assert len(task.data) < (50 << 20), \
+                'Task data too large: %s' % (len(task.data),)
 
         resources = task.resources = []
 
