@@ -34,12 +34,15 @@ class GetValueMessage(TrackerMessage):
 
 class TrackerServer(object):
     locs = {}
+
     def __init__(self):
         self.addr = None
         self.thread = None
-        self.ctx = zmq.Context()
+        self.ctx = None
 
     def start(self):
+        if self.ctx is None:
+            self.ctx = zmq.Context()
         self.thread = spawn(self.run)
         while self.addr is None:
             time.sleep(0.01)
@@ -51,6 +54,9 @@ class TrackerServer(object):
         confirm_msg = sock.recv_pyobj()
         sock.close()
         self.thread.join()
+        if self.ctx is None:
+            self.ctx.destroy()
+            self.ctx = None
         return confirm_msg
 
     def get(self, key):
@@ -78,8 +84,10 @@ class TrackerServer(object):
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("TrackerServer started at %s", self.addr)
+
         def reply(msg):
             sock.send_pyobj(msg)
+
         while True:
             msg = sock.recv_pyobj()
             if isinstance(msg, SetValueMessage):
@@ -102,6 +110,7 @@ class TrackerServer(object):
         sock.close()
         logger.debug("stop TrackerServer %s", self.addr)
 
+
 class TrackerClient(object):
     def __init__(self, addr):
         self.addr = addr
@@ -119,3 +128,7 @@ class TrackerClient(object):
         finally:
             sock.close()
 
+    def stop(self):
+        if self.ctx is not None:
+            self.ctx.destroy()
+            self.ctx = None

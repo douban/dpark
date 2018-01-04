@@ -94,6 +94,7 @@ class DparkEnv:
             return
         self.started = False
         logger.debug("stop env in %s", os.getpid())
+        self.trackerClient.stop()
         self.shuffleFetcher.stop()
         self.cacheTracker.stop()
         self.mapOutputTracker.stop()
