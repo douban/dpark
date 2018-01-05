@@ -25,11 +25,7 @@ class Job:
         self.id = self.newJobId()
         self.start = time.time()
 
-    def slaveOffer(self, s, availableCpus):
-        raise NotImplementedError
-
-    def taskOffer(self, host_offers,
-                  cpuAvailableArray, memAvailableArray):
+    def taskOffer(self, host_offers, cpus, mems):
         raise NotImplementedError
 
     def statusUpdate(self, t):
@@ -140,64 +136,20 @@ class SimpleJob(Job):
             if host in self.running_hosts[i]:
                 continue
             t = self.tasks[i]
-            if self.task_host_manager.\
-                    task_failed_on_host(t.id, host):
+            if self.task_host_manager.task_failed_on_host(t.id, host):
                 continue
             if t.cpus <= cpus + 1e-4 and t.mem <= mem:
                 return i
 
-    def findTask(self, host, localOnly, cpus, mem):
-        localTask = self.findTaskFromList(
-            self.getPendingTasksForHost(host), host, cpus, mem)
-        if localTask is not None:
-            return localTask, True
-        noPrefTask = self.findTaskFromList(
-            self.pendingTasksWithNoPrefs, host, cpus, mem)
-        if noPrefTask is not None:
-            return noPrefTask, True
-        if not localOnly:
-            return self.findTaskFromList(
-                self.allPendingTasks, host, cpus, mem), False
-        return None, False
-
-    # Respond to an offer of a single slave from the scheduler by finding a
-    # task
-    def slaveOffer(self, host, availableCpus=1, availableMem=100):
-        now = time.time()
-        localOnly = (now - self.lastPreferredLaunchTime < LOCALITY_WAIT)
-        i, preferred = self.findTask(
-            host, localOnly, availableCpus, availableMem)
-        if i is not None:
-            task = self.tasks[i]
-            task.status = 'TASK_STAGING'
-            task.start = now
-            task.host = host
-            task.tried += 1
-            self.id_retry_host[(task.id, task.tried)] = host
-            prefStr = preferred and 'preferred' or 'non-preferred'
-            logger.debug('Starting task %d:%d as TID %s on slave %s (%s)',
-                         self.id, i, task, host, prefStr)
-            self.tidToIndex[task.id] = i
-            self.launched[i] = True
-            self.tasksLaunched += 1
-            self.running_hosts[i].append(host)
-            if preferred:
-                self.lastPreferredLaunchTime = now
-            return task
-        logger.debug('no task found %s', localOnly)
-
-    def taskOffer(self, host_offers,
-                  cpuAvailableArray, memAvailableArray):
+    def taskOffer(self, host_offers, cpus, mems):
         prefer_list = []
         for host in host_offers:
             i, o = host_offers[host]
             local_task = self.findTaskFromList(
                 self.getPendingTasksForHost(host), host,
-                cpuAvailableArray[i], memAvailableArray[i])
-            if local_task is not None and not self.task_host_manager.\
-                    task_failed_on_host(self.tasks[local_task].id, host):
-                result_tuple = self._try_update_task_offer(local_task, i, o, cpuAvailableArray,
-                                                           memAvailableArray)
+                cpus[i], mems[i])
+            if local_task is not None:
+                result_tuple = self._try_update_task_offer(local_task, i, o, cpus, mems)
                 if result_tuple is None:
                     continue
                 prefer_list.append(result_tuple)
@@ -209,8 +161,7 @@ class SimpleJob(Job):
                                                            self.running_hosts[idx])
                 if i is None:
                     continue
-                result_tuple = self._try_update_task_offer(idx, i, o, cpuAvailableArray,
-                                                           memAvailableArray)
+                result_tuple = self._try_update_task_offer(idx, i, o, cpus, mems)
                 if result_tuple:
                     return [result_tuple]
         return []

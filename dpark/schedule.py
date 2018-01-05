@@ -874,6 +874,23 @@ class MesosScheduler(DAGScheduler):
             return
 
         start = time.time()
+        filter_offer = []
+        for o in offers:
+            group = (
+                self.getAttribute(
+                    o.attributes,
+                    'group') or 'None')
+            if (self.group or group.startswith(
+                    '_')) and group not in self.group:
+                driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
+                continue
+            if self.task_host_manager.is_unhealthy_host(o.hostname):
+                logger.warning('the host %s is unhealthy so skip it', o.hostname)
+                driver.declineOffer(o.id, filters=Dict(refuse_seconds=1800))
+                continue
+            self.task_host_manager.register_host(o.hostname)
+            filter_offer.append(o)
+        offers = filter_offer
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem')
                 - (o.agent_id.value not in self.agentTasks
@@ -888,13 +905,6 @@ class MesosScheduler(DAGScheduler):
                 host_offers = {}
                 for i, o in enumerate(offers):
                     sid = o.agent_id.value
-                    group = (
-                        self.getAttribute(
-                            o.attributes,
-                            'group') or 'None')
-                    if (self.group or group.startswith(
-                            '_')) and group not in self.group:
-                        continue
                     if self.agentTasks.get(sid, 0) >= self.task_per_node:
                         logger.debug('the task limit exceeded at host %s',
                                      o.hostname)
@@ -902,10 +912,6 @@ class MesosScheduler(DAGScheduler):
                     if (mems[i] < self.mem + EXECUTOR_MEMORY
                             or cpus[i] < self.cpus + EXECUTOR_CPUS):
                         continue
-                    if self.task_host_manager.is_unhealthy_host(o.hostname):
-                        logger.debug('the host %s is unhealthy so skip it', o.hostname)
-                        continue
-                    self.task_host_manager.register_host(o.hostname)
                     host_offers[o.hostname] = (i, o)
                 assigned_list = job.taskOffer(host_offers, cpus, mems)
                 if not assigned_list:
