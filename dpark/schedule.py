@@ -497,20 +497,7 @@ class LocalScheduler(DAGScheduler):
             self.taskEnded(task, reason, result, update)
 
 
-def run_task_in_process(task, tid, environ, sig_dict=None):
-    from dpark.env import env
-    env.start()
-    import signal
-    if sig_dict:
-        if 'SIGTERM' in sig_dict:
-            signal.signal(signal.SIGTERM, sig_dict['SIGTERM'])
-        if 'SIGHUP' in sig_dict:
-            signal.signal(signal.SIGHUP, sig_dict['SIGHUP'])
-        if 'SIGABRT' in sig_dict:
-            signal.signal(signal.SIGABRT, sig_dict['SIGABRT'])
-        if 'SIGQUIT' in sig_dict:
-            signal.signal(signal.SIGQUIT, sig_dict['SIGQUIT'])
-    logger.debug('run task in process %s %s', task, tid)
+def run_task_in_process(task, tid, environ):
     try:
         return run_task(task, tid)
     except KeyboardInterrupt:
@@ -524,10 +511,6 @@ class MultiProcessScheduler(LocalScheduler):
         self.threads = threads
         self.tasks = {}
         self.pool = None
-        self.sig_dict = {'SIGTERM': signal.getsignal(signal.SIGTERM),
-                         'SIGHUP': signal.getsignal(signal.SIGHUP),
-                         'SIGABRT': signal.getsignal(signal.SIGABRT),
-                         'SIGQUIT': signal.getsignal(signal.SIGQUIT)}
 
     def submitTasks(self, tasks):
         if not tasks:
@@ -550,13 +533,21 @@ class MultiProcessScheduler(LocalScheduler):
                     time.time() - start)
             self.taskEnded(task, reason, result, update)
 
+        def initializer():
+            for sig in [signal.SIGTERM, signal.SIGHUP, signal.SIGABRT, signal.SIGQUIT]:
+                signal.signal(sig, signal.SIG_DFL)
+
         for task in tasks:
             logger.debug('put task async: %s', task)
             self.tasks[task.id] = task
             if not self.pool:
-                self.pool = multiprocessing.Pool(self.threads or 2)
+                # daemonic processes are not allowed to have children
+                from dpark.broadcast import start_download_manager
+                start_download_manager()
+                self.pool = multiprocessing.Pool(self.threads or 2, initializer=initializer)
+
             self.pool.apply_async(run_task_in_process,
-                                  [task, self.nextAttempId(), env.environ, self.sig_dict],
+                                  [task, self.nextAttempId(), env.environ],
                                   callback=callback)
 
     def stop(self):
