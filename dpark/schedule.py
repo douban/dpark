@@ -591,6 +591,38 @@ def safe(f):
     return _
 
 
+class LogReceiver(object):
+
+    def __init__(self, output):
+        self.output = output
+        self._started = False
+        self.addr = None
+
+    def start(self):
+        ctx = zmq.Context()
+        sock = ctx.socket(zmq.PULL)
+        port = sock.bind_to_random_port('tcp://0.0.0.0')
+        self._started = True
+
+        def collect_log():
+            while self._started:
+                if sock.poll(1000, zmq.POLLIN):
+                    line = sock.recv()
+                    self.output.write(line)
+
+            sock.close()
+            ctx.destroy()
+
+        spawn(collect_log)
+
+        host = socket.gethostname()
+        self.addr = 'tcp://%s:%d' % (host, port)
+        logger.debug('log collecter start at %s', self.addr)
+
+    def stop(self):
+        self._started = False
+
+
 class MesosScheduler(DAGScheduler):
 
     def __init__(self, master, options):
@@ -607,8 +639,8 @@ class MesosScheduler(DAGScheduler):
         self.isRegistered = False
         self.executor = None
         self.driver = None
-        self.out_logger = None
-        self.err_logger = None
+        self.out_logger = LogReceiver(sys.stdout)
+        self.err_logger = LogReceiver(sys.stderr)
         self.lock = threading.RLock()
         self.task_host_manager = TaskHostManager()
         self.init_job()
@@ -627,10 +659,8 @@ class MesosScheduler(DAGScheduler):
 
     def start(self):
         assert not self._shutdown
-        if not self.out_logger:
-            self.out_logger = self.start_logger(sys.stdout)
-        if not self.err_logger:
-            self.err_logger = self.start_logger(sys.stderr)
+        self.out_logger.start()
+        self.err_logger.start()
 
     def start_driver(self):
         name = '[dpark] ' + \
@@ -671,24 +701,6 @@ class MesosScheduler(DAGScheduler):
                 time.sleep(1)
 
         spawn(check)
-
-    def start_logger(self, output):
-        ctx = zmq.Context()
-        sock = ctx.socket(zmq.PULL)
-        port = sock.bind_to_random_port('tcp://0.0.0.0')
-
-        def collect_log():
-            while not self._shutdown:
-                if sock.poll(1000, zmq.POLLIN):
-                    line = sock.recv()
-                    output.write(line)
-
-        spawn(collect_log)
-
-        host = socket.gethostname()
-        addr = 'tcp://%s:%d' % (host, port)
-        logger.debug('log collecter start at %s', addr)
-        return addr
 
     @safe
     def registered(self, driver, frameworkId, masterInfo):
@@ -809,7 +821,7 @@ class MesosScheduler(DAGScheduler):
         info.data = encode_data(marshal.dumps(
             (
                 Script, os.getcwd(), sys.path, dict(os.environ),
-                self.task_per_node, self.out_logger, self.err_logger,
+                self.task_per_node, self.out_logger.addr, self.err_logger.addr,
                 self.logLevel, env.environ
             )
         ))
@@ -1082,6 +1094,9 @@ class MesosScheduler(DAGScheduler):
         self.driver.stop(False)
         self.driver.join()
         self.driver = None
+
+        self.out_logger.stop()
+        self.err_logger.stop()
 
     def defaultParallelism(self):
         return 16
