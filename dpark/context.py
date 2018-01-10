@@ -392,6 +392,9 @@ def add_default_options():
     group.add_option("--checkpoint_dir", type="string", default="",
             help="shared dir to keep checkpoint of RDDs")
 
+    group.add_option("--color", action="store_true")
+    group.add_option("--no-color", action="store_false", dest='color')
+
     group.add_option("--profile", action="store_true",
             help="do profiling")
 
@@ -417,7 +420,10 @@ def parse_options():
 
     options.logLevel = (options.quiet and logging.ERROR
                   or options.verbose and logging.DEBUG or logging.INFO)
-    init_dpark_logger(options.logLevel)
+    if options.color is None:
+        options.color = getattr(sys.stderr, 'isatty', lambda: False)()
+
+    init_dpark_logger(options.logLevel, use_color=options.color)
 
     if any(arg.startswith('-') for arg in args):
         logger.warning('unknown args found in command-line: %s', ' '.join(args))

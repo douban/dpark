@@ -173,15 +173,104 @@ def atomic_file(filename, mode='w+b', bufsize=-1):
             pass
 
 
-def init_dpark_logger(log_level):
-    log_format = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
-    logging.basicConfig(format=log_format, level=log_level)
+RESET = "\033[0m"
+BOLD = "\033[1m"
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = [
+    "\033[1;%dm" % i for i in range(30, 38)
+]
 
+PALLETE = {
+    'RESET': RESET,
+    'BOLD': BOLD,
+    'BLACK': BLACK,
+    'RED': RED,
+    'GREEN': GREEN,
+    'YELLOW': YELLOW,
+    'BLUE': BLUE,
+    'MAGENTA': MAGENTA,
+    'CYAN': CYAN,
+    'WHITE': WHITE,
+}
+
+COLORS = {
+    'WARNING': YELLOW,
+    'INFO': WHITE,
+    'DEBUG': BLUE,
+    'CRITICAL': YELLOW,
+    'ERROR': RED
+}
+
+def formatter_message(message, use_color = True):
+    if use_color:
+        return message.format(
+            **PALLETE
+        )
+
+    return message.format(
+        **{k:'' for k in PALLETE}
+    )
+
+class ColoredFormatter(logging.Formatter):
+    def __init__(self, fmt=None, datefmt=None, use_color = True):
+        if fmt:
+            fmt = formatter_message(fmt, use_color)
+
+        logging.Formatter.__init__(self, fmt=fmt, datefmt=datefmt)
+        self.use_color = use_color
+
+    def format(self, record):
+        record = logging.makeLogRecord(record.__dict__)
+        levelname = record.levelname
+        if self.use_color and levelname in COLORS:
+            levelname_color = COLORS[levelname] + levelname + RESET
+            record.levelname = levelname_color
+
+        record.msg = formatter_message(record.msg, self.use_color)
+        return logging.Formatter.format(self, record)
+
+USE_UTF8 = getattr(sys.stderr, 'encoding', None) == 'UTF-8'
+
+ASCII_BAR = ('[ ', ' ]', '#', '-', '-\\|/-\\|')
+UNICODE_BAR = (u'[ ', u' ]', u'\u2589', u'-',
+    u'-\u258F\u258E\u258D\u258C\u258B\u258A')
+
+def make_progress_bar(ratio, size=14):
+    if USE_UTF8:
+        L, R, B, E, F = UNICODE_BAR
+    else:
+        L, R, B, E, F = ASCII_BAR
+
+    if size > 4:
+        n = size - 4
+        with_border = True
+    else:
+        n = size
+        with_border = False
+
+    p = n * ratio
+    blocks = int(p)
+    if p > blocks:
+        frac = int((p - blocks) * 7)
+        blanks = n - blocks - 1
+        C = F[frac]
+    else:
+        blanks = n - blocks
+        C = ''
+
+    if with_border:
+        return ''.join([L, B * blocks, C, E * blanks, R])
+    else:
+        return ''.join([B * blocks, C, E * blanks])
+
+def init_dpark_logger(log_level, use_color=None):
+    log_format = '{GREEN}%(asctime)-15s{RESET}' \
+        ' [%(levelname)s] [%(name)-9s] %(message)s'
+    datefmt = '%Y-%m-%d %H:%M:%S'
     logger = get_logger('dpark')
     logger.propagate = False
 
-    handler = logging.StreamHandler()
-    handler.setFormatter(logging.Formatter(log_format))
+    handler = logging.StreamHandler(stream=sys.stderr)
+    handler.setFormatter(ColoredFormatter(log_format, datefmt, use_color))
 
     logger.addHandler(handler)
     logger.setLevel(max(log_level, logger.level))

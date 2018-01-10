@@ -625,6 +625,7 @@ class MesosScheduler(DAGScheduler):
         self.group = options.group
         self.logLevel = options.logLevel
         self.options = options
+        self.color = options.color
         self.started = False
         self.last_finish_time = 0
         self.isRegistered = False
@@ -813,7 +814,7 @@ class MesosScheduler(DAGScheduler):
             (
                 Script, os.getcwd(), sys.path, dict(os.environ),
                 self.task_per_node, self.out_logger.addr, self.err_logger.addr,
-                self.logLevel, env.environ
+                self.logLevel, self.color, env.environ
             )
         ))
         assert len(info.data) < (50 << 20), \
@@ -994,6 +995,19 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def statusUpdate(self, driver, status):
+        def plot_progresses():
+            if self.color:
+                total = len(self.activeJobs)
+                logger.info('\x1b[2K\x1b[J\x1b[1A')
+                for i, jid in enumerate(self.activeJobs):
+                    if i == total - 1:
+                        ending = '\x1b[%sA' % total
+                    else:
+                        ending = ''
+
+                    jobs = self.activeJobs[jid]
+                    jobs.progress(ending)
+
         tid = status.task_id.value
         state = status.state
         logger.debug('status update: %s %s', tid, state)
@@ -1004,6 +1018,8 @@ class MesosScheduler(DAGScheduler):
             if jid in self.activeJobs:
                 job = self.activeJobs[jid]
                 job.statusUpdate(task_id, tried, state)
+                if job.tasksFinished == 0:
+                    plot_progresses()
             else:
                 logger.debug('kill task %s as its job has gone', tid)
                 self.driver.killTask(Dict(value=tid))
@@ -1048,11 +1064,13 @@ class MesosScheduler(DAGScheduler):
                 logger.warning(
                     'error when cPickle.loads(): %s, data:%s', e, len(data))
                 state = 'TASK_FAILED'
-                return job.statusUpdate(
-                    task_id, tried, state, 'load failed: %s' % e)
+                job.statusUpdate(task_id, tried, state, 'load failed: %s' % e)
+                return
             else:
-                return job.statusUpdate(task_id, tried, state,
-                                        reason, result, accUpdate)
+                job.statusUpdate(task_id, tried, state, reason, result, accUpdate)
+                if state == 'TASK_FINISHED':
+                    plot_progresses()
+                return
 
         # killed, lost, load failed
         job.statusUpdate(task_id, tried, state, reason or data)

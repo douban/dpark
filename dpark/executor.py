@@ -25,7 +25,10 @@ from pymesos import Executor, MesosExecutorDriver, encode_data, decode_data
 import six
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import compress, decompress, spawn, mkdir_p, get_logger
+from dpark.util import (
+    compress, decompress, spawn, mkdir_p, get_logger,
+    init_dpark_logger, formatter_message
+)
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
@@ -34,7 +37,7 @@ from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
 
-logger = get_logger('dpark.executor@%s' % socket.gethostname())
+logger = get_logger('dpark.executor')
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
@@ -396,17 +399,19 @@ class MyExecutor(Executor):
             global Script
             (
                 Script, cwd, python_path, osenv, self.parallel,
-                out_logger, err_logger, logLevel, args
+                out_logger, err_logger, logLevel, use_color, args
             ) = marshal.loads(decode_data(executorInfo.data))
 
             sys.path = python_path
             os.environ.update(osenv)
             setproctitle('[Executor]' + Script)
 
-            prefix = '[%s] ' % socket.gethostname()
+            prefix = formatter_message(
+                '{MAGENTA}[%s]{RESET} ' % socket.gethostname().ljust(10),
+                use_color
+            )
 
-            fmt = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
-            logging.basicConfig(format=fmt, level=logLevel)
+            init_dpark_logger(logLevel, use_color=use_color)
 
             r1 = self.stdout_redirect = Redirect(1, out_logger, prefix)
             sys.stdout = r1.pipe_wfile
@@ -539,4 +544,6 @@ def run():
     driver.run()
 
 if __name__ == '__main__':
+    fmt = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
+    logging.basicConfig(format=fmt, level=logging.INFO)
     run()

@@ -1,14 +1,17 @@
-from __future__ import absolute_import
+from __future__ import absolute_import, print_function
 import sys
+import math
 import time
 import socket
 from operator import itemgetter
 
-from dpark.util import get_logger
+from dpark.util import (
+    get_logger, make_progress_bar
+)
 from dpark.hostatus import TaskHostManager
 from six.moves import range
-logger = get_logger(__name__)
 
+logger = get_logger(__name__)
 
 def readable(size):
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
@@ -213,6 +216,41 @@ class SimpleJob(Job):
             self.taskLost(tid, tried, status, reason)
         task.start = time.time()
 
+    def progress(self, ending=''):
+        n = self.numTasks
+        ratio = self.tasksFinished * 1. / n
+        bar = make_progress_bar(ratio)
+        if self.tasksFinished:
+            elasped = time.time() - self.start
+            avg = self.total_used / n
+            eta = (n - self.tasksFinished) * elasped / self.tasksFinished
+            m, s = divmod(int(eta), 60)
+            h, m = divmod(m, 60)
+
+            fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
+                ' ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'.format(
+                    width=int(math.log10(self.numTasks)) + 1,
+                )
+
+            msg = fmt % (
+                self.id, bar, ratio * 100, self.tasksFinished, n, h, m, s,
+                avg, ending
+            )
+            msg = msg.ljust(80)
+            logger.info(msg)
+        else:
+            fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
+                ' ETA:--:--:-- AVG:N/A\x1b[K%s'.format(
+                    width=int(math.log10(self.numTasks)) + 1,
+                )
+
+            msg = fmt % (
+                self.id, bar, ratio * 100, self.tasksFinished, n, ending
+            )
+            msg = msg.ljust(80)
+            logger.info(msg)
+                
+
     def taskFinished(self, tid, tried, result, update):
         i = self.tidToIndex[tid]
         self.finished[i] = True
@@ -222,13 +260,11 @@ class SimpleJob(Job):
             if (task.id, tried) in self.id_retry_host else task.host
         task.used += time.time() - task.start
         self.total_used += task.used
-        if getattr(sys.stderr, 'isatty', lambda: False)():
+        if getattr(self.sched, 'color', False):
             title = 'Job %d: task %s finished in %.1fs (%d/%d)     ' % (
                 self.id, tid, task.used, self.tasksFinished, self.numTasks)
-            logger.info('Task %s finished in %.1fs (%d/%d)'
-                        '      \x1b]2;%s\x07\x1b[1A',
-                        tid, task.used, self.tasksFinished,
-                        self.numTasks, title)
+            msg = '\x1b]2;%s\x07\x1b[1A' % title
+            logger.info(msg)
 
         from dpark.schedule import Success
         self.sched.taskEnded(task, Success(), result, update)
@@ -243,12 +279,13 @@ class SimpleJob(Job):
         if self.tasksFinished == self.numTasks:
             ts = [t.used for t in self.tasks]
             tried = [t.tried for t in self.tasks]
+            elasped = time.time() - self.start
             logger.info('Job %d finished in %.1fs: min=%.1fs, '
-                        'avg=%.1fs, max=%.1fs, maxtry=%d',
-                        self.id, time.time() - self.start,
-                        min(ts), sum(ts) / len(ts), max(ts), max(tried))
-            logger.info('the ratio of local task is %f',
-                        len(self.task_local_set) * 1.0 / len(self.tasks))
+                'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
+                self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
+                max(tried), self.total_used / elasped, 
+                len(self.task_local_set) * 100. / len(self.tasks)
+            )
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
