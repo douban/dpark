@@ -34,6 +34,53 @@ def singleton(cls):
     getinstance._instances = instances
     return getinstance
 
+_shutdown_handlers = []
+
+def _shutdown():
+    for handler in _shutdown_handlers:
+        try:
+            handler()
+        except Exception:
+            logger.exception('Faield to shutdown context')
+
+    _shutdown_handlers[:] = []
+    DparkContext._instances.clear()
+    logger.info("dpark shutdown.")
+
+atexit.register(_shutdown)
+
+_pid = os.getpid()
+_prev_handlers = {}
+_signals = [
+    signal.SIGINT, signal.SIGQUIT, signal.SIGTERM,
+    signal.SIGABRT, signal.SIGHUP
+]
+
+
+def _handler(signum, frame):
+    for sig, handler in _prev_handlers.items():
+        signal.signal(sig, handler)
+
+    if _pid == os.getpid():
+        # called on main process, will do cleanup
+        logger.error("got signal %d, exiting now...", signum)
+        _shutdown()
+
+    # resend signal to trigger previous handlers
+    _prev_handlers.clear()
+    os.kill(os.getpid(), signum)
+
+
+def register_sighandlers():
+    if not _prev_handlers:
+        for sig in _signals:
+            try:
+                _prev_handlers[sig] = signal.signal(sig, _handler)
+            except Exception:
+                logger.exception('Failed to register signal handler')
+
+
+
 @singleton
 class DparkContext(object):
     nextShuffleId = 0
@@ -50,6 +97,8 @@ class DparkContext(object):
         if self.initialized:
             return
 
+        register_sighandlers()
+
         cls = self.__class__
         options = cls.options
         if options is None:
@@ -60,13 +109,13 @@ class DparkContext(object):
             from dpark.web.ui import create_app
             app = create_app(self)
             self.web_port = dpark.web.start(app)
-            options.webui_url = 'http://%s:%s' % (
+            self.webui_url = 'http://%s:%s' % (
                 socket.gethostname(),
                 self.web_port
             )
             logger.info('start listening on Web UI with port: %d' % self.web_port)
         except ImportError as e:
-            options.webui_url = ''
+            self.webui_url = None
             logger.info('no web server created as %s', e)
 
         master = self.master or options.master
@@ -90,7 +139,9 @@ class DparkContext(object):
 
             if ':' not in master:
                 master += ':5050'
-            self.scheduler = MesosScheduler(master, options)
+            self.scheduler = MesosScheduler(
+                master, options, webui_url=self.webui_url
+            )
             self.data_limit = 1024 * 1024 # 1MB
             self.isLocal = False
 
@@ -277,13 +328,12 @@ class DparkContext(object):
 
     def start(self):
         def shutdown():
+            self.stop()
             try:
                 import dpark.web
                 dpark.web.stop(self.web_port)
             except ImportError:
                 pass
-            self.scheduler.shutdown()
-            self.stop()
 
         if self.started:
             return
@@ -293,17 +343,7 @@ class DparkContext(object):
         env.start()
         self.scheduler.start()
         self.started = True
-        atexit.register(shutdown)
-
-        def handler(signm, frame):
-            logger.error("got signal %d, exit now", signm)
-            shutdown()
-        try:
-            signal.signal(signal.SIGTERM, handler)
-            signal.signal(signal.SIGHUP, handler)
-            signal.signal(signal.SIGABRT, handler)
-            signal.signal(signal.SIGQUIT, handler)
-        except: pass
+        _shutdown_handlers.append(shutdown)
 
         try:
             from rfoo.utils import rconsole

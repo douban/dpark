@@ -85,11 +85,13 @@ def gen_big_text_file(block_size, file_size, ext='txt'):
 class TestRDD(unittest.TestCase):
 
     def setUp(self):
+        from dpark.context import _shutdown
+        _shutdown()
         self.sc = DparkContext(dpark_master)
 
     def tearDown(self):
-        self.sc.stop()
-        DparkContext._instances.clear()
+        from dpark.context import _shutdown
+        _shutdown()
 
     def test_parallel_collection(self):
         slices = ParallelCollection.slice(range(5), 3)

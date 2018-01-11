@@ -5,12 +5,12 @@ import marshal
 import multiprocessing
 import os
 import socket
-import signal
 import sys
 import time
 from six.moves import urllib
 import weakref
 import threading
+import logging
 
 import zmq
 from addict import Dict
@@ -78,11 +78,6 @@ class OtherFailure(TaskEndReason):
 
     def __str__(self):
         return '<OtherFailure %s>' % self.message
-
-
-
-class SchedulerShutdown(SystemExit):
-    code = 1
 
 
 class Stage:
@@ -180,17 +175,12 @@ class DAGScheduler(Scheduler):
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
         self.idToRunJob = {}
-        self._shutdown = False
 
     def clear(self):
         self.idToStage.clear()
         self.shuffleToMapStage.clear()
         self.cacheLocs.clear()
         self.cacheTracker.clear()
-
-    def shutdown(self):
-        self._shutdown = True
-        self.stop()
 
     @property
     def cacheTracker(self):
@@ -373,9 +363,6 @@ class DAGScheduler(Scheduler):
             try:
                 evt = self.completionEvents.get(False)
             except six.moves.queue.Empty:
-                if self._shutdown:
-                    raise SchedulerShutdown()
-
                 if (failed and
                         time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT):
                     self.updateCacheLocs()
@@ -520,6 +507,19 @@ class MultiProcessScheduler(LocalScheduler):
 
         total, self.finished, start = len(tasks), 0, time.time()
 
+        def initializer():
+            # when called on subprocess of multiprocessing's Pool,
+            # default sighandler of SIGTERM will be called to quit gracefully,
+            # and we ignore other signals to prevent dead lock.
+
+            import signal
+            from .context import _signals
+            for sig in _signals:
+                if sig == signal.SIGTERM:
+                    signal.signal(sig, signal.SIG_DFL)
+                else:
+                    signal.signal(sig, signal.SIG_IGN)
+
         def callback(args):
             logger.debug('got answer: %s', args)
             tid, reason, result, update = args
@@ -533,10 +533,6 @@ class MultiProcessScheduler(LocalScheduler):
                     time.time() - start)
             self.taskEnded(task, reason, result, update)
 
-        def initializer():
-            for sig in [signal.SIGTERM, signal.SIGHUP, signal.SIGABRT, signal.SIGQUIT]:
-                signal.signal(sig, signal.SIG_DFL)
-
         for task in tasks:
             logger.debug('put task async: %s', task)
             self.tasks[task.id] = task
@@ -544,7 +540,10 @@ class MultiProcessScheduler(LocalScheduler):
                 # daemonic processes are not allowed to have children
                 from dpark.broadcast import start_download_manager
                 start_download_manager()
-                self.pool = multiprocessing.Pool(self.threads or 2, initializer=initializer)
+                self.pool = multiprocessing.Pool(
+                    self.threads or 2,
+                    initializer = initializer
+                )
 
             self.pool.apply_async(run_task_in_process,
                                   [task, self.nextAttempId(), env.environ],
@@ -616,7 +615,7 @@ class LogReceiver(object):
 
 class MesosScheduler(DAGScheduler):
 
-    def __init__(self, master, options):
+    def __init__(self, master, options, webui_url=None):
         DAGScheduler.__init__(self)
         self.master = master
         self.cpus = options.cpus
@@ -626,6 +625,7 @@ class MesosScheduler(DAGScheduler):
         self.logLevel = options.logLevel
         self.options = options
         self.color = options.color
+        self.webui_url = webui_url
         self.started = False
         self.last_finish_time = 0
         self.isRegistered = False
@@ -650,7 +650,6 @@ class MesosScheduler(DAGScheduler):
         self.init_job()
 
     def start(self):
-        assert not self._shutdown
         self.out_logger.start()
         self.err_logger.start()
 
@@ -665,7 +664,8 @@ class MesosScheduler(DAGScheduler):
             raise Exception('dpark is not allowed to run as \'root\'')
         framework.name = name
         framework.hostname = socket.gethostname()
-        framework.webui_url = self.options.webui_url
+        if self.webui_url:
+            framework.webui_url = self.webui_url
 
         self.driver = MesosSchedulerDriver(
             self, framework, self.master, use_addict=True

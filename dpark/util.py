@@ -90,7 +90,7 @@ def memory_str_to_mb(str):
     }
     return number * scale_factors[unit]
 
-MIN_REMAIN_RECURSION_LIMIT = 60
+MIN_REMAIN_RECURSION_LIMIT = 80
 def recurion_limit_breaker(f):
     def _(*a, **kw):
         try:

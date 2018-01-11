@@ -118,12 +118,6 @@ class GuideManager(object):
             self.guide_addr = None
 
 
-download_cond = None
-shared_uuid_fn_dict = None
-shared_uuid_map_dict = None
-shared_master_blocks = None
-
-
 def check_memory(location):
     try:
         import psutil
@@ -134,16 +128,6 @@ def check_memory(location):
                     rss, socket.gethostname(), location)
     except ImportError:
         logger.warning('import psutil failed')
-
-
-def init_dict():
-    global download_cond, shared_uuid_fn_dict, \
-        shared_uuid_map_dict, shared_master_blocks
-    manager = Manager()
-    shared_uuid_fn_dict = manager.dict()
-    shared_uuid_map_dict = manager.dict()
-    shared_master_blocks = manager.dict()
-    download_cond = Condition()
 
 
 def decide_dir(work_dirs):
@@ -165,8 +149,6 @@ class DownloadManager(object):
         self.server_thread = None
         self.download_threads = {}
         self.uuid_state_dict = None
-        self.shared_uuid_fn_dict = None
-        self.shared_uuid_map_dict = None
         self.uuid_map_dict = None
         self.guide_addr = None
         self.server_addr = None
@@ -175,15 +157,17 @@ class DownloadManager(object):
         self.random_inst = None
         self.work_dirs = []
         self.master_broadcast_blocks = {}
-        self.shared_master_blocks = {}
+        self.manager = manager = Manager()
+        self.shared_uuid_fn_dict = manager.dict()
+        self.shared_uuid_map_dict = manager.dict()
+        self.shared_master_blocks = manager.dict()
+        self.download_cond = Condition()
 
     def start(self):
         if self._started:
             return
 
-        init_dict()
         self._started = True
-        global shared_uuid_fn_dict, shared_uuid_map_dict, shared_master_blocks
         self.ctx = zmq.Context()
         self.host = socket.gethostname()
         if GUIDE_ADDR not in env.environ:
@@ -193,12 +177,9 @@ class DownloadManager(object):
         self.random_inst = random.SystemRandom()
         self.server_addr, self.server_thread = self.start_server()
         self.uuid_state_dict = {}
-        self.shared_uuid_fn_dict = shared_uuid_fn_dict
-        self.shared_uuid_map_dict = shared_uuid_map_dict
         self.uuid_map_dict = {}
         self.work_dirs = env.get('WORKDIR')
         self.master_broadcast_blocks = {}
-        self.shared_master_blocks = shared_master_blocks
         env.register(DOWNLOAD_ADDR, self.server_addr)
 
     def start_server(self):
@@ -407,8 +388,8 @@ class DownloadManager(object):
         self.shared_uuid_fn_dict[uuid] = self.uuid_state_dict[uuid][0]
         self.uuid_state_dict[uuid] = self.uuid_state_dict[uuid][0], True
         download_guide_sock.close()
-        with download_cond:
-            download_cond.notify_all()
+        with self.download_cond:
+            self.download_cond.notify_all()
 
     def clear(self, uuid):
         if uuid in self.master_broadcast_blocks:
@@ -439,6 +420,9 @@ class DownloadManager(object):
                 th.join()
             self.server_thread.join()
 
+        self.manager.shutdown()
+        self.manager.join()
+
 
 def accumulate_list(l):
     acc = 0
@@ -461,6 +445,7 @@ class BroadcastManager(object):
         self.cache = None
         self.shared_uuid_fn_dict = None
         self.shared_uuid_map_dict = None
+        self.download_cond = None
         self.ctx = None
 
     def start(self):
@@ -468,14 +453,14 @@ class BroadcastManager(object):
             return
 
         self._started = True
-        global shared_uuid_fn_dict, shared_uuid_map_dict
         start_download_manager()
         self.guide_addr = env.get(GUIDE_ADDR)
         self.download_addr = env.get(DOWNLOAD_ADDR)
         self.cache = Cache()
         self.ctx = zmq.Context()
-        self.shared_uuid_fn_dict = shared_uuid_fn_dict
-        self.shared_uuid_map_dict = shared_uuid_map_dict
+        self.shared_uuid_fn_dict = _download_manager.shared_uuid_fn_dict
+        self.shared_uuid_map_dict = _download_manager.shared_uuid_map_dict
+        self.download_cond = _download_manager.download_cond
 
     def register(self, uuid, value):
         self.start()
@@ -542,9 +527,9 @@ class BroadcastManager(object):
         if res == DATA_GET_FAIL:
             raise RuntimeError('Data GET failed for uuid:%s' % uuid)
         while True:
-            with download_cond:
+            with self.download_cond:
                 if uuid not in self.shared_uuid_fn_dict:
-                    download_cond.wait()
+                    self.download_cond.wait()
                 else:
                     break
         if uuid in self.shared_uuid_fn_dict:

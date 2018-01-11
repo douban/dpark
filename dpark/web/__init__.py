@@ -20,7 +20,8 @@ def start(app, port=0):
         port = s.getsockname()[1]
         s.close()
     if port in _apps:
-        return
+        return port
+
     t = threading.Thread(target=run, args=(app, port))
     t.daemon = True
     t.start()
@@ -28,6 +29,6 @@ def start(app, port=0):
 
 
 def stop(port):
-    server = _apps.get(port, None)
+    server = _apps.pop(port, None)
     if server is not None:
         server.stop()
