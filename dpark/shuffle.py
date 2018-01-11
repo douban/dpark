@@ -85,8 +85,12 @@ class AutoBatchedSerializer(object):
     Choose the size of batch automatically based on the size of object
     """
 
+    size_loaded = 0
+
     def __init__(self, best_size=1 << 16):
         self.best_size = best_size
+        self.max_num = 0
+        self.max_size = 0
 
     def load_stream(self, stream):
         while True:
@@ -97,27 +101,76 @@ class AutoBatchedSerializer(object):
             buf = stream.read(length)
             if len(buf) < length:
                 raise BadShuffleStreamException
-            vs = pickle.loads(zlib.decompress(buf))
+            buf = zlib.decompress(buf)
+            AutoBatchedSerializer.size_loaded += len(buf)
+            vs = pickle.loads(buf)
             for v in vs:
                 yield v
 
     def dump_stream(self, iterator, stream):
-        batch_size, best_size = 1, self.best_size
-        iterator = iter(iterator)
+        self._dump_stream(iter(iterator), stream)
+        logger.debug("max batch num = %d, max batch size = %d", self.max_num, self.max_size)
+
+    def _dump_stream(self, iterator, stream):
+        batch_num = 1
 
         while True:
-            vs = list(itertools.islice(iterator, batch_size))
+            vs = list(itertools.islice(iterator, batch_num))
             if not vs:
                 break
+            batch_num = self._dump_batch(stream, vs, batch_num)
 
-            buf = pickle.dumps(vs, -1)
-            mem_size = len(buf)
-            write_buf(stream, buf)
+    def _dump_batch(self, stream, vs, batch_num):
+        buf = pickle.dumps(vs, -1)
+        mem_size = len(buf)
+        write_buf(stream, buf)
 
-            if mem_size < best_size:
-                batch_size *= 2
-            elif mem_size > best_size * 10 and batch_size > 1:
-                batch_size //= 2
+        if mem_size < self.best_size:
+            batch_num *= 2
+            if batch_num > self.max_num:
+                self.max_num = batch_num
+        else:
+            if mem_size > self.best_size * 4 and batch_num > 1:
+                batch_num //= 2
+            if mem_size > self.max_size:
+                self.max_size = mem_size
+        return batch_num
+
+
+class GroupByAutoBatchedSerializer(AutoBatchedSerializer):
+
+    def _dump_stream(self, iterator, stream):
+        batch_num = 1
+
+        def _batching():
+            batch = []
+            num = 0
+
+            for k, vs in iterator:
+                n = len(vs)
+                if n + num <= batch_num:
+                    batch.append((k, vs))
+                    num += n
+                else:
+                    if batch:
+                        yield batch
+                        batch = []
+                        num = 0
+                    if n >= batch_num:
+                        sub_it = iter(vs)
+                        while(True):
+                            sub_vs = list(itertools.islice(sub_it, batch_num))
+                            if not sub_vs:
+                                break
+                            yield [(k, sub_vs)]
+                    else:
+                        batch.append((k, vs))
+                        num = n
+            if batch:
+                yield batch
+
+        for k_vs in _batching():
+            batch_num = self._dump_batch(stream, k_vs, batch_num)
 
 
 class RemoteFile(object):

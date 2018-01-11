@@ -6,7 +6,7 @@ import gzip
 
 from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
-from dpark.shuffle import LocalFileShuffle, AutoBatchedSerializer
+from dpark.shuffle import LocalFileShuffle, AutoBatchedSerializer, GroupByAutoBatchedSerializer
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -82,6 +82,7 @@ class ShuffleMapTask(DAGTask):
         self.aggregator = dep.aggregator
         self.partitioner = dep.partitioner
         self.sort_shuffle = dep.sort_shuffle
+        self.iter_values = dep.iter_values
         self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
@@ -158,7 +159,7 @@ class ShuffleMapTask(DAGTask):
         return LocalFileShuffle.getServerUri()
 
     def run_with_sorted(self, attempId):
-        serializer = AutoBatchedSerializer()
+        serializer = GroupByAutoBatchedSerializer() if self.iter_values else AutoBatchedSerializer()
         logger.debug("sorted shuffling %d of %s", self.partition, self.rdd)
         for i, bucket in self._prepare_shuffle(self.rdd):
             for tried in range(1, 4):
