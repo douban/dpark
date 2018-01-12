@@ -1,6 +1,7 @@
 # util
 from __future__ import absolute_import
 import os
+import re
 import sys
 import threading
 import errno
@@ -200,15 +201,15 @@ COLORS = {
     'ERROR': RED
 }
 
+FORMAT_PATTERN = re.compile('|'.join('{%s}' % k for k in PALLETE))
 def formatter_message(message, use_color = True):
     if use_color:
-        return message.format(
-            **PALLETE
+        return FORMAT_PATTERN.sub(
+            lambda m: PALLETE[m.group(0)[1:-1]],
+            message
         )
 
-    return message.format(
-        **{k:'' for k in PALLETE}
-    )
+    return FORMAT_PATTERN.sub('', message)
 
 class ColoredFormatter(logging.Formatter):
     def __init__(self, fmt=None, datefmt=None, use_color = True):
