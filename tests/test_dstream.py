@@ -9,6 +9,7 @@ from tempfile import mkdtemp
 from dpark.dstream import *
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
+dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 
 class TestInputStream(InputDStream):
     def __init__(self, ssc, input, numPart=2):
@@ -47,7 +48,7 @@ class TestOutputStream(ForEachDStream):
 
 class TestDStream(unittest.TestCase):
     def _setupStreams(self, intput1, input2, operation):
-        ssc = StreamingContext(2, "local")
+        ssc = StreamingContext(2, dpark_master)
         is1 = TestInputStream(ssc, intput1)
         ssc.registerInputStream(is1)
         if input2:
