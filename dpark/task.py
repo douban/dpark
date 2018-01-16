@@ -1,8 +1,8 @@
 from __future__ import absolute_import
 import marshal
+import time
 import six.moves.cPickle
 import struct
-import gzip
 
 from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
@@ -132,9 +132,8 @@ class ShuffleMapTask(DAGTask):
 
         return enumerate(buckets)
 
-    def run_without_sorted(self, attempId):
-        logger.debug("shuffling %d of %s", self.partition, self.rdd)
-        for i, bucket in self._prepare_shuffle(self.rdd):
+    def run_without_sorted(self, it):
+        for i, bucket in it:
             try:
                 if marshalable(bucket):
                     flag, d = b'm', marshal.dumps(bucket)
@@ -158,10 +157,9 @@ class ShuffleMapTask(DAGTask):
 
         return LocalFileShuffle.getServerUri()
 
-    def run_with_sorted(self, attempId):
+    def run_with_sorted(self, it):
         serializer = GroupByAutoBatchedSerializer() if self.iter_values else AutoBatchedSerializer()
-        logger.debug("sorted shuffling %d of %s", self.partition, self.rdd)
-        for i, bucket in self._prepare_shuffle(self.rdd):
+        for i, bucket in it:
             for tried in range(1, 4):
                 try:
                     path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
@@ -173,11 +171,19 @@ class ShuffleMapTask(DAGTask):
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
             else:
                 raise e
-
         return LocalFileShuffle.getServerUri()
 
     def run(self, attempId):
+        logger.debug("begin suffleMapTask %d of %s, ", self.partition, self.rdd)
+        t0 = time.time()
+        it = self._prepare_shuffle(self.rdd)
+        t1 = time.time()
         if not self.sort_shuffle:
-            return self.run_without_sorted(attempId)
+            url = self.run_without_sorted(it)
         else:
-            return self.run_with_sorted(attempId)
+            url = self.run_with_sorted(it)
+        t2 = time.time()
+        logger.debug("end shuffleMapTask %d of %s, calc/dump time: %02f/%02f sec ",
+                     self.partition, self.rdd, t1 - t0, t2 - t1)
+        return url
+
