@@ -1117,23 +1117,13 @@ class CoGroupSplit(Split):
         return self.index
 
 
-class CoGroupAggregator(AggregatorBase):
-
-    def createCombiner(self, v):
-        return [v]
-    def mergeValue(self, c, v):
-        return c + [v]
-    def mergeCombiners(self, c, v):
-        return c + v
-
-
 class CoGroupedRDD(RDD):
     def __init__(self, rdds, partitioner, taskMemory=None, sort_shuffle=None, iter_values=None):
         RDD.__init__(self, rdds[0].ctx)
         self.size = len(rdds)
         if taskMemory:
             self.mem = taskMemory
-        self.aggregator = CoGroupAggregator()
+        self.aggregator = GroupByAggregator()
         self._partitioner = partitioner
         self.sort_shuffle = sort_shuffle if sort_shuffle is not None else self.ctx.options.sort_shuffle
         self.iter_values = iter_values if iter_values is not None else self.ctx.options.iter_values
