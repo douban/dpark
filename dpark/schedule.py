@@ -556,21 +556,28 @@ class MultiProcessScheduler(LocalScheduler):
         logger.debug('process pool stopped')
 
 
-def profile(f):
-    def func(*args, **kwargs):
-        path = '/tmp/worker-%s.prof' % os.getpid()
+def profile(func):
+    import functools
+
+    @functools.wraps(func)
+    def inner(*args, **kwargs):
         import cProfile
         import pstats
-        func = f
-        cProfile.runctx('func(*args, **kwargs)',
-                        globals(), locals(), path)
-        stats = pstats.Stats(path)
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            retval = func(*args, **kwargs)
+        finally:
+            profiler.disable()
+
+        stats = pstats.Stats(profiler)
         stats.strip_dirs()
         stats.sort_stats('time', 'calls')
         stats.print_stats(20)
         stats.sort_stats('cumulative')
         stats.print_stats(20)
-    return func
+        return retval
+    return inner
 
 
 def safe(f):
