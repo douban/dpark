@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 from dpark.serialize import load_func, dump_func
 import sys
+import operator
 from six.moves import range
 
 
@@ -18,20 +19,33 @@ class HeapOnKey(object):
     def __init__(self, key=None, min_heap=False):
         self.key = key
         self.min_heap = min_heap
+        self._setup_cmp()
+
+    def _setup_cmp(self):
+        key = self.key
+        min_heap = self.min_heap
+
+        def _ge0(x, y):
+            return not (x < y)
+
+        def _lt(x,y):
+            return key(x) < key(y)
+
+        def _ge(x, y):
+            return not(key(x) < key(y))
+
+        if key is None:
+            self.cmp_lt = operator.lt if min_heap else _ge0
+        else:
+            self.cmp_lt = _lt if min_heap else _ge
 
     def __getstate__(self):
         return dump_func(self.key), self.min_heap
 
     def __setstate__(self, state):
-        f, self.min_heap  = state
-        self.key= load_func(f)
-
-    def cmp_lt(self, x, y):
-        c_x, c_y = (self.key(x), self.key(y)) if self.key else (x, y)
-        if self.min_heap:
-            return c_x < c_y
-        else:
-            return not c_x < c_y
+        key_f, self.min_heap = state
+        self.key = load_func(key_f)
+        self._setup_cmp()
 
     def push(self, heap, item):
         heap.append(item)
@@ -60,10 +74,11 @@ class HeapOnKey(object):
 
     def _sift_down(self, heap, start_pos, pos):
         new_item = heap[pos]
+        cmp_lt = self.cmp_lt
         while pos > start_pos:
             parent_pos = (pos - 1) >> 1
             parent = heap[parent_pos]
-            if self.cmp_lt(new_item, parent):
+            if cmp_lt(new_item, parent):
                 heap[pos] = parent
                 pos = parent_pos
                 continue
@@ -73,11 +88,12 @@ class HeapOnKey(object):
     def _sift_up(self, heap, pos):
         end_pos = len(heap)
         child_pos = 2 * pos + 1
+        cmp_lt = self.cmp_lt
         while child_pos < end_pos:
             right_pos = child_pos + 1
-            if right_pos < end_pos and not self.cmp_lt(heap[child_pos], heap[right_pos]):
+            if right_pos < end_pos and not cmp_lt(heap[child_pos], heap[right_pos]):
                 child_pos = right_pos
-            if self.cmp_lt(heap[pos], heap[child_pos]):
+            if cmp_lt(heap[pos], heap[child_pos]):
                 break
             heap[pos], heap[child_pos] = heap[child_pos], heap[pos]
             pos = child_pos
@@ -90,11 +106,10 @@ class HeapOnKey(object):
         return returnitem
 
     def merge(self, iterables, ordered_iters=0):
-        """iterables: each sorted with the same key
-            ordered_iters:
-                when come to equal value, the element in the first iter yields
-                    first(last) if ordered_iters >(<) 0
-                    not stable if ordered_iters == 0
+        """iterables: each is sorted
+           ordered_iters: when come to equal value, the element in the first iter yields
+                first(last) if ordered_iters >(<) 0
+                not stable if ordered_iters == 0
         """
         if not ordered_iters:
             key = lambda x: self.key(x[0])
