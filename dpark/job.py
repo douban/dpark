@@ -222,7 +222,7 @@ class SimpleJob(Job):
         bar = make_progress_bar(ratio)
         if self.tasksFinished:
             elasped = time.time() - self.start
-            avg = self.total_used / n
+            avg = self.total_used / self.tasksFinished
             eta = (n - self.tasksFinished) * elasped / self.tasksFinished
             m, s = divmod(int(eta), 60)
             h, m = divmod(m, 60)
