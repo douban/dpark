@@ -157,15 +157,16 @@ class DownloadManager(object):
         self.random_inst = None
         self.work_dirs = []
         self.master_broadcast_blocks = {}
+
+    def start(self):
+        if self._started:
+            return
+
         self.manager = manager = Manager()
         self.shared_uuid_fn_dict = manager.dict()
         self.shared_uuid_map_dict = manager.dict()
         self.shared_master_blocks = manager.dict()
         self.download_cond = Condition()
-
-    def start(self):
-        if self._started:
-            return
 
         self._started = True
         self.ctx = zmq.Context()
