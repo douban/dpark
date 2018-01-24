@@ -10,6 +10,7 @@ import time
 from six.moves import urllib
 import weakref
 import threading
+import json
 import logging
 
 import zmq
@@ -21,11 +22,12 @@ from dpark.accumulator import Accumulator
 from dpark.dependency import ShuffleDependency
 from dpark.env import env
 from dpark.job import SimpleJob
+from dpark.rdd import ShuffledRDD, CoGroupedRDD
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask
 from dpark.hostatus import TaskHostManager
 from dpark.util import (
-    compress, decompress, spawn, getuser, mkdir_p, get_logger
+    compress, decompress, spawn, getuser, mkdir_p, get_logger, Scope
 )
 import six
 from six.moves import map
@@ -88,8 +90,12 @@ class Stage:
         self.shuffleDep = shuffleDep
         self.parents = parents
         self.numPartitions = len(rdd)
-        self.outputLocs = [[] for i in range(self.numPartitions)]
+        self.outputLocs = [[] for _ in range(self.numPartitions)]
+        self.task_stats = [[] for _ in range(self.numPartitions)]
         self.try_times = 0
+        self.submit_time = 0
+        self.finish_time = 0
+        self.root_rdd = self._get_root_rdd()
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -126,6 +132,54 @@ class Stage:
         cls.nextId += 1
         return cls.nextId
 
+    def finish(self):
+        if not self.finish_time:
+            self.finish_time = time.time()
+
+    def _get_root_rdd(self):
+        from dpark.rdd import TextFileRDD
+        roots = []
+
+        def _(r):
+            if isinstance(r, (ShuffledRDD, CoGroupedRDD)) or not r.dependencies:
+                roots.append(r)
+                return False
+            return True
+        walk_dependencies(self.rdd, node_func=_)
+        # TODO: maybe multi roots, e.g. union().mergeSplits()
+        return roots[0]
+
+    def get_stats(self):
+        stats = [x[-1] for x in self.task_stats if x]
+
+        d = {}
+
+        def _summary(lst):
+            lst.sort()
+            r = {'max': max(lst),
+                 'min': min(lst),
+                 'sum': sum(lst)
+                 }
+            return r
+
+        if stats:
+            for attr in dir(stats[0]):
+                if not attr.startswith('_'):
+                    d[attr] = _summary(list([getattr(s, attr) for s in stats]))
+
+        res = {
+            'id': self.id,
+            'parents': [p.id for p in self.parents],
+            'class': self.root_rdd.__class__.__name__,
+            'call_site': self.root_rdd.scope.call_site,
+            'start_time': self.submit_time,
+            'finish_time': self.finish_time,
+            'stats': d,
+            'tasks': len(stats),
+            'splits': len(self.rdd),
+        }
+        return res
+
 
 class Scheduler:
 
@@ -147,14 +201,15 @@ class Scheduler:
 
 class CompletionEvent:
 
-    def __init__(self, task, reason, result, accumUpdates):
+    def __init__(self, task, reason, result, accumUpdates, stats):
         self.task = task
         self.reason = reason
         self.result = result
         self.accumUpdates = accumUpdates
+        self.stats = stats
 
 
-def walk_dependencies(rdd, func):
+def walk_dependencies(rdd, edge_func=lambda r,d: True, node_func=lambda r: True):
     visited = set()
     to_visit = [rdd]
     while to_visit:
@@ -162,19 +217,30 @@ def walk_dependencies(rdd, func):
         if r.id in visited:
             continue
         visited.add(r.id)
-        for dep in r.dependencies:
-            if func(r, dep):
-                to_visit.append(dep.rdd)
+        if node_func(r):
+            for dep in r.dependencies:
+                if edge_func(r, dep):
+                    to_visit.append(dep.rdd)
 
 
 class DAGScheduler(Scheduler):
 
     def __init__(self):
+        self.id = self.newId()
         self.completionEvents = six.moves.queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
         self.idToRunJob = {}
+        self.runJobTimes = 0
+        self.frameworkId = None
+
+    nextId = 0
+
+    @classmethod
+    def newId(cls):
+        cls.nextId += 1
+        return cls.nextId
 
     def clear(self):
         self.idToStage.clear()
@@ -193,13 +259,14 @@ class DAGScheduler(Scheduler):
     def submitTasks(self, tasks):
         raise NotImplementedError
 
-    def taskEnded(self, task, reason, result, accumUpdates):
+    def taskEnded(self, task, reason, result, accumUpdates, stats=None):
         self.completionEvents.put(
             CompletionEvent(
                 task,
                 reason,
                 result,
-                accumUpdates))
+                accumUpdates,
+                stats))
 
     def abort(self):
         self.completionEvents.put(None)
@@ -256,8 +323,15 @@ class DAGScheduler(Scheduler):
         walk_dependencies(stage.rdd, _)
         return list(missing)
 
-
     def runJob(self, finalRdd, func, partitions, allowLocal):
+        stats_dirpath = None
+        if isinstance(self, MesosScheduler) and self.options.stats_dir:
+            stats_dirpath = os.path.abspath(self.options.stats_dir)
+            if not os.path.exists(stats_dirpath):
+                os.makedirs(stats_dirpath)
+
+        run_id = self.runJobTimes
+        self.runJobTimes += 1
         outputParts = list(partitions)
         numOutputParts = len(partitions)
         finalStage = self.newStage(finalRdd, None)
@@ -315,6 +389,7 @@ class DAGScheduler(Scheduler):
             return
 
         def submitStage(stage):
+            stage.submit_time = time.time()
             logger.debug('submit stage %s', stage)
             if stage not in waiting and stage not in running:
                 missing = self.getMissingParentStages(stage)
@@ -388,6 +463,7 @@ class DAGScheduler(Scheduler):
             pendingTasks[stage].remove(task.id)
             if isinstance(reason, Success):
                 Accumulator.merge(evt.accumUpdates)
+                stage.task_stats[task.partition].append(evt.stats)
                 if isinstance(task, ResultTask):
                     finished[task.outputId] = True
                     numFinished += 1
@@ -398,10 +474,13 @@ class DAGScheduler(Scheduler):
                         results[lastFinished] = None
                         lastFinished += 1
 
+                    stage.finish()
+
                 elif isinstance(task, ShuffleMapTask):
                     stage = self.idToStage[task.stageId]
                     stage.addOutputLoc(task.partition, evt.result)
                     if all(stage.outputLocs):
+                        stage.finish()
                         logger.debug(
                             '%s finished; looking for newly runnable stages',
                             stage
@@ -447,11 +526,42 @@ class DAGScheduler(Scheduler):
                 raise Exception(reason.message)
 
         onStageFinished(finalStage)
+
+        self._last_stats = self.get_stats(run_id)
+        if stats_dirpath:
+            names = ['dpark', self.frameworkId, self.id, run_id]
+            name = "_".join(map(str, names)) + ".json"
+            p = os.path.join(stats_dirpath, name)
+            logger.info("writing profile to %s", p)
+            with open(p, 'w') as f:
+                json.dump(self._last_stats, f, indent=4)
         assert all(finished)
         return
 
+    def get_last_stats(self):
+        return self._last_stats
+
     def getPreferredLocs(self, rdd, partition):
         return rdd.preferredLocations(rdd.splits[partition])
+
+    def get_stats(self, run_id):
+        cmd = '[dpark] ' + \
+            os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
+
+        stages = sorted([s.get_stats() for s in self.idToStage.values()],
+                         key= lambda x: x['start_time'])
+        run = {'framework': self.frameworkId,
+                   'scheduler': self.id,
+                   "run":run_id,
+                   'call_site': Scope().call_site,
+                   'stages': stages
+                   }
+
+        ret = { 'script': {
+                    'cmd': cmd,
+                    'env': {'PWD': os.getcwd()}},
+                'run': run}
+        return ret
 
 
 def run_task(task, aid):
@@ -704,6 +814,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def registered(self, driver, frameworkId, masterInfo):
         self.isRegistered = True
+        self.frameworkId = frameworkId.value
         logger.debug('connect to master %s:%s, registered as %s',
                      masterInfo.hostname, masterInfo.port, frameworkId.value)
         self.executor = self.getExecutorInfo(str(frameworkId.value))
@@ -1063,7 +1174,7 @@ class MesosScheduler(DAGScheduler):
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
             try:
-                reason, result, accUpdate = six.moves.cPickle.loads(
+                reason, result, accUpdate, task_stats = six.moves.cPickle.loads(
                     decode_data(data))
                 if result:
                     flag, data = result
@@ -1086,7 +1197,7 @@ class MesosScheduler(DAGScheduler):
                 job.statusUpdate(task_id, tried, state, 'load failed: %s' % e)
                 return
             else:
-                job.statusUpdate(task_id, tried, state, reason, result, accUpdate)
+                job.statusUpdate(task_id, tried, state, reason, result, accUpdate, task_stats)
                 if state == 'TASK_FINISHED':
                     plot_progresses()
                 return

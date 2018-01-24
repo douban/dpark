@@ -13,6 +13,18 @@ import dpark.conf as conf
 logger = util.get_logger(__name__)
 
 
+class TaskStats(object):
+
+    def __init__(self):
+        self._reset()
+
+    def _reset(self):
+        self.bytes_max_rss = 0
+        self.bytes_shuffle_read = 0
+        self.bytes_shuffle_write = 0
+        self.secs_reduce_merge = 0
+
+
 class DparkEnv:
     environ = {}
     trackerServer = None
@@ -27,6 +39,7 @@ class DparkEnv:
 
     def __init__(self):
         self.started = False
+        self.task_stats = TaskStats()
         name = self.get('DPARK_ID')
         if name is None:
             name = '%s-%s' % (socket.gethostname(), uuid.uuid4())
@@ -52,7 +65,6 @@ class DparkEnv:
         if compress is None:
             self.register('COMPRESS', util.COMPRESS)
             compress = self.get('COMPRESS')
-
 
         if compress != util.COMPRESS:
             raise Exception("no %s available" % compress)

@@ -16,7 +16,7 @@ logging.getLogger('dpark').setLevel(logging.ERROR)
 
 class MockSchduler:
 
-    def taskEnded(self, task, reason, result, update):
+    def taskEnded(self, task, reason, result, update, stats):
         pass
 
     def requestMoreResources(self):

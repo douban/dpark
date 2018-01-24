@@ -17,7 +17,7 @@ import six.moves.socketserver
 import multiprocessing
 import six.moves.SimpleHTTPServer
 from six.moves import urllib
-
+import resource
 
 import zmq
 from addict import Dict
@@ -71,6 +71,7 @@ def run_task(task_data):
         task, ntry = loads(decompress(task_data))
         Accumulator.clear()
         result = task.run(ntry)
+        env.task_stats.bytes_max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         accUpdate = Accumulator.values()
         MutableDict.flush()
 
@@ -95,17 +96,18 @@ def run_task(task_data):
             flag += 2
 
         return 'TASK_FINISHED', six.moves.cPickle.dumps(
-            (Success(), (flag, data), accUpdate), -1)
+            (Success(), (flag, data), accUpdate, env.task_stats), -1)
     except FetchFailed as e:
-        return 'TASK_FAILED', six.moves.cPickle.dumps((e, None, None), -1)
+        return 'TASK_FAILED', six.moves.cPickle.dumps((e, None, None, None), -1)
     except:
         import traceback
         msg = traceback.format_exc()
         return 'TASK_FAILED', six.moves.cPickle.dumps(
-            (OtherFailure(msg), None, None), -1)
+            (OtherFailure(msg), None, None, None), -1)
     finally:
         gc.collect()
         gc.enable()
+
 
 
 class LocalizedHTTP(six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler):

@@ -4,6 +4,7 @@ import time
 import six.moves.cPickle
 import struct
 
+from dpark.env import env
 from dpark.util import compress, atomic_file, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle, AutoBatchedSerializer, GroupByAutoBatchedSerializer
@@ -142,6 +143,7 @@ class ShuffleMapTask(DAGTask):
             except ValueError:
                 flag, d = b'p', six.moves.cPickle.dumps(bucket, -1)
             cd = compress(d)
+            env.task_stats.bytes_shuffle_write += len(cd)
             for tried in range(1, 4):
                 try:
                     path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i, len(cd) * tried)
@@ -166,6 +168,7 @@ class ShuffleMapTask(DAGTask):
                     with atomic_file(path, bufsize=1024*4096) as f:
                         items = sorted(bucket.items(), key=lambda x: x[0])
                         serializer.dump_stream(items, f)
+                        env.task_stats.bytes_shuffle_write += f.tell()
                     break
                 except IOError as e:
                     logger.warning("write %s failed: %s, try again (%d)", path, e, tried)

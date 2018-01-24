@@ -3,6 +3,7 @@ from __future__ import print_function
 import os
 import os.path
 import sys
+import time
 import random
 from six.moves import urllib
 import marshal
@@ -204,6 +205,7 @@ class RemoteFile(object):
             raise ValueError(
                 "length not match: expected %d, but got %d" %
                 (length, len(d)))
+        env.task_stats.bytes_shuffle_read += length
         d = decompress(d[5:])
         f.close()
         if flag == b'm':
@@ -332,6 +334,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
     def fetch(self, shuffle_id, reduce_id, func):
         self.start()
+        st = time.time()
         files = self.get_remote_files(shuffle_id, reduce_id)
         for f in files:
             self.requests.put(f)
@@ -344,6 +347,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
                 raise r
 
             func(six.iteritems(r))
+        env.task_stats.merge_time = time.time() - st
 
     def stop(self):
         if not self._started:

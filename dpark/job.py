@@ -192,7 +192,7 @@ class SimpleJob(Job):
 
 
     def statusUpdate(self, tid, tried, status, reason=None,
-                     result=None, update=None):
+                     result=None, update=None, stats=None):
         logger.debug('job status update %s %s %s', tid, status, reason)
         if tid not in self.tidToIndex:
             logger.error('invalid tid: %s', tid)
@@ -211,7 +211,7 @@ class SimpleJob(Job):
             self.tasksLaunched += 1
 
         if status == 'TASK_FINISHED':
-            self.taskFinished(tid, tried, result, update)
+            self.taskFinished(tid, tried, result, update, stats)
         elif status in ('TASK_LOST', 'TASK_FAILED', 'TASK_KILLED'):
             self.taskLost(tid, tried, status, reason)
         task.start = time.time()
@@ -249,9 +249,8 @@ class SimpleJob(Job):
             )
             msg = msg.ljust(80)
             logger.info(msg)
-                
 
-    def taskFinished(self, tid, tried, result, update):
+    def taskFinished(self, tid, tried, result, update, stats):
         i = self.tidToIndex[tid]
         self.finished[i] = True
         self.tasksFinished += 1
@@ -267,7 +266,7 @@ class SimpleJob(Job):
             logger.info(msg)
 
         from dpark.schedule import Success
-        self.sched.taskEnded(task, Success(), result, update)
+        self.sched.taskEnded(task, Success(), result, update, stats)
         self.running_hosts[i] = []
         self.task_host_manager.task_succeed(task.id, hostname,
                                             Success())
@@ -283,7 +282,7 @@ class SimpleJob(Job):
             logger.info('Job %d finished in %.1fs: min=%.1fs, '
                 'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
                 self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
-                max(tried), self.total_used / elasped, 
+                max(tried), self.total_used / elasped,
                 len(self.task_local_set) * 100. / len(self.tasks)
             )
             self.sched.jobFinished(self)
