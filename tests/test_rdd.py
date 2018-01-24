@@ -354,6 +354,27 @@ class TestRDD(unittest.TestCase):
                 ).saveAsCSVFile(path),
                 [os.path.join(path, '0000.csv')])
 
+    def test_tfrecord(self):
+        N = 1000
+        d = self.sc.makeRDD(list(("the %d string" % i) for i in range(N)), 1)
+        with temppath("tfout") as path:
+            self.assertEqual(d.saveAsTfrecordsFile(path),
+                             [os.path.join(path, '0000.tfrecords')])
+            rd = self.sc.tfrecordsFile(path)
+            self.assertEqual(rd.count(), N)
+            prefix = 'prefix:'
+            self.assertEqual(d.map(lambda x: prefix + x).saveAsTfrecordsFile(path),
+                             [os.path.join(path, '0000.tfrecords')])
+            rd = self.sc.tfrecordsFile(path, splitSize=1<<10)
+            self.assertEqual(rd.count(), N)
+
+        d = self.sc.makeRDD(list(range(N)), 1)
+        with temppath('tfout') as path:
+            self.assertEqual(d.saveAsTfrecordsFile(path), [os.path.join(path, '0000.tfrecords')])
+            rd = self.sc.tfrecordsFile(path, splitSize=1<<10)
+            self.assertEqual(rd.count(), N)
+            self.assertEqual(rd.map(lambda x: int(x)).reduce(lambda x, y: x + y), sum(range(N)))
+
     def test_compressed_file(self):
         # compress
         d = self.sc.makeRDD(list(range(100000)), 1)
