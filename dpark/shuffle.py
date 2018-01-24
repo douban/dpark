@@ -598,7 +598,7 @@ class DiskMerger(Merger):
     def get_used_memory(self):
         try:
             import psutil
-            return psutil.Process().rss >> 20
+            return psutil.Process().memory_info().rss >> 20
         except Exception:
             return 0
 
