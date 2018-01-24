@@ -88,8 +88,9 @@ class GroupBySubIter(object):
         while True:
             kv = next_block_func(key)
             if kv is None:
-                return True
+                break
             blocks.append(kv[1])
+        self._finished = True
         return len(blocks)
 
     # def __del__(self):
