@@ -443,8 +443,8 @@ def add_default_options():
     group.add_option("-V","--volumes", type="string",
                      help="volumes to mount into Docker")
 
-    parser.add_option("--sort_shuffle", action="store_true")
-    parser.add_option("--iter_values", action="store_true")
+    group.add_option("--sort_shuffle", action="store_true")
+    group.add_option("--iter_values", action="store_true")
 
     parser.add_option_group(group)
 
