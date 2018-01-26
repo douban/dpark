@@ -34,7 +34,7 @@ except ImportError:
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
-    AbortFileReplacement, get_logger, portable_hash, default_crc32c_fn
+    AbortFileReplacement, get_logger, portable_hash, default_crc32c_fn, Scope
 )
 from dpark.shuffle import (
     Merger, CoGroupMerger, SortedShuffleFetcher, SortedMerger, CoGroupSortedMerger,
@@ -71,17 +71,6 @@ def cached(func):
     return getstate
 
 
-STACK_FILE_NAME = 0
-STACK_LINE_NUM = 1
-STACK_FUNC_NAME = 2
-
-
-class Scope(object):
-    def __init__(self):
-        self.__name__ = None
-        self.call_site = None
-
-
 class RDD(object):
     def __init__(self, ctx):
         self.ctx = ctx
@@ -100,27 +89,7 @@ class RDD(object):
         self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
-        self._get_scope()
-
-    def _get_scope(self):
-        stack = traceback.extract_stack(sys._getframe())
-        idx = len(stack) - 1
         self.scope = Scope()
-        for i in range(len(stack) - 1, -1, -1):
-            if stack[i][STACK_FUNC_NAME] == '__init__':
-                idx = i
-                break
-        for i in range(idx, -1, -1):
-            if stack[i][STACK_FUNC_NAME] != '__init__':
-                self.scope.__name__ = stack[i][STACK_FUNC_NAME]
-                if i > 0:
-                    self.scope.call_site = '%s at %s : %s ' % \
-                                           (self.scope.__name__,
-                                            stack[i - 1][STACK_FILE_NAME],
-                                            str(stack[i - 1][STACK_LINE_NUM]))
-                else:
-                    self.scope.call_site = '<root>'
-                break
 
     nextId = 0
 
@@ -1559,23 +1528,6 @@ class TextFileRDD(RDD):
                     hostnames.append(host)
                 self._preferred_locs[split] = hostnames
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
-
-    def _get_scope(self):
-        stack = traceback.extract_stack(sys._getframe())
-        self.scope = Scope()
-        for i in range(0, len(stack)):
-            if 'dpark/context.py' in stack[i][STACK_FILE_NAME]:
-                self.scope.__name__ = stack[i][STACK_FUNC_NAME]
-                if i > 0:
-                    self.scope.call_site = '%s in %s:%s' % \
-                                           (self.scope.__name__,
-                                            stack[i - 1][STACK_FILE_NAME],
-                                            str(stack[i - 1][STACK_LINE_NUM]))
-                else:
-                    self.scope.call_site = '<root>'
-                break
-        if not self.scope.__name__:
-            super(TextFileRDD, self)._get_scope()
 
     def open_file(self):
         return open_file(self.path)
