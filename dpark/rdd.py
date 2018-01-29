@@ -18,12 +18,18 @@ import shutil
 import heapq
 import struct
 import traceback
+import tempfile
 
 try:
     from cStringIO import StringIO
     BytesIO = StringIO
-except:
+except ImportError:
     from six import BytesIO, StringIO
+
+try:
+    from cPickle import Pickler, Unpickler
+except ImportError:
+    from pickle import  Pickler, Unpickler
 
 from dpark.dependency import *
 from dpark.util import (
@@ -271,8 +277,8 @@ class RDD(object):
     def glom(self):
         return GlommedRDD(self)
 
-    def cartesian(self, other):
-        return CartesianRDD(self, other)
+    def cartesian(self, other, taskMemory=None, cacheMemory=None):
+        return CartesianRDD(self, other, taskMemory=taskMemory, cacheMemory=cacheMemory)
 
     def zipWith(self, other):
         return ZippedRDD(self.ctx, [self, other])
@@ -1061,18 +1067,31 @@ class ShuffledRDD(RDD):
         return merger
 
 
+DEFAULT_CACHE_MEMORY_SIZE = 256
+
+
 class CartesianSplit(Split):
     def __init__(self, idx, s1, s2):
         self.index = idx
         self.s1 = s1
         self.s2 = s2
 
+
 class CartesianRDD(RDD):
-    def __init__(self, rdd1, rdd2):
+    def __init__(self, rdd1, rdd2, taskMemory=None, cacheMemory=DEFAULT_CACHE_MEMORY_SIZE):
         RDD.__init__(self, rdd1.ctx)
         self.rdd1 = rdd1
         self.rdd2 = rdd2
-        self.mem = max(rdd1.mem, rdd2.mem) * 1.5
+        self.cache_memory = int(max(
+            DEFAULT_CACHE_MEMORY_SIZE,
+            cacheMemory or DEFAULT_CACHE_MEMORY_SIZE
+        ))
+        self.mem = int(max(
+            taskMemory or self.ctx.options.mem,
+            rdd1.mem * 1.5,
+            rdd2.mem * 1.5,
+            self.cache_memory * 2.5
+        ))
         self.numSplitsInRdd2 = n = len(rdd2)
         self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
@@ -1089,16 +1108,45 @@ class CartesianRDD(RDD):
         self.rdd1 = self.rdd2 = None
 
     def compute(self, split):
-        b = None
-        for i in self.rdd1.iterator(split.s1):
-            if b is None:
-                b = []
-                for j in self.rdd2.iterator(split.s2):
-                    yield (i, j)
-                    b.append(j)
-            else:
-                for j in b:
-                    yield (i,j)
+        saved = False
+        _cached = None
+        basedir = os.path.join(env.workdir[-1], 'temp')
+        mkdir_p(basedir)
+        with tempfile.SpooledTemporaryFile(self.cache_memory << 20, dir=basedir) as f:
+            for i in self.rdd1.iterator(split.s1):
+                if not saved:
+                    with gzip.GzipFile('dummy', fileobj=f, compresslevel=1) as gf:
+                        pickler = Pickler(gf, -1)
+                        for j in self.rdd2.iterator(split.s2):
+                            yield i, j
+                            pickler.dump(j)
+
+                    saved = True
+
+                elif _cached is not None:
+                    # speedup when memory is enough
+                    for j in _cached:
+                        yield i, j
+
+                else:
+                    if not f._rolled:
+                        _cached = []
+
+                    f.seek(0)
+                    with gzip.GzipFile(fileobj=f, mode='rb') as gf:
+                        unpickler = Unpickler(gf)
+                        try:
+                            while True:
+                                j = unpickler.load()
+                                yield i, j
+                                if _cached is not None:
+                                    _cached.append(j)
+                        except EOFError:
+                            pass
+
+                    if _cached is not None:
+                        f.close()
+
 
 class CoGroupSplitDep: pass
 class NarrowCoGroupSplitDep(CoGroupSplitDep):
