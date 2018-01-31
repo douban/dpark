@@ -386,8 +386,9 @@ class SortedShuffleFetcher(ShuffleFetcher):
 
 class Merger(object):
 
-    def __init__(self, rdd):
-        self.mergeCombiners = rdd.aggregator.mergeCombiners
+    def __init__(self, aggregator):
+        self.createCombiner = aggregator.createCombiner
+        self.mergeCombiners = aggregator.mergeCombiners
         self.combined = {}
 
     def merge(self, items):
@@ -411,8 +412,8 @@ class SortMergeAggregator(AggregatorBase):
 
 
 class SortedMerger(Merger):
-    def __init__(self, rdd):
-        self.aggregator = SortMergeAggregator(rdd.aggregator.mergeCombiners)
+    def __init__(self, aggregator):
+        self.aggregator = SortMergeAggregator(aggregator.mergeCombiners)
         self.combined = iter([])
 
     def merge(self, iters):
@@ -439,8 +440,8 @@ class SortedGroupMerger(Merger):
 
 class CoGroupMerger(object):
 
-    def __init__(self, rdd):
-        self.size = rdd.size
+    def __init__(self, size):
+        self.size = size
         self.combined = {}
 
     def get_seq(self, k):
@@ -600,10 +601,9 @@ class SortedItems(object):
 
 class DiskMerger(Merger):
 
-    def __init__(self, rdd):
-        Merger.__init__(self, rdd)
-        self.total = len(rdd)
-        self.mem = 0.8 * rdd.mem or MAX_SHUFFLE_MEMORY
+    def __init__(self, aggregator):
+        Merger.__init__(self, aggregator, mem)
+        self.mem = 0.8 * mem or MAX_SHUFFLE_MEMORY
         self.archives = []
         self.base_memory = self.get_used_memory()
         self.max_merge = None

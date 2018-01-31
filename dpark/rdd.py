@@ -1041,7 +1041,7 @@ class ShuffledRDD(RDD):
 
     def compute(self, split):
         if not self.sort_shuffle:
-            merger = Merger(self)
+            merger = Merger(self.aggregator)
             fetcher = env.shuffleFetcher
             fetcher.fetch(self.shuffleId, split.index, merger.merge)
         else:
@@ -1050,7 +1050,7 @@ class ShuffledRDD(RDD):
             if self.iter_values:
                 merger = SortedGroupMerger(self.scope.call_site)
             else:
-                merger = SortedMerger(self)
+                merger = SortedMerger(self.aggregator)
             merger.merge(iters)
 
         return merger
@@ -1191,7 +1191,7 @@ class CoGroupedRDD(RDD):
                                                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def _compute_hash_merge(self, split):
-        m = CoGroupMerger(self)
+        m = CoGroupMerger(self.size)
         for i, dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))
