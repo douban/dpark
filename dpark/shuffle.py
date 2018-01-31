@@ -74,10 +74,10 @@ class BadShuffleStreamException(Exception):
     pass
 
 
-def write_buf(stream, buf):
+def write_buf(stream, buf, is_mashal):
     buf = zlib.compress(buf, 1)
     size = len(buf)
-    stream.write(struct.pack("!I", size))
+    stream.write(struct.pack("!I?", size, is_mashal))
     stream.write(buf)
 
 
@@ -92,19 +92,23 @@ class AutoBatchedSerializer(object):
         self.best_size = best_size
         self.max_num = 0
         self.max_size = 0
+        self.use_marshal = True
 
     def load_stream(self, stream):
         while True:
-            length = stream.read(4)
-            if not length:
+            head = stream.read(5)
+            if not head:
                 return
-            length = struct.unpack("!I", length)[0]
+            length, is_mashal = struct.unpack("!I?", head)
             buf = stream.read(length)
             if len(buf) < length:
                 raise BadShuffleStreamException
             buf = zlib.decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
-            vs = pickle.loads(buf)
+            if is_mashal:
+                vs = marshal.loads(buf)
+            else:
+                vs = pickle.loads(buf)
             for v in vs:
                 yield v
 
@@ -122,9 +126,17 @@ class AutoBatchedSerializer(object):
             batch_num = self._dump_batch(stream, vs, batch_num)
 
     def _dump_batch(self, stream, vs, batch_num):
-        buf = pickle.dumps(vs, -1)
+        if self.use_marshal:
+            try:
+                buf = marshal.dump(vs)
+            except:
+                buf = pickle.dumps(vs, -1)
+                self.use_marshal = False
+        else:
+            buf = pickle.dumps(vs, -1)
+
         mem_size = len(buf)
-        write_buf(stream, buf)
+        write_buf(stream, buf, self.use_marshal)
 
         if mem_size < self.best_size:
             batch_num *= 2
