@@ -285,34 +285,34 @@ class DparkContext(object):
         if key_filter is None:
             fullscan = True
         if isinstance(path, (tuple, list)):
-            return self.union([self.beansdb(p, depth, key_filter, fullscan,
-                                            raw, only_latest)
+            rdd = self.union([self.beansdb(p, depth, key_filter, fullscan,
+                                            raw=True, only_latest=False)
                     for p in path])
-
-        path = os.path.realpath(path)
-        assert os.path.exists(path), "%s no exists" % path
-        if os.path.isdir(path):
-            subs = []
-            if not depth:
-                subs = [os.path.join(path, n) for n in os.listdir(path)
-                        if n.endswith('.data')]
-            if subs:
-                rdd = self.union([BeansdbFileRDD(self, p, key_filter,
-                                                 fullscan, raw=True)
-                        for p in subs])
-            else:
-                subs = [os.path.join(path, '%x'%i) for i in range(16)]
-                rdd = self.union([self.beansdb(p, depth and depth-1, key_filter,
-                                               fullscan, True, only_latest)
-                        for p in subs if os.path.exists(p)])
-                only_latest = False
         else:
-            rdd = BeansdbFileRDD(self, path, key_filter, fullscan, raw=True)
+            path = os.path.realpath(path)
+            assert os.path.exists(path), "%s no exists" % path
+            if os.path.isdir(path):
+                subs = []
+                if not depth:
+                    subs = [os.path.join(path, n) for n in os.listdir(path)
+                            if n.endswith('.data')]
+                if subs:
+                    rdd = self.union([BeansdbFileRDD(self, p, key_filter,
+                                                    fullscan, raw=True)
+                            for p in subs])
+                else:
+                    subs = [os.path.join(path, '%x'%i) for i in range(16)]
+                    rdd = self.union([self.beansdb(p, depth and depth-1, key_filter,
+                                                fullscan, raw=True, only_latest=False)
+                            for p in subs if os.path.exists(p)])
+            else:
+                rdd = BeansdbFileRDD(self, path, key_filter, fullscan, raw)
 
         # choose only latest version
         if only_latest:
+            numSplits = min(int(ceil(len(rdd)/4)), 800)
             rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2,
-                                  int(ceil(len(rdd) / 4)))
+                                  numSplits=numSplits)
         if not raw:
             rdd = rdd.mapValue(lambda v_ver_t: (restore_value(*v_ver_t[0]), v_ver_t[1], v_ver_t[2]))
         return rdd
