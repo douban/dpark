@@ -223,7 +223,11 @@ class TDigest(object):
         for it in range(len(weight) - 1):
             if mean[it] == x:
                 w0 = weight_so_far
-                weight_so_far += sum(weight[it:-1]) + sum(weight[it + 1:])
+                weight_so_far += sum(
+                    weight[i] + weight[i + 1]
+                    for i in xrange(it, len(weight) - 1)
+                    if mean[i + 1] == x
+                )
                 return (w0 +  weight_so_far) / 2. / self._total_weight
 
             if mean[it] <= x and mean[it + 1] > x:
