@@ -358,20 +358,20 @@ class TestRDD(unittest.TestCase):
         N = 1000
         d = self.sc.makeRDD(list(("the %d string" % i) for i in range(N)), 1)
         with temppath("tfout") as path:
-            self.assertEqual(d.saveAsTfrecordsFile(path),
+            self.assertEqual(d.saveAsTFRecordsFile(path),
                              [os.path.join(path, '0000.tfrecords')])
-            rd = self.sc.tfrecordsFile(path)
+            rd = self.sc.tfRecordsFile(path)
             self.assertEqual(rd.count(), N)
             prefix = 'prefix:'
-            self.assertEqual(d.map(lambda x: prefix + x).saveAsTfrecordsFile(path),
+            self.assertEqual(d.map(lambda x: prefix + x).saveAsTFRecordsFile(path),
                              [os.path.join(path, '0000.tfrecords')])
-            rd = self.sc.tfrecordsFile(path, splitSize=1<<10)
+            rd = self.sc.tfRecordsFile(path, splitSize=1<<10)
             self.assertEqual(rd.count(), N)
 
         d = self.sc.makeRDD(list(range(N)), 1)
         with temppath('tfout') as path:
-            self.assertEqual(d.saveAsTfrecordsFile(path), [os.path.join(path, '0000.tfrecords')])
-            rd = self.sc.tfrecordsFile(path, splitSize=1<<10)
+            self.assertEqual(d.saveAsTFRecordsFile(path), [os.path.join(path, '0000.tfrecords')])
+            rd = self.sc.tfRecordsFile(path, splitSize=1<<10)
             self.assertEqual(rd.count(), N)
             self.assertEqual(rd.map(lambda x: int(x)).reduce(lambda x, y: x + y), sum(range(N)))
 

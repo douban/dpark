@@ -34,7 +34,7 @@ except ImportError:
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
-    AbortFileReplacement, get_logger, portable_hash
+    AbortFileReplacement, get_logger, portable_hash, default_crc32c_fn
 )
 from dpark.shuffle import (
     Merger, CoGroupMerger, SortedShuffleFetcher, SortedMerger, CoGroupSortedMerger,
@@ -436,7 +436,7 @@ class RDD(object):
     def saveAsTextFile(self, path, ext='', overwrite=True, compress=False):
         return OutputTextFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
-    def saveAsTfrecordsFile(self, path, ext='', overwrite=True, compress=False):
+    def saveAsTFRecordsFile(self, path, ext='', overwrite=True, compress=False):
         return OutputTfrecordstFileRDD(self, path, ext, overwrite, compress=compress).collect()
 
     def saveAsTextFileByKey(self, path, ext='', overwrite=True, compress=False):
@@ -1614,6 +1614,8 @@ class TextFileRDD(RDD):
 
 class TfrecordsRDD(TextFileRDD):
 
+    DEFAULT_READ_SIZE = 1 << 10
+
     def __init__(self, ctx, path, numSplits=None, splitSize=None):
         TextFileRDD.__init__(self, ctx, path, numSplits, splitSize)
 
@@ -1623,24 +1625,30 @@ class TfrecordsRDD(TextFileRDD):
             end = split.end
             if start > 0:
                 # modified below
-                while not self.check_split_point(f, start):
-                    start += 1
-                    if start >= end:
-                        logger.info("End Of File")
-                        return
+                f.seek(start)
+                buffer = f.read(min(self.DEFAULT_READ_SIZE, end - f.tell()))
+                while start < end:
+                    cursor = 0
+                    while cursor < len(buffer) - 11 and not self.check_split_point(buffer[cursor:cursor + 12]):
+                        cursor += 1
+                    start += cursor
+                    if cursor == len(buffer) - 11:
+                        start += 11
+                        buffer = buffer[-11:] + f.read(min(self.DEFAULT_READ_SIZE, end - f.tell()))
+                    else:
+                        break
 
             if start >= end:
                 return
 
+            f.seek(start)
             while start < end:
-                record, size = self.get_single_record(f, start)
+                record = self.get_single_record(f)
                 yield record
-                start += size
+                start += len(record)+16
 
-    def check_split_point(self, f, point):
-        f.seek(point)
+    def check_split_point(self, buf):
         buf_length_expected = 12
-        buf = f.read(buf_length_expected)
         if not buf:
             return False
         if len(buf) != buf_length_expected:
@@ -1649,8 +1657,7 @@ class TfrecordsRDD(TextFileRDD):
         length_mask_actual = self._masked_crc32c(buf[:8])
         return length_mask_actual == length_mask_expected
 
-    def get_single_record(self, f, point):
-        f.seek(point)
+    def get_single_record(self, f):
         buf_length_expected = 12
         buf = f.read(buf_length_expected)
         if len(buf) != buf_length_expected:
@@ -1666,18 +1673,13 @@ class TfrecordsRDD(TextFileRDD):
             data, data_mask_expected = struct.unpack('<%dsI' % length, buf)
             data_mask_actual = self._masked_crc32c(data)
             if data_mask_actual == data_mask_expected:
-                return data.decode(), len(data)+16
+                return data.decode()
             else:
                 logger.error("data loss!!!")  # Note: Pending
         else:
-            return None, 0
+            return None
 
-    def _default_crc32c_fn(value):
-        import crcmod
-        _default_crc32c_fn_fn = crcmod.predefined.mkPredefinedCrcFun('crc-32c')
-        return _default_crc32c_fn_fn(value)
-
-    def _masked_crc32c(self, value, crc32c_fn=_default_crc32c_fn):
+    def _masked_crc32c(self, value, crc32c_fn=default_crc32c_fn):
         crc = crc32c_fn(value)
         return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
 
@@ -2101,12 +2103,7 @@ class OutputTfrecordstFileRDD(OutputTextFileRDD):
             empty = False
         return not empty
 
-    def _default_crc32c_fn(value):
-        import crcmod
-        _default_crc32c_fn_fn = crcmod.predefined.mkPredefinedCrcFun('crc-32c')
-        return _default_crc32c_fn_fn(value)
-
-    def _masked_crc32c(self, value, crc32c_fn=_default_crc32c_fn):
+    def _masked_crc32c(self, value, crc32c_fn=default_crc32c_fn):
         crc = crc32c_fn(value)
         return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
 

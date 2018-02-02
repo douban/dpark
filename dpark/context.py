@@ -210,7 +210,7 @@ class DparkContext(object):
         else:
             return create_rdd(cls, path, *ka, **kws)
 
-    def tfrecordsFile(self, path, *args, **kwargs):
+    def tfRecordsFile(self, path, *args, **kwargs):
         return self.textFile(path, cls=TfrecordsRDD, *args, **kwargs)
 
     def partialTextFile(self, path, begin, end, splitSize=None, numSplits=None):

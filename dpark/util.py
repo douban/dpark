@@ -289,3 +289,11 @@ def get_logger(name):
     logging.setLoggerClass(old_class)
     return logger
 
+
+def default_crc32c_fn(value):
+    if not default_crc32c_fn.fn:
+        import crcmod
+        default_crc32c_fn.fn = crcmod.predefined.mkPredefinedCrcFun('crc-32c')
+    return default_crc32c_fn.fn(value)
+
+default_crc32c_fn.fn = None
