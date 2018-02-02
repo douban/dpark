@@ -37,6 +37,7 @@ def singleton(cls):
 _shutdown_handlers = []
 
 def _shutdown():
+    started = len(_shutdown_handlers)
     for handler in _shutdown_handlers:
         try:
             handler()
@@ -45,7 +46,8 @@ def _shutdown():
 
     _shutdown_handlers[:] = []
     DparkContext._instances.clear()
-    logger.info("dpark shutdown.")
+    if started:
+        logger.info("dpark shutdown.")
 
 atexit.register(_shutdown)
 
