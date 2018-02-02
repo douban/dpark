@@ -42,11 +42,11 @@ class StageInfo(object):
                 self._input_edges.add((dep.rdd.id, r.id))
                 return False
             if len(dep.rdd.dependencies) != 0 or \
-               dep.rdd.scope.__name__ not in filter_set:
+               dep.rdd.scope.dpark_func_name not in filter_set:
                 # 无下级依赖的rdd如果属于同一个 scope.func_name ，
                 # 则这些rdd只展示一次
                 self._internal_edges.add((dep.rdd.id, r.id))
-                filter_set.add(dep.rdd.scope.__name__)
+                filter_set.add(dep.rdd.scope.dpark_func_name)
                 return True
             return False
 
@@ -92,7 +92,7 @@ class StageInfo(object):
         for node_id in self._nodes:
             inner_node = StageInfo.idToRDDNode[node_id]
             ret_str += 'subgraph cluster_node_%d{\n' % node_id
-            ret_str += 'label=%s\n' % inner_node.scope.__name__
+            ret_str += 'label=%s\n' % inner_node.scope.dpark_func_name
             ret_str += '%d [label="%s"]\n' % (node_id,
                                               (str(inner_node) + '\n' +
                                                inner_node.scope.call_site))

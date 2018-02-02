@@ -322,6 +322,6 @@ def get_user_call_site():
 class Scope(object):
     def __init__(self):
         fn, pos = get_user_call_site()
-        self.__name__ = fn
+        self.dpark_func_name = fn
         self.call_site = "@".join([fn, pos])
 
