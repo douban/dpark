@@ -24,15 +24,16 @@ from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
 from dpark.nested_groupby import GroupByNestedIter, list_values, list_value
 
-# to see task fail reason, have to set logging level
-# logging.getLogger('dpark').setLevel(logging.INFO)
-logging.getLogger('dpark').setLevel(logging.ERROR)
-
 dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 # to test on mesos,
 # export TEST_DPARK_MASTER=mesos
 # export TMPDIR=/path/on/moosefs
 print("test with dpark_master=%s, tempdir=%s" % (dpark_master, tempfile.gettempdir()))
+
+if dpark_master == 'mesos':
+    logging.getLogger('dpark').setLevel(logging.INFO)
+else:
+    logging.getLogger('dpark').setLevel(logging.ERROR)
 
 
 @contextlib.contextmanager
