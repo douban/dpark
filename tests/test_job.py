@@ -55,13 +55,14 @@ class TestJob(unittest.TestCase):
         job.task_host_manager.register_host('localhost')
         cpus = [10]
         mems = [10]
+        gpus = [0]
         # the return of taskOffer is a list whose item is TUPLE with Index of offer,
         # information of Offer,
         # description of Task
-        ts = sum([job.taskOffer(host_offers, cpus, mems) for i in range(10)], [])
+        ts = sum([job.taskOffer(host_offers, cpus, mems, gpus) for i in range(10)], [])
         assert len(ts) == 10
         assert job.tasksLaunched == 10
-        assert not job.taskOffer(host_offers, cpus, mems)
+        assert not job.taskOffer(host_offers, cpus, mems, gpus)
         [job.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts]
         assert job.tasksFinished == 10
 
@@ -76,15 +77,18 @@ class TestJob(unittest.TestCase):
         job.task_host_manager.register_host('localhost', purge_elapsed=0)
         cpus = [1]
         mems = [10]
+        gpus = [0]
         ts = sum([job.taskOffer(host_offers=host_offers, cpus=cpus,
-                                mems=mems) for i in range(10)], [])
+                                mems=mems, gpus=gpus) for i in range(10)], [])
         [job.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts[1:]]
         assert job.tasksFinished == 9
         job.statusUpdate(ts[0][2].id, 0, 'TASK_FAILED')
         t = job.taskOffer(host_offers=host_offers, cpus=cpus,
-                          mems=mems)[0]
+                          mems=mems, gpus=gpus)[0]
         assert t[2].id == 0
-        assert not job.taskOffer(host_offers=host_offers, cpus=cpus, mems=mems)
+        assert not job.taskOffer(
+            host_offers=host_offers, cpus=cpus, mems=mems, gpus=gpus
+        )
         assert job.tasksLaunched == 10
         job.statusUpdate(t[2].id, 1, 'TASK_FINISHED')
         assert job.tasksFinished == 10

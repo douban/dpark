@@ -28,7 +28,7 @@ class Job:
         self.id = self.newJobId()
         self.start = time.time()
 
-    def taskOffer(self, host_offers, cpus, mems):
+    def taskOffer(self, host_offers, cpus, mems, gpus):
         raise NotImplementedError
 
     def statusUpdate(self, t):
@@ -54,7 +54,7 @@ MAX_TASK_MEMORY = 15 << 10  # 15GB
 
 class SimpleJob(Job):
 
-    def __init__(self, sched, tasks, cpus=1, mem=100,
+    def __init__(self, sched, tasks, cpus=1, mem=100, gpus=0,
                  task_host_manager=None):
         Job.__init__(self)
         self.sched = sched
@@ -66,6 +66,7 @@ class SimpleJob(Job):
             t.used = 0
             t.cpus = cpus
             t.mem = mem
+            t.gpus = gpus
 
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
@@ -132,7 +133,7 @@ class SimpleJob(Job):
         ts = sorted(list(st.items()), key=itemgetter(1), reverse=True)
         return [t for t, _ in ts]
 
-    def findTaskFromList(self, l, host, cpus, mem):
+    def findTaskFromList(self, l, host, cpus, mem, gpus):
         for i in l:
             if self.launched[i] or self.finished[i]:
                 continue
@@ -141,18 +142,18 @@ class SimpleJob(Job):
             t = self.tasks[i]
             if self.task_host_manager.task_failed_on_host(t.id, host):
                 continue
-            if t.cpus <= cpus + 1e-4 and t.mem <= mem:
+            if t.cpus <= cpus + 1e-4 and t.mem <= mem and t.gpus <= gpus:
                 return i
 
-    def taskOffer(self, host_offers, cpus, mems):
+    def taskOffer(self, host_offers, cpus, mems, gpus):
         prefer_list = []
         for host in host_offers:
             i, o = host_offers[host]
             local_task = self.findTaskFromList(
                 self.getPendingTasksForHost(host), host,
-                cpus[i], mems[i])
+                cpus[i], mems[i], gpus[i])
             if local_task is not None:
-                result_tuple = self._try_update_task_offer(local_task, i, o, cpus, mems)
+                result_tuple = self._try_update_task_offer(local_task, i, o, cpus, mems, gpus)
                 if result_tuple is None:
                     continue
                 prefer_list.append(result_tuple)
@@ -164,15 +165,14 @@ class SimpleJob(Job):
                                                            self.running_hosts[idx])
                 if i is None:
                     continue
-                result_tuple = self._try_update_task_offer(idx, i, o, cpus, mems)
+                result_tuple = self._try_update_task_offer(idx, i, o, cpus, mems, gpus)
                 if result_tuple:
                     return [result_tuple]
         return []
 
-    def _try_update_task_offer(self, task_idx, i, o, cpu, mem):
+    def _try_update_task_offer(self, task_idx, i, o, cpus, mem, gpus):
         t = self.tasks[task_idx]
-        if t.cpus <= cpu[i] + 1e-4 and \
-                        t.mem <= mem[i]:
+        if t.cpus <= cpus[i] + 1e-4 and t.mem <= mem[i] and t.gpus <= gpus[i]:
             t.status = 'TASK_STAGING'
             t.start = time.time()
             t.host = o.hostname

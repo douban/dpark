@@ -96,6 +96,8 @@ class RDD(object):
         ctx.init()
         self.err = ctx.options.err
         self.mem = ctx.options.mem
+        self.cpus = 0
+        self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
         self._get_scope()
@@ -810,11 +812,26 @@ class RDD(object):
             .mapValue(_)
 
 
+    def with_cpus(self, cpus):
+        self.cpus = cpus
+        return self
+
+    def with_gpus(self, gpus):
+        self.gpus = gpus
+        return self
+
+    def with_mem(self, mem):
+        self.mem = mem
+        return self
+
+
 class DerivedRDD(RDD):
     def __init__(self, rdd):
         RDD.__init__(self, rdd.ctx)
         self.prev = rdd
         self.mem = max(self.mem, rdd.mem)
+        self.cpus = rdd.cpus
+        self.gpus = rdd.gpus
         self._dependencies = [OneToOneDependency(rdd)]
         self._splits = self.prev.splits
         self._preferred_locs = self.prev._preferred_locs
@@ -1095,6 +1112,15 @@ class CartesianRDD(RDD):
             rdd2.mem * 1.5,
             self.cache_memory * 2.5
         ))
+        self.cpus = max(
+            rdd1.cpus,
+            rdd2.cpus
+        )
+        self.gpus = int(max(
+            rdd1.gpus,
+            rdd2.gpus
+        ))
+
         self.numSplitsInRdd2 = n = len(rdd2)
         self._splits = [CartesianSplit(s1.index*n+s2.index, s1, s2)
             for s1 in rdd1.splits for s2 in rdd2.splits]
@@ -1284,7 +1310,11 @@ class UnionSplit(Split):
 class UnionRDD(RDD):
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
-        self.mem = rdds[0].mem if rdds else self.mem
+        if rdds:
+            self.mem = max(rdd.mem for rdd in rdds)
+            self.cpus = max(rdd.cpus for rdd in rdds)
+            self.gpus = max(rdd.cpus for rdd in rdds)
+
         pos = 0
         for rdd in rdds:
             self._splits.extend([UnionSplit(pos + i, rdd, sp) for i, sp in enumerate(rdd.splits)])
@@ -1303,6 +1333,8 @@ class SliceRDD(RDD):
         RDD.__init__(self, rdd.ctx)
         self.rdd = rdd
         self.mem = rdd.mem
+        self.cpus = rdd.cpus
+        self.gpus = rdd.gpus
         if j > len(rdd):
             j = len(rdd)
         self.i = i
@@ -1336,6 +1368,8 @@ class MergedRDD(RDD):
         numSplits = (len(rdd) + splitSize - 1) // splitSize
         self.rdd = rdd
         self.mem = rdd.mem
+        self.cpus = rdd.cpus
+        self.gpus = rdd.gpus
         self.splitSize = splitSize
         self.numSplits = numSplits
 
@@ -1363,6 +1397,8 @@ class ZippedRDD(RDD):
         RDD.__init__(self, ctx)
         self.rdds = rdds
         self.mem = max(r.mem for r in rdds)
+        self.cpus = max(r.cpus for r in rdds)
+        self.gpus = max(r.gpus for r in rdds)
         self._splits = [MultiSplit(i, splits)
                 for i, splits in enumerate(zip(*[rdd.splits for rdd in rdds]))]
         self._dependencies = [OneToOneDependency(rdd) for rdd in rdds]

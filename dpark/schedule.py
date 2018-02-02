@@ -833,8 +833,11 @@ class MesosScheduler(DAGScheduler):
         if not tasks:
             return
 
-        job = SimpleJob(self, tasks, self.cpus, tasks[0].rdd.mem or self.mem,
-                        self.task_host_manager)
+        rdd = tasks[0].rdd
+        assert all(t.rdd is rdd for t in tasks)
+
+        job = SimpleJob(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
+                        rdd.gpus, self.task_host_manager)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
@@ -900,12 +903,13 @@ class MesosScheduler(DAGScheduler):
             filter_offer.append(o)
         offers = filter_offer
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
+        gpus = [self.getResource(o.resources, 'gpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem')
                 - (o.agent_id.value not in self.agentTasks
                     and EXECUTOR_MEMORY or 0)
                 for o in offers]
-        logger.debug('get %d offers (%s cpus, %s mem), %d jobs',
-                     len(offers), sum(cpus), sum(mems), len(self.activeJobs))
+        logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
+                     len(offers), sum(cpus), sum(mems), sum(gpus), len(self.activeJobs))
 
         tasks = {}
         for job in self.activeJobsQueue:
@@ -921,7 +925,7 @@ class MesosScheduler(DAGScheduler):
                             or cpus[i] < self.cpus + EXECUTOR_CPUS):
                         continue
                     host_offers[o.hostname] = (i, o)
-                assigned_list = job.taskOffer(host_offers, cpus, mems)
+                assigned_list = job.taskOffer(host_offers, cpus, mems, gpus)
                 if not assigned_list:
                     break
                 for i, o, t in assigned_list:
@@ -936,6 +940,7 @@ class MesosScheduler(DAGScheduler):
                     self.agentTasks[sid] = self.agentTasks.get(sid, 0) + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
+                    gpus[i] -= t.gpus
 
         used = time.time() - start
         if used > 10:
@@ -947,9 +952,9 @@ class MesosScheduler(DAGScheduler):
             else:
                 driver.declineOffer(o.id)
 
-        logger.debug('reply with %d tasks, %s cpus %s mem left',
+        logger.debug('reply with %d tasks, %s cpus %s mem %s gpus left',
                      sum(len(ts) for ts in tasks.values()),
-                     sum(cpus), sum(mems))
+                     sum(cpus), sum(mems), sum(gpus))
 
     @safe
     def offerRescinded(self, driver, offer_id):
@@ -998,6 +1003,13 @@ class MesosScheduler(DAGScheduler):
         mem.name = 'mem'
         mem.type = 'SCALAR'
         mem.scalar.value = t.mem
+
+        cpu = Dict()
+        resources.append(cpu)
+        cpu.name = 'gpus'
+        cpu.type = 'SCALAR'
+        cpu.scalar.value = t.gpus
+
         return task
 
     @safe
