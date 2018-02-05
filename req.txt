@@ -1,24 +1,24 @@
-addict==2.1.0
+addict==2.1.2
 appdirs==1.4.3
 click==6.7
-Cython==0.25.2
+crcmod==1.7
+Cython==0.27.3
 flaky==3.4.0
-Flask==0.12
-gevent==1.2.1
+Flask==0.12.2
+gevent==1.2.2
 greenlet==0.4.12
 http-parser==0.8.3
 itsdangerous==0.24
-Jinja2==2.9.5
+Jinja2==2.10
 lz4==0.8.2; platform_python_implementation!="PyPy"
 lz4-cffi==1.0.5; platform_python_implementation=="PyPy"
 MarkupSafe==1.0
 msgpack-python==0.4.8
 packaging==16.8
-psutil==5.2.0
+psutil==5.4.2
 pymesos==0.2.15
 pyparsing==2.2.0
 pyquicklz==1.4.1
-pyzmq==16.0.2
-six==1.10.0
-Werkzeug==0.11.15
-crcmod==1.7
+pyzmq==16.0.3
+six==1.11.0
+Werkzeug==0.13
