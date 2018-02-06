@@ -15,6 +15,7 @@ req = [
     'psutil>=2.0.0',
     'addict',
     'pyquicklz',
+    'py-lz4framed',
 ]
 
 if platform.python_implementation() != 'PyPy':

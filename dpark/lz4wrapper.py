@@ -1,12 +1,15 @@
-import lz4
-if hasattr(lz4, 'block'):
-    # lz4 > 0.8
-    compress = lz4.block.compress
-    decompress = lz4.block.decompress
-elif hasattr(lz4, 'FFI'):
-    # lz4-cffi
-    compress = lz4.compress
-    decompress = lz4.uncompress
+import platform
+
+if platform.python_implementation() == 'PyPy':
+    def compress(*a, **kw):
+        from lz4framed import compress as _compress
+        return _compress(*a, **kw)
+
+    def decompress(*a, **kw):
+        from lz4framed import decompress as _decompress
+        return _decompress(*a, **kw)
+
 else:
-    compress = lz4.compress
-    decompress = lz4.decompress
+    from lz4framed import compress, decompress
+
+__all__ = ['compress', 'decompress']

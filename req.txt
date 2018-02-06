@@ -10,8 +10,7 @@ greenlet==0.4.12
 http-parser==0.8.3
 itsdangerous==0.24
 Jinja2==2.10
-lz4==0.8.2; platform_python_implementation!="PyPy"
-lz4-cffi==1.0.5; platform_python_implementation=="PyPy"
+py-lz4framed==0.9.6
 MarkupSafe==1.0
 msgpack-python==0.4.8
 packaging==16.8
