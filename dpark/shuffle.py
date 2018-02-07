@@ -268,9 +268,7 @@ class RemoteFile(object):
             from dpark.schedule import FetchFailed
             raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
         else:
-            logger.debug("Fetch failed for shuffle %d,"
-                         " reduce %d, %d, %s, %s, tried",
-                         self.url, self.num_retry, e)
+            logger.debug(msg)
             time.sleep(2 ** self.num_retry * 0.1)
 
 
