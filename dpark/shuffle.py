@@ -18,8 +18,8 @@ import uuid
 import gc
 import six
 import itertools
-from six.moves import range
-from six.moves import zip
+from operator import itemgetter
+from six.moves import range, zip, reduce
 
 try:
     import cStringIO as StringIO
@@ -338,11 +338,11 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             if f is None:
                 break
             try:
-                self.results.put(f.fetch_dct())
+                self.results.put((f.fetch_dct(), f.mid))
             except FetchFailed as e:
                 self.results.put(e)
 
-    def fetch(self, shuffle_id, reduce_id, func):
+    def fetch(self, shuffle_id, reduce_id, merge_func):
         self.start()
         st = time.time()
         files = self.get_remote_files(shuffle_id, reduce_id)
@@ -355,8 +355,9 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             if isinstance(r, FetchFailed):
                 self.stop()  # restart
                 raise r
+            r, map_id = r
 
-            func(six.iteritems(r))
+            merge_func(six.iteritems(r), map_id)
         env.task_stats.merge_time = time.time() - st
 
     def stop(self):
@@ -391,7 +392,7 @@ class Merger(object):
         self.mergeCombiners = aggregator.mergeCombiners
         self.combined = {}
 
-    def merge(self, items):
+    def merge(self, items, map_id):
         combined = self.combined
         mergeCombiners = self.mergeCombiners
         for k, v in items:
@@ -400,6 +401,26 @@ class Merger(object):
 
     def __iter__(self):
         return six.iteritems(self.combined)
+
+
+class OrderedMerger(Merger):
+
+    def merge(self, items, map_id):
+        combined = self.combined
+        for k, v in items:
+            o = combined.get(k)
+            iv = (map_id, v)
+            if o is None:
+                combined[k] =  [iv]
+            else:
+                o.append(iv)
+
+    def __iter__(self):
+        mergeCombiners = self.mergeCombiners
+        for k, ivs in six.iteritems(self.combined):
+            ivs.sort(key=itemgetter(0))
+            cb = reduce(mergeCombiners, (v for _, v in ivs))
+            yield k, cb
 
 
 class SortMergeAggregator(AggregatorBase):
@@ -452,12 +473,45 @@ class CoGroupMerger(object):
         for k, v in items:
             self.get_seq(k)[i].append(v)
 
-    def extend(self, i, items):
-        for k, v in items:
-            self.get_seq(k)[i].extend(v)
+    def extend(self, i, items, map_id):
+        for k, vs in items:
+            self.get_seq(k)[i].extend(vs)
 
     def __iter__(self):
         return six.iteritems(self.combined)
+
+
+class OrderedCoGroupMerger(object):
+
+    def __init__(self, size):
+        self.size = size
+        self.first = {}
+        self.combined = {}
+
+    def get_seq(self, k):
+        return self.combined.setdefault(
+            k, tuple([[] for _ in range(self.size)]))
+
+    def append(self, i, items):
+        g  = {}
+        for k, v in items:
+            g.setdefault(k, []).append(v)
+
+        self.extend(i, six.iteritems(g), 0)
+
+    def extend(self, i, items, map_id):
+        for k, v in items:
+            self.get_seq(k)[i].append(((i, map_id), v))
+
+    def __iter__(self):
+
+        def _combine(ivs):
+            ivs.sort(key=itemgetter(0))
+            combined = reduce(lambda x, y: x.extend(y) or x, (v for _, v in ivs), [])
+            return combined
+
+        for k, vv in six.iteritems(self.combined):
+            yield k, tuple(map(_combine, vv))
 
 
 class CoGroupSortMergeAggregator(AggregatorBase):

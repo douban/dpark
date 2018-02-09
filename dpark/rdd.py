@@ -38,6 +38,7 @@ from dpark.util import (
 )
 from dpark.shuffle import (
     Merger, CoGroupMerger, SortedShuffleFetcher, SortedMerger, CoGroupSortedMerger,
+    OrderedMerger, OrderedCoGroupMerger,
     SortedGroupMerger, StreamCoGroupSortedMerger,
 )
 from dpark.env import env
@@ -1041,7 +1042,10 @@ class ShuffledRDD(RDD):
 
     def compute(self, split):
         if not self.sort_shuffle:
-            merger = Merger(self.aggregator)
+            if isinstance(self.aggregator, GroupByAggregator):
+                merger = OrderedMerger(self.aggregator)
+            else:
+                merger = Merger(self.aggregator)
             fetcher = env.shuffleFetcher
             fetcher.fetch(self.shuffleId, split.index, merger.merge)
         else:
@@ -1191,13 +1195,13 @@ class CoGroupedRDD(RDD):
                                                if isinstance(dep, NarrowCoGroupSplitDep)], [])
 
     def _compute_hash_merge(self, split):
-        m = CoGroupMerger(self.size)
+        m = OrderedCoGroupMerger(self.size)
         for i, dep in enumerate(split.deps):
             if isinstance(dep, NarrowCoGroupSplitDep):
                 m.append(i, dep.rdd.iterator(dep.split))
             elif isinstance(dep, ShuffleCoGroupSplitDep):
-                def merge(items):
-                    m.extend(i, items)
+                def merge(items, map_id):
+                    m.extend(i, items, map_id)
                 env.shuffleFetcher.fetch(dep.shuffleId, split.index, merge)
         return m
 
