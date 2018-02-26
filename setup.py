@@ -6,7 +6,11 @@ setuptools_version = tuple(int(n) for n in setuptools.__version__.split('.'))
 assert setuptools_version >= (18, 0, 0), \
     'setuptools >= 18.0.0 required for Cython extension'
 
-ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
+ext_modules = [
+    Extension('dpark.portable_hash', ['dpark/portable_hash.pyx']),
+    Extension('dpark.crc32c', ['dpark/crc32c.c', 'dpark/crc32c_mod.c'], extra_compile_args=['-msse4.2']),
+]
+
 version = '0.4.2'
 req = [
     'pymesos>=0.2.10',

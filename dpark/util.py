@@ -12,6 +12,8 @@ import logging
 import os.path
 from contextlib import contextmanager
 from zlib import compress as _compress
+from dpark.crc32c import crc32c
+
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
@@ -291,13 +293,10 @@ def get_logger(name):
     return logger
 
 
-def default_crc32c_fn(value):
-    if not default_crc32c_fn.fn:
-        import crcmod
-        default_crc32c_fn.fn = crcmod.predefined.mkPredefinedCrcFun('crc-32c')
-    return default_crc32c_fn.fn(value)
+def masked_crc32c(s):
+    crc = crc32c(s)
+    return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
 
-default_crc32c_fn.fn = None
 
 src_dir = os.path.dirname(os.path.abspath(__file__))
 STACK_FILE_NAME = 0

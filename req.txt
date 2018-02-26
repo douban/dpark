@@ -1,7 +1,6 @@
 addict==2.1.2
 appdirs==1.4.3
 click==6.7
-crcmod==1.7
 Cython==0.27.3
 flaky==3.4.0
 Flask==0.12.2

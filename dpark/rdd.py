@@ -34,7 +34,8 @@ except ImportError:
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
-    AbortFileReplacement, get_logger, portable_hash, default_crc32c_fn, Scope
+    AbortFileReplacement, get_logger, portable_hash, Scope,
+    masked_crc32c
 )
 from dpark.shuffle import (
     Merger, CoGroupMerger, SortedShuffleFetcher, SortedMerger, CoGroupSortedMerger,
@@ -1568,6 +1569,7 @@ class TextFileRDD(RDD):
             start += size
             if start >= end: break
 
+
 class TfrecordsRDD(TextFileRDD):
 
     DEFAULT_READ_SIZE = 1 << 10
@@ -1610,7 +1612,7 @@ class TfrecordsRDD(TextFileRDD):
         if len(buf) != buf_length_expected:
             return False
         length, length_mask_expected = struct.unpack('<QI', buf)
-        length_mask_actual = self._masked_crc32c(buf[:8])
+        length_mask_actual = masked_crc32c(buf[:8])
         return length_mask_actual == length_mask_expected
 
     def get_single_record(self, f):
@@ -1619,7 +1621,7 @@ class TfrecordsRDD(TextFileRDD):
         if len(buf) != buf_length_expected:
             raise ValueError('Not a valid TFRecord. Fewer than %d bytes: %s' % (buf_length_expected, buf))
         length, length_mask_expected = struct.unpack('<QI', buf)
-        length_mask_actual = self._masked_crc32c(buf[:8])
+        length_mask_actual = masked_crc32c(buf[:8])
         if length_mask_actual == length_mask_expected:
             # data verification
             buf_length_expected = length + 4
@@ -1627,7 +1629,7 @@ class TfrecordsRDD(TextFileRDD):
             if len(buf) != buf_length_expected:
                 raise ValueError('Not a valid TFRecord. Fewer than %d bytes: %s' % (buf_length_expected, buf))
             data, data_mask_expected = struct.unpack('<%dsI' % length, buf)
-            data_mask_actual = self._masked_crc32c(data)
+            data_mask_actual = masked_crc32c(data)
             if data_mask_actual == data_mask_expected:
                 return data.decode()
             else:
@@ -1635,9 +1637,6 @@ class TfrecordsRDD(TextFileRDD):
         else:
             return None
 
-    def _masked_crc32c(self, value, crc32c_fn=default_crc32c_fn):
-        crc = crc32c_fn(value)
-        return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
 
 class PartialTextFileRDD(TextFileRDD):
     def __init__(self, ctx, path, firstPos, lastPos, splitSize=None, numSplits=None):
@@ -2045,6 +2044,7 @@ class OutputTextFileRDD(DerivedRDD):
 
         return not empty
 
+
 class OutputTfrecordstFileRDD(OutputTextFileRDD):
     def __init__(self, rdd, path, ext, overwrite=True, compress=False):
         OutputTextFileRDD.__init__(self, rdd=rdd, path=path, ext='.tfrecords', overwrite=overwrite, compress=compress)
@@ -2054,14 +2054,11 @@ class OutputTfrecordstFileRDD(OutputTextFileRDD):
         for string in strings:
             string_bytes = str(string).encode()
             encoded_length = struct.pack('<Q', len(string_bytes))
-            f.write(encoded_length + struct.pack('<I', self._masked_crc32c(encoded_length)) +
-                       string_bytes + struct.pack('<I', self._masked_crc32c(string_bytes)))
+            f.write(encoded_length + struct.pack('<I', masked_crc32c(encoded_length)) +
+                       string_bytes + struct.pack('<I', masked_crc32c(string_bytes)))
             empty = False
         return not empty
 
-    def _masked_crc32c(self, value, crc32c_fn=default_crc32c_fn):
-        crc = crc32c_fn(value)
-        return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
 
 class MultiOutputTextFileRDD(OutputTextFileRDD):
     MAX_OPEN_FILES = 512
