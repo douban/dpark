@@ -1,6 +1,9 @@
+import os
 import platform
 import setuptools
 from setuptools import setup, Extension, find_packages
+
+os.environ['ARCHFLAGS'] = ''
 
 setuptools_version = tuple(int(n) for n in setuptools.__version__.split('.'))
 assert setuptools_version >= (18, 0, 0), \
