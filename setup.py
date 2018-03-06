@@ -22,11 +22,6 @@ req = [
     'py-lz4framed',
 ]
 
-if platform.python_implementation() != 'PyPy':
-    req.append('lz4')
-else:
-    req.append('lz4-cffi')
-
 setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "

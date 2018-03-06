@@ -53,7 +53,9 @@ static struct PyModuleDef crc32c_module_def = {
 
 PyObject *
 PyInit_crc32c(void) {
+#ifndef __clang__
     __builtin_cpu_init ();
+#endif
     PyObject *module = PyModule_Create(&crc32c_module_def);
     if (module == NULL)
         return NULL;
@@ -65,7 +67,9 @@ PyInit_crc32c(void) {
 
 void
 initcrc32c(void) {
+#ifndef __clang__
     __builtin_cpu_init ();
+#endif
     PyObject *module, *d, *x;
     module = Py_InitModule("crc32c", crc32c_module_methods);
     if (module == NULL)
