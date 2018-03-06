@@ -102,7 +102,7 @@ class AutoBatchedSerializer(object):
             length, is_mashal = struct.unpack("!I?", head)
             buf = stream.read(length)
             if len(buf) < length:
-                raise BadShuffleStreamException
+                raise BadShuffleStreamException("@%d" % stream.tell())
             buf = zlib.decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
             if is_mashal:
@@ -245,8 +245,6 @@ class RemoteFile(object):
                         continue
                     yield obj
                 return
-            except BadShuffleStreamException:
-                raise
             except Exception as e:
                 n_skip = max(i, n_skip)
                 self.on_fail(e)  # may raise exception
@@ -270,9 +268,9 @@ class RemoteFile(object):
 
     def on_fail(self, e):
         self.num_retry += 1
-        msg = "Fetch failed for url %s, %d/%d. exception: %s. " % (self.url, self.num_retry, self.max_retry, e)
+        msg = "Fetch failed for url %s, %d/%d. exception: %r. " % (self.url, self.num_retry, self.max_retry, e)
         fail_fast = False
-        if isinstance(e, IOError) and str(e).find("many open file") >= 0:
+        if isinstance(e, BadShuffleStreamException) or isinstance(e, IOError) and str(e).find("many open file") >= 0:
             fail_fast = True
         if fail_fast or self.num_retry >= self.max_retry:
             msg += "GIVE UP!"
