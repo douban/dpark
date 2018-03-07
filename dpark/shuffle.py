@@ -358,7 +358,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             r, map_id = r
 
             merge_func(six.iteritems(r), map_id)
-        env.task_stats.merge_time = time.time() - st
+        env.task_stats.secs_reduce_merge = time.time() - st
 
     def stop(self):
         if not self._started:
