@@ -135,11 +135,11 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.flatMap(lambda x:[1//x]).count(), 99)
         self.assertEqual(nums.reduce(lambda x,y:x+100//y), 431)
 
-    def test_pair_operation(self):
+    def test_shuffle_rdd(self):
 
         d = list(zip([1,2,3,3], list(range(4,8))))
-
         nums = self.sc.makeRDD(d, 2)
+
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey().map(list_value).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
@@ -155,8 +155,48 @@ class TestRDD(unittest.TestCase):
             ]
         )
 
+    def test_group_with(self):
+
+        d = list(zip([1,2,3,3], list(range(4,8))))
+        nums = self.sc.makeRDD(d, 2)
+        d = list(zip([2,3,4], [1,2,3]))
+        nums2 = self.sc.makeRDD(d, 2)
+
+        # group with
+        res = nums.groupWith(nums2).map(list_values).collect()
+        res = sorted(res)
+        exp = [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))]
+        self.assertEqual(res, exp)
+        return
+
+        nums3 = self.sc.makeRDD(list(zip([4,5,1], [1,2,3])), 1).groupByKey(2).map(list_value).flatMapValue(lambda x:x)
+        res = sorted(nums.groupWith([nums2, nums3]).map(list_values).collect())
+        exp = [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
+                (4,([],[3],[1])), (5,([],[],[2]))]
+
+        self.assertEqual(res, exp)
+
+        rdds = []
+
+        for j in range(3):
+            data = list([(i, i+j) for i in range(3) if i != j])
+            data.extend(data)
+            rdds.append(self.sc.makeRDD(data, 2))
+
+        exp = [(0, ([], [1, 1], [2, 2])), (1, ([1, 1], [], [3, 3])), (2, ([2, 2], [3, 3], []))]
+        res = rdds[0].groupWith([rdds[1], rdds[2]]).map(list_values).collect()
+        res = sorted(res, key=lambda x: x[0])
+        self.assertEqual(res, exp)
+
+    def test_join(self):
+        d = list(zip([1,2,3,3], list(range(4,8))))
+        nums = self.sc.makeRDD(d, 2)
+        d = list(zip([2,3,4], [1,2,3]))
+        nums2 = self.sc.makeRDD(d, 2)
+        d = list(zip(range(10), range(10))) + [(10, 10)] * 5
+        nums_skew = self.sc.makeRDD(d, 10)
+
         # join
-        nums2 = self.sc.makeRDD(list(zip([2,3,4], [1,2,3])), 2)
         self.assertEqual(nums.join(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
@@ -191,30 +231,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.lookup(2), 5)
         self.assertEqual(nums.lookup(4), None)
 
-        # group with
-        res = nums.groupWith(nums2).map(list_values).collect()
-        res = sorted(res)
-        exp = [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))]
-        self.assertEqual(res, exp)
-
-        nums3 = self.sc.makeRDD(list(zip([4,5,1], [1,2,3])), 1).groupByKey(2).map(list_value).flatMapValue(lambda x:x)
-        res = sorted(nums.groupWith([nums2, nums3]).map(list_values).collect())
-        exp = [(1, ([4],[],[3])), (2, ([5],[1],[])), (3,([6,7],[2],[])),
-                (4,([],[3],[1])), (5,([],[],[2]))]
-
-        self.assertEqual(res, exp)
-
-        rdds = []
-
-        for j in range(3):
-            data = list([(i, i+j) for i in range(3) if i != j])
-            data.extend(data)
-            rdds.append(self.sc.makeRDD(data, 2))
-
-        exp = [(0, ([], [1, 1], [2, 2])), (1, ([1, 1], [], [3, 3])), (2, ([2, 2], [3, 3], []))]
-        res = rdds[0].groupWith([rdds[1], rdds[2]]).map(list_values).collect()
-        res = sorted(res, key=lambda x: x[0])
-        self.assertEqual(res, exp)
 
     def test_top_by_key(self):
         # group with top n per group
