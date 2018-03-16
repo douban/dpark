@@ -414,6 +414,7 @@ class MyExecutor(Executor):
             )
 
             init_dpark_logger(logLevel, use_color=use_color)
+            logging.root.setLevel(logLevel)
 
             r1 = self.stdout_redirect = Redirect(1, out_logger, prefix)
             sys.stdout = r1.pipe_wfile
