@@ -7,7 +7,7 @@ assert setuptools_version >= (18, 0, 0), \
     'setuptools >= 18.0.0 required for Cython extension'
 
 ext_modules = [Extension('dpark.portable_hash', ['dpark/portable_hash.pyx'])]
-version = '0.4.1'
+version = '0.4.2'
 req = [
     'pymesos>=0.2.10',
     'pyzmq',
