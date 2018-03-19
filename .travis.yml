@@ -10,18 +10,15 @@ addons:
 matrix:
     include:
         - python: 2.7
-          env: TOX_ENV=py27
+          env: TOXENV=py27
         - python: 3.5
-          env: TOX_ENV=py35
+          env: TOXENV=py35
         - python: pypy
-          env: TOX_ENV=pypy
+          env: TOXENV=pypy
 install:
-    - pip install -U setuptools
-    - pip install -r req.txt
-    - pip install .
-
+    - pip install -U setuptools tox
 script:
-    - nosetests -v
+    - tox
 branches:
     except:
         - legacy
