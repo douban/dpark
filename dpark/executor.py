@@ -547,6 +547,6 @@ def run():
     driver.run()
 
 if __name__ == '__main__':
-    fmt = '%(asctime)-15s [%(levelname)s] [%(name)-9s] %(message)s'
+    fmt = '%(asctime)-15s [%(levelname)s] [%(threadName)s] [%(name)-9s] %(message)s'
     logging.basicConfig(format=fmt, level=logging.INFO)
     run()
