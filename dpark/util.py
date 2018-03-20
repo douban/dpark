@@ -423,3 +423,26 @@ class MemoryChecker(object):
         self.thread.join()
         self.thread = None
 
+
+def profile(func):
+    import functools
+
+    @functools.wraps(func)
+    def inner(*args, **kwargs):
+        import cProfile
+        import pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            retval = func(*args, **kwargs)
+        finally:
+            profiler.disable()
+
+        stats = pstats.Stats(profiler)
+        stats.strip_dirs()
+        stats.sort_stats('time', 'calls')
+        stats.print_stats(20)
+        stats.sort_stats('cumulative')
+        stats.print_stats(20)
+        return retval
+    return inner
