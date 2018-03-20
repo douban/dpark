@@ -1101,6 +1101,7 @@ class MesosScheduler(DAGScheduler):
 
     @safe
     def statusUpdate(self, driver, status):
+
         def plot_progresses():
             if self.color:
                 total = len(self.activeJobs)

@@ -27,7 +27,7 @@ import six
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import (
     compress, decompress, spawn, mkdir_p, get_logger,
-    init_dpark_logger, formatter_message
+    init_dpark_logger, formatter_message, ERROR_TASK_OOM
 )
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
@@ -41,9 +41,10 @@ logger = get_logger('dpark.executor')
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24
-KILL_TIME_OUT = 0.1  # 0.1 sec
-CLEAN_ZOMBIE_TIME_OUT = 10
+MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24 # 1 day
+KILL_TIMEOUT = 0.1  # 0.1 sec, to reply to mesos fast
+TASK_LOST_JOIN_TIMEOUT = 5
+TASK_LOST_DISCARD_TIMEOUT = 60
 Script = ''
 
 
@@ -150,15 +151,18 @@ def startWebServer(path):
 def terminate(tid, proc):
     name = 'worker(tid: %s, pid: %s)' % (tid, proc.pid)
     try:
-        os.kill(proc.pid, signal.SIGKILL)
-        proc.join(KILL_TIME_OUT)
-        existcode = proc.exitcode
-        if proc.exitcode != - signal.SIGKILL:
-            logger.debug('%s terminate fail: %s', name, existcode)
-        else:
-            logger.debug('%s terminate ok', name)
+        os.kill(proc.pid, signal.SIGTERM)
+    except ProcessLookupError:
+        return
     except Exception as e:
-        logger.warn('%s terminate exception: %s', name, e)
+        if proc.join(timeout=KILL_TIMEOUT/2) is None:
+            try:
+                os.kill(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                return
+            except Exception as e:
+                if proc.join(KILL_TIMEOUT/2) is not None:
+                    logger.exception('%s terminate fail', name)
 
 
 def get_task_memory(task):
@@ -298,6 +302,10 @@ class MyExecutor(Executor):
 
         # task_id.value -> (task, process)
         self.tasks = {}
+
+        # task_id.value -> (task, timestamp)
+        self.finished_tasks = {}
+
         # (task_id.value, (status, data))
         self.result_queue = multiprocessing.Queue()
 
@@ -307,7 +315,8 @@ class MyExecutor(Executor):
         # so we can check whether a workdir is in use externally.
         self._fd_for_locks = []
 
-    def check_memory(self, driver):
+
+    def check_alive(self, driver):
         try:
             import psutil
         except ImportError:
@@ -317,60 +326,56 @@ class MyExecutor(Executor):
         mem_limit = {}
         idle_since = time.time()
 
+        _DELAY, _KILLED, _LOST, _DISCARD = list(range(4))
+        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM,  ERROR_TASK_OOM]
+
         while True:
             with self.lock:
-                tids_to_pop = []
-                for tid, (task, proc) in six.iteritems(self.tasks):
-                    task_id = task.task_id
-                    try:
-                        pid = proc.pid
-                        p = psutil.Process(pid)
-                        rss = p.memory_info().rss >> 20
-                    except Exception as e:
-                        logger.error(
-                            'worker process %d of task %s is dead: %s',
-                            pid, tid, e
-                        )
-                        reply_status(driver, task_id, 'TASK_LOST')
-                        tids_to_pop.append(tid)
-                        continue
+                tasks = self.tasks.items()
 
-                    if p.status() == psutil.STATUS_ZOMBIE or not p.is_running():
-                        reply_status(driver, task_id, 'TASK_LOST')
-                        proc.join(CLEAN_ZOMBIE_TIME_OUT)
+            tids_to_pop = []
+            for tid, (task, proc) in tasks:
+                task_id = task.task_id
+                name = "task %s (pid = %d)" % (tid, proc.pid)
+                st = _DELAY
+
+                try:
+                    p = psutil.Process(proc.pid)
+                except Exception as e:
+                    st = _LOST
+
+                if st == _LOST or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):
+                    ec = proc.join(TASK_LOST_JOIN_TIMEOUT)
+                    if ec is not None:
+                        if ec in kill_ecs:
+                            st = _KILLED
+                        else:
+                            st = _LOST
+                            logger.warning('%s lost with exit code: %s', ec)
+                    else:
                         try:
                             os.waitpid(proc.pid, os.WNOHANG)
                         except OSError as e:
-                            if e.errno == errno.ECHILD:
-                                tids_to_pop.append(tid)
-                            else:
-                                logger.exception('process termination fail: ', e.message)
+                            st = _LOST
+                            if e.errno != errno.ECHILD:
+                                logger.exception('%s lost, raise exception when waitpid')
                         else:
-                            logger.error('worker process %d of task %s is zombie', pid, tid)
-                        continue
+                            t = self.finished_tasks.get(tid)
+                            if t is None:
+                                self.finished_tasks[tid] = t
+                            elif time.time() - t > TASK_LOST_DISCARD_TIMEOUT:
+                                logger.warning('%s is zombie for %d secs, discard it!', name, TASK_LOST_DISCARD_TIMEOUT)
 
-                    offered = get_task_memory(task)
-                    if not offered:
-                        continue
-                    if rss > offered * 1.5:
-                        logger.warning(
-                            'task %s used too much memory: %dMB > %dMB * 1.5, '
-                            'kill it. ' 'use -M argument or taskMemory '
-                            'to request more memory.',
-                            tid, rss, offered
-                        )
+                if st != _DELAY:
+                    tids_to_pop.append(tid)
+                    reply_status(driver, task_id, 'TASK_KILLED' if st == _KILLED else 'TASK_LOST')
 
-                        reply_status(driver, task_id, 'TASK_KILLED')
-                        tids_to_pop.append(tid)
-                        terminate(tid, proc)
-                    elif rss > offered * mem_limit.get(tid, 1.0):
-                        logger.debug(
-                            'task %s used too much memory: %dMB > %dMB, '
-                            'use -M to request or taskMemory for more memory',
-                            tid, rss, offered)
-                        mem_limit[tid] = rss / offered + 0.1
-                for tid in tids_to_pop:
-                    self.tasks.pop(tid)
+                with self.lock:
+                    for tid in tids_to_pop:
+                        try:
+                            self.tasks.pop(tid)
+                        except:
+                            pass
                 now = time.time()
                 if self.tasks:
                     idle_since = now
@@ -445,7 +450,7 @@ class MyExecutor(Executor):
             if 'MESOS_SLAVE_PID' in os.environ:  # make unit test happy
                 setup_cleaner_process(self.workdir)
 
-            spawn(self.check_memory, driver)
+            spawn(self.check_alive, driver)
             spawn(self.replier, driver)
 
             env.environ.update(args)
@@ -471,6 +476,7 @@ class MyExecutor(Executor):
 
                 with self.lock:
                     task, _ = self.tasks.pop(task_id_value)
+                    self.finished_tasks[task_id_value] = time.time()
 
                 reply_status(driver, task.task_id, state, data)
 

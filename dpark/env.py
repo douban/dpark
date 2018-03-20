@@ -38,6 +38,7 @@ class DparkEnv:
         return cls.environ.get(name, default)
 
     def __init__(self):
+        self.meminfo = util.MemoryChecker()
         self.started = False
         self.task_stats = TaskStats()
         name = self.get('DPARK_ID')
