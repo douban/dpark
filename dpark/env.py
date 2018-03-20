@@ -20,9 +20,20 @@ class TaskStats(object):
 
     def _reset(self):
         self.bytes_max_rss = 0
-        self.bytes_shuffle_read = 0
-        self.bytes_shuffle_write = 0
-        self.secs_reduce_merge = 0
+        self.secs_all = 0
+
+        # broadcast
+        self.secs_broadcast = 0
+
+        # shuffle: fetch and merge -> run and merge ->  dump
+        self.bytes_fetch = 0
+        self.bytes_dump = 0
+        self.secs_fetch = 0  # 0 for sort merge if not use disk
+        self.secs_dump = 0
+
+        # rotate
+        self.num_fetch_rotate = 0  # 0 if all in memory
+        self.num_dump_rotate = 0  # 1 if all in memory
 
 
 class DparkEnv:
