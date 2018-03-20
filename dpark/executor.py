@@ -484,6 +484,8 @@ class MyExecutor(Executor):
         logger.debug('launch task %s', task.task_id.value)
 
         def worker(name, q, task_id_value, task_data):
+            task_id_str = "task %s"  % (task_id_value, )
+            threading.current_thread().name = task_id_str
             setproctitle(name)
             env.start()
             q.put((task_id_value, run_task(task_data)))
