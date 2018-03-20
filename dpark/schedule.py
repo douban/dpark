@@ -149,7 +149,7 @@ class Stage:
         # TODO: maybe multi roots, e.g. union().mergeSplits()
         return roots[0]
 
-    def get_stats(self):
+    def _summary_stats(self):
         stats = [x[-1] for x in self.task_stats if x]
 
         d = {}
@@ -166,6 +166,34 @@ class Stage:
             for attr in dir(stats[0]):
                 if not attr.startswith('_'):
                     d[attr] = _summary(list([getattr(s, attr) for s in stats]))
+        return d
+
+    def fmt_stats(self):
+        n = self.numPartitions
+        stats = self._summary_stats()
+        msg = "[metric = min/avg/max]: "
+        for k, d in six.iteritems(stats):
+            sm = d['sum']
+            unit = k.split('_')[0]
+            if unit == 'num':
+                fmt = " = %d/%d/%d"
+            else:
+                fmt = " = %.2f/%.2f/%.2f"
+
+            if sm > 0:
+                msg += k
+                vs = d['min'], sm/n, d['max']
+                unit_s = " "
+                if unit == "bytes":
+                    vs = tuple([v >> 20 for v in vs])
+                    fmt = " = %.2f/%.2f/%.2f"
+                    unit_s = " MB "
+                msg += (fmt % vs)
+                msg += unit_s
+        return msg
+
+    def get_stats(self):
+        d = self._summary_stats()
 
         res = {
             'id': self.id,
@@ -175,8 +203,8 @@ class Stage:
             'start_time': self.submit_time,
             'finish_time': self.finish_time,
             'stats': d,
-            'tasks': len(stats),
-            'splits': len(self.rdd),
+            'num_partition': self.numPartitions,
+            'mem': self.rdd.mem,
         }
         return res
 
@@ -377,6 +405,7 @@ class DAGScheduler(Scheduler):
 
             MutableDict.merge()
             walk_dependencies(stage.rdd, _)
+            logger.info("stage %d finish %s", stage.id, stage.fmt_stats())
 
         if (allowLocal and
                 (
