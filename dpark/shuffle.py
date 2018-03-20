@@ -79,6 +79,7 @@ def write_buf(stream, buf, is_mashal):
     size = len(buf)
     stream.write(struct.pack("!I?", size, is_mashal))
     stream.write(buf)
+    return size + 4
 
 
 class AutoBatchedSerializer(object):
@@ -88,11 +89,13 @@ class AutoBatchedSerializer(object):
 
     size_loaded = 0
 
-    def __init__(self, best_size=1 << 16):
+    def __init__(self, best_size=1 << 17):
         self.best_size = best_size
         self.max_num = 0
         self.max_size = 0
         self.use_marshal = True
+        self.num_batch = 0
+        self.file_size = 0
 
     def load_stream(self, stream):
         while True:
@@ -121,6 +124,7 @@ class AutoBatchedSerializer(object):
 
         while True:
             vs = list(itertools.islice(iterator, batch_num))
+            self.num_batch += 1
             if not vs:
                 break
             batch_num = self._dump_batch(stream, vs, batch_num)
@@ -136,14 +140,14 @@ class AutoBatchedSerializer(object):
             buf = pickle.dumps(vs, -1)
 
         mem_size = len(buf)
-        write_buf(stream, buf, self.use_marshal)
+        self.file_size += write_buf(stream, buf, self.use_marshal)
 
         if mem_size < self.best_size:
             batch_num *= 2
             if batch_num > self.max_num:
                 self.max_num = batch_num
         else:
-            if mem_size > self.best_size * 4 and batch_num > 1:
+            if mem_size > self.best_size * 2 and batch_num > 1:
                 batch_num //= 2
             if mem_size > self.max_size:
                 self.max_size = mem_size
@@ -183,6 +187,7 @@ class GroupByAutoBatchedSerializer(AutoBatchedSerializer):
                 yield batch
 
         for k_vs in _batching():
+            self.num_batch += 1
             batch_num = self._dump_batch(stream, k_vs, batch_num)
 
 
