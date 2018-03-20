@@ -42,16 +42,24 @@ logger = get_logger(__name__)
 class LocalFileShuffle:
     @classmethod
     def getOutputFile(cls, shuffle_id, input_id, output_id, datasize=0):
+        """
+            datasize < 0: disk first
+            datasize > 0: memfirst
+            datasize = 0: read only, use link
+        """
         shuffleDir = env.get('WORKDIR')
         path = os.path.join(shuffleDir[0], str(shuffle_id), str(input_id))
         mkdir_p(path)
         p = os.path.join(path, str(output_id))
-        if datasize > 0 and len(shuffleDir) > 1:
-            # datasize > 0 means its writing
-            st = os.statvfs(path)
-            free = st.f_bfree * st.f_bsize
-            ratio = st.f_bfree * 1.0 / st.f_blocks
-            if free < max(datasize, 1 << 30) or ratio < 0.66:
+        if datasize != 0 and len(shuffleDir) > 1:
+            use_disk = datasize < 0
+            if datasize > 0:
+                st = os.statvfs(path)
+                free = st.f_bfree * st.f_bsize
+                ratio = st.f_bfree * 1.0 / st.f_blocks
+                use_disk = free < max(datasize, 1 << 30) or ratio < 0.66
+
+            if use_disk:
                 d2 = os.path.join(
                     random.choice(shuffleDir[1:]),
                     str(shuffle_id), str(input_id))
