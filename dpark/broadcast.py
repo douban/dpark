@@ -2,6 +2,7 @@ from __future__ import absolute_import
 import os
 import zmq
 import uuid
+import time
 import binascii
 import random
 import socket
@@ -629,9 +630,11 @@ class Broadcast(object):
         if name != 'value':
             return getattr(self.value, name)
 
+        t = time.time()
         value = _manager.fetch(self.uuid, self.compressed_size)
         if value is None:
             raise RuntimeError("fetch broadcast failed")
+        env.task_stats.secs_broadcast += time.time() - t
         self.value = value
         return value
 
