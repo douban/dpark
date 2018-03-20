@@ -231,6 +231,7 @@ class RemoteFile(object):
             f.close()
             raise IOError("not found")
 
+        env.task_stats.bytes_fetch += int(f.headers['content-length'])
         d = f.read()
         flag = d[:1]
         length, = struct.unpack("I", d[1:5])
@@ -238,7 +239,6 @@ class RemoteFile(object):
             raise ValueError(
                 "length not match: expected %d, but got %d" %
                 (length, len(d)))
-        env.task_stats.bytes_shuffle_read += length
         d = decompress(d[5:])
         f.close()
         if flag == b'm':
@@ -275,6 +275,7 @@ class RemoteFile(object):
         if f.code == 404:
             f.close()
             raise IOError("not found")
+        env.task_stats.bytes_fetch += int(f.headers['content-length'])
 
         self.num_open += 1
         serializer = AutoBatchedSerializer()
@@ -363,11 +364,11 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
     def fetch(self, shuffle_id, reduce_id, merge_func):
         self.start()
-        st = time.time()
         files = self.get_remote_files(shuffle_id, reduce_id)
         for f in files:
             self.requests.put(f)
 
+        t = time.time()
         from dpark.schedule import FetchFailed
         for i in range(len(files)):
             r = self.results.get()
@@ -377,7 +378,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             r, map_id = r
 
             merge_func(six.iteritems(r), map_id)
-        env.task_stats.secs_reduce_merge = time.time() - st
+        env.task_stats.secs_fetch = time.time() - t
 
     def stop(self):
         if not self._started:
