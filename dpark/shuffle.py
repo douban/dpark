@@ -2,15 +2,12 @@ from __future__ import absolute_import
 from __future__ import print_function
 import os
 import os.path
-import sys
-import time
 import random
 from six.moves import urllib
 import marshal
 import struct
 import time
 import six.moves.cPickle as pickle
-import gzip
 import zlib
 import six.moves.queue
 import heapq
@@ -19,6 +16,7 @@ import gc
 import six
 import itertools
 from operator import itemgetter
+from itertools import islice
 from six.moves import range, zip, reduce
 
 try:
@@ -26,20 +24,27 @@ try:
 except ImportError:
     from six import BytesIO as StringIO
 
-from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger
+from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger, ERROR_TASK_OOM
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.heaponkey import HeapOnKey
-from dpark.dependency import AggregatorBase
+from dpark.dependency import AggregatorBase, GroupByAggregator
 from dpark.nested_groupby import GroupByNestedIter, cogroup_no_dup
 
-
-MAX_SHUFFLE_MEMORY = 2000  # 2 GB
 
 logger = get_logger(__name__)
 
 
 class LocalFileShuffle:
+
+    @classmethod
+    def get_tmp(cls):
+        dirs = env.get('WORKDIR')
+        d = random.choice(dirs[1:]) if dirs[1:] else dirs[0]
+        mkdir_p(d)
+        return os.path.join(d, 'shuffle-%s.tmp' % uuid.uuid4().hex)
+
+
     @classmethod
     def getOutputFile(cls, shuffle_id, input_id, output_id, datasize=0):
         """
@@ -82,10 +87,10 @@ class BadShuffleStreamException(Exception):
     pass
 
 
-def write_buf(stream, buf, is_mashal):
+def write_buf(stream, buf, is_marshal):
     buf = zlib.compress(buf, 1)
     size = len(buf)
-    stream.write(struct.pack("!I?", size, is_mashal))
+    stream.write(struct.pack("!I?", size, is_marshal))
     stream.write(buf)
     return size + 4
 
@@ -183,7 +188,7 @@ class GroupByAutoBatchedSerializer(AutoBatchedSerializer):
                         num = 0
                     if n >= batch_num:
                         sub_it = iter(vs)
-                        while(True):
+                        while True:
                             sub_vs = list(itertools.islice(sub_it, batch_num))
                             if not sub_vs:
                                 break
@@ -225,43 +230,65 @@ class RemoteFile(object):
         self.max_retry = 3
         self.num_retry = 0
 
-    def _fetch_dct(self):
-        f = urllib.request.urlopen(self.url)
-        if f.code == 404:
-            f.close()
-            raise IOError("not found")
-
-        env.task_stats.bytes_fetch += int(f.headers['content-length'])
-        d = f.read()
-        flag = d[:1]
-        length, = struct.unpack("I", d[1:5])
-        if length != len(d):
-            raise ValueError(
-                "length not match: expected %d, but got %d" %
-                (length, len(d)))
-        d = decompress(d[5:])
-        f.close()
-        if flag == b'm':
-            d = marshal.loads(d)
-        elif flag == b'p':
-            d = pickle.loads(d)
-        else:
-            raise ValueError("invalid flag")
-        return d
-
-    def fetch_dct(self):
-        while True:
-            try:
-                return self._fetch_dct()
-            except Exception as e:
-                self.on_fail(e)
-
-    def iter_sorted(self):
+    def unsorted_batches(self):
         n_skip = 0
         while True:
             try:
                 i = 0
-                for i, obj in enumerate(self._iter_sorted()):
+                for i, (flag, d) in enumerate(self._unsorted_batches()):
+                    if i < n_skip:
+                        continue
+                    d = decompress(d)
+                    if flag == b'm':
+                        items = marshal.loads(d)
+                    elif flag == b'p':
+                        items = pickle.loads(d)
+                    else:
+                        raise ValueError("invalid flag")
+
+                    yield items
+                return
+            except Exception as e:
+                n_skip = max(i, n_skip)
+                self.on_fail(e)
+
+    def _unsorted_batches(self):
+        f = urllib.request.urlopen(self.url)
+        if f.code == 404:
+            f.close()
+            raise IOError("not found")
+        exp_size = int(f.headers['content-length'])
+        total_size = 0
+
+        while True:
+            head = f.read(5)
+            if len(head) == 0:
+                break
+            elif 0 < len(head) < 5:
+                raise IOError("fetch bad head length %d" % (len(head),))
+
+            flag = head[:1]
+            length, = struct.unpack("I", head[1:5])
+            total_size += length + 5
+            d = f.read(length)
+            if length != len(d):
+                raise IOError(
+                    "length not match: expected %d, but got %d" %
+                    (length, len(d)))
+            yield flag, d
+        if total_size != exp_size:
+            raise IOError(
+                "fetch size not match: expected %d, but got %d" %
+                (exp_size, total_size))
+
+        env.task_stats.bytes_fetch += exp_size
+
+    def sorted_items(self):
+        n_skip = 0
+        while True:
+            try:
+                i = 0
+                for i, obj in enumerate(self._sorted_items()):
                     if i < n_skip:
                         continue
                     yield obj
@@ -270,7 +297,7 @@ class RemoteFile(object):
                 n_skip = max(i, n_skip)
                 self.on_fail(e)  # may raise exception
 
-    def _iter_sorted(self):
+    def _sorted_items(self):
         f = urllib.request.urlopen(self.url)
         if f.code == 404:
             f.close()
@@ -300,7 +327,7 @@ class RemoteFile(object):
             from dpark.schedule import FetchFailed
             raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
         else:
-            logger.debug(msg)
+            logger.warning(msg)
             time.sleep(2 ** self.num_retry * 0.1)
 
 
@@ -332,7 +359,8 @@ class SimpleShuffleFetcher(ShuffleFetcher):
             "Fetching outputs for shuffle %d, reduce %d",
             shuffle_id, reduce_id)
         for f in self.get_remote_files():
-            merge_func(six.iteritems(f.fetch_dct()))
+            for items in f.unsorted_batches():
+                merge_func(items)
 
 
 class ParallelShuffleFetcher(SimpleShuffleFetcher):
@@ -348,17 +376,19 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self._started = True
         self.requests = six.moves.queue.Queue()
         self.results = six.moves.queue.Queue(self.nthreads)
-        self.threads = [spawn(self._worker_thread)
+        self.threads = [spawn(self._fetch_thread)
                         for i in range(self.nthreads)]
 
-    def _worker_thread(self):
+    def _fetch_thread(self):
         from dpark.schedule import FetchFailed
         while True:
             f = self.requests.get()
             if f is None:
                 break
             try:
-                self.results.put((f.fetch_dct(), f.mid))
+                for items in f.unsorted_batches():
+                    self.results.put((items, f.mid))
+                self.results.put(1)
             except FetchFailed as e:
                 self.results.put(e)
 
@@ -370,14 +400,18 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
         t = time.time()
         from dpark.schedule import FetchFailed
-        for i in range(len(files)):
+        num_done = 0
+        while num_done < len(files):
             r = self.results.get()
-            if isinstance(r, FetchFailed):
+            if r == 1:
+                num_done += 1
+            elif isinstance(r, FetchFailed):
                 self.stop()  # restart
                 raise r
-            r, map_id = r
+            else:
+                items, map_id = r
+                merge_func(items, map_id)
 
-            merge_func(six.iteritems(r), map_id)
         env.task_stats.secs_fetch = time.time() - t
 
     def stop(self):
@@ -396,191 +430,27 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             t.join()
 
 
-class SortedShuffleFetcher(ShuffleFetcher):
+class SortShuffleFetcher(ShuffleFetcher):
 
     def get_iters(self, shuffle_id, reduce_id):
-        return [f.iter_sorted() for f in self.get_remote_files(shuffle_id, reduce_id)]
+        return [f.sorted_items() for f in self.get_remote_files(shuffle_id, reduce_id)]
 
     def fetch(self, shuffle_id, reduce_id, merge_func):
         merge_func(self.get_iters(shuffle_id, reduce_id))
 
 
-class Merger(object):
-
-    def __init__(self, aggregator):
-        self.createCombiner = aggregator.createCombiner
-        self.mergeCombiners = aggregator.mergeCombiners
-        self.combined = {}
-
-    def merge(self, items, map_id):
-        combined = self.combined
-        mergeCombiners = self.mergeCombiners
-        for k, v in items:
-            o = combined.get(k)
-            combined[k] = mergeCombiners(o, v) if o is not None else v
-
-    def __iter__(self):
-        return six.iteritems(self.combined)
-
-
-class OrderedMerger(Merger):
-
-    def merge(self, items, map_id):
-        combined = self.combined
-        for k, v in items:
-            o = combined.get(k)
-            iv = (map_id, v)
-            if o is None:
-                combined[k] =  [iv]
-            else:
-                o.append(iv)
-
-    def __iter__(self):
-        mergeCombiners = self.mergeCombiners
-        for k, ivs in six.iteritems(self.combined):
-            ivs.sort(key=itemgetter(0))
-            cb = reduce(mergeCombiners, (v for _, v in ivs))
-            yield k, cb
-
-
-class SortMergeAggregator(AggregatorBase):
-
-    def __init__(self, mergeCombiners):
-        self.mergeValue = mergeCombiners
-
-    def createCombiner(self, v):
-        return v
-
-
-class SortedMerger(Merger):
-    def __init__(self, aggregator):
-        self.aggregator = SortMergeAggregator(aggregator.mergeCombiners)
-        self.combined = iter([])
-
-    def merge(self, iters):
-        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
-        self.combined = self.aggregator.aggregate_sorted(heap.merge(iters))
-
-    def __iter__(self):
-        return self.combined
-
-
-class SortedGroupMerger(Merger):
-
-    def __init__(self, rdd_name):
-        self.rdd_name = rdd_name
-        self.combined = None
-
-    def merge(self, iters):
-        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
-        self.combined = GroupByNestedIter(heap.merge(iters), self.rdd_name)
-
-    def __iter__(self):
-        return self.combined
-
-
-class CoGroupMerger(object):
-
-    def __init__(self, size):
-        self.size = size
-        self.combined = {}
-
-    def get_seq(self, k):
-        return self.combined.setdefault(
-            k, tuple([[] for _ in range(self.size)]))
-
-    def append(self, i, items):
-        for k, v in items:
-            self.get_seq(k)[i].append(v)
-
-    def extend(self, i, items, map_id):
-        for k, vs in items:
-            self.get_seq(k)[i].extend(vs)
-
-    def __iter__(self):
-        return six.iteritems(self.combined)
-
-
-class OrderedCoGroupMerger(object):
-
-    def __init__(self, size):
-        self.size = size
-        self.first = {}
-        self.combined = {}
-
-    def get_seq(self, k):
-        return self.combined.setdefault(
-            k, tuple([[] for _ in range(self.size)]))
-
-    def append(self, i, items):
-        g  = {}
-        for k, v in items:
-            g.setdefault(k, []).append(v)
-
-        self.extend(i, six.iteritems(g), 0)
-
-    def extend(self, i, items, map_id):
-        for k, v in items:
-            self.get_seq(k)[i].append(((i, map_id), v))
-
-    def __iter__(self):
-
-        def _combine(ivs):
-            ivs.sort(key=itemgetter(0))
-            combined = reduce(lambda x, y: x.extend(y) or x, (v for _, v in ivs), [])
-            return combined
-
-        for k, vv in six.iteritems(self.combined):
-            yield k, tuple(map(_combine, vv))
-
-
-class CoGroupSortMergeAggregator(AggregatorBase):
-    def __init__(self, size):
-        self.size = size
-
-    def createCombiner(self, v):
-        values = tuple([[] for _ in range(self.size)])
-        values[v[0]].extend(v[1])
-        return values
-
-    def mergeValue(self, c, v):
-        c[v[0]].extend(v[1])
-        return c
-
-
-class CoGroupSortedMerger(SortedMerger):
-
-    def __init__(self, size):
-        self.aggregator = CoGroupSortMergeAggregator(size)
-        self.combined = iter([])
-
-
-class StreamCoGroupSortedMerger(SortedMerger):
-
-    def __init__(self):
-        self.combined = None
-
-    def merge(self, iters):
-        # each item like <key, values>
-        self.combined = cogroup_no_dup(list(map(iter, iters)))
-
-    def __iter__(self):
-        return self.combined
-
-
-def heap_merged(items_lists, combiner, max_memory):
+def heap_merged(items_lists, combiner):
     heap = []
 
-    def pushback(it, i):
+    def pushback(_it, _i):
         try:
-            k, v = next(it)
+            _k, _v = next(_it)
             # put i before value, so do not compare the value
-            heapq.heappush(heap, (k, i, v))
+            heapq.heappush(heap, (_k, i, _v))
         except StopIteration:
             pass
 
     for i, it in enumerate(items_lists):
-        it.set_bufsize((max_memory * 1024) / len(items_lists))
         pushback(it, i)
 
     if not heap:
@@ -601,69 +471,24 @@ def heap_merged(items_lists, combiner, max_memory):
     yield last_key, last_value
 
 
-class SortedItems(object):
+class SortedItemsOnDisk(object):
 
-    def __init__(self, items):
-        self.bufsize = 4096 * 1024
-        self.buf = None
-        self.offset = 0
-        dirs = env.get('WORKDIR')
-        self.path = path = os.path.join(
-            random.choice(dirs[1:]) if dirs[1:] else dirs[0],
-            'shuffle-%s.tmp.gz' % uuid.uuid4().hex)
+    def __init__(self, items, shuffle_config):
+        self.path = path = LocalFileShuffle.get_tmp()
+        with atomic_file(path, bufsize=4096) as f:
+            if not isinstance(items, list):
+                items = list(items)
+            items.sort(key=itemgetter(0))
+            serializer = get_serializer(shuffle_config)
+            serializer.dump_stream(items, f)
+            self.size = f.tell()
+            self.num_batch = serializer.num_batch
 
-        with atomic_file(path, bufsize=self.bufsize) as f:
-            f = gzip.GzipFile(fileobj=f)
-            items = sorted(items, key=lambda k_v: k_v[0])
-            try:
-                for i in items:
-                    s = marshal.dumps(i)
-                    f.write(struct.pack("I", len(s)))
-                    f.write(s)
-                self.loads = marshal.loads
-            except Exception:
-                f.rewind()
-                for i in items:
-                    s = six.moves.cPickle.dumps(i)
-                    f.write(struct.pack("I", len(s)))
-                    f.write(s)
-                self.loads = six.moves.cPickle.loads
-            f.close()
-
-    def set_bufsize(self, bufsize):
-        self.bufsize = min(max(int(bufsize / 4096), 1), 1024) * 4096
-
-    def fill(self):
-        with gzip.open(self.path) as f:
-            if self.offset != 0:
-                f.seek(self.offset)
-
-            self.buf = StringIO.StringIO(f.read(self.bufsize))
-            self.offset = f.tell()
-
-    def read(self, size):
-        r = self.buf.read(size)
-        if len(r) < size:
-            self.fill()
-            r += self.buf.read(size - len(r))
-
-        return r
-
-    def next(self):
-        if self.buf is None:
-            self.fill()
-
-        b = self.read(4)
-        if not b:
-            try:
-                if os.path.exists(self.path):
-                    os.remove(self.path)
-            except Exception:
-                pass
-            return
-
-        sz, = struct.unpack("I", b)
-        return self.loads(self.read(sz))
+    def __iter__(self):
+        serializer = AutoBatchedSerializer()
+        with open(self.path, 'rb') as f:
+            for obj in serializer.load_stream(f):
+                yield obj
 
     def __dealloc__(self):
         try:
@@ -673,51 +498,321 @@ class SortedItems(object):
             pass
 
 
-class DiskMerger(Merger):
 
-    def __init__(self, aggregator):
-        Merger.__init__(self, aggregator, mem)
-        self.mem = 0.8 * mem or MAX_SHUFFLE_MEMORY
-        self.archives = []
-        self.base_memory = self.get_used_memory()
-        self.max_merge = None
-        self.merged = 0
+class Merger(object):
 
-    def get_used_memory(self):
-        try:
-            import psutil
-            return psutil.Process().memory_info().rss >> 20
-        except Exception:
-            return 0
+    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
+        self.shuffle_config = shuffle_config
+        self.aggregator = aggregator
+        self.size = size
+        self.call_site = call_site
 
-    def merge(self, items):
-        Merger.merge(self, items)
+    @classmethod
+    def get(cls, shuffle_config, aggregator=None, size=0, call_site=None):
+        sc = shuffle_config
 
-        self.merged += 1
-        if self.max_merge is None:
-            current_mem = max(self.get_used_memory() - self.base_memory,
-                              sys.getsizeof(self.combined) >> 20)
-            if current_mem > self.mem:
-                logger.warning(
-                    'Too much memory for shuffle, using disk-based shuffle')
-                self.max_merge = self.merged
+        if sc.is_sort_merge:
+            # all mergers keep order
+            c = SortMerger
+            if sc.is_cogroup:
+                if sc.is_iter_group:
+                    c = IterCoGroupSortMerger
+            elif sc.is_groupby:
+                if sc.is_iter_group:
+                    c = IterGroupBySortMerger
+        else:
+            c = DiskHashMerger
+            if sc.is_groupby:
+                if sc.is_ordered_group:
+                    c = OrderedGroupByDiskHashMerger
+            elif sc.is_cogroup:
+                if sc.is_ordered_group:
+                    c = OrderedCoGroupDiskHashMerger
+                else:
+                    c = CoGroupDiskHashMerger
+        logger.debug("%s %s", c, shuffle_config)
+        return c(shuffle_config, aggregator, size, call_site)
 
-        if self.max_merge is not None and self.merged >= self.max_merge:
-            self.rotate()
-            self.merged = 0
 
-    def rotate(self):
-        self.archives.append(SortedItems(six.iteritems(self.combined)))
+class DiskHashMerger(Merger):
+
+    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
+        Merger.__init__(self, shuffle_config, aggregator, size, call_site)
+
         self.combined = {}
+
+        self.use_disk = shuffle_config.is_disk_merge
+        self.archives = []
+
+        self.rotate_time = 0
+        self.last_rotate_ts = time.time()
+        self.rotate_num = 0
+        self.total_size = 0
+
+    def _rotate(self):
+        total_size = self.total_size
+        t0 = time.time()
+        time_since_last = t0 - self.last_rotate_ts
+        dict_size = len(self.combined)
+        rss_before = env.meminfo.rss_rt()
+        size = self._dump()
+        self.total_size += size
+        rss_after = env.meminfo.rss_rt()
+        t1 = time.time()
+        rotate_time = t1 - t0
+        self.last_rotate_ts = t1
+        self.rotate_time += rotate_time
+        self.rotate_num += 1
+        max_rotate = 1000
+        if self.rotate_num > max_rotate:
+            logger.warnging('more than %d rotation. exit!', max_rotate)
+            os._exit(ERROR_TASK_OOM)
+
+        env.meminfo.may_kill(adjust=True, exit=True)
+
+        logger.warning('rotate %d: use %.2f, since last %.2f secs, dict_size 0x%x,'
+                     'mem %d -> %d MB, disk size +%d = %d MB',
+                     self.rotate_num, rotate_time, time_since_last, dict_size,
+                     rss_before >> 20, rss_after >> 20, size >> 20, total_size >> 20)
+
+        return env.meminfo.mem_limit_soft
+
+    def disk_size(self):
+        return sum([a.size for a in self.archives])
+
+    def _dump(self):
+        import gc
+        items = self.combined.items()
+        f = SortedItemsOnDisk(items, self.shuffle_config)
+        self.archives.append(f)
+        del items
+
+        if self.shuffle_config.is_groupby:
+            for v in self.combined.itervalues():
+                del v[:]
+        self.combined.clear()
         gc.collect()
+        return f.size
+
+    def merge(self, items, map_id, dep_id=0):
+        mem_limit = env.meminfo.mem_limit_soft
+        use_disk = self.use_disk
+        try:
+            env.meminfo.check = use_disk
+            self._merge(items, map_id, dep_id, use_disk, env.meminfo, mem_limit)
+        finally:
+            env.meminfo.check = True
+
+    def _get_merge_function(self):
+        return self.aggregator.mergeCombiners
+
+    def _merge(self, items, map_id, dep_id, use_disk, meminfo, mem_limit):
+        combined = self.combined
+        merge_combiner = self.aggregator.mergeCombiners
+        for k, v in items:
+            o = combined.get(k)
+            combined[k] = merge_combiner(o, v) if o is not None else v
+
+            if use_disk and meminfo.rss > mem_limit:
+                mem_limit = self._rotate()
 
     def __iter__(self):
         if not self.archives:
             return six.iteritems(self.combined)
+        items = self.combined.items()
+        items.sort(key=itemgetter(0))
+        combined = items
+        self.archives.append(iter(combined))
+        iters = list(map(iter, self.archives))
+        sc = self.shuffle_config
+        if sc.is_groupby and sc.is_iter_group:
+            heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
+            it = GroupByNestedIter(heap.merge(iters), "")
+        else:
+            it = heap_merged(iters, self._get_merge_function())
+        return it
 
-        if self.combined:
-            self.rotate()
-        return heap_merged(self.archives, self.mergeCombiners, self.mem)
+
+class OrderedGroupByDiskHashMerger(DiskHashMerger):
+
+    def _merge(self, items, map_id, dep_id, use_disk, meminfo, mem_limit):
+        combined = self.combined
+        for k, v in items:
+            o = combined.get(k)
+            iv = (map_id, v)
+            if o is None:
+                combined[k] = [iv]
+            else:
+                o.append(iv)
+            if use_disk and meminfo.rss > mem_limit:
+                mem_limit = self._rotate()
+
+    def __iter__(self):
+        it = DiskHashMerger.__iter__(self)
+        merge_combiner = self.aggregator.mergeCombiners
+        for k, ivs in it:
+            ivs.sort(key=itemgetter(0))
+            cb = reduce(merge_combiner, (v for _, v in ivs))
+            yield k, cb
+
+
+class CoGroupDiskHashMerger(DiskHashMerger):
+
+    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
+        DiskHashMerger.__init__(self, shuffle_config, aggregator, size, call_site)
+        self.direct_upstreams = []
+
+    def _get_merge_function(self):
+        def _merge(x, y):
+            for i in range(self.size):
+                x[i].extend(y[i])
+            return x
+        return _merge
+
+    def _merge(self, items, map_id, dep_id, use_disk, meminfo, mem_limit):
+        combined = self.combined
+        if map_id < 0:
+            for k, v in items:
+                t = combined.get(k)
+                if t is None:
+                    combined[k] = t = tuple([[] for _ in range(self.size)])
+                t[dep_id].append(v)
+                if use_disk and meminfo.rss > mem_limit:
+                    mem_limit = self._rotate()
+        else:
+            for k, vs in items:
+                t = combined.get(k)
+                if t is None:
+                    combined[k] = t = tuple([[] for _ in range(self.size)])
+                t[dep_id].extend(vs)
+
+
+class OrderedCoGroupDiskHashMerger(CoGroupDiskHashMerger):
+
+    def _merge(self, items, map_id, dep_id, use_disk, meminfo, mem_limit):
+        combined = self.combined
+        if map_id < 0:
+            self.upstreams.append(dep_id)
+            for k, v in items:
+                t = combined.get(k)
+                if t is None:
+                    combined[k] = t = tuple([[] for _ in range(self.size)])
+                t[dep_id].append(v)
+                if use_disk and meminfo.rss > mem_limit:
+                    mem_limit = self._rotate()
+        else:
+            for k, vs in items:
+                t = combined.get(k)
+                if t is None:
+                    combined[k] = t = tuple([[] for _ in range(self.size)])
+                t[dep_id].append((map_id, vs))
+                if use_disk and meminfo.rss > mem_limit:
+                    mem_limit = self._rotate()
+
+    def __iter__(self):
+        it = DiskHashMerger.__iter__(self)
+
+        direct_upstreams = self.direct_upstreams
+        for k, groups in it:
+            t = list([[] for _ in range(self.size)])
+            for i, g in enumerate(groups):
+                if g:
+                    if i in direct_upstreams:
+                        t[i] = g
+                    else:
+                        g.sort(key=itemgetter(0))
+                        g1 = []
+                        for _, vs in g:
+                            g1.extend(vs)
+                        t[i] = g1
+            yield k, tuple(t)
+
+
+class SortMergeAggregator(AggregatorBase):
+
+    def __init__(self, mergeCombiners):
+        # each item is a combiner
+        self.mergeValue = mergeCombiners
+
+    def createCombiner(self, v):
+        return v
+
+
+class CoGroupSortMergeAggregator(AggregatorBase):
+    def __init__(self, size):
+        self.size = size
+
+    def createCombiner(self, v):
+        # v = (rdd_index, value)
+        values = tuple([[] for _ in range(self.size)])
+        values[v[0]].extend(v[1])
+        return values
+
+    def mergeValue(self, c, v):
+        c[v[0]].extend(v[1])
+        return c
+
+
+class SortMerger(Merger):
+
+    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
+        Merger.__init__(self, shuffle_config, aggregator, size, call_site)
+
+        if aggregator:
+            self.aggregator = SortMergeAggregator(self.aggregator.mergeCombiners)
+        else:
+            self.aggregator = CoGroupSortMergeAggregator(size)
+        self.combined = iter([])
+
+        self.paths = []
+
+    def _merge_sorted(self, iters):
+        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
+        merged = heap.merge(iters)
+        return self.aggregator.aggregate_sorted(merged)
+
+    def _disk_merge_sorted(self, iters):
+        t = time.time()
+        s = AutoBatchedSerializer()
+        iters = iter(iters)
+        while True:
+            batch = list(islice(iters, 100))
+            if not batch:
+                break
+            path = LocalFileShuffle.get_tmp()
+            with open(path, 'wb') as f:
+                s.dump_stream(self._merge_sorted(batch), f)
+            self.paths.append(path)
+            env.task_stats.num_fetch_rotate += 1
+
+        files = [s.load_stream(open(p)) for p in self.paths]
+        env.task_stats.secs_fetch = time.time() - t
+        return self._merge_sorted(files)
+
+    def merge(self, iters):
+        if self.shuffle_config.is_disk_merge or len(iters) > self.shuffle_config.MAX_OPEN_FILE:
+            merged = self._disk_merge_sorted(iters)
+        else:
+            merged = self._merge_sorted(iters)
+
+        self.combined = merged
+
+    def __iter__(self):
+        return self.combined
+
+
+class IterGroupBySortMerger(SortMerger):
+
+    def _merge_sorted(self, iters):
+        heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
+        return GroupByNestedIter(heap.merge(iters), self.call_site)
+
+
+class IterCoGroupSortMerger(SortMerger):
+
+    def _merge_sorted(self, iters):
+        # each item like <key, values>
+        return cogroup_no_dup(list(map(iter, iters)))
 
 
 class BaseMapOutputTracker(object):
@@ -753,15 +848,6 @@ def test():
     logging.basicConfig(level=logging.DEBUG)
     from dpark.env import env
     env.start()
-
-    l = []
-    for i in range(10):
-        d = list(zip(list(range(10000)), list(range(10000))))
-        random.shuffle(d)
-        l.append(SortedItems(d))
-    hl = heap_merged(l, lambda x, y: x + y, MAX_SHUFFLE_MEMORY)
-    for i in range(10):
-        print(i, next(hl))
 
     path = LocalFileShuffle.getOutputFile(1, 0, 0)
     d = compress(six.moves.cPickle.dumps({'key': 'value'}, -1))
