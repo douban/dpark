@@ -13,6 +13,11 @@ import os.path
 from contextlib import contextmanager
 from zlib import compress as _compress
 from dpark.crc32c import crc32c
+from threading import Thread
+import psutil
+import resource
+
+ERROR_TASK_OOM = 3
 
 try:
     from dpark.portable_hash import portable_hash as _hash
@@ -296,6 +301,7 @@ def get_logger(name):
 def masked_crc32c(s):
     crc = crc32c(s)
     return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
+logger = get_logger(__name__)
 
 
 src_dir = os.path.dirname(os.path.abspath(__file__))
@@ -323,4 +329,97 @@ class Scope(object):
         fn, pos = get_user_call_site()
         self.dpark_func_name = fn
         self.call_site = "@".join([fn, pos])
+
+
+class MemoryChecker(object):
+    """ value in MBytes
+        only used in mesos task
+        start early
+    """
+
+    def __init__(self):
+        self.rss = 0
+        self._stop = False
+        self.mf = None
+        self.check = True
+        self.addation = 0
+        self.mem = 100 << 30
+        self.ratio = 1
+        self.thread = None
+        self.task_id = None
+        self.exit = False
+
+    @property
+    def mem_limit_soft(self):
+        return int(self.mem * self.ratio)
+
+    def add(self, n):
+        self.addation += n
+
+    def rss_rt(self):
+        return (self.mf().rss + self.addation)
+
+    @classmethod
+    def maxrss(cls):
+        return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
+
+    def may_kill(self, adjust, exit):
+        limit = self.mem * self.ratio
+        rss = self.rss_rt()
+        if rss > limit:
+            if rss > self.mem * 1.5:
+                tmpl = "task used too much memory: %dMB > %dMB * 1.5," \
+                        "kill it. use -M argument or taskMemory " \
+                        "to request more memory."
+                msg = tmpl% (rss >> 20, self.mem>>20)
+
+                logger.warning(msg)
+                if exit:
+                    os._exit(ERROR_TASK_OOM)
+                else:
+                    if sys.version[0] == 3:
+                        import _thread
+                    else:
+                        import thread as _thread
+                    print(msg)
+                    _thread.interrupt_main()
+
+            elif adjust:
+                self.ratio *= 1.1
+                logger.info('enlarge soft memory limit by 1.1 to %d MB', self.mem_limit_soft >> 20)
+
+    def _start(self):
+        p = psutil.Process()
+
+        logger.debug("start mem check thread")
+        if hasattr(p, "memory_info"):
+            self.mf = getattr(p, "memory_info")
+        else:
+            self.mf = getattr(p, 'get_memory_info')
+        mf = self.mf
+
+        def check_mem():
+            while not self._stop:
+                rss = self.rss = (mf().rss + self.addation)  # 1ms
+                if self.check:
+                    self.may_kill(adjust=False, exit=self.exit)
+                time.sleep(0.1)
+
+        self.thread = t = threading.Thread(target=check_mem)
+        t.daemon = True
+        t.start()
+
+    def start(self, task_id, mem_limit_mb, exit=False):
+        self._stop = False
+        self.exit = exit
+        self.mem = int(mem_limit_mb) << 20
+        self.task_id = task_id
+        if not self.thread:
+            self._start()
+        self.thread.name = "task-%s-checkmem" % (task_id, )
+
+    def stop(self):
+        self._stop = True
+        self.thread.join()
+        self.thread = None
 
