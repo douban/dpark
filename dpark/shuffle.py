@@ -199,6 +199,14 @@ class GroupByAutoBatchedSerializer(AutoBatchedSerializer):
             batch_num = self._dump_batch(stream, k_vs, batch_num)
 
 
+def get_serializer(shuffle_config):
+    sc = shuffle_config
+    if sc.is_iter_group and (sc.is_groupby or sc.is_cogroup):
+        return GroupByAutoBatchedSerializer()
+    else:
+        return AutoBatchedSerializer()
+
+
 class RemoteFile(object):
 
     num_open = 0

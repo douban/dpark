@@ -3,11 +3,14 @@ import marshal
 import time
 import six.moves.cPickle
 import struct
+import os
+import os.path
+
 
 from dpark.env import env
-from dpark.util import compress, atomic_file, get_logger
+from dpark.util import compress, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
-from dpark.shuffle import LocalFileShuffle, AutoBatchedSerializer, GroupByAutoBatchedSerializer
+from dpark.shuffle import LocalFileShuffle, get_serializer, Merger
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -22,7 +25,7 @@ class Task:
         cls.nextId += 1
         return cls.nextId
 
-    def run(self, id):
+    def run(self, task_id):
         raise NotImplementedError
 
     def preferredLocations(self):
@@ -37,6 +40,17 @@ class DAGTask(Task):
     def __repr__(self):
         return '<task %d:%d>'%(self.stageId, self.id)
 
+    def run(self, task_id):
+        try:
+            env.meminfo.start(task_id, int(self.rdd.mem))
+            env.meminfo.check = False
+            return self._run(task_id)
+        except Exception as e:
+            logger.exception("Task.run error")
+        finally:
+            env.meminfo.check = True
+            env.meminfo.stop()
+
 
 class ResultTask(DAGTask):
     def __init__(self, stageId, rdd, func, partition, locs, outputId):
@@ -48,8 +62,8 @@ class ResultTask(DAGTask):
         self.locs = locs
         self.outputId = outputId
 
-    def run(self, attemptId):
-        logger.debug("run task %s with %d", self, attemptId)
+    def _run(self, task_id):
+        logger.debug("run task %s with %d", self, task_id)
         return self.func(self.rdd.iterator(self.split))
 
     def preferredLocations(self):
@@ -82,8 +96,7 @@ class ShuffleMapTask(DAGTask):
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator
         self.partitioner = dep.partitioner
-        self.sort_shuffle = dep.sort_shuffle
-        self.iter_values = dep.iter_values
+        self.shuffle_config = dep.shuffle_config
         self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
@@ -109,84 +122,198 @@ class ShuffleMapTask(DAGTask):
     def preferredLocations(self):
         return self.locs
 
-    def _prepare_shuffle(self, rdd):
-        split = self.split
-        numOutputSplits = self.partitioner.numPartitions
-        getPartition = self.partitioner.getPartition
-        mergeValue = self.aggregator.mergeValue
-        createCombiner = self.aggregator.createCombiner
+    def _run(self, task_id):
+        env.meminfo.ratio = self.shuffle_config.dump_mem_ratio
+        mem_limit = env.meminfo.mem_limit_soft
+        t0 = time.time()
+        logger.debug("run task with shuffle_flag %r" % (self.shuffle_config, ))
+        rdd = self.rdd
+        meminfo = env.meminfo
+        n = self.partitioner.numPartitions
+        get_partition = self.partitioner.getPartition
+        merge_value = self.aggregator.mergeValue
+        create_combiner = self.aggregator.createCombiner
+        dumper_cls = SortMergeBucketDumper if self.shuffle_config.is_sort_merge else BucketDumper
+        dumper = dumper_cls(self.shuffleId, self.partition, n, self.shuffle_config)
+        buckets = [{} for _ in range(n)]
 
-        buckets = [{} for i in range(numOutputSplits)]
-        for item in rdd.iterator(split):
+        for item in rdd.iterator(self.split):
             try:
                 k, v = item
-                bucketId = getPartition(k)
-                bucket = buckets[bucketId]
+                bucket = buckets[get_partition(k)]
                 r = bucket.get(k, None)
                 if r is not None:
-                    bucket[k] = mergeValue(r, v)
+                    bucket[k] = merge_value(r, v)
                 else:
-                    bucket[k] = createCombiner(v)
+                    bucket[k] = create_combiner(v)
+                if meminfo.rss > mem_limit:
+                    logger.warning("mem %d MB, dump rotate %d", int(meminfo.rss) >> 20, env.task_stats.num_dump_rotate + 1)
+                    dumper.dump(buckets, False)
+                    [buckets[i].clear() for i in range(n)]
+                    env.meminfo.may_kill(adjust=True, exit=True)
+                    mem_limit = env.meminfo.mem_limit_soft
             except ValueError as e:
                 logger.exception('The ValueError exception: %s at %s', str(e), str(rdd.scope.call_site))
                 raise
 
-        return enumerate(buckets)
-
-    def run_without_sorted(self, it):
-        for i, bucket in it:
-            try:
-                if marshalable(bucket):
-                    flag, d = b'm', marshal.dumps(bucket)
-                else:
-                    flag, d = b'p', six.moves.cPickle.dumps(bucket, -1)
-            except ValueError:
-                flag, d = b'p', six.moves.cPickle.dumps(bucket, -1)
-            cd = compress(d)
-            env.task_stats.bytes_shuffle_write += len(cd)
-            for tried in range(1, 4):
-                try:
-                    path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i, len(cd) * tried)
-                    with atomic_file(path, bufsize=1024*4096) as f:
-                        f.write(flag + struct.pack("I", 5 + len(cd)))
-                        f.write(cd)
-
-                    break
-                except IOError as e:
-                    logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
-            else:
-                raise e
-
-        return LocalFileShuffle.getServerUri()
-
-    def run_with_sorted(self, it):
-        serializer = GroupByAutoBatchedSerializer() if self.iter_values else AutoBatchedSerializer()
-        for i, bucket in it:
-            for tried in range(1, 4):
-                try:
-                    path = LocalFileShuffle.getOutputFile(self.shuffleId, self.partition, i)
-                    with atomic_file(path, bufsize=1024*4096) as f:
-                        items = sorted(bucket.items(), key=lambda x: x[0])
-                        serializer.dump_stream(items, f)
-                        env.task_stats.bytes_shuffle_write += f.tell()
-                    break
-                except IOError as e:
-                    logger.warning("write %s failed: %s, try again (%d)", path, e, tried)
-            else:
-                raise e
-        return LocalFileShuffle.getServerUri()
-
-    def run(self, attempId):
-        logger.debug("begin suffleMapTask %d of %s, ", self.partition, self.rdd)
-        t0 = time.time()
-        it = self._prepare_shuffle(self.rdd)
         t1 = time.time()
-        if not self.sort_shuffle:
-            url = self.run_without_sorted(it)
-        else:
-            url = self.run_with_sorted(it)
-        t2 = time.time()
-        logger.debug("end shuffleMapTask %d of %s, calc/dump time: %02f/%02f sec ",
-                     self.partition, self.rdd, t1 - t0, t2 - t1)
-        return url
+        dumper.dump(buckets, True)
+        dumper.commit(self.aggregator)
+        del buckets
+        env.task_stats.bytes_dump += dumper.get_size()
+        env.task_stats.num_dump_rotate += 1
+        t = time.time()
+        env.task_stats.secs_dump += t - t1
+        env.task_stats.secs_all = t - t0
 
+        return LocalFileShuffle.getServerUri()
+
+
+class BucketDumper(object):
+
+    def __init__(self, shuffle_id, map_id, num_reduce, shuffle_config):
+        self.shuffle_id = shuffle_id
+        self.map_id = map_id
+        self.num_reduce = n = num_reduce
+        self.shuffle_config = shuffle_config
+        self.paths = [None for _ in range(n)]
+
+        # stats
+        self.sizes = [0 for _ in range(n)]
+        self.num_dump = 0
+
+    def _get_path(self, i, size):
+        return LocalFileShuffle.getOutputFile(self.shuffle_id, self.map_id, i, size)
+
+    def _get_path_check_mem(self, i, size):
+        if size > 0:
+            if env.meminfo.rss + size > env.meminfo.mem_limit_soft:
+                p = self._get_path(i, -1)
+            else:
+                p = self._get_path(i, size)
+                if p.startswith("/dev/shm"):
+                    env.meminfo.add(size)
+        else:
+            p = self._get_path(i, size)
+        return p
+
+    def get_size(self):
+        return sum(self.sizes)
+
+    def _mk_tmp(self, s, seq=None):
+        if seq is not None:
+            return "%s.tmp.%d" % (s, seq)
+        else:
+            return "%s.tmp" % (s, )
+
+    def _get_next_tmp(self, reduce_id, is_final, size):
+        i = reduce_id
+        if is_final and self.num_dump == 0:
+            # check memory
+            self.paths[i] = p = self._get_path_check_mem(i, size)
+        else:
+            # dump to disk!
+            p = self.paths[i]
+            if not p:
+                self.paths[i] = p = self._get_path(i, -1)
+        return self._mk_tmp(p)
+
+    def _pre_commit(self, aggregator):
+        pass
+
+    def _dump_empty_bucket(self, i):
+        p = self._get_path(i, 1)
+        logger.debug("dump empty %s", p)
+        self._dump_bucket(self._prepare([])[0], p)
+
+    def commit(self, aggregator):
+        self._pre_commit(aggregator)
+        for i in range(self.num_reduce):
+            path = self.paths[i]
+            if path:
+                old = self._mk_tmp(path)
+                os.rename(old, path)
+            else:
+                self._dump_empty_bucket(i)
+
+    def _prepare(self, items):
+        items = list(items)
+        try:
+            if marshalable(items):
+                flag, d = b'm', marshal.dumps(items)
+            else:
+                flag, d = b'p', six.moves.cPickle.dumps(items, -1)
+        except ValueError:
+            flag, d = b'p', six.moves.cPickle.dumps(items, -1)
+        data = compress(d)
+        size = len(data)
+        return (flag, data), size
+
+    def _dump_bucket(self, data, path):
+        flag, data = data
+        if self.num_dump == 0 and os.path.exists(path):
+            logger.warning("remove old dump %s", path)
+            os.remove(path)
+        with open(path, 'ab') as f:
+            f.write(flag + struct.pack("I", len(data)))
+            f.write(data)
+        return len(data)
+
+    def dump(self, buckets, is_final):
+        t = time.time()
+        for i, bucket_dict in enumerate(buckets):
+            if not bucket_dict:
+                continue
+            items = six.iteritems(bucket_dict)
+            data, exp_size = self._prepare(items)
+            path = self._get_next_tmp(i, is_final, exp_size)
+            logger.debug("dump %s", path)
+            size = self._dump_bucket(data, path)
+            self.sizes[i] += size
+
+        self.num_dump += 1
+        t =  time.time() - t
+        env.task_stats.secs_dump += t
+        env.task_stats.num_dump_rotate += 1
+
+
+class SortMergeBucketDumper(BucketDumper):
+
+    def _pre_commit(self, aggregator):
+        for i in range(self.num_reduce):
+            out_path = self.paths[i]
+            if out_path:
+                tmp = self._mk_tmp(out_path)
+
+                in_path = [self._mk_tmp(out_path, i) for i in range(self.num_dump + 1)]
+                in_path = [p for p in in_path if os.path.exists(p)]
+                if len(in_path) == 1:
+                    os.rename(in_path[0], tmp)
+                else:
+                    inputs = [get_serializer(self.shuffle_config).load_stream(open(p))
+                              for p in in_path]
+                    sc = self.shuffle_config.dup()
+                    sc.op = "groupby"
+                    merger = Merger.get(sc, aggregator=aggregator, call_site=self.__class__.__name__)
+                    merger.merge(inputs)
+                    with open(tmp, 'w') as f:
+                        get_serializer(self.shuffle_config).dump_stream(merger, f)
+            else:
+                self._dump_empty_bucket(i)
+
+    def _get_next_tmp(self, i, is_final, size):
+        p = self.paths[i]
+        if not p:
+            self.paths[i] = p = self._get_path(i, -1)
+
+        return self._mk_tmp(p, self.num_dump)
+
+    def _prepare(self, items):
+        return items, -1
+
+    def _dump_bucket(self, items, path):
+        serializer = get_serializer(self.shuffle_config)
+        with open(path, 'wb') as f:
+            serializer.dump_stream(sorted(items), f)
+            size = f.tell()
+        return size
