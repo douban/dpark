@@ -72,13 +72,13 @@ class ShuffleDependency(Dependency):
 class AggregatorBase(object):
 
     def createCombiner(self, x):
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__.__name__)
 
     def mergeValue(self, s, x):
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__.__name__)
 
     def mergeCombiners(self, x, y):
-        raise NotImplementedError
+        raise NotImplementedError(self.__class__.__name__)
 
     def aggregate_sorted(self, items):
         create = self.createCombiner
