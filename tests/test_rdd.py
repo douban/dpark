@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 import os
 import sys
+import time
 from six.moves import map
 from six.moves import range
 from six.moves import zip
@@ -16,6 +17,7 @@ from math import ceil
 import binascii
 import tempfile
 import contextlib
+import dpark.conf
 from dpark.context import *
 from dpark.rdd import *
 from dpark.beansdb import is_valid_key, restore_value
@@ -24,6 +26,7 @@ from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
 from dpark.nested_groupby import GroupByNestedIter, list_values, list_value
 
+
 dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 # to test on mesos,
 # export TEST_DPARK_MASTER=mesos
@@ -31,9 +34,11 @@ dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 print("test with dpark_master=%s, tempdir=%s" % (dpark_master, tempfile.gettempdir()))
 
 if dpark_master == 'mesos':
-    logging.getLogger('dpark').setLevel(logging.INFO)
+    logging.getLogger('dpark').setLevel(logging.WARNING)
+    verbosity = 2
 else:
     logging.getLogger('dpark').setLevel(logging.ERROR)
+    verbosity = 1
 
 
 @contextlib.contextmanager
@@ -88,12 +93,16 @@ class TestRDD(unittest.TestCase):
 
     def setUp(self):
         from dpark.context import _shutdown
-        _shutdown()
+        time.sleep(0.1)
         self.sc = DparkContext(dpark_master)
+        self.sc.init()
 
     def tearDown(self):
         from dpark.context import _shutdown
         _shutdown()
+
+
+class TestRDDNoShuffle(TestRDD):
 
     def test_parallel_collection(self):
         slices = ParallelCollection.slice(range(5), 3)
@@ -102,7 +111,7 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(list(slices[1]), list(range(2, 4)))
         self.assertEqual(list(slices[2]), list(range(4, 5)))
 
-    def test_basic_operation(self):
+    def test_basic(self):
         d = list(range(4))
         nums = self.sc.makeRDD(d, 2)
         self.assertEqual(len(nums.splits), 2)
@@ -112,7 +121,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.filter(lambda x:x>1).collect(), [2, 3])
         self.assertEqual(nums.flatMap(lambda x:list(range(x))).collect(), [0, 0,1, 0,1,2])
         self.assertEqual(nums.union(nums).collect(), d + d)
-        self.assertEqual(nums.cartesian(nums).map(lambda x_y:x_y[0]*x_y[1]).reduce(lambda x,y:x+y), 36)
         self.assertEqual(nums.glom().map(lambda x:list(x)).collect(),[[0,1],[2,3]])
         self.assertEqual(nums.mapPartitions(lambda x:[sum(x)]).collect(),[1, 5])
         self.assertEqual(nums.map(lambda x:str(x)+"/").reduce(lambda x,y:x+y),
@@ -135,17 +143,111 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.flatMap(lambda x:[1//x]).count(), 99)
         self.assertEqual(nums.reduce(lambda x,y:x+100//y), 431)
 
-    def test_shuffle_rdd(self):
+    def test_empty_rdd(self):
+        rdd = self.sc.union([])
+        self.assertEqual(rdd.count(), 0)
+        self.assertEqual(rdd.sort().collect(), [])
+
+    def test_iter(self):
+        d = list(range(1000))
+        rdd = self.sc.makeRDD(d, 10)
+        assert d == [i for i in rdd]
+
+    def test_checkpoint(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = list(range(1000))
+            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
+            assert rdd._dependencies
+            r = rdd.collect()
+            assert not rdd._dependencies
+            self.assertEqual(len(rdd), 15)
+            self.assertEqual(rdd.collect(), r)
+        finally:
+            shutil.rmtree(checkpoint_path)
+
+    def test_checkpoint_partial(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = list(range(1000))
+            r = list(range(1, 1001))
+            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
+            assert rdd._dependencies
+            sum(self.sc.runJob(rdd, lambda x: list(x), [0]), [])
+            assert not rdd._dependencies
+            self.assertEqual(len(rdd), 15)
+            self.assertEqual(rdd.collect(), r)
+        finally:
+            shutil.rmtree(checkpoint_path)
+
+    def test_long_lineage(self):
+        checkpoint_path = mkdtemp()
+        try:
+            d = list(range(1000))
+            rdd = self.sc.makeRDD(d, 15)
+            for i in range(10):
+                for j in range(100):
+                    rdd = rdd.map(lambda x: x+1)
+                rdd.checkpoint(checkpoint_path)
+                r = rdd.collect()
+                self.assertEqual(r, [x + 100 for x in d])
+                d = r
+        finally:
+            shutil.rmtree(checkpoint_path)
+
+    def test_long_recursion(self):
+        d = list(range(10))
+        rdd = self.sc.makeRDD(d)
+        for i in range(1000):
+            rdd = rdd.map(lambda x: x+1)
+
+        loads(dumps(rdd))
+        self.assertEqual(rdd.collect(), [x+1000 for x in d])
+
+    def test_enumerations(self):
+        N = 100
+        p = 10
+        l = list(range(N))
+        d1 = [(x//p, x) for x in l]
+        d2 = list(enumerate(l))
+        rdd = self.sc.makeRDD(l, p)
+        self.assertEqual(rdd.enumeratePartition().collect(), d1)
+        self.assertEqual(rdd.enumerate().collect(), d2)
+
+    def test_accumulater(self):
+        d = list(range(4))
+        nums = self.sc.makeRDD(d, 2)
+
+        acc = self.sc.accumulator()
+        nums.map(lambda x: acc.add(x)).count()
+        self.assertEqual(acc.value, 6)
+
+        acc = self.sc.accumulator([], listAcc)
+        nums.map(lambda x: acc.add([x])).count()
+        self.assertEqual(list(sorted(acc.value)), list(range(4)))
+
+    def test_batch(self):
+        d = list(range(1234))
+        rdd = self.sc.makeRDD(d, 10).batch(100)
+        self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
+        self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
+
+
+class TestRDDShuffle(TestRDD):
+
+    def test_basic(self):
 
         d = list(zip([1,2,3,3], list(range(4,8))))
         nums = self.sc.makeRDD(d, 2)
+        d = list(zip(range(10), range(10))) + [(10, 10)] * 5
+        nums_skew = self.sc.makeRDD(d, 10)
 
+        r = nums.reduceByKey(lambda x,y:x+y)
+        self.assertEqual(r.collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKey(lambda x,y:x+y).collectAsMap(), {1:4, 2:5, 3:13})
         self.assertEqual(nums.reduceByKeyToDriver(lambda x,y:x+y), {1:4, 2:5, 3:13})
         self.assertEqual(nums.groupByKey().map(list_value).collectAsMap(), {1:[4], 2:[5], 3:[6,7]})
 
-        d = list(zip(range(10), range(10))) + [(10, 10)] * 5
-        nums_skew = self.sc.makeRDD(d, 10)
         self.assertEqual(
             list(map(sorted, nums_skew.groupByKey(3, fixSkew=1).map(list_value).glom().collect())),
             [
@@ -154,20 +256,38 @@ class TestRDD(unittest.TestCase):
                 [(10, [10, 10, 10, 10, 10])]
             ]
         )
+        self.assertEqual(nums.flatMapValue(lambda x:list(range(x))).count(), 22)
+        self.assertEqual(nums.groupByKey().map(list_value).lookup(3), [6,7])
+        self.assertEqual(nums.partitionByKey().lookup(2), 5)
+        self.assertEqual(nums.partitionByKey().lookup(4), None)
+        self.assertEqual(nums.lookup(2), 5)
+        self.assertEqual(nums.lookup(4), None)
+
+    def test_cartesian(self):
+        d = list(range(4))
+        nums = self.sc.makeRDD(d, 2)
+        self.assertEqual(nums.cartesian(nums).map(lambda x_y:x_y[0]*x_y[1]).reduce(lambda x,y:x+y), 36)
+
+    def test_cache_shuffle(self):
+        rdd1 = self.sc.parallelize([(1, 11), (2, 12), (3, 22)]).cache()
+        rdd2 = self.sc.parallelize([(1, 33), (2, 44), (4, 55)]).cache()
+        expected = set([(2, (12, 44)), (1, (11, 33))])
+        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
+        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
 
     def test_group_with(self):
-
         d = list(zip([1,2,3,3], list(range(4,8))))
         nums = self.sc.makeRDD(d, 2)
         d = list(zip([2,3,4], [1,2,3]))
-        nums2 = self.sc.makeRDD(d, 2)
+        nums2 = self.sc.makeRDD(d, 3)
+        d = list(zip(range(10), range(10))) + [(10, 10)] * 5
+        nums_skew = self.sc.makeRDD(d, 10)
 
-        # group with
         res = nums.groupWith(nums2).map(list_values).collect()
         res = sorted(res)
         exp = [(1, ([4],[])), (2, ([5],[1])), (3,([6,7],[2])), (4,([],[3]))]
         self.assertEqual(res, exp)
-        return
+
 
         nums3 = self.sc.makeRDD(list(zip([4,5,1], [1,2,3])), 1).groupByKey(2).map(list_value).flatMapValue(lambda x:x)
         res = sorted(nums.groupWith([nums2, nums3]).map(list_values).collect())
@@ -177,7 +297,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(res, exp)
 
         rdds = []
-
         for j in range(3):
             data = list([(i, i+j) for i in range(3) if i != j])
             data.extend(data)
@@ -188,15 +307,21 @@ class TestRDD(unittest.TestCase):
         res = sorted(res, key=lambda x: x[0])
         self.assertEqual(res, exp)
 
+        res = nums_skew.cogroup(nums, 3, fixSkew=0.5).map(list_values).glom().collect()
+        res = list(map(sorted, res))
+        exp = [[(0, ([0], [])), (1, ([1], [4])), (2, ([2], [5]))],
+            [(3, ([3], [6, 7])), (4, ([4], [])), (5, ([5], [])), (6, ([6], [])), (7, ([7], []))],
+            [(8, ([8], [])), (9, ([9], [])), (10, ([10, 10, 10, 10, 10], []))]
+        ]
+        self.assertEqual(res, exp)
+
     def test_join(self):
         d = list(zip([1,2,3,3], list(range(4,8))))
         nums = self.sc.makeRDD(d, 2)
         d = list(zip([2,3,4], [1,2,3]))
         nums2 = self.sc.makeRDD(d, 2)
         d = list(zip(range(10), range(10))) + [(10, 10)] * 5
-        nums_skew = self.sc.makeRDD(d, 10)
 
-        # join
         self.assertEqual(nums.join(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
@@ -207,14 +332,6 @@ class TestRDD(unittest.TestCase):
         self.assertEqual(nums.innerJoin(nums2).collect(),
                 [(2, (5, 1)), (3, (6, 2)), (3, (7, 2))])
 
-        res = nums_skew.cogroup(nums, 3, fixSkew=0.5).map(list_values).glom().collect()
-        res = list(map(sorted, res))
-        exp = [[(0, ([0], [])), (1, ([1], [4])), (2, ([2], [5]))],
-            [(3, ([3], [6, 7])), (4, ([4], [])), (5, ([5], [])), (6, ([6], [])), (7, ([7], []))],
-            [(8, ([8], [])), (9, ([9], [])), (10, ([10, 10, 10, 10, 10], []))]
-        ]
-        self.assertEqual(res, exp)
-
         # join - data contains duplicate key
         numsDup = self.sc.makeRDD(list(zip([2,2,4], [1,2,3])), 2)
         self.assertEqual(nums.join(numsDup).collect(),
@@ -224,13 +341,6 @@ class TestRDD(unittest.TestCase):
 
         self.assertEqual(nums.mapValue(lambda x:x+1).collect(),
                 [(1, 5), (2, 6), (3, 7), (3, 8)])
-        self.assertEqual(nums.flatMapValue(lambda x:list(range(x))).count(), 22)
-        self.assertEqual(nums.groupByKey().map(list_value).lookup(3), [6,7])
-        self.assertEqual(nums.partitionByKey().lookup(2), 5)
-        self.assertEqual(nums.partitionByKey().lookup(4), None)
-        self.assertEqual(nums.lookup(2), 5)
-        self.assertEqual(nums.lookup(4), None)
-
 
     def test_top_by_key(self):
         # group with top n per group
@@ -311,18 +421,6 @@ class TestRDD(unittest.TestCase):
             [(i, [pp + i for pp in p]) for i in range(10)]
         ))
 
-    def test_accumulater(self):
-        d = list(range(4))
-        nums = self.sc.makeRDD(d, 2)
-
-        acc = self.sc.accumulator()
-        nums.map(lambda x: acc.add(x)).count()
-        self.assertEqual(acc.value, 6)
-
-        acc = self.sc.accumulator([], listAcc)
-        nums.map(lambda x: acc.add([x])).count()
-        self.assertEqual(list(sorted(acc.value)), list(range(4)))
-
     def test_sort(self):
         d = list(range(100))
         self.assertEqual(self.sc.makeRDD(d, 10).collect(), list(range(100)))
@@ -340,11 +438,6 @@ class TestRDD(unittest.TestCase):
                 d.append(i)
         rdd = self.sc.makeRDD(d, 10)
         self.assertEqual(rdd.hot(), list(zip(list(range(9, -1, -1)), list(range(11, 1, -1)))))
-
-    def test_empty_rdd(self):
-        rdd = self.sc.union([])
-        self.assertEqual(rdd.count(), 0)
-        self.assertEqual(rdd.sort().collect(), [])
 
     def test_text_file(self):
         srcpath = 'tests/test_rdd.py'
@@ -455,12 +548,6 @@ class TestRDD(unittest.TestCase):
             rd = self.sc.table(path)
             self.assertEqual(rd.map(lambda x:x.f1+x.f2).reduce(lambda x,y:x+y), 2*sum(range(N)))
 
-    def test_batch(self):
-        d = list(range(1234))
-        rdd = self.sc.makeRDD(d, 10).batch(100)
-        self.assertEqual(rdd.flatMap(lambda x:x).collect(), d)
-        self.assertEqual(rdd.filter(lambda x: len(x)<=2 or len(x) >100).collect(), [])
-
     def test_partial_file(self):
         p = 'tests/test_rdd.py'
         l = 300
@@ -528,16 +615,6 @@ class TestRDD(unittest.TestCase):
         for key, expect in input_expect:
             self.assertEqual(func(key), expect)
 
-    def test_enumerations(self):
-        N = 100
-        p = 10
-        l = list(range(N))
-        d1 = [(x//p, x) for x in l]
-        d2 = list(enumerate(l))
-        rdd = self.sc.makeRDD(l, p)
-        self.assertEqual(rdd.enumeratePartition().collect(), d1)
-        self.assertEqual(rdd.enumerate().collect(), d2)
-
     def test_tabular(self):
         d = list(range(10000))
         d = list(zip(d, list(map(str, d)), list(map(float, d))))
@@ -559,82 +636,45 @@ class TestRDD(unittest.TestCase):
 
             self.assertEqual(sorted(x.f_int for x in r), sorted(x[0] for x in d if hash(x[2]) %2))
 
-    def test_iter(self):
-        d = list(range(1000))
-        rdd = self.sc.makeRDD(d, 10)
-        assert d == [i for i in rdd]
 
-    def test_checkpoint(self):
-        checkpoint_path = mkdtemp()
-        try:
-            d = list(range(1000))
-            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
-            assert rdd._dependencies
-            r = rdd.collect()
-            assert not rdd._dependencies
-            self.assertEqual(len(rdd), 15)
-            self.assertEqual(rdd.collect(), r)
-        finally:
-            shutil.rmtree(checkpoint_path)
-
-    def test_checkpoint_partial(self):
-        checkpoint_path = mkdtemp()
-        try:
-            d = list(range(1000))
-            r = list(range(1, 1001))
-            rdd = self.sc.makeRDD(d, 15).map(lambda x: x+1).checkpoint(checkpoint_path)
-            assert rdd._dependencies
-            sum(self.sc.runJob(rdd, lambda x: list(x), [0]), [])
-            assert not rdd._dependencies
-            self.assertEqual(len(rdd), 15)
-            self.assertEqual(rdd.collect(), r)
-        finally:
-            shutil.rmtree(checkpoint_path)
-
-    def test_long_lineage(self):
-        checkpoint_path = mkdtemp()
-        try:
-            d = list(range(1000))
-            rdd = self.sc.makeRDD(d, 15)
-            for i in range(10):
-                for j in range(100):
-                    rdd = rdd.map(lambda x: x+1)
-                rdd.checkpoint(checkpoint_path)
-                r = rdd.collect()
-                self.assertEqual(r, [x + 100 for x in d])
-                d = r
-        finally:
-            shutil.rmtree(checkpoint_path)
-
-    def test_long_recursion(self):
-        d = list(range(10))
-        rdd = self.sc.makeRDD(d)
-        for i in range(1000):
-            rdd = rdd.map(lambda x: x+1)
-
-        loads(dumps(rdd))
-        self.assertEqual(rdd.collect(), [x+1000 for x in d])
-
-    def test_cache_shuffle(self):
-        rdd1 = self.sc.parallelize([(1, 11), (2, 12), (3, 22)]).cache()
-        rdd2 = self.sc.parallelize([(1, 33), (2, 44), (4, 55)]).cache()
-        expected = set([(2, (12, 44)), (1, (11, 33))])
-        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
-        self.assertEqual(set(rdd1.join(rdd2).collect()), expected)
-
-
-class TestRDDSortShuffle(TestRDD):
+class TestRDDShuffleKeepOrder(TestRDDShuffle):
 
     def setUp(self):
-        self.sc = DparkContext(dpark_master)
-        self.sc.init()
-        self.sc.options.sort_shuffle = True
+        TestRDD.setUp(self)
+        dpark.conf.ShuffleConfig.default.order()
+
+    def tearDown(self):
+        TestRDD.tearDown(self)
+        dpark.conf.ShuffleConfig.default.no_order()
+
+
+class TestRDDShuffleSortMerge(TestRDDShuffle):
+
+    def setUp(self):
+        TestRDD.setUp(self)
+
+        dpark.conf.ShuffleConfig.default.sort()
         GroupByNestedIter.NO_CACHE = True
 
     def tearDown(self):
-        self.sc.stop()
-        DparkContext._instances.clear()
+        TestRDD.tearDown(self)
+        dpark.conf.DEFAULT_SHUFFLE_FLAGES = 0
         GroupByNestedIter.NO_CACHE = False
 
+
+class TestRDDShuffleSortMergeIterGroup(TestRDDShuffle):
+
+    def setUp(self):
+        TestRDD.setUp(self)
+
+        dpark.conf.ShuffleConfig.default.sort().iter_group()
+        GroupByNestedIter.NO_CACHE = True
+
+    def tearDown(self):
+        TestRDD.tearDown(self)
+        dpark.conf.ShuffleConfig.default.no_order().list_group()
+        GroupByNestedIter.NO_CACHE = False
+
+
 if __name__ == "__main__":
-    unittest.main()
+    unittest.main(verbosity=verbosity)
