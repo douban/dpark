@@ -37,4 +37,87 @@ def load_conf(path):
         logger.error("error while load conf from %s: %s", path, e)
         raise
 
+
+class ShuffleConfig(object):
+
+    # configured in /etc/dpark.conf
+    default = None
+    MAX_OPEN_FILE = 900
+
+    def __init__(self, sort_merge=False, use_disk=False, iter_group=False, keep_order=False):
+        self.is_sort_merge = sort_merge
+        self.is_disk_merge = use_disk
+        self.is_iter_group = iter_group
+        self.is_ordered_group = keep_order
+
+        self.dump_mem_ratio = 0.9
+
+        # used internal
+        self.op = "udf" # 'udf' or 'group' or 'cogroup'
+
+    def __repr__(self):
+        return "ShuffleConfig%r" % (self.__dict__)
+
+    @classmethod
+    def new(cls):
+        return cls(False, False, False, False)
+
+    def dup(self):
+        sc = ShuffleConfig()
+        sc.__dict__ = dict(self.__dict__)
+        return sc
+
+    def sort(self):
+        self.is_sort_merge = True
+        return self
+
+    def hash(self):
+        self.is_sort_merge = False
+        return self
+
+    def mem(self):
+        self.is_disk_merge = False
+        return self
+
+    def disk(self, dump_mem_ratio=None):
+        self.is_disk_merge = True
+        if dump_mem_ratio:
+            self.dump_mem_ratio = dump_mem_ratio
+        return self
+
+    def order(self):
+        self.is_ordered_group = True
+        return self
+
+    def no_order(self):
+        self.is_ordered_group = False
+        return self
+
+    def iter_group(self):
+        self.is_iter_group = True
+        return self
+
+    def list_group(self):
+        self.is_iter_group = False
+        return self
+
+    def cogroup(self):
+        self.op = 'cogroup'
+        return self
+
+    def groupby(self):
+        self.op = 'groupby'
+        return self
+
+    @property
+    def is_cogroup(self):
+        return self.op == 'cogroup'
+
+    @property
+    def is_groupby(self):
+        return self.op == 'groupby'
+
+
+ShuffleConfig.default =  ShuffleConfig(False, False, False, False)
 load_conf(os.environ.get('DPARK_CONF', '/etc/dpark.conf'))
+
