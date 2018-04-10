@@ -61,13 +61,12 @@ class RangeDependency(NarrowDependency):
 class ShuffleDependency(Dependency):
     isShuffle = True
 
-    def __init__(self, shuffleId, rdd, aggregator, partitioner, sort_shuffle, iter_values):
+    def __init__(self, shuffleId, rdd, aggregator, partitioner, shuffle_config):
         Dependency.__init__(self, rdd)
         self.shuffleId = shuffleId
         self.aggregator = aggregator
         self.partitioner = partitioner
-        self.sort_shuffle = sort_shuffle
-        self.iter_values = iter_values
+        self.shuffle_config = shuffle_config
 
 
 class AggregatorBase(object):
