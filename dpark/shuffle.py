@@ -99,13 +99,13 @@ class AutoBatchedSerializer(object):
             head = stream.read(5)
             if not head:
                 return
-            length, is_mashal = struct.unpack("!I?", head)
+            length, is_marshal = struct.unpack("!I?", head)
             buf = stream.read(length)
             if len(buf) < length:
                 raise BadShuffleStreamException("@%d" % stream.tell())
             buf = zlib.decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
-            if is_mashal:
+            if is_marshal:
                 vs = marshal.loads(buf)
             else:
                 vs = pickle.loads(buf)
@@ -128,7 +128,7 @@ class AutoBatchedSerializer(object):
     def _dump_batch(self, stream, vs, batch_num):
         if self.use_marshal:
             try:
-                buf = marshal.dump(vs)
+                buf = marshal.dumps(vs)
             except:
                 buf = pickle.dumps(vs, -1)
                 self.use_marshal = False
