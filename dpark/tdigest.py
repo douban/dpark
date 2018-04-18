@@ -1,4 +1,5 @@
 from math import isnan, ceil, pi
+from six.moves import range
 
 class Centroid(object):
 
@@ -52,15 +53,15 @@ class TDigest(object):
     def __add__(self, other):
         if not isinstance(other, TDigest):
             raise TypeError('Can not add {} with {}'.format(
-                self.__class__.__name__, 
-                other.__class__.__name__, 
+                self.__class__.__name__,
+                other.__class__.__name__,
             ))
 
         if len(other) == 0:
             return self
-        
+
         other.compress()
-        
+
         self._tmp_mean.extend(other._mean)
         self._tmp_weight.extend(other._weight)
         total = sum(other._weight)
@@ -210,7 +211,7 @@ class TDigest(object):
         if x >= mean[-1]:
             if self._max - mean[-1] > 0:
                 return (
-                    1. - 
+                    1. -
                     (self._max - x) / (self.max - mean[-1]) *
                     weight[-1] / self._total_weight / 2.
                 )
@@ -218,14 +219,14 @@ class TDigest(object):
             else:
                 return 1.
 
-        
+
         weight_so_far = weight[0] / 2.
         for it in range(len(weight) - 1):
             if mean[it] == x:
                 w0 = weight_so_far
                 weight_so_far += sum(
                     weight[i] + weight[i + 1]
-                    for i in xrange(it, len(weight) - 1)
+                    for i in range(it, len(weight) - 1)
                     if mean[i + 1] == x
                 )
                 return (w0 +  weight_so_far) / 2. / self._total_weight
