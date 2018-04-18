@@ -246,6 +246,9 @@ class RemoteFile(object):
                     else:
                         raise ValueError("invalid flag")
 
+                    if isinstance(items, dict):
+                        items = items.items()
+
                     yield items
                 return
             except Exception as e:
