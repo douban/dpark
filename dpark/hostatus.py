@@ -82,7 +82,7 @@ class TaskHostManager:
 
     def register_host(self, hostname, purge_elapsed=PURGE_ELAPSED):
         if hostname not in self.host_dict:
-            logger.debug('register %s to the task host manager', hostname)
+            # logger.debug('register %s to the task host manager', hostname)
             self.host_dict[hostname] = HostStatus(hostname, purge_elapsed=purge_elapsed)
 
     def task_failed_on_host(self, task_id, host):

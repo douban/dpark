@@ -1024,8 +1024,8 @@ class MesosScheduler(DAGScheduler):
                 - (o.agent_id.value not in self.agentTasks
                     and EXECUTOR_MEMORY or 0)
                 for o in offers]
-        logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
-                     len(offers), sum(cpus), sum(mems), sum(gpus), len(self.activeJobs))
+        #logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
+        #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.activeJobs))
 
         tasks = {}
         for job in self.activeJobsQueue:
@@ -1068,9 +1068,9 @@ class MesosScheduler(DAGScheduler):
             else:
                 driver.declineOffer(o.id)
 
-        logger.debug('reply with %d tasks, %s cpus %s mem %s gpus left',
-                     sum(len(ts) for ts in tasks.values()),
-                     sum(cpus), sum(mems), sum(gpus))
+        # logger.debug('reply with %d tasks, %s cpus %s mem %s gpus left',
+        #            sum(len(ts) for ts in tasks.values()),
+        #             sum(cpus), sum(mems), sum(gpus))
 
     @safe
     def offerRescinded(self, driver, offer_id):
