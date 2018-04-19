@@ -1067,7 +1067,7 @@ class MesosScheduler(DAGScheduler):
         task.task_id.value = tid
         task.agent_id.value = o.agent_id.value
         task.data = encode_data(
-            compress(six.moves.cPickle.dumps((t, t.tried), -1))
+            compress(six.moves.cPickle.dumps((t, (job.id, t.tried)), -1))
         )
         task.executor = self.executor
         if len(task.data) > 1000 * 1024:

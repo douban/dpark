@@ -68,9 +68,10 @@ def reply_status(driver, task_id, state, data=None):
 def run_task(task_data):
     try:
         gc.disable()
-        task, ntry = loads(decompress(task_data))
+        task, (job_id, ntry) = loads(decompress(task_data))
+        tid = '%s:%s:%s' % (job_id, task.id, ntry)
         Accumulator.clear()
-        result = task.run(ntry)
+        result = task.run(tid)
         env.task_stats.bytes_max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         accUpdate = Accumulator.values()
         MutableDict.flush()
@@ -107,7 +108,6 @@ def run_task(task_data):
     finally:
         gc.collect()
         gc.enable()
-
 
 
 class LocalizedHTTP(six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler):
