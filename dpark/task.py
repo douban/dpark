@@ -2,7 +2,6 @@ from __future__ import absolute_import
 import marshal
 import time
 import six.moves.cPickle
-import struct
 import os
 import os.path
 
@@ -10,7 +9,7 @@ import os.path
 from dpark.env import env
 from dpark.util import compress, get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
-from dpark.shuffle import LocalFileShuffle, get_serializer, Merger
+from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -240,22 +239,22 @@ class BucketDumper(object):
         items = list(items)
         try:
             if marshalable(items):
-                flag, d = b'm', marshal.dumps(items)
+                is_marshal, d = True, marshal.dumps(items)
             else:
-                flag, d = b'p', six.moves.cPickle.dumps(items, -1)
+                is_marshal, d = False, six.moves.cPickle.dumps(items, -1)
         except ValueError:
-            flag, d = b'p', six.moves.cPickle.dumps(items, -1)
+            is_marshal, d = False, six.moves.cPickle.dumps(items, -1)
         data = compress(d)
         size = len(data)
-        return (flag, data), size
+        return (is_marshal, data), size
 
     def _dump_bucket(self, data, path):
-        flag, data = data
+        is_marshal, data = data
         if self.num_dump == 0 and os.path.exists(path):
             logger.warning("remove old dump %s", path)
             os.remove(path)
         with open(path, 'ab') as f:
-            f.write(flag + struct.pack("I", len(data)))
+            f.write(pack_header(len(data), is_marshal, False))
             f.write(data)
         return len(data)
 

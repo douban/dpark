@@ -35,6 +35,29 @@ from dpark.nested_groupby import GroupByNestedIter, cogroup_no_dup
 logger = get_logger(__name__)
 
 
+# readable
+F_MAPPING = {
+    (True, True): b'M',
+    (False, True): b'P',
+    (True, False): b'm',
+    (False, False): b'p'
+}
+
+F_MAPPING_R = dict([(v, k) for k, v in F_MAPPING.items()])
+
+
+def pack_header(length, is_marshal, is_sorted):
+    flag = F_MAPPING[(is_marshal, is_sorted)]
+    return flag + struct.pack("I", length)
+
+
+def unpack_header(head):
+    flag = head[:1]
+    is_marshal, is_sorted = F_MAPPING_R[flag]
+    length, = struct.unpack("I", head[1:5])
+    return length,is_marshal, is_sorted
+
+
 class LocalFileShuffle:
 
     @classmethod
@@ -90,7 +113,7 @@ class BadShuffleStreamException(Exception):
 def write_buf(stream, buf, is_marshal):
     buf = zlib.compress(buf, 1)
     size = len(buf)
-    stream.write(struct.pack("!I?", size, is_marshal))
+    stream.write(pack_header(size, is_marshal, True))
     stream.write(buf)
     return size + 4
 
@@ -115,7 +138,9 @@ class AutoBatchedSerializer(object):
             head = stream.read(5)
             if not head:
                 return
-            length, is_marshal = struct.unpack("!I?", head)
+
+            length, is_marshal, is_sorted = unpack_header(head)
+            assert(is_sorted)
             buf = stream.read(length)
             if len(buf) < length:
                 raise BadShuffleStreamException("@%d" % stream.tell())
@@ -235,16 +260,14 @@ class RemoteFile(object):
         while True:
             try:
                 i = 0
-                for i, (flag, d) in enumerate(self._unsorted_batches()):
+                for i, (is_marshal, d) in enumerate(self._unsorted_batches()):
                     if i < n_skip:
                         continue
                     d = decompress(d)
-                    if flag == b'm':
+                    if is_marshal:
                         items = marshal.loads(d)
-                    elif flag == b'p':
-                        items = pickle.loads(d)
                     else:
-                        raise ValueError("invalid flag")
+                        items = pickle.loads(d)
 
                     if isinstance(items, dict):
                         items = items.items()
@@ -270,15 +293,15 @@ class RemoteFile(object):
             elif 0 < len(head) < 5:
                 raise IOError("fetch bad head length %d" % (len(head),))
 
-            flag = head[:1]
-            length, = struct.unpack("I", head[1:5])
+            length, is_marshal, is_sorted = unpack_header(head)
+            assert(not is_sorted)
             total_size += length + 5
             d = f.read(length)
             if length != len(d):
                 raise IOError(
                     "length not match: expected %d, but got %d" %
                     (length, len(d)))
-            yield flag, d
+            yield is_marshal, d
         if total_size != exp_size:
             raise IOError(
                 "fetch size not match: expected %d, but got %d" %
@@ -855,7 +878,7 @@ def test():
     path = LocalFileShuffle.getOutputFile(1, 0, 0)
     d = compress(six.moves.cPickle.dumps({'key': 'value'}, -1))
     f = open(path, 'w')
-    f.write('p' + struct.pack('I', 5 + len(d)) + d)
+    f.write(pack_header(len(d), False, False) + d)
     f.close()
 
     uri = LocalFileShuffle.getServerUri()
