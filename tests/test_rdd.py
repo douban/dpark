@@ -36,9 +36,11 @@ print("test with dpark_master=%s, tempdir=%s" % (dpark_master, tempfile.gettempd
 if dpark_master == 'mesos':
     logging.getLogger('dpark').setLevel(logging.WARNING)
     verbosity = 2
+    sleep_interval = 2
 else:
     logging.getLogger('dpark').setLevel(logging.ERROR)
     verbosity = 1
+    sleep_interval = 0.1
 
 
 @contextlib.contextmanager
@@ -93,7 +95,7 @@ class TestRDD(unittest.TestCase):
 
     def setUp(self):
         from dpark.context import _shutdown
-        time.sleep(0.1)
+        time.sleep(sleep_interval)
         self.sc = DparkContext(dpark_master)
         self.sc.init()
 
