@@ -52,6 +52,9 @@ def pack_header(length, is_marshal, is_sorted):
 
 
 def unpack_header(head):
+    l = len(head)
+    if l != 5:
+        raise IOError("fetch bad head length %d" % (l,))
     flag = head[:1]
     is_marshal, is_sorted = F_MAPPING_R[flag]
     length, = struct.unpack("I", head[1:5])
@@ -106,9 +109,6 @@ class LocalFileShuffle:
         return env.get('SERVER_URI')
 
 
-class BadShuffleStreamException(Exception):
-    pass
-
 
 def write_buf(stream, buf, is_marshal):
     buf = zlib.compress(buf, 1)
@@ -138,12 +138,12 @@ class AutoBatchedSerializer(object):
             head = stream.read(5)
             if not head:
                 return
-
             length, is_marshal, is_sorted = unpack_header(head)
             assert(is_sorted)
             buf = stream.read(length)
             if len(buf) < length:
-                raise BadShuffleStreamException("@%d" % stream.tell())
+                raise IOError( "length not match: expected %d, but got %d" % (length, len(buf)))
+
             buf = zlib.decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
             if is_marshal:
@@ -255,97 +255,91 @@ class RemoteFile(object):
         self.max_retry = 3
         self.num_retry = 0
 
-    def unsorted_batches(self):
-        n_skip = 0
-        while True:
-            try:
-                i = 0
-                for i, (is_marshal, d) in enumerate(self._unsorted_batches()):
-                    if i < n_skip:
-                        continue
-                    d = decompress(d)
-                    if is_marshal:
-                        items = marshal.loads(d)
-                    else:
-                        items = pickle.loads(d)
-
-                    if isinstance(items, dict):
-                        items = items.items()
-
-                    yield items
-                return
-            except Exception as e:
-                n_skip = max(i, n_skip)
-                self.on_fail(e)
-
-    def _unsorted_batches(self):
+    def open(self):
         f = urllib.request.urlopen(self.url)
         if f.code == 404:
             f.close()
             raise IOError("not found")
         exp_size = int(f.headers['content-length'])
-        total_size = 0
+        return f, exp_size
 
-        while True:
-            head = f.read(5)
-            if len(head) == 0:
-                break
-            elif 0 < len(head) < 5:
-                raise IOError("fetch bad head length %d" % (len(head),))
-
-            length, is_marshal, is_sorted = unpack_header(head)
-            assert(not is_sorted)
-            total_size += length + 5
-            d = f.read(length)
-            if length != len(d):
-                raise IOError(
-                    "length not match: expected %d, but got %d" %
-                    (length, len(d)))
-            yield is_marshal, d
-        if total_size != exp_size:
-            raise IOError(
-                "fetch size not match: expected %d, but got %d" %
-                (exp_size, total_size))
-
-        env.task_stats.bytes_fetch += exp_size
-
-    def sorted_items(self):
-        n_skip = 0
+    def unsorted_batches(self):
+        done = 0
         while True:
             try:
-                i = 0
-                for i, obj in enumerate(self._sorted_items()):
-                    if i < n_skip:
-                        continue
-                    yield obj
-                return
+                for (is_marshal, d) in islice(self._unsorted_batches(), done, None):
+                    d = decompress(d)
+                    if is_marshal:
+                        items = marshal.loads(d)
+                    else:
+                        items = pickle.loads(d)
+                    done += 1
+                    yield items
+                break
             except Exception as e:
-                n_skip = max(i, n_skip)
+                logger.exception(e)
+                self.on_fail(e)
+
+    def _unsorted_batches(self):
+        f = None
+        try:
+            f, exp_size = self.open()
+            total_size = 0
+            while True:
+                head = f.read(5)
+                if len(head) == 0:
+                    break
+                length, is_marshal, is_sorted = unpack_header(head)
+                assert(not is_sorted)
+                total_size += length + 5
+                d = f.read(length)
+                if length != len(d):
+                    raise IOError(
+                        "length not match: expected %d, but got %d" %
+                        (length, len(d)))
+                yield is_marshal, d
+            if total_size != exp_size:
+                raise IOError(
+                    "fetch size not match: expected %d, but got %d" %
+                    (exp_size, total_size))
+
+            env.task_stats.bytes_fetch += exp_size
+        finally:
+            if f:
+                f.close()
+
+    def sorted_items(self):
+        done = 0
+        while True:
+            try:
+                for obj in islice(self._sorted_items(), 0, None):
+                    done += 1
+                    yield obj
+                break
+            except Exception as e:
                 self.on_fail(e)  # may raise exception
 
     def _sorted_items(self):
-        f = urllib.request.urlopen(self.url)
-        if f.code == 404:
-            f.close()
-            raise IOError("not found")
-        env.task_stats.bytes_fetch += int(f.headers['content-length'])
-
-        self.num_open += 1
-        serializer = AutoBatchedSerializer()
+        f = None
         try:
+            serializer = AutoBatchedSerializer()
+            self.num_open += 1
+            f, exp_size = self.open()
             for obj in serializer.load_stream(f):
                 yield obj
+            env.task_stats.bytes_fetch += exp_size
         finally:
             # rely on GC to close if generator not exhausted
             # so Fetcher must not be an attr of RDD
-            f.close()
+            if f:
+                f.close()
             self.num_open -= 1
 
     def on_fail(self, e):
         self.num_retry += 1
-        msg = "Fetch failed for url %s, %d/%d. exception: %r. " % (self.url, self.num_retry, self.max_retry, e)
+        msg = "Fetch failed for url %s, tried %d/%d times. Exception: %r. " % (self.url, self.num_retry, self.max_retry, e)
         fail_fast = False
-        if isinstance(e, BadShuffleStreamException) or isinstance(e, IOError) and str(e).find("many open file") >= 0:
+        if  isinstance(e, IOError) and str(e).find("many open file") >= 0:
             fail_fast = True
         if fail_fast or self.num_retry >= self.max_retry:
             msg += "GIVE UP!"
