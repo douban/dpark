@@ -182,27 +182,39 @@ class ProxyConn(object):
         return ans[4: -1]
 
     def readchunk(self, inode, index, chunkopflags=0):
-        if self.version < (3, 0, 4):
-            ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode, index)
-        else:
-            ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode,
-                                      index, uint8(chunkopflags))
-        n = len(ans)
-        if n == 1:
-            from .utils import Error
-            raise Error(ord(ans))
-        if n % 2 == 0:
-            if n < 20:
-                raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
-            if (n - 20) % 6 == 0:
-                length, id, version = unpack("QQI", ans)
-                return Chunk(id, length, version, ans[20:])
-        else:
-            if n < 21:
-                raise Exception('read chunk invalid length: %s(expected 21 above)' % n)
-            if (n - 21) % 10 == 0:
-                protocolid, length, id, version = unpack('BQQI', ans)
-                return Chunk(id, length, version, ans[21:], ele_width=10)
-            elif (n - 21) % 14 == 0:
-                protocolid, length, id, version = unpack('BQQI', ans)
-                return Chunk(id, length, version, ans[21:], ele_width=14)
+        cnt = 0
+        while True:
+            cnt += 1
+            if self.version < (3, 0, 4):
+                ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode, index)
+            else:
+                ans = self.sendAndReceive(CLTOMA_FUSE_READ_CHUNK, inode,
+                                          index, uint8(chunkopflags))
+            n = len(ans)
+            if n == 1:
+                from .utils import Error
+                err = ord(ans)
+                if err == ERROR_LOCKED:
+                    if cnt < 100:
+                        time.sleep(0.1)
+                        continue
+
+                    logger.warning('Waited too long for locked chunk %s:%s', inode, index)
+
+                raise Error(ord(ans))
+
+            if n % 2 == 0:
+                if n < 20:
+                    raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
+                if (n - 20) % 6 == 0:
+                    length, id, version = unpack("QQI", ans)
+                    return Chunk(id, length, version, ans[20:])
+            else:
+                if n < 21:
+                    raise Exception('read chunk invalid length: %s(expected 21 above)' % n)
+                if (n - 21) % 10 == 0:
+                    protocolid, length, id, version = unpack('BQQI', ans)
+                    return Chunk(id, length, version, ans[21:], ele_width=10)
+                elif (n - 21) % 14 == 0:
+                    protocolid, length, id, version = unpack('BQQI', ans)
+                    return Chunk(id, length, version, ans[21:], ele_width=14)
