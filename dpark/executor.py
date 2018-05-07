@@ -314,6 +314,8 @@ class MyExecutor(Executor):
         # Keep the file descriptor of current workdir,
         # so we can check whether a workdir is in use externally.
         self._fd_for_locks = []
+        self.stdout_redirect = None
+        self.stderr_redirect = None
 
 
     def check_alive(self, driver):
@@ -538,8 +540,10 @@ class MyExecutor(Executor):
             except:
                 pass
 
-        sys.stdout = self.stdout_redirect.reset()
-        sys.stderr = self.stderr_redirect.reset()
+        if self.stdout_redirect:
+            sys.stdout = self.stdout_redirect.reset()
+        if self.stderr_redirect:
+            sys.stderr = self.stderr_redirect.reset()
 
 
 def run():
