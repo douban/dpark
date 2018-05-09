@@ -8,7 +8,6 @@ import marshal
 import struct
 import time
 import six.moves.cPickle as pickle
-import zlib
 import six.moves.queue
 import heapq
 import uuid
@@ -24,7 +23,7 @@ try:
 except ImportError:
     from six import BytesIO as StringIO
 
-from dpark.util import decompress, spawn, mkdir_p, atomic_file, get_logger, ERROR_TASK_OOM
+from dpark.util import compress, decompress, spawn, mkdir_p, atomic_file, get_logger, ERROR_TASK_OOM
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.heaponkey import HeapOnKey
@@ -111,7 +110,7 @@ class LocalFileShuffle:
 
 
 def write_buf(stream, buf, is_marshal):
-    buf = zlib.compress(buf, 1)
+    buf = compress(buf)
     size = len(buf)
     stream.write(pack_header(size, is_marshal, True))
     stream.write(buf)
@@ -144,7 +143,7 @@ class AutoBatchedSerializer(object):
             if len(buf) < length:
                 raise IOError( "length not match: expected %d, but got %d" % (length, len(buf)))
 
-            buf = zlib.decompress(buf)
+            buf = decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
             if is_marshal:
                 vs = marshal.loads(buf)
