@@ -5,6 +5,7 @@ import time
 import socket
 from operator import itemgetter
 
+from dpark.tdigest import TDigest
 from dpark.util import (
     get_logger, make_progress_bar
 )
@@ -47,7 +48,7 @@ class Job:
 LOCALITY_WAIT = 0
 WAIT_FOR_RUNNING = 10
 MAX_TASK_FAILURES = 4
-MAX_TASK_MEMORY = 15 << 10  # 15GB
+MAX_TASK_MEMORY = 20 << 10  # 20GB
 
 # A Job that runs a set of tasks with no interdependencies.
 
@@ -96,6 +97,8 @@ class SimpleJob(Job):
             else TaskHostManager()
         self.id_retry_host = {}
         self.task_local_set = set()
+        self.mem_digest = TDigest()
+        self.mem90 = 0
 
     @property
     def taskEverageTime(self):
@@ -210,11 +213,15 @@ class SimpleJob(Job):
             self.launched[i] = True
             self.tasksLaunched += 1
 
+
         if status == 'TASK_FINISHED':
             self.taskFinished(tid, tried, result, update, stats)
         elif status in ('TASK_LOST', 'TASK_FAILED', 'TASK_KILLED'):
             self.taskLost(tid, tried, status, reason)
+
         task.start = time.time()
+        if stats:
+            self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
 
     def progress(self, ending=''):
         n = self.numTasks
@@ -312,11 +319,20 @@ class SimpleJob(Job):
         task = self.tasks[index]
         hostname = self.id_retry_host[(task.id, tried)] \
             if (task.id, tried) in self.id_retry_host else task.host
-        if status == 'TASK_KILLED':
+
+        if status == 'TASK_KILLED' or str(reason).startswith('Memory limit exceeded:'):
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
-            for i, t in enumerate(self.tasks):
-                if not self.launched[i]:
-                    t.mem = max(task.mem, t.mem)
+            logger.info("task %s oom, enlarge memory limit to %d, origin %d", task.id, task.mem, task.rdd.mem)
+
+            mem90 = self.mem_digest.quantile(0.9)
+            if not math.isnan(mem90):
+                mem90 = int(mem90)
+                if mem90 > self.mem90:
+                    logger.info("enlarge memory limit of remaining task from >%d to >%d (mem90)", self.mem90, mem90)
+                    self.mem90 = mem90
+                    for i, t in enumerate(self.tasks):
+                        if not self.launched[i]:
+                            t.mem = max(mem90, t.mem)
 
         elif status == 'TASK_FAILED':
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
