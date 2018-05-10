@@ -344,10 +344,10 @@ class MemoryChecker(object):
         self.check = True
         self.addation = 0
         self.mem = 100 << 30
-        self.ratio = 1
+        self.ratio = 0.8
         self.thread = None
         self.task_id = None
-        self.exit = False
+        self.oom = False
 
     @property
     def mem_limit_soft(self):
@@ -356,6 +356,7 @@ class MemoryChecker(object):
     def add(self, n):
         self.addation += n
 
+    @property
     def rss_rt(self):
         return (self.mf().rss + self.addation)
 
@@ -363,30 +364,37 @@ class MemoryChecker(object):
     def maxrss(cls):
         return resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
 
-    def may_kill(self, adjust, exit):
-        limit = self.mem * self.ratio
-        rss = self.rss_rt()
-        if rss > limit:
+    def _kill(self, rss, from_main_thread):
+        tmpl = "task used too much memory: %dMB > %dMB * 1.5," \
+                "kill it. use -M argument or taskMemory " \
+                "to request more memory."
+        msg = tmpl % (rss >> 20, self.mem >> 20)
+
+        logger.warning(msg)
+        if from_main_thread:
+            os._exit(ERROR_TASK_OOM)
+        else:
+            if sys.version[0] == 3:
+                import _thread
+            else:
+                import thread as _thread
+            self.oom = True
+            _thread.interrupt_main()
+
+    def after_rotate(self):
+        limit = self.mem_limit_soft
+        self.rss = rss = self.rss_rt
+        if rss > limit * 0.9:
             if rss > self.mem * 1.5:
-                tmpl = "task used too much memory: %dMB > %dMB * 1.5," \
-                        "kill it. use -M argument or taskMemory " \
-                        "to request more memory."
-                msg = tmpl% (rss >> 20, self.mem>>20)
-
-                logger.warning(msg)
-                if exit:
-                    os._exit(ERROR_TASK_OOM)
-                else:
-                    if sys.version[0] == 3:
-                        import _thread
-                    else:
-                        import thread as _thread
-                    print(msg)
-                    _thread.interrupt_main()
-
-            elif adjust:
-                self.ratio *= 1.1
-                logger.info('enlarge soft memory limit by 1.1 to %d MB', self.mem_limit_soft >> 20)
+                self._kill(rss, from_main_thread=True)
+            else:
+                new_limit = max(limit, rss) * 1.1
+                self.ratio = new_limit / self.mem * 1.1
+                logger.info('after rotate, rss = %d MB, enlarge soft memory limit %d -> %d MB, origin = %d MB',
+                             rss >> 20,
+                             limit >> 20,
+                             self.mem_limit_soft >> 20,
+                             self.mem >> 20)
 
     def _start(self):
         p = psutil.Process()
@@ -401,17 +409,16 @@ class MemoryChecker(object):
         def check_mem():
             while not self._stop:
                 rss = self.rss = (mf().rss + self.addation)  # 1ms
-                if self.check:
-                    self.may_kill(adjust=False, exit=self.exit)
+                if self.check and rss > self.mem * 1.5:
+                    self._kill(rss, from_main_thread=False)
                 time.sleep(0.1)
 
         self.thread = t = threading.Thread(target=check_mem)
         t.daemon = True
         t.start()
 
-    def start(self, task_id, mem_limit_mb, exit=False):
+    def start(self, task_id, mem_limit_mb):
         self._stop = False
-        self.exit = exit
         self.mem = int(mem_limit_mb) << 20
         self.task_id = task_id
         if not self.thread:

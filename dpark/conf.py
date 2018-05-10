@@ -24,6 +24,7 @@ MOOSEFS_DIR_CACHE = False
 # memory used per task, like -M (--m) option in context.
 MEM_PER_TASK = 200.0
 
+
 def load_conf(path):
     if not os.path.exists(path):
         logger.warning("conf %s do not exists, use default config", path)
@@ -36,6 +37,10 @@ def load_conf(path):
     except Exception as e:
         logger.error("error while load conf from %s: %s", path, e)
         raise
+
+
+LOG_ROTATE = True
+MULTI_SEGMENT_DUMP = True
 
 
 class ShuffleConfig(object):

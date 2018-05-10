@@ -43,7 +43,7 @@ TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
 MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24 # 1 day
 KILL_TIMEOUT = 0.1  # 0.1 sec, to reply to mesos fast
-TASK_LOST_JOIN_TIMEOUT = 5
+TASK_LOST_JOIN_TIMEOUT = 3
 TASK_LOST_DISCARD_TIMEOUT = 60
 Script = ''
 
@@ -347,20 +347,21 @@ class MyExecutor(Executor):
                     st = _LOST
 
                 if st == _LOST or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):
-                    ec = proc.join(TASK_LOST_JOIN_TIMEOUT)
+                    proc.join(TASK_LOST_JOIN_TIMEOUT)  # join in py2 not return exitcode
+                    ec = proc.exitcode
                     if ec is not None:
                         if ec in kill_ecs:
                             st = _KILLED
                         else:
                             st = _LOST
-                            logger.warning('%s lost with exit code: %s', ec)
+                            logger.warning('%s lost with exit code: %s', tid, ec)
                     else:
                         try:
                             os.waitpid(proc.pid, os.WNOHANG)
                         except OSError as e:
                             st = _LOST
                             if e.errno != errno.ECHILD:
-                                logger.exception('%s lost, raise exception when waitpid')
+                                logger.exception('%s lost, raise exception when waitpid', tid)
                         else:
                             t = self.finished_tasks.get(tid)
                             if t is None:

@@ -5,9 +5,9 @@ import six.moves.cPickle
 import os
 import os.path
 
-
+import dpark.conf
 from dpark.env import env
-from dpark.util import compress, get_logger
+from dpark.util import compress, get_logger, ERROR_TASK_OOM
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header
 from six.moves import range
@@ -35,20 +35,29 @@ class DAGTask(Task):
     def __init__(self, stageId):
         Task.__init__(self)
         self.stageId = stageId
+        self.mem = 0
 
     def __repr__(self):
         return '<task %d:%d>'%(self.stageId, self.id)
 
     def run(self, task_id):
         try:
-            env.meminfo.start(task_id, int(self.rdd.mem))
-            env.meminfo.check = False
+            if self.mem != 0:
+                env.meminfo.start(task_id, int(self.mem))
+                if dpark.conf.MULTI_SEGMENT_DUMP:
+                    env.meminfo.check = False
             return self._run(task_id)
         except Exception as e:
             logger.exception("Task.run error")
+        except KeyboardInterrupt as e:
+            if self.mem != 0 and env.meminfo.oom:
+                os._exit(ERROR_TASK_OOM)
+            else:
+                raise e
         finally:
-            env.meminfo.check = True
-            env.meminfo.stop()
+            if self.mem != 0:
+                env.meminfo.check = True
+                env.meminfo.stop()
 
 
 class ResultTask(DAGTask):
@@ -62,7 +71,7 @@ class ResultTask(DAGTask):
         self.outputId = outputId
 
     def _run(self, task_id):
-        logger.debug("run task %s with %d", self, task_id)
+        logger.debug("run task %s: %s", task_id, self)
         return self.func(self.rdd.iterator(self.split))
 
     def preferredLocations(self):
@@ -122,7 +131,6 @@ class ShuffleMapTask(DAGTask):
         return self.locs
 
     def _run(self, task_id):
-        env.meminfo.ratio = self.shuffle_config.dump_mem_ratio
         mem_limit = env.meminfo.mem_limit_soft
         t0 = time.time()
         logger.debug("run task with shuffle_flag %r" % (self.shuffle_config, ))
@@ -136,7 +144,8 @@ class ShuffleMapTask(DAGTask):
         dumper = dumper_cls(self.shuffleId, self.partition, n, self.shuffle_config)
         buckets = [{} for _ in range(n)]
 
-        for item in rdd.iterator(self.split):
+        last_i = 0
+        for i, item in enumerate(rdd.iterator(self.split)):
             try:
                 k, v = item
                 bucket = buckets[get_partition(k)]
@@ -145,12 +154,20 @@ class ShuffleMapTask(DAGTask):
                     bucket[k] = merge_value(r, v)
                 else:
                     bucket[k] = create_combiner(v)
-                if meminfo.rss > mem_limit:
-                    logger.warning("mem %d MB, dump rotate %d", int(meminfo.rss) >> 20, env.task_stats.num_dump_rotate + 1)
+
+                if dpark.conf.MULTI_SEGMENT_DUMP and meminfo.rss > mem_limit:
+                    _log = logger.info if dpark.conf.LOG_ROTATE else logger.debug
+                    _log("dump rotate %d with %d kv: mem %d MB, sort limit %d MB, limit %d MB",
+                         env.task_stats.num_dump_rotate + 1,
+                         i - last_i,
+                         int(meminfo.rss) >> 20,
+                         mem_limit >> 20,
+                         int(meminfo.mem) >> 20)
                     dumper.dump(buckets, False)
-                    [buckets[i].clear() for i in range(n)]
-                    env.meminfo.may_kill(adjust=True, exit=True)
+                    [buckets[j].clear() for j in range(n)]
+                    env.meminfo.after_rotate()
                     mem_limit = env.meminfo.mem_limit_soft
+                    last_i = i
             except ValueError as e:
                 logger.exception('The ValueError exception: %s at %s', str(e), str(rdd.scope.call_site))
                 raise

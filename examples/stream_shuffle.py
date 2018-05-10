@@ -232,7 +232,7 @@ class TestShuffle(unittest.TestCase):
             rdd0 = dc.makeRDD([0, 1], 2).mapPartition(mp1)
             rdd0.mem = map_mem
 
-            rdd1 = rdd0.groupByKey(numSplits=2, shuffle_config=SC.new().disk()).mapPartition(mp2)
+            rdd1 = rdd0.groupByKey(numSplits=2, shuffle_config=SC.new().disk(0.8)).mapPartition(mp2)
             res = rdd1.collect()
             assert(sum(res) == num_key * values_per_key * 2)
             st =  dc.scheduler.get_last_stats()
@@ -243,4 +243,6 @@ class TestShuffle(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    import dpark.conf
+    dpark.conf.MULTI_SEGMENT_DUMP = True
     unittest.main(verbosity=2)

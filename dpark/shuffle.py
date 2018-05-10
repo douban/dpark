@@ -23,6 +23,7 @@ try:
 except ImportError:
     from six import BytesIO as StringIO
 
+import dpark.conf
 from dpark.util import compress, decompress, spawn, mkdir_p, atomic_file, get_logger, ERROR_TASK_OOM
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
@@ -561,6 +562,9 @@ class DiskHashMerger(Merger):
         self.combined = {}
 
         self.use_disk = shuffle_config.is_disk_merge
+        if self.use_disk:
+            env.meminfo.ratio = shuffle_config.dump_mem_ratio
+
         self.archives = []
 
         self.rotate_time = 0
@@ -573,10 +577,10 @@ class DiskHashMerger(Merger):
         t0 = time.time()
         time_since_last = t0 - self.last_rotate_ts
         dict_size = len(self.combined)
-        rss_before = env.meminfo.rss_rt()
+        rss_before = env.meminfo.rss_rt
         size = self._dump()
         self.total_size += size
-        rss_after = env.meminfo.rss_rt()
+        rss_after = env.meminfo.rss_rt
         t1 = time.time()
         rotate_time = t1 - t0
         self.last_rotate_ts = t1
@@ -587,12 +591,13 @@ class DiskHashMerger(Merger):
             logger.warnging('more than %d rotation. exit!', max_rotate)
             os._exit(ERROR_TASK_OOM)
 
-        env.meminfo.may_kill(adjust=True, exit=True)
+        env.meminfo.after_rotate()
 
-        logger.warning('rotate %d: use %.2f, since last %.2f secs, dict_size 0x%x,'
-                     'mem %d -> %d MB, disk size +%d = %d MB',
-                     self.rotate_num, rotate_time, time_since_last, dict_size,
-                     rss_before >> 20, rss_after >> 20, size >> 20, total_size >> 20)
+        _log = logger.info if dpark.conf.LOG_ROTATE else logger.debug
+        _log('rotate %d: use %.2f sec, since last %.2f secs, dict_size 0x%x,'
+             'mem %d -> %d MB, disk size +%d = %d MB',
+             self.rotate_num, rotate_time, time_since_last, dict_size,
+             rss_before >> 20, rss_after >> 20, size >> 20, total_size >> 20)
 
         return env.meminfo.mem_limit_soft
 
