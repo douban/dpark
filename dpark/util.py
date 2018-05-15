@@ -273,7 +273,7 @@ def make_progress_bar(ratio, size=14):
 
 def init_dpark_logger(log_level, use_color=None):
     log_format = '{GREEN}%(asctime)-15s{RESET}' \
-        ' [%(levelname)s] [%(threadName)s] [%(name)-9s] %(message)s'
+            ' [%(levelname)s] [%(threadName)s] [%(name)-9s:%(lineno)d] %(message)s'
     datefmt = '%Y-%m-%d %H:%M:%S'
     logger = get_logger('dpark')
     logger.propagate = False
