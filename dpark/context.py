@@ -130,6 +130,8 @@ class DparkContext(object):
         else:
             if master == 'mesos':
                 master = conf.MESOS_MASTER
+            else:
+                master = conf.MESOS_MASTERS.get(master, master)
 
             if master.startswith('mesos://'):
                 if '@' in master:

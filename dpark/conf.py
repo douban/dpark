@@ -13,6 +13,7 @@ if os.path.exists('/dev/shm'):
 
 # uri of mesos master, host[:5050] or or zk://...
 MESOS_MASTER = 'localhost'
+MESOS_MASTERS = {}
 
 # mount points of MooseFS, must be available on all slaves
 # for example:  '/mfs' : 'mfsmaster',

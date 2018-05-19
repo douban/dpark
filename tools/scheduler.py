@@ -826,9 +826,14 @@ if __name__ == '__main__':
 
     conf.__dict__.update(os.environ)
 
+    # by name
     if options.master == 'mesos':
         options.master = conf.MESOS_MASTER
-    elif options.master.startswith('mesos://'):
+    else:
+        options.master = conf.MESOS_MASTERS.get(options.master, options.master)
+
+    # parse
+    if options.master.startswith('mesos://'):
         if '@' in options.master:
             options.master = options.master[options.master.rfind('@') + 1:]
         else:
