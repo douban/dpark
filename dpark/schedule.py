@@ -747,6 +747,7 @@ class MesosScheduler(DAGScheduler):
         self.group = options.group
         self.logLevel = options.logLevel
         self.options = options
+        self.role = options.role
         self.color = options.color
         self.webui_url = webui_url
         self.started = False
@@ -786,6 +787,8 @@ class MesosScheduler(DAGScheduler):
         if framework.user == 'root':
             raise Exception('dpark is not allowed to run as \'root\'')
         framework.name = name
+        if self.role:
+            framework.role = self.role
         framework.hostname = socket.gethostname()
         if self.webui_url:
             framework.webui_url = self.webui_url
