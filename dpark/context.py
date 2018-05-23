@@ -120,7 +120,7 @@ class DparkContext(object):
             self.webui_url = None
             logger.info('no web server created as %s', e)
 
-        master = self.master or options.master
+        origin_master = master = self.master or options.master
         if master == 'local':
             self.scheduler = LocalScheduler()
             self.isLocal = True
@@ -143,6 +143,7 @@ class DparkContext(object):
 
             if ':' not in master:
                 master += ':5050'
+            logger.info("use master %s -> %s", origin_master,  master)
             self.scheduler = MesosScheduler(
                 master, options, webui_url=self.webui_url
             )
