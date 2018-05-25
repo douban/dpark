@@ -203,18 +203,19 @@ class ProxyConn(object):
 
                 raise Error(ord(ans))
 
-            if n % 2 == 0:
-                if n < 20:
-                    raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
-                if (n - 20) % 6 == 0:
-                    length, id, version = unpack("QQI", ans)
-                    return Chunk(id, length, version, ans[20:])
+            if n < 20:
+                raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
+
+            if self.version >= (3, 0, 10):
+                assert (n - 21) % 14 == 0 , n
+                protocolid, length, id, version = unpack('BQQI', ans)
+                return Chunk(id, length, version, ans[21:], ele_width=14)
+            elif self.version >= (1, 7, 32):
+                assert (n - 21) % 10 == 0, n
+                protocolid, length, id, version = unpack('BQQI', ans)
+                return Chunk(id, length, version, ans[21:], ele_width=10)
             else:
-                if n < 21:
-                    raise Exception('read chunk invalid length: %s(expected 21 above)' % n)
-                if (n - 21) % 10 == 0:
-                    protocolid, length, id, version = unpack('BQQI', ans)
-                    return Chunk(id, length, version, ans[21:], ele_width=10)
-                elif (n - 21) % 14 == 0:
-                    protocolid, length, id, version = unpack('BQQI', ans)
-                    return Chunk(id, length, version, ans[21:], ele_width=14)
+                assert (n - 20) % 6 == 0, n
+                length, id, version = unpack("QQI", ans)
+                return Chunk(id, length, version, ans[20:])
+
