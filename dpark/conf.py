@@ -41,7 +41,7 @@ def load_conf(path):
 
 LOG_ROTATE = True
 MULTI_SEGMENT_DUMP = True
-
+DUMP_MEM_RATIO = 0.9
 
 class ShuffleConfig(object):
 
@@ -55,7 +55,7 @@ class ShuffleConfig(object):
         self.is_iter_group = iter_group
         self.is_ordered_group = keep_order
 
-        self.dump_mem_ratio = 0.9
+        self.dump_mem_ratio = DUMP_MEM_RATIO
 
         # used internal
         self.op = "udf" # 'udf' or 'group' or 'cogroup'
