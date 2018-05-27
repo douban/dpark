@@ -17,6 +17,7 @@ import itertools
 from operator import itemgetter
 from itertools import islice
 from six.moves import range, zip, reduce
+from functools import wraps
 
 try:
     import cStringIO as StringIO
@@ -237,6 +238,41 @@ def get_serializer(shuffle_config):
         return AutoBatchedSerializer()
 
 
+def fetch_with_retry(f):
+
+    MAX_RETRY = 3
+
+    @wraps(f)
+    def _(self):
+        self.num_batch_done = 0
+        while True:
+           try:
+               for items in islice(f(self), self.num_batch_done, None):
+                    self.num_batch_done += 1
+                    yield items
+               if self.num_retry > 0:
+                    logger.info("Fetch retry %d success for url %s, num_batch %d ", self.num_retry, self.url, self.num_batch_done)
+               break
+           except Exception as e:
+                logger.exception("Fetch Fail")
+                self.num_retry += 1
+                msg = "Fetch failed for url %s, tried %d/%d times. Exception: %r. " % (self.url, self.num_retry, MAX_RETRY, e)
+                fail_fast = False
+                if  isinstance(e, IOError) and str(e).find("many open file") >= 0:
+                    fail_fast = True
+                if fail_fast or self.num_retry >= MAX_RETRY:
+                    msg += "GIVE UP!"
+                    logger.warning(msg)
+                    from dpark.schedule import FetchFailed
+                    raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
+                else:
+                    sleep_time = 2 ** self.num_retry * 0.5  # 0.5, 1.0, 2.0
+                    msg += "sleep %d secs" % (sleep_time, )
+                    logger.warning(msg)
+                    time.sleep(sleep_time)
+    return _
+
+
 class RemoteFile(object):
 
     num_open = 0
@@ -252,8 +288,9 @@ class RemoteFile(object):
         else:
             self.url = "%s/%d/%d/%d" % (uri, shuffle_id, map_id, reduce_id)
         logger.debug("fetch %s", self.url)
-        self.max_retry = 3
+
         self.num_retry = 0
+        self.num_batch_done = 0
 
     def open(self):
         f = urllib.request.urlopen(self.url)
@@ -263,28 +300,14 @@ class RemoteFile(object):
         exp_size = int(f.headers['content-length'])
         return f, exp_size
 
+    @fetch_with_retry
     def unsorted_batches(self):
-        done = 0
-        while True:
-            try:
-                for (is_marshal, d) in islice(self._unsorted_batches(), done, None):
-                    d = decompress(d)
-                    if is_marshal:
-                        items = marshal.loads(d)
-                    else:
-                        items = pickle.loads(d)
-                    done += 1
-                    yield items
-                break
-            except Exception as e:
-                logger.exception(e)
-                self.on_fail(e)
-
-    def _unsorted_batches(self):
         f = None
+        #TEST_RETRY = True
         try:
             f, exp_size = self.open()
             total_size = 0
+
             while True:
                 head = f.read(5)
                 if len(head) == 0:
@@ -297,7 +320,16 @@ class RemoteFile(object):
                     raise IOError(
                         "length not match: expected %d, but got %d" %
                         (length, len(d)))
-                yield is_marshal, d
+                d = decompress(d)
+                if is_marshal:
+                    items = marshal.loads(d)
+                else:
+                    items = pickle.loads(d)
+                yield items
+
+                #if TEST_RETRY and self.num_retry == 0:
+                #    raise Exception("test_retry")
+
             if total_size != exp_size:
                 raise IOError(
                     "fetch size not match: expected %d, but got %d" %
@@ -308,18 +340,8 @@ class RemoteFile(object):
             if f:
                 f.close()
 
+    @fetch_with_retry
     def sorted_items(self):
-        done = 0
-        while True:
-            try:
-                for obj in islice(self._sorted_items(), 0, None):
-                    done += 1
-                    yield obj
-                break
-            except Exception as e:
-                self.on_fail(e)  # may raise exception
-
-    def _sorted_items(self):
         f = None
         try:
             serializer = AutoBatchedSerializer()
@@ -334,21 +356,6 @@ class RemoteFile(object):
             if f:
                 f.close()
             self.num_open -= 1
-
-    def on_fail(self, e):
-        self.num_retry += 1
-        msg = "Fetch failed for url %s, tried %d/%d times. Exception: %r. " % (self.url, self.num_retry, self.max_retry, e)
-        fail_fast = False
-        if  isinstance(e, IOError) and str(e).find("many open file") >= 0:
-            fail_fast = True
-        if fail_fast or self.num_retry >= self.max_retry:
-            msg += "GIVE UP!"
-            logger.warning(msg)
-            from dpark.schedule import FetchFailed
-            raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
-        else:
-            logger.warning(msg)
-            time.sleep(2 ** self.num_retry * 0.1)
 
 
 class ShuffleFetcher(object):
