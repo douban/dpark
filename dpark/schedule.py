@@ -183,6 +183,7 @@ class Stage:
             if sm > 0:
                 msg += k
                 vs = d['min'], sm/n, d['max']
+                vs = tuple(map(int, vs))
                 unit_s = " "
                 if unit == "bytes":
                     vs = tuple([v >> 20 for v in vs])
