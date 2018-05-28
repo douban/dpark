@@ -610,7 +610,7 @@ class Broadcast(object):
         self.compressed_size = _manager.register(self.uuid, self.value)
         block_num = (self.compressed_size + BLOCK_SIZE - 1) >> BLOCK_SHIFT
         self.bytes = block_num * BLOCK_SIZE
-        logger.info("broadcast %s in %d blocks", self.uuid, block_num)
+        logger.info("broadcast %s in %d blocks, %d bytes", self.uuid, block_num, self.compressed_size)
 
     def clear(self):
         _manager.clear(self.uuid)
