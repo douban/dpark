@@ -62,7 +62,11 @@ class GuideManager(object):
 
         def run():
             logger.debug("guide start at %s", self.guide_addr)
-            while True:
+
+            while self._started:
+                if not sock.poll(1000, zmq.POLLIN):
+                    continue
+
                 type, msg = sock.recv_pyobj()
                 if type == GUIDE_STOP:
                     sock.send_pyobj(0)
@@ -109,13 +113,9 @@ class GuideManager(object):
         self._started = False
         if self.guide_thread and self.guide_addr.\
                 startswith('tcp://%s:' % socket.gethostname()):
-            sock = self.ctx.socket(zmq.REQ)
-            sock.setsockopt(zmq.LINGER, 0)
-            sock.connect(self.guide_addr)
-            sock.send_pyobj((GUIDE_STOP, None))
-            sock.recv_pyobj()
-            sock.close()
-            self.guide_thread.join()
+            self.guide_thread.join(timeout=1)
+            if self.guide_thread.is_alive():
+                logger.warning("guide_thread not stopped.")
             self.guide_addr = None
 
 
@@ -196,7 +196,9 @@ class DownloadManager(object):
         def run():
             logger.debug("server started at %s", server_addr)
 
-            while True:
+            while self._started:
+                if not sock.poll(1000, zmq.POLLIN):
+                    continue
                 type, msg = sock.recv_pyobj()
                 logger.debug('server recv: %s %s', type, msg)
                 if type == SERVER_STOP:
@@ -410,20 +412,13 @@ class DownloadManager(object):
         self._started = False
         if self.server_thread and self.server_addr.\
                 startswith('tcp://%s:' % socket.gethostname()):
-            req = self.ctx.socket(zmq.REQ)
-            req.setsockopt(zmq.LINGER, 0)
-            req.connect(self.server_addr)
-            req.send_pyobj((SERVER_STOP, None))
-            avail = req.poll(1 * 100, zmq.POLLIN)
-            if avail:
-                req.recv_pyobj()
-            req.close()
             for _, th in six.iteritems(self.download_threads):
-                th.join()
-            self.server_thread.join()
+                th.join(timeout=0.1)  # only in executor, not needed
+            self.server_thread.join(timeout=1)
+            if self.server_thread.is_alive():
+                logger.warning("Download mananger server_thread not stopped.")
 
-        self.manager.shutdown()
-        self.manager.join()
+        self.manager.shutdown() # shutdown will try join and terminate server process
 
 
 def accumulate_list(l):
