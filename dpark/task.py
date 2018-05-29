@@ -143,6 +143,7 @@ class ShuffleMapTask(DAGTask):
         dumper_cls = SortMergeBucketDumper if self.shuffle_config.is_sort_merge else BucketDumper
         dumper = dumper_cls(self.shuffleId, self.partition, n, self.shuffle_config)
         buckets = [{} for _ in range(n)]
+        env.meminfo.ratio = min(float(n) / (n+1), env.meminfo.ratio)
 
         last_i = 0
         for i, item in enumerate(rdd.iterator(self.split)):
