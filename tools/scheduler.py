@@ -344,6 +344,13 @@ class SubmitScheduler(BaseScheduler):
             return
 
         for offer in offers:
+            try:
+                if conf.ban(offer.hostname):
+                    logger.debug("skip offer on banned node: %s", offer.hostname)
+                    continue
+            except:
+                logger.exception("bad ban() func in dpark.conf")
+
             attrs = self.getAttributes(offer)
             group = attrs.get('group', 'None')
             if (self.options.group or group.startswith(

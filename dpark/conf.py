@@ -110,6 +110,10 @@ def rddconf(_dummy=_named_only_start,
     return res
 
 
+def ban(hostname):
+    return False
+
+
 def load_conf(path):
     if not os.path.exists(path):
         logger.warning("conf %s do not exists, use default config", path)

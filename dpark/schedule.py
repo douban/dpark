@@ -1007,6 +1007,13 @@ class MesosScheduler(DAGScheduler):
         start = time.time()
         filter_offer = []
         for o in offers:
+            try:
+                if conf.ban(o.hostname):
+                    logger.debug("skip offer on banned node: %s", o.hostname)
+                    continue
+            except:
+                logger.exception("bad ban() func in dpark.conf")
+
             group = (
                 self.getAttribute(
                     o.attributes,
