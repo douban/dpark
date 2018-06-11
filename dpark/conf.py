@@ -25,6 +25,90 @@ MOOSEFS_DIR_CACHE = False
 # memory used per task, like -M (--m) option in context.
 MEM_PER_TASK = 200.0
 
+MAX_OPEN_FILE = 900
+LOG_ROTATE = True
+MULTI_SEGMENT_DUMP = True
+
+OP_UDF = "udf"
+OP_GROUPBY = "groupby"
+OP_COGROUP = "cogroup"
+
+_named_only_start = object()
+
+
+class RDDConf(object):
+
+    # use default_rddconf to set default values, do NOT change ATTRS
+    ATTRS = {
+        "disk_merge": False,
+        "sort_merge": False,
+        "iter_group": False,
+        "ordered_group": False,
+        "dump_mem_ratio": 0.9,
+        "op": OP_UDF,
+        "_dummy":_named_only_start,
+    }
+
+    def __init__(self, _dummy, disk_merge, sort_merge, iter_group, ordered_group, dump_mem_ratio, op):
+        if _dummy !=_named_only_start:
+            raise TypeError("DO NOT use RDDConf directly; use dpark.conf.rddconf() instead. ")
+
+        self.disk_merge = disk_merge
+        self.sort_merge = sort_merge
+        self.iter_group = iter_group
+        self.ordered_group = ordered_group
+        self.dump_mem_ratio = dump_mem_ratio
+        self.op = op
+
+    def __setattr__(self, name, value):
+        if name not in self.ATTRS:
+            msg = "'RDDConf' object has no attribute '{}'. Valid attrs: {}".format(name, self.to_dict().keys())
+            raise AttributeError(msg)
+        object.__setattr__(self, name, value)
+
+    def to_dict(self):
+        d = dict(self.__dict__)
+        return d
+
+    def __repr__(self):
+        return "RDDConf_%r" % (self.to_dict())
+
+    def dup(self, **kwargs):
+        res = RDDConf(_named_only_start, **self.__dict__)
+        for k, v in kwargs.items():
+            res.__setattr__(k, v)
+        return res
+
+    @property
+    def is_cogroup(self):
+        return self.op == OP_COGROUP
+
+    @property
+    def is_groupby(self):
+        return self.op == OP_GROUPBY
+
+
+default_rddconf = RDDConf(**RDDConf.ATTRS)  # for user
+_rdd = default_rddconf # for etc
+
+
+def rddconf(_dummy=_named_only_start,
+        disk_merge=None, sort_merge=None,
+        iter_group=False, ordered_group=None,
+        dump_mem_ratio=None,
+        op=OP_UDF):
+    """ Return new RDDConfig object based on default values.
+        Only takes named arguments.
+        e.g. groupByKey(.., rddconf=dpark.conf.rddconf(...))
+    """
+    if _dummy !=_named_only_start:
+        raise TypeError("rddconf() only takes named arguments")
+    kwargs = locals()
+    kwargs.pop("_dummy")
+    kwargs = dict([kv for kv in kwargs.items() if kv[1] is not None])
+    res  = default_rddconf.dup(**kwargs)
+    return res
+
 
 def load_conf(path):
     if not os.path.exists(path):
@@ -39,91 +123,5 @@ def load_conf(path):
         logger.error("error while load conf from %s: %s", path, e)
         raise
 
-
-LOG_ROTATE = True
-MULTI_SEGMENT_DUMP = True
-DUMP_MEM_RATIO = 0.9
-
-class ShuffleConfig(object):
-
-    # configured in /etc/dpark.conf
-    default = None
-    MAX_OPEN_FILE = 900
-
-    def __init__(self, sort_merge=False, use_disk=False, iter_group=False, keep_order=False):
-        self.is_sort_merge = sort_merge
-        self.is_disk_merge = use_disk
-        self.is_iter_group = iter_group
-        self.is_ordered_group = keep_order
-
-        self.dump_mem_ratio = DUMP_MEM_RATIO
-
-        # used internal
-        self.op = "udf" # 'udf' or 'group' or 'cogroup'
-
-    def __repr__(self):
-        return "ShuffleConfig%r" % (self.__dict__)
-
-    @classmethod
-    def new(cls):
-        return cls(False, False, False, False)
-
-    def dup(self):
-        sc = ShuffleConfig()
-        sc.__dict__ = dict(self.__dict__)
-        return sc
-
-    def sort(self):
-        self.is_sort_merge = True
-        return self
-
-    def hash(self):
-        self.is_sort_merge = False
-        return self
-
-    def mem(self):
-        self.is_disk_merge = False
-        return self
-
-    def disk(self, dump_mem_ratio=None):
-        self.is_disk_merge = True
-        if dump_mem_ratio:
-            self.dump_mem_ratio = dump_mem_ratio
-        return self
-
-    def order(self):
-        self.is_ordered_group = True
-        return self
-
-    def no_order(self):
-        self.is_ordered_group = False
-        return self
-
-    def iter_group(self):
-        self.is_iter_group = True
-        return self
-
-    def list_group(self):
-        self.is_iter_group = False
-        return self
-
-    def cogroup(self):
-        self.op = 'cogroup'
-        return self
-
-    def groupby(self):
-        self.op = 'groupby'
-        return self
-
-    @property
-    def is_cogroup(self):
-        return self.op == 'cogroup'
-
-    @property
-    def is_groupby(self):
-        return self.op == 'groupby'
-
-
-ShuffleConfig.default =  ShuffleConfig(False, False, False, False)
 load_conf(os.environ.get('DPARK_CONF', '/etc/dpark.conf'))
 
