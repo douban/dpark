@@ -819,11 +819,6 @@ if __name__ == '__main__':
 
     (options, command) = parser.parse_args()
 
-    if 'DPARK_CONF' in os.environ:
-        conf.load_conf(os.environ['DPARK_CONF'])
-    elif os.path.exists('/etc/dpark.conf'):
-        conf.load_conf('/etc/dpark.conf')
-
     conf.__dict__.update(os.environ)
 
     # by name
