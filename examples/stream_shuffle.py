@@ -15,12 +15,13 @@ from dpark import DparkContext
 from dpark.nested_groupby import GroupByNestedIter
 from dpark.shuffle import GroupByNestedIter, AutoBatchedSerializer
 from dpark.util import get_logger, profile
-from dpark.conf import ShuffleConfig as SC
+import dpark.conf
 
 GroupByNestedIter.NO_CACHE = True
 print_mem_incr = True
 print_mem_incr = False
 dc = DparkContext('mesos')
+RC = dpark.conf.rddconf
 M = 1024 * 1024
 
 def rss_func(p):
@@ -126,28 +127,28 @@ class BenchShuffle(object):
 
         return mm, total_time, reduce_time
 
-    def test_reducebykey(self, shuffle_config, dup_key=False, taskMemory=None):
+    def test_reducebykey(self, rddconf, dup_key=False, taskMemory=None):
         rdd = self.gen_data(dup_key=dup_key)
-        rdd = rdd.reduceByKey(lambda x, y: y, numSplits=self.num_reduce, shuffle_config=shuffle_config, taskMemory=taskMemory)
+        rdd = rdd.reduceByKey(lambda x, y: y, numSplits=self.num_reduce, rddconf=rddconf, taskMemory=taskMemory)
         return self.count(rdd)
 
-    def test_groupbykey(self, shuffle_config, count_value=True, dup_key=True, taskMemory=None):
+    def test_groupbykey(self, rddconf, count_value=True, dup_key=True, taskMemory=None):
         rdd = self.gen_data(dup_key=dup_key)
-        rdd = rdd.groupByKey(numSplits=self.num_reduce, shuffle_config=shuffle_config, taskMemory=taskMemory)
+        rdd = rdd.groupByKey(numSplits=self.num_reduce, rddconf=rddconf, taskMemory=taskMemory)
         self.exp_num_value = self.num_key * self.num_value_per_key * self.num_map
         return self.count(rdd, count_value)
 
-    def test_cogroup(self, shuffle_config, count_value=True, dup_key=True, taskMemory=None):
+    def test_cogroup(self, rddconf, count_value=True, dup_key=True, taskMemory=None):
         rdd1 = self.gen_data(dup_key=dup_key)
         rdd2 = self.gen_data(dup_key=dup_key)
-        rdd = rdd1.groupWith(rdd2, numSplits=self.num_reduce, shuffle_config=shuffle_config, taskMemory=taskMemory)
+        rdd = rdd1.groupWith(rdd2, numSplits=self.num_reduce, rddconf=rddconf, taskMemory=taskMemory)
         self.exp_num_value = self.num_map * self.num_key * self.num_value_per_key * 2
         return self.count(rdd, count_value, multi_value=True)
 
-    def test_join(self, shuffle_config, count_value=True, dup_key=True, taskMemory=None):
+    def test_join(self, rddconf, count_value=True, dup_key=True, taskMemory=None):
         rdd1 = self.gen_data(dup_key=dup_key)
         rdd2= BenchShuffle(self.num_key, 2, 2).gen_data(dup_key=dup_key)
-        rdd = rdd1.join(rdd2, numSplits=self.num_reduce, shuffle_config=shuffle_config, taskMemory=taskMemory)
+        rdd = rdd1.join(rdd2, numSplits=self.num_reduce, rddconf=rddconf, taskMemory=taskMemory)
         self.exp_num_key = self.exp_num_value = self.num_map * self.num_key * self.num_value_per_key * 2 * 2
         return self.count(rdd)
 
@@ -161,55 +162,55 @@ def max_rss():
 class TestShuffle(unittest.TestCase):
 
     def test_max_open_file(self):
-        n = SC.MAX_OPEN_FILE
+        n = dpark.conf.MAX_OPEN_FILE
         for num_map in [n, n+1]:
             # should see waring 'fall back to SHUFFLE_DISK' for n+1
-            sc = SC.new().sort()
-            BenchShuffle(10, 10, num_map).test_groupbykey(shuffle_config=sc, taskMemory=50)
+            rddconf = dpark.conf.rddconf(sort_merge=True)
+            BenchShuffle(10, 10, num_map).test_groupbykey(rddconf=rddconf, taskMemory=50)
 
     def test_oom_many_key(self):
         params = [
-            (SC.new(), 2500), # 30 sec
-            (SC.new().disk(), 2500), # 30 sec
-            (SC.new().disk(0.6), 1000), # 145 sec
-            (SC.new().sort(), 50), # 43 sec
+            (RC(), 2500), # 30 sec
+            (RC(disk_merge=True), 2500), # 30 sec
+            (RC(disk_merge=True, dump_mem_ratio=0.6), 1000), # 145 sec
+            (RC(sort_merge=True), 50), # 43 sec
             ]
-        for sc, m in params:
-            BenchShuffle(1024*128, 2, 100).test_reducebykey(shuffle_config=sc, dup_key=False, taskMemory=m)
+        for rc, m in params:
+            BenchShuffle(1024*128, 2, 100).test_reducebykey(rddconf=rc, dup_key=False, taskMemory=m)
 
     def test_oom_many_value(self):
         params = [
-            (SC.new(), 4000), # 16 sec
-            (SC.new().disk(0.7), 1000), # 17 sec
-            (SC.new().sort(), 200), # 16 sec
-            (SC.new().sort().iter_group(), 50), # 16 sec
+            (RC(), 4000), # 16 sec
+            (RC(disk_merge=True, dump_mem_ratio=0.7), 1000), # 17 sec
+            (RC(sort_merge=True), 200), # 16 sec
+            (RC(sort_merge=True, iter_group=True), 50), # 16 sec
             ]
-        for sc, m in params:
-            BenchShuffle(1024, 1024, 100).test_groupbykey(shuffle_config=sc, taskMemory=m)
+        for rc, m in params:
+            BenchShuffle(1024, 1024, 100).test_groupbykey(rddconf=rc, taskMemory=m)
 
     def test_oom_onebigkey(self):
         params = [
-            (SC.new(), 3500), # 24 sec
-            (SC.new().sort().iter_group(), 50), # 15 sec
+            (RC(), 3500), # 24 sec
+            (RC(sort_merge=True, iter_group=True), 50), # 15 sec
             ]
-        for sc, m in params:
-            BenchShuffle(1, 1024 * 1024, 100).test_groupbykey(shuffle_config=sc, taskMemory=m)
+        for rc, m in params:
+            BenchShuffle(1, 1024 * 1024, 100).test_groupbykey(rddconf=rc, taskMemory=m)
 
     def test_cogroup(self):
         params = [
-            (SC.new(), 7000), # 40 sec
-            (SC.new().sort().iter_group(), 50), # 45 sec
+            (RC(), 7000), # 40 sec
+            (RC(sort_merge=True, iter_group=True), 50), # 45 sec
             ]
-        for sc, m in params:
-            BenchShuffle(1, 1024*1024, 100).test_cogroup(shuffle_config=sc, taskMemory=m)
+        for rc, m in params:
+            BenchShuffle(1, 1024*1024, 100).test_cogroup(rddconf=rc, taskMemory=m)
 
     def test_join(self):
         params = [
-            (SC.new().sort().iter_group(), 50), # 208 sec
-            (SC.new(), 3500), # 115 sec
+            (RC(sort_merge=True, iter_group=True), 50), # 208 sec
+            (RC(), 3500), # 115 sec
             ]
-        for sc, m in params:
-            BenchShuffle(1, 1024*1024, 100).test_join(shuffle_config=sc, taskMemory=m)
+        for rc, m in params:
+            BenchShuffle(1, 1024*1024, 100).test_join(rddconf=rc, taskMemory=m)
 
     def test_disk_merge(self):
 
@@ -232,7 +233,7 @@ class TestShuffle(unittest.TestCase):
             rdd0 = dc.makeRDD([0, 1], 2).mapPartition(mp1)
             rdd0.mem = map_mem
 
-            rdd1 = rdd0.groupByKey(numSplits=2, shuffle_config=SC.new().disk(0.8)).mapPartition(mp2)
+            rdd1 = rdd0.groupByKey(numSplits=2, rddconf=RC(disk_merge=True, dump_mem_ratio=0.6)).mapPartition(mp2)
             res = rdd1.collect()
             assert(sum(res) == num_key * values_per_key * 2)
             st =  dc.scheduler.get_last_stats()
@@ -245,4 +246,10 @@ class TestShuffle(unittest.TestCase):
 if __name__ == "__main__":
     import dpark.conf
     dpark.conf.MULTI_SEGMENT_DUMP = True
+    rc = dpark.conf.default_rddconf
+    rc.disk_merge = False
+    rc.sort_merge = False
+    rc.iter_group = False
+    rc.ordered_group = False
+    rc.dump_mem_ratio = False
     unittest.main(verbosity=2)

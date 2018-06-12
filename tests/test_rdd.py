@@ -643,11 +643,11 @@ class TestRDDShuffleKeepOrder(TestRDDShuffle):
 
     def setUp(self):
         TestRDD.setUp(self)
-        dpark.conf.ShuffleConfig.default.order()
+        dpark.conf.default_rddconf.ordered_group = True
 
     def tearDown(self):
         TestRDD.tearDown(self)
-        dpark.conf.ShuffleConfig.default.no_order()
+        dpark.conf.default_rddconf.ordered_group = False
 
 
 class TestRDDShuffleSortMerge(TestRDDShuffle):
@@ -655,26 +655,27 @@ class TestRDDShuffleSortMerge(TestRDDShuffle):
     def setUp(self):
         TestRDD.setUp(self)
 
-        dpark.conf.ShuffleConfig.default.sort()
+        dpark.conf.default_rddconf.sort_merge = True
         GroupByNestedIter.NO_CACHE = True
 
     def tearDown(self):
         TestRDD.tearDown(self)
         dpark.conf.DEFAULT_SHUFFLE_FLAGES = 0
-        GroupByNestedIter.NO_CACHE = False
+        dpark.conf.default_rddconf.sort_merge = False
 
 
 class TestRDDShuffleSortMergeIterGroup(TestRDDShuffle):
 
     def setUp(self):
         TestRDD.setUp(self)
-
-        dpark.conf.ShuffleConfig.default.sort().iter_group()
+        dpark.conf.default_rddconf.sort_merge = True
+        dpark.conf.default_rddconf.iter_group = True
         GroupByNestedIter.NO_CACHE = True
 
     def tearDown(self):
         TestRDD.tearDown(self)
-        dpark.conf.ShuffleConfig.default.no_order().list_group()
+        dpark.conf.default_rddconf.sort_merge = False
+        dpark.conf.default_rddconf.iter_group = False
         GroupByNestedIter.NO_CACHE = False
 
 

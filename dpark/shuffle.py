@@ -230,9 +230,8 @@ class GroupByAutoBatchedSerializer(AutoBatchedSerializer):
             batch_num = self._dump_batch(stream, k_vs, batch_num)
 
 
-def get_serializer(shuffle_config):
-    sc = shuffle_config
-    if sc.is_iter_group and (sc.is_groupby or sc.is_cogroup):
+def get_serializer(rddconf):
+    if rddconf.iter_group and (rddconf.is_groupby or rddconf.is_cogroup):
         return GroupByAutoBatchedSerializer()
     else:
         return AutoBatchedSerializer()
@@ -500,13 +499,13 @@ def heap_merged(items_lists, combiner):
 
 class SortedItemsOnDisk(object):
 
-    def __init__(self, items, shuffle_config):
+    def __init__(self, items, rddconf):
         self.path = path = LocalFileShuffle.get_tmp()
         with atomic_file(path, bufsize=4096) as f:
             if not isinstance(items, list):
                 items = list(items)
             items.sort(key=itemgetter(0))
-            serializer = get_serializer(shuffle_config)
+            serializer = get_serializer(rddconf)
             serializer.dump_stream(items, f)
             self.size = f.tell()
             self.num_batch = serializer.num_batch
@@ -528,49 +527,47 @@ class SortedItemsOnDisk(object):
 
 class Merger(object):
 
-    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
-        self.shuffle_config = shuffle_config
+    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
+        self.rddconf = rddconf
         self.aggregator = aggregator
         self.size = size
         self.call_site = call_site
 
     @classmethod
-    def get(cls, shuffle_config, aggregator=None, size=0, call_site=None):
-        sc = shuffle_config
-
-        if sc.is_sort_merge:
+    def get(cls, rddconf, aggregator=None, size=0, call_site=None):
+        if rddconf.sort_merge:
             # all mergers keep order
             c = SortMerger
-            if sc.is_cogroup:
-                if sc.is_iter_group:
+            if rddconf.is_cogroup:
+                if rddconf.iter_group:
                     c = IterCoGroupSortMerger
-            elif sc.is_groupby:
-                if sc.is_iter_group:
+            elif rddconf.is_groupby:
+                if rddconf.iter_group:
                     c = IterGroupBySortMerger
         else:
             c = DiskHashMerger
-            if sc.is_groupby:
-                if sc.is_ordered_group:
+            if rddconf.is_groupby:
+                if rddconf.ordered_group:
                     c = OrderedGroupByDiskHashMerger
-            elif sc.is_cogroup:
-                if sc.is_ordered_group:
+            elif rddconf.is_cogroup:
+                if rddconf.ordered_group:
                     c = OrderedCoGroupDiskHashMerger
                 else:
                     c = CoGroupDiskHashMerger
-        logger.debug("%s %s", c, shuffle_config)
-        return c(shuffle_config, aggregator, size, call_site)
+        logger.debug("%s %s", c, rddconf)
+        return c(rddconf, aggregator, size, call_site)
 
 
 class DiskHashMerger(Merger):
 
-    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
-        Merger.__init__(self, shuffle_config, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
+        Merger.__init__(self, rddconf, aggregator, size, call_site)
 
         self.combined = {}
 
-        self.use_disk = shuffle_config.is_disk_merge
+        self.use_disk = rddconf.disk_merge
         if self.use_disk:
-            env.meminfo.ratio = shuffle_config.dump_mem_ratio
+            env.meminfo.ratio = rddconf.dump_mem_ratio
 
         self.archives = []
 
@@ -614,11 +611,11 @@ class DiskHashMerger(Merger):
     def _dump(self):
         import gc
         items = self.combined.items()
-        f = SortedItemsOnDisk(items, self.shuffle_config)
+        f = SortedItemsOnDisk(items, self.rddconf)
         self.archives.append(f)
         del items
 
-        if self.shuffle_config.is_groupby:
+        if self.rddconf.is_groupby:
             for v in self.combined.itervalues():
                 del v[:]
         self.combined.clear()
@@ -655,8 +652,7 @@ class DiskHashMerger(Merger):
         combined = items
         self.archives.append(iter(combined))
         iters = list(map(iter, self.archives))
-        sc = self.shuffle_config
-        if sc.is_groupby and sc.is_iter_group:
+        if self.rddconf.is_groupby and self.rddconf.iter_group:
             heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
             it = GroupByNestedIter(heap.merge(iters), "")
         else:
@@ -689,8 +685,8 @@ class OrderedGroupByDiskHashMerger(DiskHashMerger):
 
 class CoGroupDiskHashMerger(DiskHashMerger):
 
-    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
-        DiskHashMerger.__init__(self, shuffle_config, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
+        DiskHashMerger.__init__(self, rddconf, aggregator, size, call_site)
         self.direct_upstreams = []
 
     def _get_merge_function(self):
@@ -786,8 +782,8 @@ class CoGroupSortMergeAggregator(AggregatorBase):
 
 class SortMerger(Merger):
 
-    def __init__(self, shuffle_config, aggregator=None, size=None, call_site=None):
-        Merger.__init__(self, shuffle_config, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
+        Merger.__init__(self, rddconf, aggregator, size, call_site)
 
         if aggregator:
             self.aggregator = SortMergeAggregator(self.aggregator.mergeCombiners)
@@ -821,7 +817,7 @@ class SortMerger(Merger):
         return self._merge_sorted(files)
 
     def merge(self, iters):
-        if self.shuffle_config.is_disk_merge or len(iters) > self.shuffle_config.MAX_OPEN_FILE:
+        if self.rddconf.disk_merge or len(iters) > dpark.conf.MAX_OPEN_FILE:
             merged = self._disk_merge_sorted(iters)
         else:
             merged = self._merge_sorted(iters)

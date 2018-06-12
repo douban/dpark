@@ -104,7 +104,7 @@ class ShuffleMapTask(DAGTask):
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator
         self.partitioner = dep.partitioner
-        self.shuffle_config = dep.shuffle_config
+        self.rddconf = dep.rddconf
         self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
@@ -133,15 +133,15 @@ class ShuffleMapTask(DAGTask):
     def _run(self, task_id):
         mem_limit = env.meminfo.mem_limit_soft
         t0 = time.time()
-        logger.debug("run task with shuffle_flag %r" % (self.shuffle_config, ))
+        logger.debug("run task with shuffle_flag %r" % (self.rddconf, ))
         rdd = self.rdd
         meminfo = env.meminfo
         n = self.partitioner.numPartitions
         get_partition = self.partitioner.getPartition
         merge_value = self.aggregator.mergeValue
         create_combiner = self.aggregator.createCombiner
-        dumper_cls = SortMergeBucketDumper if self.shuffle_config.is_sort_merge else BucketDumper
-        dumper = dumper_cls(self.shuffleId, self.partition, n, self.shuffle_config)
+        dumper_cls = SortMergeBucketDumper if self.rddconf.sort_merge else BucketDumper
+        dumper = dumper_cls(self.shuffleId, self.partition, n, self.rddconf)
         buckets = [{} for _ in range(n)]
         env.meminfo.ratio = min(float(n) / (n+1), env.meminfo.ratio)
 
@@ -188,11 +188,11 @@ class ShuffleMapTask(DAGTask):
 
 class BucketDumper(object):
 
-    def __init__(self, shuffle_id, map_id, num_reduce, shuffle_config):
+    def __init__(self, shuffle_id, map_id, num_reduce, rddconf):
         self.shuffle_id = shuffle_id
         self.map_id = map_id
         self.num_reduce = n = num_reduce
-        self.shuffle_config = shuffle_config
+        self.rddconf = rddconf
         self.paths = [None for _ in range(n)]
 
         # stats
@@ -307,14 +307,13 @@ class SortMergeBucketDumper(BucketDumper):
                 if len(in_path) == 1:
                     os.rename(in_path[0], tmp)
                 else:
-                    inputs = [get_serializer(self.shuffle_config).load_stream(open(p))
+                    inputs = [get_serializer(self.rddconf).load_stream(open(p))
                               for p in in_path]
-                    sc = self.shuffle_config.dup()
-                    sc.op = "groupby"
-                    merger = Merger.get(sc, aggregator=aggregator, call_site=self.__class__.__name__)
+                    rddconf = self.rddconf.dup(op=dpark.conf.OP_GROUPBY)
+                    merger = Merger.get(rddconf, aggregator=aggregator, call_site=self.__class__.__name__)
                     merger.merge(inputs)
                     with open(tmp, 'w') as f:
-                        get_serializer(self.shuffle_config).dump_stream(merger, f)
+                        get_serializer(self.rddconf).dump_stream(merger, f)
             else:
                 self._dump_empty_bucket(i)
 
@@ -329,7 +328,7 @@ class SortMergeBucketDumper(BucketDumper):
         return items, -1
 
     def _dump_bucket(self, items, path):
-        serializer = get_serializer(self.shuffle_config)
+        serializer = get_serializer(self.rddconf)
         with open(path, 'wb') as f:
             serializer.dump_stream(sorted(items), f)
             size = f.tell()
