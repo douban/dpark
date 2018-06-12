@@ -143,7 +143,6 @@ class DparkContext(object):
 
             if ':' not in master:
                 master += ':5050'
-            logger.info("use master %s -> %s", origin_master,  master)
             self.scheduler = MesosScheduler(
                 master, options, webui_url=self.webui_url
             )
@@ -159,6 +158,11 @@ class DparkContext(object):
         self.defaultMinSplits = max(self.defaultParallelism, 2)
 
         self.initialized = True
+
+        logger.info("DparkContext initialized, use master %s -> %s, default_rddconf = %s",
+                    origin_master,  master,
+                    conf.default_rddconf)
+
 
     @staticmethod
     def setLogLevel(level):
