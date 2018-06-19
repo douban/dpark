@@ -247,7 +247,7 @@ class BucketDumper(object):
             path = self.paths[i]
             if path:
                 old = self._mk_tmp(path)
-                os.rename(old, path)
+                os.rename(old, path)  # comment it to test fetch (404)
             else:
                 self._dump_empty_bucket(i)
 

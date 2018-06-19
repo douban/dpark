@@ -240,6 +240,7 @@ def get_serializer(rddconf):
 def fetch_with_retry(f):
 
     MAX_RETRY = 3
+    RETRY_INTERVALS = [1, 10]
 
     @wraps(f)
     def _(self):
@@ -253,21 +254,22 @@ def fetch_with_retry(f):
                     logger.info("Fetch retry %d success for url %s, num_batch %d ", self.num_retry, self.url, self.num_batch_done)
                break
            except Exception as e:
-                logger.exception("Fetch Fail")
                 self.num_retry += 1
-                msg = "Fetch failed for url %s, tried %d/%d times. Exception: %r. " % (self.url, self.num_retry, MAX_RETRY, e)
+                msg = "Fetch failed for url %s, tried %d/%d times. Exception: %s. " % (self.url, self.num_retry, MAX_RETRY, e)
                 fail_fast = False
-                if  isinstance(e, IOError) and str(e).find("many open file") >= 0:
+                emsg = str(e)
+                if not any([emsg.find(s) >= 0 for s in ["Connection refused",]]):
+                    # ["many open file", "404"]
                     fail_fast = True
+                    msg += "no need to retry."
                 if fail_fast or self.num_retry >= MAX_RETRY:
-                    msg += "GIVE UP!"
                     logger.warning(msg)
                     from dpark.schedule import FetchFailed
                     raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
                 else:
-                    sleep_time = 2 ** self.num_retry * 0.5  # 0.5, 1.0, 2.0
+                    sleep_time = RETRY_INTERVALS[self.num_retry - 1]
                     msg += "sleep %d secs" % (sleep_time, )
-                    logger.warning(msg)
+                    logger.debug(msg)
                     time.sleep(sleep_time)
     return _
 
@@ -286,6 +288,7 @@ class RemoteFile(object):
             self.url = 'file://' + LocalFileShuffle.getOutputFile(shuffle_id, map_id, reduce_id)
         else:
             self.url = "%s/%d/%d/%d" % (uri, shuffle_id, map_id, reduce_id)
+        # self.url = self.url.replace("5055", "5075")  # test fetch retry
         logger.debug("fetch %s", self.url)
 
         self.num_retry = 0
