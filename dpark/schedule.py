@@ -123,7 +123,10 @@ class Stage:
                 ls.remove(host)
                 becameUnavailable = True
         if becameUnavailable:
-            logger.info('%s is now unavailable on host %s', self, host)
+            msg = ("%s is now unavailable on host %s, "
+                   "postpone resubmit until %d secs later "
+                   "to wait for futher fetch failure")
+            logger.info(msg, self, host, RESUBMIT_TIMEOUT)
 
     nextId = 0
 
