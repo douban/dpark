@@ -47,8 +47,6 @@ class DAGTask(Task):
                 if dpark.conf.MULTI_SEGMENT_DUMP:
                     env.meminfo.check = False
             return self._run(task_id)
-        except Exception as e:
-            logger.exception("Task.run error")
         except KeyboardInterrupt as e:
             if self.mem != 0 and env.meminfo.oom:
                 os._exit(ERROR_TASK_OOM)
