@@ -242,7 +242,7 @@ class RDD(object):
     def union(self, *args):
         return UnionRDD(self.ctx, [self] + list(args))
 
-    def sort(self, key=lambda x:x, reverse=False, numSplits=None, taskMemory=None):
+    def sort(self, key=lambda x:x, reverse=False, numSplits=None, taskMemory=None, rddconf=None):
         if not len(self):
             return self
         if len(self) == 1:
@@ -254,7 +254,7 @@ class RDD(object):
         keys = sorted(samples, reverse=reverse)[5::10][:numSplits-1]
         parter = RangePartitioner(keys, reverse=reverse)
         aggr = MergeAggregator()
-        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter, taskMemory).flatMap(lambda x_y:x_y[1])
+        parted = ShuffledRDD(self.map(lambda x:(key(x),x)), aggr, parter, taskMemory, rddconf=rddconf).flatMap(lambda x_y:x_y[1])
         return parted.mapPartitions(lambda x:sorted(x, key=key, reverse=reverse))
 
     def glom(self):
