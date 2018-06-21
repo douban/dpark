@@ -12,7 +12,8 @@ from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
 from dpark.env import env
 from dpark.file_manager import walk
 from dpark.tabular import TabularRDD
-from dpark.util import memory_str_to_mb, init_dpark_logger, get_logger
+from dpark.util import memory_str_to_mb
+from dpark.utils.log import init_dpark_logger, get_logger
 import dpark.conf as conf
 from math import ceil
 import socket

@@ -1,7 +1,7 @@
 import time
 import random
 from six.moves import filter
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 PURGE_ELAPSED = 60 * 5
 FAILED_TIMES = 2
 logger = get_logger(__name__)

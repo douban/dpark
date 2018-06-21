@@ -8,9 +8,10 @@ import tempfile
 import zmq
 
 from dpark import util
+from dpark.utils.log import get_logger
 import dpark.conf as conf
 
-logger = util.get_logger(__name__)
+logger = get_logger(__name__)
 
 
 class TaskStats(object):

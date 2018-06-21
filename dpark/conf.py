@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 import os
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 
 
 logger = get_logger(__name__)

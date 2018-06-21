@@ -25,7 +25,8 @@ except ImportError:
     from six import BytesIO as StringIO
 
 import dpark.conf
-from dpark.util import compress, decompress, spawn, mkdir_p, atomic_file, get_logger, ERROR_TASK_OOM
+from dpark.util import compress, decompress, spawn, mkdir_p, atomic_file, ERROR_TASK_OOM
+from dpark.utils.log import get_logger
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.heaponkey import HeapOnKey

@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 import os, sys
 import re
-import logging
 from collections import namedtuple
 import itertools
 

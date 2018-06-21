@@ -13,7 +13,8 @@ import mmap
 from multiprocessing import Manager, Condition
 from mmap import ACCESS_WRITE, ACCESS_READ
 
-from dpark.util import compress, decompress, spawn, get_logger, mkdir_p
+from dpark.utils.log import get_logger
+from dpark.util import compress, decompress, spawn, mkdir_p
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env

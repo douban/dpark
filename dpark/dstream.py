@@ -17,7 +17,8 @@ try:
 except ImportError:
     import pickle
 
-from dpark.util import spawn, atomic_file, get_logger
+from dpark.util import spawn, atomic_file
+from dpark.utils.log import get_logger
 from dpark.serialize import load_func, dump_func
 from dpark.dependency import Partitioner, HashPartitioner, Aggregator
 from dpark.context import DparkContext

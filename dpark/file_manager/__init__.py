@@ -2,7 +2,7 @@ from __future__ import absolute_import
 from .utils import FileInfo, unpack, read_chunk
 from .consts import *
 from .mfs_proxy import ProxyConn
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 from .fs import MooseFS, PosixFS
 import os
 

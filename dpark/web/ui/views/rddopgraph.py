@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import absolute_import
 from dpark.rdd import ShuffleDependency
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 from six.moves import map
 
 logger = get_logger(__name__)

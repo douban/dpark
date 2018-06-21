@@ -1,7 +1,7 @@
 import weakref
 import sys
 from collections import deque
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 
 logger = get_logger(__name__)
 

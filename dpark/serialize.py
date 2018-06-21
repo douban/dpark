@@ -19,7 +19,7 @@ from pickle import whichmodule, PROTO, STOP
 from collections import deque
 from functools import partial
 
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 import six
 from six.moves import range
 from six.moves import copyreg

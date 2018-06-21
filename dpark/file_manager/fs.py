@@ -7,7 +7,7 @@ import threading
 from .utils import FileInfo, read_chunk
 from .consts import *
 from .mfs_proxy import ProxyConn
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 import six
 from six.moves import range
 try:

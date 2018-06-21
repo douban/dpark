@@ -8,7 +8,7 @@ import time
 import struct
 import zlib
 import six.moves.cPickle
-from dpark.util import get_logger
+from dpark.utils.log import get_logger
 from dpark.file_manager import open_file
 from dpark.serialize import load_func, dump_func
 from contextlib import closing

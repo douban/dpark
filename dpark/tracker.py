@@ -3,7 +3,8 @@ import socket
 import zmq
 import time
 
-from dpark.util import spawn, get_logger
+from dpark.util import spawn
+from dpark.utils.log import get_logger
 
 logger = get_logger(__name__)
 

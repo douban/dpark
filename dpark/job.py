@@ -6,7 +6,7 @@ import socket
 from operator import itemgetter
 
 from dpark.tdigest import TDigest
-from dpark.util import (
+from dpark.utils.log import (
     get_logger, make_progress_bar
 )
 from dpark.hostatus import TaskHostManager

@@ -9,7 +9,8 @@ import struct
 import msgpack
 
 from dpark.env import env
-from dpark.util import mkdir_p, atomic_file, get_logger
+from dpark.util import mkdir_p, atomic_file
+from dpark.utils.log import get_logger
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 from six.moves import map
 from six.moves import range
