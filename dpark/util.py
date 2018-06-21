@@ -281,8 +281,9 @@ def init_dpark_logger(log_level, use_color=None):
     handler = logging.StreamHandler(stream=sys.stderr)
     handler.setFormatter(ColoredFormatter(log_format, datefmt, use_color))
 
+    handler.setLevel(max(log_level, logger.level))
     logger.addHandler(handler)
-    logger.setLevel(max(log_level, logger.level))
+    logger.setLevel(logging.DEBUG)
 
 
 def get_logger(name):
