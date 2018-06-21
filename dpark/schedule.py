@@ -776,6 +776,10 @@ class MesosScheduler(DAGScheduler):
         DAGScheduler.clear(self)
         self.init_job()
 
+    def processHeartBeat(self):
+        # no need in dpark now, just for compatibility with pymesos
+        pass
+
     def start(self):
         self.out_logger.start()
         self.err_logger.start()
