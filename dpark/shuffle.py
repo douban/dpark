@@ -327,7 +327,11 @@ class RemoteFile(object):
                 if is_marshal:
                     items = marshal.loads(d)
                 else:
-                    items = pickle.loads(d)
+                    try:
+                        items = pickle.loads(d)
+                    except:
+                        time.sleep(1)
+                        items = pickle.loads(d)
                 yield items
 
                 #if TEST_RETRY and self.num_retry == 0:
