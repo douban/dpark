@@ -415,16 +415,24 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
 
     def _fetch_thread(self):
         from dpark.schedule import FetchFailed
+
         while True:
             f = self.requests.get()
             if f is None:
                 break
             try:
                 for items in f.unsorted_batches():
+                    if not self._started:
+                        break
                     self.results.put((items, f.mid))
+                if not self._started:
+                    break
                 self.results.put(1)
             except FetchFailed as e:
+                if not self._started:
+                    break
                 self.results.put(e)
+                break
 
     def fetch(self, shuffle_id, reduce_id, merge_func):
         self.start()
@@ -440,7 +448,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             if r == 1:
                 num_done += 1
             elif isinstance(r, FetchFailed):
-                self.stop()  # restart
+                self.stop()
                 raise r
             else:
                 items, map_id = r
@@ -456,12 +464,19 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
         self._started = False
         while not self.requests.empty():
             self.requests.get_nowait()
-        while not self.results.empty():
-            self.results.get_nowait()
         for i in range(self.nthreads):
             self.requests.put(None)
-        for t in self.threads:
-            t.join()
+
+        N = 5
+        for _ in range(N):
+            while not self.results.empty():
+                self.results.get_nowait()
+            for t in self.threads:
+                t.join(1)
+            if all([not t.isAlive() for t in self.threads]):
+                return
+        else:
+            logger.info("FIXME: fail to join fetcher threads")
 
 
 class SortShuffleFetcher(ShuffleFetcher):
