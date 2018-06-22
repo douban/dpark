@@ -299,7 +299,7 @@ class SimpleJob(Job):
 
         from dpark.schedule import FetchFailed
         if isinstance(reason, FetchFailed) and self.numFailures[index] >= 1:
-            logger.warning('Task %s was Lost due to fetch failure from %s',
+            logger.warning('Cancel task %s after fetch fail twice from %s',
                            tid, reason.serverUri)
             self.sched.taskEnded(self.tasks[index], reason, None, None)
             # cancel tasks
@@ -339,7 +339,7 @@ class SimpleJob(Job):
                 else logger.warning
             if reason not in self.reasons:
                 _logger(
-                    'task %s failed @ %s: %s\n%s',
+                    'task %s failed @ %s: %s : %s',
                     task.id,
                     hostname,
                     task,
@@ -383,7 +383,7 @@ class SimpleJob(Job):
             task = self.tasks[i]
             if (self.launched[i] and task.status == 'TASK_STAGING'
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.debug('task %d timeout %.1f (at %s), re-assign it',
+                logger.info('task %d timeout %.1f (at %s), re-assign it',
                              task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
@@ -399,8 +399,8 @@ class SimpleJob(Job):
                 if used > avg * (2 ** task.tried) * scale:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
-                        logger.debug('re-submit task %s for timeout %.1f, '
-                                     'try %d', task.id, used, task.tried)
+                        logger.info('re-submit task %s for timeout %.1f, '
+                                    'try %d', task.id, used, task.tried)
                         task.used += used
                         task.start = now
                         self.launched[idx] = False
