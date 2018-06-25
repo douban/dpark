@@ -36,6 +36,8 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
+from dpark.utils.debug import spawn_rconsole
+
 
 logger = get_logger('dpark.executor')
 
@@ -429,6 +431,8 @@ class MyExecutor(Executor):
 
             r2 = self.stderr_redirect = Redirect(2, err_logger, prefix)
             sys.stderr = r2.pipe_wfile
+
+            spawn_rconsole(locals())
 
             if os.path.exists(cwd):
                 try:

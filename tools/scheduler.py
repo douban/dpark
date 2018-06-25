@@ -22,6 +22,7 @@ from optparse import OptionParser
 from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
 from dpark.util import getuser, memory_str_to_mb
+from dpark.utils.debug import spawn_rconsole
 
 logger = logging.getLogger('dpark.scheduler')
 
@@ -879,11 +880,7 @@ if __name__ == '__main__':
     signal.signal(signal.SIGABRT, handler)
     signal.signal(signal.SIGQUIT, handler)
 
-    try:
-        from rfoo.utils import rconsole
-        rconsole.spawn_server(locals(), 0)
-    except ImportError:
-        pass
+    spawn_rconsole(locals())
 
     try:
         driver.start()

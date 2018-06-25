@@ -14,6 +14,7 @@ from dpark.file_manager import walk
 from dpark.tabular import TabularRDD
 from dpark.util import memory_str_to_mb
 from dpark.utils.log import init_dpark_logger, get_logger
+from dpark.utils.debug import spawn_rconsole
 import dpark.conf as conf
 from math import ceil
 import socket
@@ -358,11 +359,7 @@ class DparkContext(object):
         self.started = True
         _shutdown_handlers.append(shutdown)
 
-        try:
-            from rfoo.utils import rconsole
-            rconsole.spawn_server(locals(), 0)
-        except ImportError:
-            pass
+        spawn_rconsole(locals())
 
     def runJob(self, rdd, func, partitions=None, allowLocal=False):
         self.start()
