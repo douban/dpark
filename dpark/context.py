@@ -8,7 +8,9 @@ import gc
 from dpark.rdd import *
 from dpark.beansdb import restore_value
 from dpark.accumulator import Accumulator
-from dpark.schedule import LocalScheduler, MultiProcessScheduler, MesosScheduler
+from dpark.schedule import (
+    LocalScheduler, MultiProcessScheduler, MesosScheduler
+)
 from dpark.env import env
 from dpark.file_manager import walk
 from dpark.tabular import TabularRDD
@@ -47,7 +49,9 @@ def singleton(cls):
     getinstance._instances = instances
     return getinstance
 
+
 _shutdown_handlers = []
+
 
 def _shutdown():
     started = len(_shutdown_handlers)
@@ -62,8 +66,8 @@ def _shutdown():
     if started:
         logger.info("dpark shutdown.")
 
-atexit.register(_shutdown)
 
+atexit.register(_shutdown)
 _pid = os.getpid()
 _prev_handlers = {}
 _signals = [
@@ -95,11 +99,11 @@ def register_sighandlers():
                 logger.exception('Failed to register signal handler')
 
 
-
 @singleton
 class DparkContext(object):
     nextShuffleId = 0
     options = None
+
     def __init__(self, master=None):
         if is_gevent_monkey_patched():
             raise RuntimeError('DPark do not support gevent.')
@@ -109,7 +113,10 @@ class DparkContext(object):
         self.started = False
         self.defaultParallelism = 2
         self.web_port = None
+        self.webui_url = None
         self.data_limit = None
+        self.scheduler = None
+        self.is_local = True
 
     def init(self):
         if self.initialized:
@@ -139,10 +146,10 @@ class DparkContext(object):
         origin_master = master = self.master or options.master
         if master == 'local':
             self.scheduler = LocalScheduler()
-            self.isLocal = True
+            self.is_local = True
         elif master == 'process':
             self.scheduler = MultiProcessScheduler(options.parallel)
-            self.isLocal = False
+            self.is_local = False
         else:
             if master == 'mesos':
                 master = conf.MESOS_MASTER
@@ -162,8 +169,8 @@ class DparkContext(object):
             self.scheduler = MesosScheduler(
                 master, options, webui_url=self.webui_url
             )
-            self.data_limit = 1024 * 1024 # 1MB
-            self.isLocal = False
+            self.data_limit = 1024 * 1024  # 1MB
+            self.is_local = False
 
         self.master = master
 
@@ -178,7 +185,6 @@ class DparkContext(object):
         logger.info("DparkContext initialized, use master %s -> %s, default_rddconf = %s",
                     origin_master,  master,
                     conf.default_rddconf)
-
 
     @staticmethod
     def setLogLevel(level):
@@ -204,13 +210,14 @@ class DparkContext(object):
                 for p in path])
 
         path = os.path.realpath(path)
-        def create_rdd(cls, path, *ka, **kw):
-            if cls is TextFileRDD:
-                if path.endswith('.bz2'):
-                    return BZip2FileRDD(self, path, *ka, **kw)
-                elif path.endswith('.gz'):
-                    return GZipFileRDD(self, path, *ka, **kw)
-            return cls(self, path, *ka, **kw)
+
+        def create_rdd(_cls, _path, *_ka, **_kw):
+            if _cls is TextFileRDD:
+                if _path.endswith('.bz2'):
+                    return BZip2FileRDD(self, _path, *_ka, **_kw)
+                elif _path.endswith('.gz'):
+                    return GZipFileRDD(self, _path, *_ka, **_kw)
+            return _cls(self, _path, *_ka, **_kw)
 
         if os.path.isdir(path):
             paths = []
@@ -275,7 +282,7 @@ class DparkContext(object):
 
     def beansdb(self, path, depth=None, filter=None,
                 fullscan=False, raw=False, only_latest=False):
-        '''(Key, (VALUE, Version, Timestamp)) data in beansdb
+        """(Key, (VALUE, Version, Timestamp)) data in beansdb
 
         Data structure:
             REC = (Key, TRIPLE)
@@ -300,7 +307,7 @@ class DparkContext(object):
             only_latest: for each key, keeping the REC with the largest
                 Timestamp. This will append a reduceByKey RDD.
                 Need this because online beansdb data is log structured.
-        '''
+        """
 
         key_filter = filter
 
@@ -309,8 +316,8 @@ class DparkContext(object):
             fullscan = True
         if isinstance(path, (tuple, list)):
             rdd = self.union([self.beansdb(p, depth, key_filter, fullscan,
-                                            raw=True, only_latest=False)
-                    for p in path])
+                                           raw=True, only_latest=False)
+                              for p in path])
         else:
             path = os.path.realpath(path)
             assert os.path.exists(path), "%s no exists" % path
@@ -321,21 +328,21 @@ class DparkContext(object):
                             if n.endswith('.data')]
                 if subs:
                     rdd = self.union([BeansdbFileRDD(self, p, key_filter,
-                                                    fullscan, raw=True)
-                            for p in subs])
+                                                     fullscan, raw=True)
+                                      for p in subs])
                 else:
-                    subs = [os.path.join(path, '%x'%i) for i in range(16)]
+                    subs = [os.path.join(path, '%x' % i) for i in range(16)]
                     rdd = self.union([self.beansdb(p, depth and depth-1, key_filter,
-                                                fullscan, raw=True, only_latest=False)
-                            for p in subs if os.path.exists(p)])
+                                                   fullscan, raw=True, only_latest=False)
+                                      for p in subs if os.path.exists(p)])
             else:
                 rdd = BeansdbFileRDD(self, path, key_filter, fullscan, raw)
 
         # choose only latest version
         if only_latest:
-            numSplits = min(int(ceil(len(rdd)/4)), 800)
-            rdd = rdd.reduceByKey(lambda v1,v2: v1[2] > v2[2] and v1 or v2,
-                                  numSplits=numSplits)
+            num_splits = min(int(ceil(len(rdd)/4)), 800)
+            rdd = rdd.reduceByKey(lambda v1, v2: v1[2] > v2[2] and v1 or v2,
+                                  numSplits=num_splits)
         if not raw:
             rdd = rdd.mapValue(lambda v_ver_t: (restore_value(*v_ver_t[0]), v_ver_t[1], v_ver_t[2]))
         return rdd
@@ -433,46 +440,47 @@ class Parser(optparse.OptionParser):
             else:
                 return
 
+
 parser = Parser(usage="Usage: %prog [options] [args]")
+
 
 def add_default_options():
     group = optparse.OptionGroup(parser, "Dpark Options")
 
     group.add_option("-m", "--master", type="string", default="local",
-            help="master of Mesos: local, process, host[:port], or mesos://")
-#    group.add_option("-n", "--name", type="string", default="dpark",
-#            help="job name")
+                     help="master of Mesos: local, process, host[:port], or mesos://")
     group.add_option("-p", "--parallel", type="int", default=0,
-            help="number of processes")
+                     help="number of processes")
 
     group.add_option("-c", "--cpus", type="float", default=1.0,
-            help="cpus used per task")
+                     help="cpus used per task")
     group.add_option("-M", "--mem", type="string",
-            help="memory used per task (e.g. 300m, 1g), default unit is 'm'")
+                     help="memory used per task (e.g. 300m, 1g), default unit is 'm'")
     group.add_option("-g", "--group", type="string", default="",
-            help="which group of machines")
+                     help="which group of machines")
     group.add_option("--err", type="float", default=0.0,
-            help="acceptable ignored error record ratio (0.01%)")
+                     help="acceptable ignored error record ratio (0.01%)")
     group.add_option("--checkpoint_dir", type="string", default="",
-            help="shared dir to keep checkpoint of RDDs")
+                     help="shared dir to keep checkpoint of RDDs")
 
     group.add_option("--color", action="store_true")
     group.add_option("--no-color", action="store_false", dest='color')
 
     group.add_option("--profile", action="store_true",
-            help="do profiling")
+                     help="do profiling")
     group.add_option("--stats_dir", type="string", default="")
     group.add_option("--role", type="string", default="")
 
-    group.add_option("-I","--image", type="string",
+    group.add_option("-I", "--image", type="string",
                      help="image name for Docker")
-    group.add_option("-V","--volumes", type="string",
+    group.add_option("-V", "--volumes", type="string",
                      help="volumes to mount into Docker")
 
     parser.add_option_group(group)
 
     parser.add_option("-q", "--quiet", action="store_true")
     parser.add_option("-v", "--verbose", action="store_true")
+
 
 add_default_options()
 
@@ -485,7 +493,7 @@ def parse_options():
         options.mem = memory_str_to_mb(options.mem)
 
     options.logLevel = (options.quiet and logging.ERROR
-                  or options.verbose and logging.DEBUG or logging.INFO)
+                        or options.verbose and logging.DEBUG or logging.INFO)
     if options.color is None:
         options.color = getattr(sys.stderr, 'isatty', lambda: False)()
 
