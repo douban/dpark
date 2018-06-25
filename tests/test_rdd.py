@@ -31,7 +31,11 @@ dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 # to test on mesos,
 # export TEST_DPARK_MASTER=mesos
 # export TMPDIR=/path/on/moosefs
-print("test with dpark_master=%s, tempdir=%s" % (dpark_master, tempfile.gettempdir()))
+
+env_msg = "test with dpark_master={}, tempdir={}, PYTHONPATH={}".format(
+    dpark_master, tempfile.gettempdir(), os.environ.get("PYTHONPATH")
+)
+print(env_msg)
 
 if dpark_master == 'mesos':
     logging.getLogger('dpark').setLevel(logging.WARNING)
