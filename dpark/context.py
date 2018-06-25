@@ -22,8 +22,19 @@ from six.moves import range
 
 logger = get_logger(__name__)
 
+
+def is_gevent_monkey_patched():
+    try:
+        from gevent import monkey
+    except ImportError:
+        return False
+    else:
+        return bool(getattr(monkey, 'saved', False))
+
+
 def singleton(cls):
     instances = {}
+
     def getinstance(*a, **kw):
         key = (cls, tuple(a), tuple(sorted(kw.items())))
         if key not in instances:
@@ -90,6 +101,9 @@ class DparkContext(object):
     nextShuffleId = 0
     options = None
     def __init__(self, master=None):
+        if is_gevent_monkey_patched():
+            raise RuntimeError('DPark do not support gevent.')
+
         self.master = master
         self.initialized = False
         self.started = False
