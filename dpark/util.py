@@ -11,7 +11,6 @@ import os.path
 from contextlib import contextmanager
 from zlib import compress as _compress
 from dpark.crc32c import crc32c
-from threading import Thread
 import psutil
 import resource
 from dpark.utils.log import get_logger
@@ -314,27 +313,3 @@ class MemoryChecker(object):
         self._stop = True
         self.thread.join()
         self.thread = None
-
-
-def profile(func):
-    import functools
-
-    @functools.wraps(func)
-    def inner(*args, **kwargs):
-        import cProfile
-        import pstats
-        profiler = cProfile.Profile()
-        profiler.enable()
-        try:
-            retval = func(*args, **kwargs)
-        finally:
-            profiler.disable()
-
-        stats = pstats.Stats(profiler)
-        stats.strip_dirs()
-        stats.sort_stats('time', 'calls')
-        stats.print_stats(20)
-        stats.sort_stats('cumulative')
-        stats.print_stats(20)
-        return retval
-    return inner

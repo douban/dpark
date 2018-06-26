@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dpark import DparkContext
 from dpark.nested_groupby import GroupByNestedIter
 from dpark.shuffle import GroupByNestedIter, AutoBatchedSerializer
-from dpark.util import get_logger, profile
+from dpark.utils.profile import profile
 import dpark.conf
 
 GroupByNestedIter.NO_CACHE = True
@@ -75,7 +75,7 @@ class BenchShuffle(object):
 
         M = 1024*1024
 
-        #@profile
+        #@profile()
         def _count_time(it):
             st = time.time()
             nk = 0
