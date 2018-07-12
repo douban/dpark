@@ -9,6 +9,7 @@ import struct
 import msgpack
 
 from dpark.env import env
+from dpark.serialize import marshalable
 from dpark.util import mkdir_p, atomic_file
 from dpark.utils.log import get_logger
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
@@ -105,14 +106,15 @@ class DiskCache(Cache):
         with atomic_file(path) as f:
             c = 0
             f.write(struct.pack("I", c))
-            try_marshal = True
+            # check is marshalable and compatible with broadcast
+            can_marshal = marshalable(items)
             for v in items:
-                if try_marshal:
+                if can_marshal:
                     try:
                         r = 0, marshal.dumps(v)
                     except Exception:
                         r = 1, six.moves.cPickle.dumps(v, -1)
-                        try_marshal = False
+                        can_marshal = False
                 else:
                     r = 1, six.moves.cPickle.dumps(v, -1)
                 f.write(msgpack.packb(r))

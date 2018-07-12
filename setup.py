@@ -23,6 +23,7 @@ req = [
     'addict',
     'pyquicklz',
     'py-lz4framed',
+    'six',
 ]
 
 setup(name='DPark',
