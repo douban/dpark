@@ -156,6 +156,7 @@ class Type(Token):
         'string':STR,
         'int':INT,
         'float':FLOAT,
+        'long':INT,
     }
     reverse_mapping = dict(reversed(i) for i in mappping.items())
     @classmethod
@@ -198,11 +199,11 @@ class SpecialChar(Token):
 
 KEYWORDS = r'select|from|where|like|having|order|not|and|or|group|by|desc|asc|'\
         r'as|limit|in|sum|count|avg|max|min|adcount|outfile|into|drop|show|create|'\
-        r'table|if|exists|all|distinct|tables|inner|left|right|outer|join|using'
+        r'table|if|exists|all|distinct|tables|inner|left|right|outer|join|using|long'
 
 lexer = re.Scanner([
     (r'\b(' + KEYWORDS + r')\b', lambda _,t: Keyword(t)),
-    (r'\b(int|float|string|char|varchar)\b', lambda _,t: Type(t)),
+    (r'\b(int|long|float|string|char|varchar)\b', lambda _,t: Type(t)),
     (r'`(\\`|\\\\|[^\\`])+`', lambda _,t:Identity(t[1:-1])),
     (r'\b([_a-z][.\w]*)\b', lambda _,t:Identity(t)),
     (r'(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?', lambda _,t:Number(t)),
@@ -499,6 +500,15 @@ class Expr(object):
     def not_(self):
         return combine('NOT', operator.not_, self)
 
+    def like(self, pattern):
+        return combine('LIKE', lambda x,y: re.match(y, x) is not None, self, pattern)
+
+    def in_(self, values):
+        def _in(x, *y):
+            return any((operator.eq(x, i) for i in y))
+        return combine('IN', _in, self, *values)
+
+
 class CombineExpr(Expr):
     def __init__(self, rep, fun, *args):
         self.fun = fun
@@ -539,6 +549,7 @@ class ColumnRefExpr(Expr):
     def __repr__(self):
         return self.value
 
+
 class NativeExpr(Expr):
     def __init__(self, x):
         self.value = unquote(x, '"').replace('\n', ' ')
@@ -550,6 +561,7 @@ class NativeExpr(Expr):
 
     def __repr__(self):
         return '$"%s"' % self.value
+
 
 class SetExpr(Expr):
     def __call__(self, schema):
@@ -928,7 +940,6 @@ def comparison_predicate():
                          )
                     )
                )
-
 
 def like_predicate():
     return bind(string_value_expression(), lambda x:
@@ -1541,7 +1552,7 @@ Use Python expression:
 
 if __name__ == '__main__':
     from dpark import optParser
-    optParser.set_default('master', 'flet6')
+    optParser.set_default('master', 'mesos')
     optParser.add_option('-e', '--query', type='string', default='',
             help='execute the SQL qeury then exit')
     optParser.add_option('-s', '--script', type='string', default='',
