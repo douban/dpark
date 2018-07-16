@@ -10,7 +10,7 @@ import tempfile
 import os.path
 from contextlib import contextmanager
 from zlib import compress as _compress
-from dpark.crc32c import crc32c
+from dpark.utils.crc32c import crc32c
 
 
 try:

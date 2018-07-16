@@ -11,7 +11,8 @@ assert setuptools_version >= (18, 0, 0), \
 
 ext_modules = [
     Extension('dpark.portable_hash', ['dpark/portable_hash.pyx']),
-    Extension('dpark.crc32c', ['dpark/crc32c.c', 'dpark/crc32c_mod.c'], extra_compile_args=['-msse4.2']),
+    Extension('dpark.utils.crc32c', ['dpark/utils/crc32c.c', 'dpark/utils/crc32c_mod.c'],
+              extra_compile_args=['-msse4.2']),
 ]
 
 version = '0.4.2'
