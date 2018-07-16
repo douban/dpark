@@ -7,7 +7,8 @@ import os.path
 
 import dpark.conf
 from dpark.env import env
-from dpark.util import compress, ERROR_TASK_OOM
+from dpark.util import compress
+from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header

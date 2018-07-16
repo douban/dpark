@@ -26,9 +26,10 @@ import six
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.util import (
-    compress, decompress, spawn, mkdir_p,  ERROR_TASK_OOM
+    compress, decompress, spawn, mkdir_p
 )
 from dpark.utils.log import get_logger, init_dpark_logger, formatter_message
+from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure

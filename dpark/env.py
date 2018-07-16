@@ -5,10 +5,9 @@ import shutil
 import uuid
 import tempfile
 
-import zmq
-
 from dpark import util
 from dpark.utils.log import get_logger
+from dpark.utils.memory import MemoryChecker
 import dpark.conf as conf
 
 logger = get_logger(__name__)
@@ -50,7 +49,7 @@ class DparkEnv:
         return cls.environ.get(name, default)
 
     def __init__(self):
-        self.meminfo = util.MemoryChecker()
+        self.meminfo = MemoryChecker()
         self.started = False
         self.task_stats = TaskStats()
         name = self.get('DPARK_ID')
