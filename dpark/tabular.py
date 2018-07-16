@@ -17,7 +17,7 @@ import six
 from six.moves import map
 from six.moves import range
 from six.moves import zip
-from dpark.lz4wrapper import compress, decompress
+from dpark.utils.lz4wrapper import compress, decompress
 
 '''
 Strip Format:

@@ -34,7 +34,7 @@ def compress(s):
     return _compress(s, 1)
 
 try:
-    from dpark.lz4wrapper import compress, decompress
+    from dpark.utils.lz4wrapper import compress, decompress
     COMPRESS = 'lz4'
 except ImportError:
     try:
