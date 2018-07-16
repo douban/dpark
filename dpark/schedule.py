@@ -27,9 +27,11 @@ from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask
 from dpark.hostatus import TaskHostManager
 from dpark.util import (
-    compress, decompress, spawn, getuser, mkdir_p, Scope
+    compress, decompress, spawn, getuser
 )
 from dpark.utils.log import get_logger
+from dpark.utils.frame import Scope
+
 import six
 from six.moves import map
 from six.moves import range

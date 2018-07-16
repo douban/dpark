@@ -34,10 +34,11 @@ import dpark.conf
 from dpark.dependency import *
 from dpark.util import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
-    AbortFileReplacement, portable_hash, Scope,
+    AbortFileReplacement, portable_hash,
     masked_crc32c
 )
 from dpark.utils.log import get_logger
+from dpark.utils.frame import Scope
 from dpark.shuffle import SortShuffleFetcher, Merger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
