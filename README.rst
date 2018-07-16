@@ -1,11 +1,7 @@
 DPark
 =====
 
-.. image:: https://badges.gitter.im/douban/dpark.svg
-   :alt: Join the chat at https://gitter.im/douban/dpark
-   :target: https://gitter.im/douban/dpark?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
-
-|pypi status| |travis-ci status|
+|pypi status| |ci status| |gitter|
 
 DPark is a Python clone of Spark, MapReduce(R) alike computing framework
 supporting iterative computation.
@@ -65,8 +61,13 @@ as:
 Mailing list: dpark-users@googlegroups.com
 (http://groups.google.com/group/dpark-users)
 
-.. |travis-ci status| image:: https://travis-ci.org/douban/dpark.svg
-   :target: https://travis-ci.org/douban/dpark
 
-.. |pypi status| image:: https://img.shields.io/pypi/dm/DPark.svg
+.. |pypi status| image:: https://img.shields.io/pypi/v/DPark.svg
    :target: https://pypi.python.org/pypi/DPark
+
+.. |gitter| image:: https://badges.gitter.im/douban/dpark.svg
+   :alt: Join the chat at https://gitter.im/douban/dpark
+   :target: https://gitter.im/douban/dpark?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge
+
+.. |ci status| image:: https://travis-ci.org/douban/dpark.svg
+   :target: https://travis-ci.org/douban/dpark
