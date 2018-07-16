@@ -4,7 +4,7 @@ import random
 from math import isnan, asin, pi
 from functools import reduce
 from flaky import flaky
-from dpark.tdigest import TDigest
+from dpark.utils.tdigest import TDigest
 
 
 if sys.version_info.major < 3:

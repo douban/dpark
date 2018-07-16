@@ -5,7 +5,7 @@ import time
 import socket
 from operator import itemgetter
 
-from dpark.tdigest import TDigest
+from dpark.utils.tdigest import TDigest
 from dpark.utils.log import (
     get_logger, make_progress_bar
 )

@@ -736,7 +736,7 @@ class RDD(object):
 
     def percentiles(self, p, sampleRate=1.0, func=None):
         def _(it):
-            from dpark.tdigest import TDigest
+            from dpark.utils.tdigest import TDigest
             digest = TDigest()
             for k in it:
                 digest.add(k)
@@ -762,7 +762,7 @@ class RDD(object):
     def percentilesByKey(self, p, sampleRate=1.0, func=None,
                          numSplits=None, taskMemory=None, fixSkew=-1):
         def _create(x):
-            from dpark.tdigest import TDigest
+            from dpark.utils.tdigest import TDigest
             digest = TDigest()
             digest.add(x)
             return digest
