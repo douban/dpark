@@ -30,7 +30,7 @@ from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
-from dpark.heaponkey import HeapOnKey
+from dpark.utils.heaponkey import HeapOnKey
 from dpark.dependency import AggregatorBase, GroupByAggregator
 from dpark.nested_groupby import GroupByNestedIter, cogroup_no_dup
 

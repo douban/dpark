@@ -3,7 +3,7 @@ import bisect
 
 from dpark.util import portable_hash
 from dpark.serialize import load_func, dump_func
-from dpark.heaponkey import HeapOnKey
+from dpark.utils.heaponkey import HeapOnKey
 from six.moves import range
 
 class Dependency:
