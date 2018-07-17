@@ -723,7 +723,7 @@ class AdcountExpr(SetExpr):
         try:
             from pyhll import HyperLogLog
         except ImportError:
-            from dpark.hyperloglog import HyperLogLog
+            from dpark.utils.hyperloglog import HyperLogLog
 
         expr = self.expr(schema)
         return (

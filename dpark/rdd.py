@@ -724,7 +724,7 @@ class RDD(object):
         try:
             from pyhll import HyperLogLog
         except ImportError:
-            from .hyperloglog import HyperLogLog
+            from dpark.utils.hyperloglog import HyperLogLog
         def create(v):
             return HyperLogLog([v], 16)
         def combine(s, v):

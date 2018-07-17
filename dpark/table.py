@@ -15,7 +15,7 @@ from functools import reduce
 try:
     from pyhll import HyperLogLog
 except ImportError:
-    from dpark.hyperloglog import HyperLogLog
+    from dpark.utils.hyperloglog import HyperLogLog
 
 from dpark.utils.hotcounter import HotCounter
 
