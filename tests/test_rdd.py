@@ -32,7 +32,7 @@ dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 # export TEST_DPARK_MASTER=mesos
 # export TMPDIR=/path/on/moosefs
 
-env_msg = "test with dpark_master={}, tempdir={}, PYTHONPATH={}".format(
+env_msg = "test with TEST_DPARK_MASTER={}, TMPDIR={}, PYTHONPATH={}".format(
     dpark_master, tempfile.gettempdir(), os.environ.get("PYTHONPATH")
 )
 print(env_msg)
