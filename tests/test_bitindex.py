@@ -5,7 +5,7 @@ import random
 from six.moves import range
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from dpark.bitindex import BitIndex, Bloomfilter
+from dpark.utils.bitindex import BitIndex, Bloomfilter
 
 class TestBitIndex(unittest.TestCase):
     def test_sets(self):
