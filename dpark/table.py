@@ -17,7 +17,7 @@ try:
 except ImportError:
     from dpark.hyperloglog import HyperLogLog
 
-from .hotcounter import HotCounter
+from dpark.utils.hotcounter import HotCounter
 
 SimpleAggs = {
     'sum': lambda x,y: x+y,
