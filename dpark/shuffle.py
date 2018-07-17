@@ -32,7 +32,7 @@ from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.utils.heaponkey import HeapOnKey
 from dpark.dependency import AggregatorBase, GroupByAggregator
-from dpark.nested_groupby import GroupByNestedIter, cogroup_no_dup
+from dpark.utils.nested_groupby import GroupByNestedIter, cogroup_no_dup
 
 
 logger = get_logger(__name__)

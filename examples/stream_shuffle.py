@@ -12,7 +12,7 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark import DparkContext
-from dpark.nested_groupby import GroupByNestedIter
+from dpark.utils.nested_groupby import GroupByNestedIter
 from dpark.shuffle import GroupByNestedIter, AutoBatchedSerializer
 from dpark.utils.profile import profile
 import dpark.conf

@@ -4,7 +4,7 @@ import sys
 import os
 import unittest
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from dpark.nested_groupby import (
+from dpark.utils.nested_groupby import (
     GroupByNestedIter, list_value, group_by_simple, cogroup_no_dup, list_nested_cogroup
 )
 

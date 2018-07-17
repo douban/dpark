@@ -24,7 +24,7 @@ from dpark.beansdb import is_valid_key, restore_value
 from dpark.accumulator import *
 from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
-from dpark.nested_groupby import GroupByNestedIter, list_values, list_value
+from dpark.utils.nested_groupby import GroupByNestedIter, list_values, list_value
 
 
 dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
