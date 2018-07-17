@@ -6,7 +6,7 @@ import logging
 import gc
 
 from dpark.rdd import *
-from dpark.beansdb import restore_value
+from dpark.utils.beansdb import restore_value
 from dpark.accumulator import Accumulator
 from dpark.schedule import (
     LocalScheduler, MultiProcessScheduler, MesosScheduler

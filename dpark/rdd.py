@@ -42,7 +42,7 @@ from dpark.utils.frame import Scope
 from dpark.shuffle import SortShuffleFetcher, Merger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
-from dpark.beansdb import BeansdbReader, BeansdbWriter
+from dpark.utils.beansdb import BeansdbReader, BeansdbWriter
 from contextlib import closing
 import six
 from six.moves import filter

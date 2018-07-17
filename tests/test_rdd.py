@@ -20,7 +20,7 @@ import contextlib
 import dpark.conf
 from dpark.context import *
 from dpark.rdd import *
-from dpark.beansdb import is_valid_key, restore_value
+from dpark.utils.beansdb import is_valid_key, restore_value
 from dpark.accumulator import *
 from tempfile import mkdtemp
 from dpark.serialize import loads, dumps
