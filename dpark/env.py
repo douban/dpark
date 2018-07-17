@@ -5,7 +5,7 @@ import shutil
 import uuid
 import tempfile
 
-from dpark import util
+from dpark import utils
 from dpark.utils.log import get_logger
 from dpark.utils.memory import MemoryChecker
 import dpark.conf as conf
@@ -75,10 +75,10 @@ class DparkEnv:
 
         compress = self.get('COMPRESS')
         if compress is None:
-            self.register('COMPRESS', util.COMPRESS)
+            self.register('COMPRESS', utils.COMPRESS)
             compress = self.get('COMPRESS')
 
-        if compress != util.COMPRESS:
+        if compress != utils.COMPRESS:
             raise Exception("no %s available" % compress)
 
     def start(self):
@@ -87,7 +87,7 @@ class DparkEnv:
         self.started = True
         logger.debug("start env in %s", os.getpid())
         for d in self.workdir:
-            util.mkdir_p(d)
+            utils.mkdir_p(d)
 
         if 'TRACKER_ADDR' not in self.environ:
             from dpark.tracker import TrackerServer

@@ -7,7 +7,7 @@ import struct
 import glob
 import uuid
 from dpark.env import env
-from dpark.util import compress, decompress, mkdir_p, atomic_file
+from dpark.utils import compress, decompress, mkdir_p, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
 from collections import OrderedDict

@@ -132,7 +132,7 @@ def add_loghub(framework_id):
     try:
         import dpark
         from dpark.conf import LOGHUB
-        from dpark.util import getuser
+        from dpark.utils import getuser
         date_str = datetime.now().strftime("%Y/%m/%d/%H")
         dir_path = os.path.join(LOGHUB, date_str)
         if not os.path.exists(dir_path):

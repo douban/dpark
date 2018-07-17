@@ -21,7 +21,7 @@ from addict import Dict
 from optparse import OptionParser
 from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
-from dpark.util import getuser, memory_str_to_mb
+from dpark.utils import getuser, memory_str_to_mb
 from dpark.utils.debug import spawn_rconsole
 
 logger = logging.getLogger('dpark.scheduler')

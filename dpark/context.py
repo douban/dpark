@@ -14,7 +14,7 @@ from dpark.schedule import (
 from dpark.env import env
 from dpark.file_manager import walk
 from dpark.tabular import TabularRDD
-from dpark.util import memory_str_to_mb
+from dpark.utils import memory_str_to_mb
 from dpark.utils.log import init_dpark_logger, get_logger
 from dpark.utils.debug import spawn_rconsole
 import dpark.conf as conf

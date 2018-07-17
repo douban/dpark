@@ -25,7 +25,7 @@ except ImportError:
     from six import BytesIO as StringIO
 
 import dpark.conf
-from dpark.util import compress, decompress, spawn, mkdir_p, atomic_file
+from dpark.utils import compress, decompress, spawn, mkdir_p, atomic_file
 from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.env import env
@@ -894,7 +894,7 @@ class MapOutputTracker(BaseMapOutputTracker):
 
 
 def test():
-    from dpark.util import compress
+    from dpark.utils import compress
     import logging
     logging.basicConfig(level=logging.DEBUG)
     from dpark.env import env

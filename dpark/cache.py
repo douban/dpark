@@ -10,7 +10,7 @@ import msgpack
 
 from dpark.env import env
 from dpark.serialize import marshalable
-from dpark.util import mkdir_p, atomic_file
+from dpark.utils import mkdir_p, atomic_file
 from dpark.utils.log import get_logger
 from dpark.tracker import GetValueMessage, AddItemMessage, RemoveItemMessage
 from six.moves import map

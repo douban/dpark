@@ -7,7 +7,7 @@ import struct
 import marshal
 import six.moves.cPickle
 from dpark.rdd import RDD, MultiSplit, TextFileRDD, Split, ParallelCollection, cached
-from dpark.util import chain, atomic_file
+from dpark.utils import chain, atomic_file
 from dpark.file_manager import walk
 from dpark.utils.bitindex import Bloomfilter, BitIndex
 from dpark.serialize import dumps, loads

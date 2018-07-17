@@ -32,7 +32,7 @@ except ImportError:
 
 import dpark.conf
 from dpark.dependency import *
-from dpark.util import (
+from dpark.utils import (
     spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
     AbortFileReplacement, portable_hash,
     masked_crc32c

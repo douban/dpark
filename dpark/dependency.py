@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 import bisect
 
-from dpark.util import portable_hash
+from dpark.utils import portable_hash
 from dpark.serialize import load_func, dump_func
 from dpark.utils.heaponkey import HeapOnKey
 from six.moves import range

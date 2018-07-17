@@ -25,7 +25,7 @@ from pymesos import Executor, MesosExecutorDriver, encode_data, decode_data
 import six
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-from dpark.util import (
+from dpark.utils import (
     compress, decompress, spawn, mkdir_p
 )
 from dpark.utils.log import get_logger, init_dpark_logger, formatter_message
