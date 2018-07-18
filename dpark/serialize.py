@@ -2,30 +2,28 @@ from __future__ import absolute_import
 from __future__ import print_function
 import sys
 import types
-
-try:
-    from cStringIO import StringIO
-except ImportError:
-    from six import BytesIO as StringIO
-
 import marshal
 import types
+import six
 import six.moves.cPickle
 import itertools
+from collections import deque
+from functools import partial
+from six.moves import range
+from six.moves import copyreg
+from six import int2byte
+from dpark.utils.log import get_logger
+from pickle import whichmodule, PROTO, STOP
 
 if six.PY2:
     from pickle import Pickler
 else:
     from pickle import _Pickler as Pickler
-from pickle import whichmodule, PROTO, STOP
-from collections import deque
-from functools import partial
 
-from dpark.utils.log import get_logger
-import six
-from six.moves import range
-from six.moves import copyreg
-from six import int2byte
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from six import BytesIO as StringIO
 
 logger = get_logger(__name__)
 
