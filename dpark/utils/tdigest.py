@@ -121,9 +121,7 @@ class TDigest(object):
             q2 = (w_so_far + proposed_weight) / self._total_weight
             if z * z <= q0 * (1 - q0) and z * z <= q2 * (1 - q2):
                 weight[-1] += incoming_weight[ix]
-                mean[-1] = mean[-1] + \
-                           (incoming_mean[ix] - mean[-1]) * \
-                           incoming_weight[ix] / weight[-1]
+                mean[-1] = mean[-1] + (incoming_mean[ix] - mean[-1]) * incoming_weight[ix] / weight[-1]
 
             else:
                 w_so_far += weight[-1]
@@ -227,13 +225,11 @@ class TDigest(object):
                 )
                 return (w0 + weight_so_far) / 2. / self._total_weight
 
-            if mean[it] <= x and mean[it + 1] > x:
+            if mean[it] <= x < mean[it + 1]:
                 if mean[it + 1] - mean[it] > 0:
                     dw = (weight[it] + weight[it + 1]) / 2.
-                    return (
-                                   weight_so_far + \
-                                   dw * (x - mean[it]) / (mean[it + 1] - mean[it])
-                           ) / self._total_weight
+                    return (weight_so_far +
+                            dw * (x - mean[it]) / (mean[it + 1] - mean[it])) / self._total_weight
                 else:
                     dw = (weight[it] + weight[it + 1]) / 2.
                     return weight_so_far + dw / self._total_weight

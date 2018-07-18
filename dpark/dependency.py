@@ -220,8 +220,7 @@ class HashPartitioner(Partitioner):
         self.partitions = max(1, int(partitions))
         self.thresholds = thresholds
         assert self.partitions != 0
-        assert self.thresholds is None or \
-               len(self.thresholds) == self.partitions - 1
+        assert self.thresholds is None or len(self.thresholds) == self.partitions - 1
 
     @property
     def numPartitions(self):

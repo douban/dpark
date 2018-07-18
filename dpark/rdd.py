@@ -1941,7 +1941,8 @@ class BZip2FileRDD(TextFileRDD):
             np = nd.find(magic)
             while nd and np < 0:
                 t = f.read(len(nd))
-                if not t: break
+                if not t:
+                    break
                 nd += t
                 np = nd.find(magic)
             d += nd[:np] if np >= 0 else nd
@@ -2315,6 +2316,7 @@ class OutputTableFileRDD(OutputTextFileRDD):
 
     def writedata(self, f, rows):
         import msgpack
+
         def flush(buf):
             d = buf.getvalue()
             if self.compress:

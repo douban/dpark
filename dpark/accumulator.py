@@ -85,7 +85,6 @@ class Accumulator:
             cls.originals[id_].add(value)
 
 
-
 ReadBytes = Accumulator()
 WriteBytes = Accumulator()
 

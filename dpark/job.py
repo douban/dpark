@@ -235,10 +235,8 @@ class SimpleJob(Job):
             m, s = divmod(int(eta), 60)
             h, m = divmod(m, 60)
 
-            fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
-                  ' ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'.format(
-                width=int(math.log10(self.numTasks)) + 1,
-            )
+            tmpl = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'
+            fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
 
             msg = fmt % (
                 self.id, bar, ratio * 100, self.tasksFinished, n, h, m, s,
@@ -247,14 +245,11 @@ class SimpleJob(Job):
             msg = msg.ljust(80)
             logger.info(msg)
         else:
-            fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
-                  ' ETA:--:--:-- AVG:N/A\x1b[K%s'.format(
-                width=int(math.log10(self.numTasks)) + 1,
-            )
 
-            msg = fmt % (
-                self.id, bar, ratio * 100, self.tasksFinished, n, ending
-            )
+            tmpl = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:--:--:-- AVG:N/A\x1b[K%s'
+            fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
+
+            msg = fmt % (self.id, bar, ratio * 100, self.tasksFinished, n, ending)
             msg = msg.ljust(80)
             logger.info(msg)
 
