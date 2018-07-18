@@ -25,7 +25,9 @@ NORMAL = 1
 
 
 class HyperLogLog(object):
-    def __init__(self, items=[], b=None, err=0.01):
+    def __init__(self, items=None, b=None, err=0.01):
+        if items is None:
+            items = []
         assert 0.005 <= err < 0.14, 'must 0.005 < err < 0.14'
         if b is None:
             b = int(math.ceil(math.log((1.04 / err) ** 2, 2)))

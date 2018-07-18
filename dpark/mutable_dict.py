@@ -33,7 +33,9 @@ class LRUDict(object):
 
 
 class ConflictValues(object):
-    def __init__(self, v=[]):
+    def __init__(self, v=None):
+        if v is None:
+            v = []
         self.value = list(v)
 
     def __repr__(self):

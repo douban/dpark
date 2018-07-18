@@ -6,7 +6,9 @@ from six.moves import range
 
 
 class HotCounter(object):
-    def __init__(self, vs=[], limit=20):
+    def __init__(self, vs=None, limit=20):
+        if vs is None:
+            vs = []
         self.limit = limit
         self.total = {}
         self.updates = {}
