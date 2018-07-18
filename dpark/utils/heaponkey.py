@@ -111,9 +111,14 @@ class HeapOnKey(object):
                 not stable if ordered_iters == 0
         """
         if not ordered_iters:
-            key = lambda x: self.key(x[0])
+
+            def key(x):
+                return self.key(x[0])
         else:
-            key = lambda x: (self.key(x[0]), x[1])
+
+            def key(x):
+                return self.key(x[0]), x[1]
+
         heap = HeapOnKey(key, self.min_heap)
         _heappop, _heapreplace, _StopIteration = heap.pop, heap.replace, StopIteration
         _len = len
