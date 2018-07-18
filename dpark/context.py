@@ -112,12 +112,13 @@ class DparkContext(object):
         self.master = master
         self.initialized = False
         self.started = False
-        self.defaultParallelism = 2
         self.web_port = None
         self.webui_url = None
         self.data_limit = None
         self.scheduler = None
         self.is_local = True
+        self.defaultParallelism = 2
+        self.defaultMinSplits = 2
 
     def init(self):
         if self.initialized:

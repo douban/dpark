@@ -81,6 +81,11 @@ class DparkEnv:
         if compress != utils.COMPRESS:
             raise Exception("no %s available" % compress)
 
+        self.trackerClient = None
+        self.cacheTracker = None
+        self.shuffleFetcher = None
+        self.mapOutputTracker = None
+
     def start(self):
         if self.started:
             return
