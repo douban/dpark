@@ -107,7 +107,7 @@ class HyperLogLog(object):
 
 
 def test(l, err=0.03):
-    hll = HyperLogLog(err)
+    hll = HyperLogLog(err=err)
     for i in l:
         hll.add(str(i) + 'ip')
     le = len(hll)
