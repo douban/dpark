@@ -1,11 +1,10 @@
 from __future__ import absolute_import
-import uuid
 import os
 import six.moves.cPickle
 from six.moves import urllib
 import struct
 import glob
-import uuid
+import uuid as uuid_pkg
 from dpark.env import env
 from dpark.utils import compress, decompress, mkdir_p, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage
@@ -43,7 +42,7 @@ class ConflictValues(object):
 
 class MutableDict(object):
     def __init__(self, partition_num, cacheLimit=None):
-        self.uuid = str(uuid.uuid4())
+        self.uuid = str(uuid_pkg.uuid4())
         self.partitioner = HashPartitioner(partition_num)
         self.data = LRUDict(cacheLimit)
         self.cacheLimit = cacheLimit
@@ -53,7 +52,7 @@ class MutableDict(object):
         self.is_local = True
 
     def __getstate__(self):
-        return (self.uuid, self.partitioner, self.generation, self.cacheLimit)
+        return self.uuid, self.partitioner, self.generation, self.cacheLimit
 
     def __setstate__(self, v):
         self.uuid, self.partitioner, self.generation, self.cacheLimit = v
@@ -99,7 +98,7 @@ class MutableDict(object):
             else:
                 updated_keys[key] = {k: v}
 
-        uid = uuid.uuid4().get_hex()
+        uid = uuid_pkg.uuid4().get_hex()
         for key, updated in updated_keys.items():
             new = self._fetch_missing(key)
             for k, v in updated.items():

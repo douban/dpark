@@ -375,9 +375,9 @@ class MyExecutor(Executor):
                     reply_status(driver, task_id, 'TASK_KILLED' if st == _KILLED else 'TASK_LOST')
 
                 with self.lock:
-                    for tid in tids_to_pop:
+                    for tid_ in tids_to_pop:
                         try:
-                            self.tasks.pop(tid)
+                            self.tasks.pop(tid_)
                         except:
                             pass
                 now = time.time()
@@ -495,10 +495,10 @@ class MyExecutor(Executor):
         reply_status(driver, task_id, 'TASK_RUNNING')
         logger.debug('launch task %s', task.task_id.value)
 
-        def worker(name, q, task_id_value, task_data):
+        def worker(procname, q, task_id_value, task_data):
             task_id_str = "task %s" % (task_id_value,)
             threading.current_thread().name = task_id_str
-            setproctitle(name)
+            setproctitle(procname)
             env.start()
             q.put((task_id_value, run_task(task_data)))
 

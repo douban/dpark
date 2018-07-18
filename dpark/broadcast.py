@@ -1,7 +1,7 @@
 from __future__ import absolute_import
 import os
 import zmq
-import uuid
+import uuid as uuid_pkg
 import time
 import binascii
 import random
@@ -373,19 +373,19 @@ class DownloadManager(object):
         os.close(fd)
         while not all(bitmap):
             remote = []
-            for addr, _bitmap in six.iteritems(sources):
+            for _addr, _bitmap in six.iteritems(sources):
                 if block_num == 0:
                     block_num = len(_bitmap)
                     bitmap = [0] * block_num
                     self.uuid_map_dict[uuid] = bitmap
-                if not addr.startswith('tcp://%s:' % self.host):
-                    remote.append((addr, _bitmap))
+                if not _addr.startswith('tcp://%s:' % self.host):
+                    remote.append((_addr, _bitmap))
             self.random_inst.shuffle(remote)
-            for addr, _bitmap in remote:
-                indices = [i for i in range(block_num) if not bitmap[i] and _bitmap[i]]
-                if indices:
-                    self.random_inst.shuffle(indices)
-                    _fetch(addr, indices[:BATCHED_BLOCKS], _bitmap)
+            for _addr, _bitmap in remote:
+                _indices = [i for i in range(block_num) if not bitmap[i] and _bitmap[i]]
+                if _indices:
+                    self.random_inst.shuffle(_indices)
+                    _fetch(_addr, _indices[:BATCHED_BLOCKS], _bitmap)
                     self._update_sources(uuid, bitmap, download_guide_sock)
             sources = self._get_sources(uuid, download_guide_sock)
         write_mmap_handler.flush()
@@ -611,7 +611,7 @@ def stop_manager():
 class Broadcast(object):
     def __init__(self, value):
         assert value is not None, 'broadcast object should not been None'
-        self.uuid = str(uuid.uuid4())
+        self.uuid = str(uuid_pkg.uuid4())
         self.value = value
         self.compressed_size = _manager.register(self.uuid, self.value)
         block_num = (self.compressed_size + BLOCK_SIZE - 1) >> BLOCK_SHIFT

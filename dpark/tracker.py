@@ -92,8 +92,8 @@ class TrackerServer(object):
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
         logger.debug("TrackerServer started at %s", self.addr)
 
-        def reply(msg):
-            sock.send_pyobj(msg)
+        def reply(msg_):
+            sock.send_pyobj(msg_)
 
         while True:
             msg = sock.recv_pyobj()

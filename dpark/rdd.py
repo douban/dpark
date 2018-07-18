@@ -201,11 +201,12 @@ class RDD(object):
 
     @recurion_limit_breaker
     def iterator(self, split):
-        def _compute(rdd, split):
+
+        def _compute(rdd, split_):
             if self.shouldCache:
-                return env.cacheTracker.getOrCompute(rdd, split)
+                return env.cacheTracker.getOrCompute(rdd, split_)
             else:
-                return rdd.compute(split)
+                return rdd.compute(split_)
 
         if self.checkpoint_path:
             if self._checkpoint_rdd is None:

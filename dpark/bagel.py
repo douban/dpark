@@ -9,8 +9,8 @@ logger = get_logger(__name__)
 
 
 class Vertex:
-    def __init__(self, id, value, outEdges, active):
-        self.id = id
+    def __init__(self, id_, value, outEdges, active):
+        self.id = id_
         self.value = value
         self.outEdges = outEdges
         self.active = active

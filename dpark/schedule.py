@@ -566,9 +566,9 @@ class DAGScheduler(Scheduler):
         if stats_dirpath:
             names = ['dpark', self.frameworkId, self.id, run_id]
             name = "_".join(map(str, names)) + ".json"
-            p = os.path.join(stats_dirpath, name)
-            logger.info("writing profile to %s", p)
-            with open(p, 'w') as f:
+            path = os.path.join(stats_dirpath, name)
+            logger.info("writing profile to %s", path)
+            with open(path, 'w') as f:
                 json.dump(self._last_stats, f, indent=4)
         assert all(finished)
         return
@@ -905,13 +905,13 @@ class MesosScheduler(DAGScheduler):
                 v.host_path = v.container_path = path
                 v.mode = 'RW'
 
-            def _mount_volume(volumes, host_path, container_path, mode):
-                v = Dict()
-                volumes.append(v)
-                v.container_path = container_path
-                v.mode = mode
-                if host_path:
-                    v.host_path = host_path
+            def _mount_volume(_volumes, _host_path, _container_path, _mode):
+                _v = Dict()
+                _volumes.append(_v)
+                _v.container_path = _container_path
+                _v.mode = _mode
+                if _host_path:
+                    _v.host_path = _host_path
 
             if self.options.volumes:
                 for volume in self.options.volumes.split(','):
@@ -1158,13 +1158,13 @@ class MesosScheduler(DAGScheduler):
             if self.color:
                 total = len(self.activeJobs)
                 logger.info('\x1b[2K\x1b[J\x1b[1A')
-                for i, jid in enumerate(self.activeJobs):
+                for i, job_id in enumerate(self.activeJobs):
                     if i == total - 1:
                         ending = '\x1b[%sA' % total
                     else:
                         ending = ''
 
-                    jobs = self.activeJobs[jid]
+                    jobs = self.activeJobs[job_id]
                     jobs.progress(ending)
 
         tid = status.task_id.value
