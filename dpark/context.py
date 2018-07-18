@@ -251,7 +251,7 @@ class DparkContext(object):
         return PartialTextFileRDD(self, path, begin, end, splitSize, numSplits)
 
     def bzip2File(self, *args, **kwargs):
-        "deprecated"
+        """deprecated"""
         logger.warning("bzip2File() is deprecated, use textFile('xx.bz2') instead")
         return self.textFile(cls=BZip2FileRDD, *args, **kwargs)
 
@@ -292,6 +292,7 @@ class DparkContext(object):
             RAW_VALUE = (flag, BYTES_VALUE)
 
         Args:
+            path: beansdb data path
             filter: used to filter key
             depth: choice = [None, 0, 1, 2]. e.g. depth=2 assume dir tree like:
                     'path/[0-F]/[0-F]/%03d.data'

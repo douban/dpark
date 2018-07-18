@@ -83,7 +83,7 @@ def izip(*its):
 
 
 def mkdir_p(path):
-    "like `mkdir -p`"
+    """like `mkdir -p`"""
     try:
         os.makedirs(path)
     except OSError as exc:

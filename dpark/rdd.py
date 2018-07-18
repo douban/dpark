@@ -443,7 +443,7 @@ class RDD(object):
 
     def saveAsBeansdb(self, path, depth=0, overwrite=True, compress=True,
                       raw=False, valueWithMeta=False):
-        ''' save (key, value) pair in beansdb format files
+        """ save (key, value) pair in beansdb format files
 
         Args:
             depth: choice = [0, 1, 2].
@@ -452,7 +452,7 @@ class RDD(object):
                 MUST use depth == 0 to generate data for rivendb
             raw: same as in DparkContext.beansdb
             valueWithMeta: expect TRIPLE as input value
-        '''
+        """
         assert depth <= 2, 'only support depth<=2 now'
         if len(self) >= 256:
             self = self.mergeSplit(len(self) // 256 + 1)
@@ -515,7 +515,7 @@ class RDD(object):
 
     def topByKey(self, top_n, order_func=None,
                  reverse=False, num_splits=None, task_memory=None, fixSkew=-1):
-        ''' Base on groupByKey, return the top_n values in each group.
+        """ Base on groupByKey, return the top_n values in each group.
             The values in a key are ordered by a function object order_func.
             The result values in a key is order in inc order, if you want
             dec order, reverse is needed.
@@ -531,7 +531,7 @@ class RDD(object):
         :param num_splits: same with groupByKey
         :param task_memory: same with groupByKey
         :return: rdd
-        '''
+        """
 
         # To keep stable in heap, topByKey func need to generate the 4-tuple  which is
         # in the form of the
@@ -592,8 +592,8 @@ class RDD(object):
         This is functionally equivalent to `join`, but `innerJoin` assume `smallRdd` is a
         small Data set, and `innerJoin` will broadcast the `smallRdd` to optimize running time.
 
-        >>> x = dpark.parallelize([("a", 1), ("b", 4)])
-        >>> y = dpark.parallelize([("a", 2), ("a", 3)])
+        >>> x = dpark_context.parallelize([("a", 1), ("b", 4)])
+        >>> y = dpark_context.parallelize([("a", 2), ("a", 3)])
         >>> x.innerJoin(y).collect()
         [('a', (1, 2)), ('a', (1, 3))]
         """

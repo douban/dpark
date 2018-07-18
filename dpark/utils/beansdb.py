@@ -322,10 +322,10 @@ class BeansdbWriter(object):
         return write_record(f, key, flag, value, version, ts)
 
     def write_bucket(self, it, index):
-        ''' 0 <= index < 256
+        """ 0 <= index < 256
             yield from it
             write to  "*/%03d.data" % index
-        '''
+        """
         N = 16 ** self.depth
         if self.depth > 0:
             fmt = '%%0%dx' % self.depth

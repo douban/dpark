@@ -31,7 +31,7 @@ logger = get_logger(__name__)
 
 
 class LazySave(object):
-    '''Out of band marker for lazy saves among lazy writes.'''
+    """Out of band marker for lazy saves among lazy writes."""
 
     __slots__ = ['obj']
 
@@ -43,7 +43,7 @@ class LazySave(object):
 
 
 class LazyMemo(object):
-    '''Out of band marker for lazy memos among lazy writes.'''
+    """Out of band marker for lazy memos among lazy writes."""
 
     __slots__ = ['obj']
 
