@@ -216,9 +216,9 @@ class SimpleJob(Job):
             self.tasksLaunched += 1
 
         if status == 'TASK_FINISHED':
-            self.taskFinished(tid, tried, result, update, stats)
+            self._task_finished(tid, tried, result, update, stats)
         elif status in ('TASK_LOST', 'TASK_FAILED', 'TASK_KILLED'):
-            self.taskLost(tid, tried, status, reason)
+            self._task_lost(tid, tried, status, reason)
 
         task.start = time.time()
         if stats:
@@ -253,7 +253,7 @@ class SimpleJob(Job):
             msg = msg.ljust(80)
             logger.info(msg)
 
-    def taskFinished(self, tid, tried, result, update, stats):
+    def _task_finished(self, tid, tried, result, update, stats):
         i = self.tidToIndex[tid]
         self.finished[i] = True
         self.tasksFinished += 1
@@ -290,7 +290,7 @@ class SimpleJob(Job):
                         )
             self.sched.jobFinished(self)
 
-    def taskLost(self, tid, tried, status, reason):
+    def _task_lost(self, tid, tried, status, reason):
         index = self.tidToIndex[tid]
 
         from dpark.schedule import FetchFailed
@@ -352,8 +352,7 @@ class SimpleJob(Job):
         if self.numFailures[index] > MAX_TASK_FAILURES:
             logger.error('Task %d failed more than %d times; aborting job',
                          self.tasks[index].id, MAX_TASK_FAILURES)
-            self.abort('Task %d failed more than %d times'
-                       % (self.tasks[index].id, MAX_TASK_FAILURES))
+            self._abort('Task %d failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
         self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:
@@ -404,12 +403,12 @@ class SimpleJob(Job):
                     else:
                         logger.error('task %s timeout, aborting job %s',
                                      task, self.id)
-                        self.abort('task %s timeout' % task)
+                        self._abort('task %s timeout' % task)
                 else:
                     break
         return self.tasksLaunched < n
 
-    def abort(self, message):
+    def _abort(self, message):
         logger.error('abort the job: %s', message)
         tasks = ' '.join(str(i) for i in range(len(self.finished))
                          if not self.finished[i])
