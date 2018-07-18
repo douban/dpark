@@ -61,6 +61,12 @@ class DAGTask(Task):
                 env.meminfo.check = True
                 env.meminfo.stop()
 
+    def _run(self, task_id):
+        raise NotImplementedError
+
+    def preferredLocations(self):
+        raise NotImplementedError
+
 
 class ResultTask(DAGTask):
     def __init__(self, stageId, rdd, func, partition, locs, outputId):
