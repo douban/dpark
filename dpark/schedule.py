@@ -388,8 +388,8 @@ class DAGScheduler(Scheduler):
             pass
         results = [None] * numOutputParts
         finished = [None] * numOutputParts
-        lastFinished = 0
-        numFinished = 0
+        last_finished = 0
+        num_finished = 0
 
         waiting = set()
         running = set()
@@ -469,7 +469,7 @@ class DAGScheduler(Scheduler):
 
         submitStage(finalStage)
 
-        while numFinished != numOutputParts:
+        while num_finished != numOutputParts:
             try:
                 evt = self.completionEvents.get(False)
             except six.moves.queue.Empty:
@@ -501,13 +501,13 @@ class DAGScheduler(Scheduler):
                 stage.task_stats[task.partition].append(evt.stats)
                 if isinstance(task, ResultTask):
                     finished[task.outputId] = True
-                    numFinished += 1
+                    num_finished += 1
                     results[task.outputId] = evt.result
-                    while lastFinished < numOutputParts and finished[
-                        lastFinished]:
-                        yield results[lastFinished]
-                        results[lastFinished] = None
-                        lastFinished += 1
+
+                    while last_finished < numOutputParts and finished[last_finished]:
+                        yield results[last_finished]
+                        results[last_finished] = None
+                        last_finished += 1
 
                     stage.finish()
 
