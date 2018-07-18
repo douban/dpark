@@ -242,7 +242,7 @@ def test():
     dc = DparkContext("local")
     dc.start()
     nums = dc.parallelize(list(range(100)), 10)
-    tracker = CacheTracker(True)
+    tracker = CacheTracker()
     tracker.registerRDD(nums.id, len(nums))
     split = nums.splits[0]
     print(list(tracker.getOrCompute(nums, split)))
