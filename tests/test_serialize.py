@@ -53,7 +53,7 @@ class TestSerialize(unittest.TestCase):
         x = 10
 
         def foo():
-            return (x, y)
+            return x, y
 
         dumped_func = dump_closure(foo)
         func = load_closure(dumped_func)

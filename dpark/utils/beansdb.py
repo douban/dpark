@@ -88,7 +88,7 @@ def prepare_value(val, compress):
     flag = 0
     if isinstance(val, six.binary_type):
         pass
-    elif isinstance(val, (bool)):
+    elif isinstance(val, bool):
         flag = FLAG_BOOL
         val = str(int(val)).encode('utf-8')
     elif isinstance(val, six.integer_types):
