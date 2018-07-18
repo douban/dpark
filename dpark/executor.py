@@ -8,21 +8,18 @@ import fcntl
 import shutil
 import signal
 import socket
-import six.moves.cPickle
 import logging
 import marshal
 import threading
 import subprocess
-import six.moves.socketserver
 import multiprocessing
-import six.moves.SimpleHTTPServer
-from six.moves import urllib
+import six
+from six.moves import socketserver, cPickle, SimpleHTTPServer, urllib
 import resource
 
 import zmq
 from addict import Dict
 from pymesos import Executor, MesosExecutorDriver, encode_data, decode_data
-import six
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.utils import (
@@ -83,10 +80,10 @@ def run_task(task_data):
             try:
                 flag, data = 0, marshal.dumps(result)
             except Exception:
-                flag, data = 1, six.moves.cPickle.dumps(result, -1)
+                flag, data = 1, cPickle.dumps(result, -1)
 
         else:
-            flag, data = 1, six.moves.cPickle.dumps(result, -1)
+            flag, data = 1, cPickle.dumps(result, -1)
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
@@ -99,25 +96,25 @@ def run_task(task_data):
             )
             flag += 2
 
-        return 'TASK_FINISHED', six.moves.cPickle.dumps(
+        return 'TASK_FINISHED', cPickle.dumps(
             (Success(), (flag, data), accUpdate, env.task_stats), -1)
     except FetchFailed as e:
-        return 'TASK_FAILED', six.moves.cPickle.dumps((e, None, None, None), -1)
+        return 'TASK_FAILED', cPickle.dumps((e, None, None, None), -1)
     except:
         import traceback
         msg = traceback.format_exc()
-        return 'TASK_FAILED', six.moves.cPickle.dumps(
+        return 'TASK_FAILED', cPickle.dumps(
             (OtherFailure(msg), None, None, None), -1)
     finally:
         gc.collect()
         gc.enable()
 
 
-class LocalizedHTTP(six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler):
+class LocalizedHTTP(SimpleHTTPServer.SimpleHTTPRequestHandler):
     basedir = None
 
     def translate_path(self, path):
-        out = six.moves.SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(
+        out = SimpleHTTPServer.SimpleHTTPRequestHandler.translate_path(
             self, path)
         return self.basedir + '/' + os.path.relpath(out)
 
@@ -143,7 +140,7 @@ def startWebServer(path):
 
     logger.warning('default webserver at %s not available', DEFAULT_WEB_PORT)
     LocalizedHTTP.basedir = os.path.dirname(path)
-    ss = six.moves.socketserver.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
+    ss = socketserver.TCPServer(('0.0.0.0', 0), LocalizedHTTP)
     spawn(ss.serve_forever)
     uri = 'http://%s:%d/%s' % (socket.gethostname(), ss.server_address[1],
                                os.path.basename(path))

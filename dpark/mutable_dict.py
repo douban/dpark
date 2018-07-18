@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 import os
-import six.moves.cPickle
-from six.moves import urllib
+from six.moves import urllib, cPickle
 import struct
 import glob
 import uuid as uuid_pkg
@@ -116,7 +115,7 @@ class MutableDict(object):
 
             url = '%s/%s' % (server_uri, filename)
             with atomic_file(fn) as f:
-                data = compress(six.moves.cPickle.dumps(new))
+                data = compress(cPickle.dumps(new))
                 f.write(struct.pack('<I', len(data) + 4) + data)
 
             env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
@@ -168,7 +167,7 @@ class MutableDict(object):
                 raise IOError('Transfer %s failed: %s received, %s expected' % (url,
                                                                                 len(data), length))
 
-            data = six.moves.cPickle.loads(decompress(data[4:]))
+            data = cPickle.loads(decompress(data[4:]))
             for k, v in data.items():
                 if k in result:
                     r = result[k]

@@ -7,7 +7,6 @@ import binascii
 import random
 import socket
 import struct
-import six.moves.cPickle
 import marshal
 import mmap
 from multiprocessing import Manager, Condition
@@ -19,7 +18,7 @@ from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
 import six
-from six.moves import range, map
+from six.moves import range, map, cPickle
 
 try:
     from itertools import izip
@@ -544,11 +543,11 @@ class BroadcastManager(object):
                 buf = marshal.dumps((uuid, obj))
                 type_ = MARSHAL_TYPE
             else:
-                buf = six.moves.cPickle.dumps((uuid, obj), -1)
+                buf = cPickle.dumps((uuid, obj), -1)
                 type_ = PICKLE_TYPE
 
         except Exception:
-            buf = six.moves.cPickle.dumps((uuid, obj), -1)
+            buf = cPickle.dumps((uuid, obj), -1)
             type_ = PICKLE_TYPE
 
         checksum = binascii.crc32(buf) & 0xFFFF
@@ -572,7 +571,7 @@ class BroadcastManager(object):
         if type_ == MARSHAL_TYPE:
             _uuid, value = marshal.loads(buf)
         elif type_ == PICKLE_TYPE:
-            _uuid, value = six.moves.cPickle.loads(buf)
+            _uuid, value = cPickle.loads(buf)
         else:
             raise RuntimeError('Unknown serialization type: %s' % type_)
 
