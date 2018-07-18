@@ -46,7 +46,7 @@ class HotCounter(object):
         return sorted(list(self.total.items()), key=operator.itemgetter(1), reverse=True)[:limit]
 
 
-if __name__ == '__main__':
+def test():
     import random
     import math
 
@@ -59,3 +59,7 @@ if __name__ == '__main__':
         t.update(c)
     for k, v in t.top(20):
         print(k, v)
+
+
+if __name__ == '__main__':
+    test()
