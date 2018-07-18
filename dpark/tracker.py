@@ -127,13 +127,15 @@ class TrackerClient(object):
         if self.ctx is None:
             self.ctx = zmq.Context()
 
+        sock = None
         try:
             sock = self.ctx.socket(zmq.REQ)
             sock.connect(self.addr)
             sock.send_pyobj(msg)
             return sock.recv_pyobj()
         finally:
-            sock.close()
+            if sock:
+                sock.close()
 
     def stop(self):
         if self.ctx is not None:
