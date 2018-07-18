@@ -153,23 +153,23 @@ class HeapOnKey(object):
 
 
 def test():
-    l = [10, 9, 20, 18, 3, 24, 29, 39]
+    lst = [10, 9, 20, 18, 3, 24, 29, 39]
     h = HeapOnKey()
-    h.heapify(l)
+    h.heapify(lst)
     import sys
-    print('the list after heapify:', l, file=sys.stderr)
-    l.pop()
-    l[0] = 12
-    h._sift_up(l, 0)
-    print('the list after sift up:', l, file=sys.stderr)
-    h.push(l, 8)
-    print('the list after push:', l, file=sys.stderr)
-    ret = h.pop(l)
-    print('the list after pop:', l, ' with value:', ret, file=sys.stderr)
+    print('the list after heapify:', lst, file=sys.stderr)
+    lst.pop()
+    lst[0] = 12
+    h._sift_up(lst, 0)
+    print('the list after sift up:', lst, file=sys.stderr)
+    h.push(lst, 8)
+    print('the list after push:', lst, file=sys.stderr)
+    ret = h.pop(lst)
+    print('the list after pop:', lst, ' with value:', ret, file=sys.stderr)
     h = HeapOnKey(min_heap=True)
-    h.heapify(l)
-    h.push(l, 12)
-    print('the list after reverse:', l, file=sys.stderr)
+    h.heapify(lst)
+    h.push(lst, 12)
+    print('the list after reverse:', lst, file=sys.stderr)
 
     class Foo:
         def __init__(self, name='', age=0, score=None):
@@ -189,19 +189,19 @@ def test():
     def key_func(foo):
         return foo.age
 
-    l = [Foo('aaa', 10, (60, 89, 70)), Foo('bbb', 20, (78, 75, 60)),
-         Foo('ccc', 15, (60, 73, 84)), Foo('ddd', 21, (87, 64, 65)),
-         Foo('eee', 30, (54, 53, 79)), Foo('fff', 10, (87, 73, 98))]
+    lst = [Foo('aaa', 10, (60, 89, 70)), Foo('bbb', 20, (78, 75, 60)),
+           Foo('ccc', 15, (60, 73, 84)), Foo('ddd', 21, (87, 64, 65)),
+           Foo('eee', 30, (54, 53, 79)), Foo('fff', 10, (87, 73, 98))]
     h = HeapOnKey(key=key_func, min_heap=True)
-    h.heapify(l)
-    print('the list after heapify:', l, file=sys.stderr)
+    h.heapify(lst)
+    print('the list after heapify:', lst, file=sys.stderr)
 
     len_l = 100000
     top_n = 10
-    l = []
+    lst = []
     import random
     for i in range(len_l):
-        l.append(random.randint(1, 2 * len_l + 1))
+        lst.append(random.randint(1, 2 * len_l + 1))
 
     top_l = []
     call_cnt = 0
@@ -214,7 +214,7 @@ def test():
     h = HeapOnKey(key=cnt_key)
     import time
     start = time.time()
-    for i in l:
+    for i in lst:
         if len(top_l) >= top_n:
             h.push_pop(top_l, i)
         else:
@@ -225,7 +225,7 @@ def test():
 
     start = time.time()
     top_l = []
-    for i in l:
+    for i in lst:
         top_l.append(i)
         top_l.sort(key=cnt_key)
         if len(top_l) > top_n:
