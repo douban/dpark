@@ -207,7 +207,7 @@ class TDigest(object):
             if self._max - mean[-1] > 0:
                 return (
                         1. -
-                        (self._max - x) / (self.max - mean[-1]) *
+                        (self._max - x) / (self._max - mean[-1]) *
                         weight[-1] / self._total_weight / 2.
                 )
 
