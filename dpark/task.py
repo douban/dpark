@@ -19,14 +19,14 @@ logger = get_logger(__name__)
 
 class Task:
     def __init__(self):
-        self.id = Task.newId()
+        self.id = Task.new_id()
 
-    nextId = 0
+    next_id = 0
 
     @classmethod
-    def newId(cls):
-        cls.nextId += 1
-        return cls.nextId
+    def new_id(cls):
+        cls.next_id += 1
+        return cls.next_id
 
     def run(self, task_id):
         raise NotImplementedError

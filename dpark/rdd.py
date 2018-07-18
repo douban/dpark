@@ -77,7 +77,7 @@ def cached(func):
 class RDD(object):
     def __init__(self, ctx):
         self.ctx = ctx
-        self.id = RDD.newId()
+        self.id = RDD.new_id()
         self._splits = []
         self._dependencies = []
         self.aggregator = None
@@ -98,7 +98,7 @@ class RDD(object):
     nextId = 0
 
     @classmethod
-    def newId(cls):
+    def new_id(cls):
         cls.nextId += 1
         return cls.nextId
 

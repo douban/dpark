@@ -26,7 +26,7 @@ setAcc = AccumulatorParam(set(), lambda x, y: x.update(y) or x)
 
 class Accumulator:
     def __init__(self, initialValue=0, param=numAcc):
-        self.id = self.newId()
+        self.id = self.new_id()
         if param is None:
             param = numAcc
         self.param = param
@@ -53,7 +53,7 @@ class Accumulator:
     nextId = 0
 
     @classmethod
-    def newId(cls):
+    def new_id(cls):
         cls.nextId += 1
         return cls.nextId
 

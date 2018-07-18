@@ -87,7 +87,7 @@ class OtherFailure(TaskEndReason):
 class Stage:
 
     def __init__(self, rdd, shuffleDep, parents):
-        self.id = self.newId()
+        self.id = self.new_id()
         self.rdd = rdd
         self.shuffleDep = shuffleDep
         self.parents = parents
@@ -133,7 +133,7 @@ class Stage:
     nextId = 0
 
     @classmethod
-    def newId(cls):
+    def new_id(cls):
         cls.nextId += 1
         return cls.nextId
 
@@ -260,7 +260,7 @@ def walk_dependencies(rdd, edge_func=lambda r, d: True, node_func=lambda r: True
 class DAGScheduler(Scheduler):
 
     def __init__(self):
-        self.id = self.newId()
+        self.id = self.new_id()
         self.completionEvents = six.moves.queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
         self.shuffleToMapStage = {}
@@ -272,7 +272,7 @@ class DAGScheduler(Scheduler):
     nextId = 0
 
     @classmethod
-    def newId(cls):
+    def new_id(cls):
         cls.nextId += 1
         return cls.nextId
 

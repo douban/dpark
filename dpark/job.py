@@ -1,5 +1,4 @@
 from __future__ import absolute_import, print_function
-import sys
 import math
 import time
 import socket
@@ -24,27 +23,18 @@ def readable(size):
     return '%.1f%s' % (size, units[unit])
 
 
-class Job:
+class Job(object):
+
+    next_job_id = 0
 
     def __init__(self):
-        self.id = self.newJobId()
+        self.id = self.new_job_id()
         self.start = time.time()
 
-    def taskOffer(self, host_offers, cpus, mems, gpus):
-        raise NotImplementedError
-
-    def statusUpdate(self, t):
-        raise NotImplementedError
-
-    def error(self, code, message):
-        raise NotImplementedError
-
-    nextJobId = 0
-
     @classmethod
-    def newJobId(cls):
-        cls.nextJobId += 1
-        return cls.nextJobId
+    def new_job_id(cls):
+        cls.next_job_id += 1
+        return cls.next_job_id
 
 
 LOCALITY_WAIT = 0
