@@ -69,11 +69,11 @@ class GuideManager(object):
                 if not sock.poll(1000, zmq.POLLIN):
                     continue
 
-                type, msg = sock.recv_pyobj()
-                if type == GUIDE_STOP:
+                type_, msg = sock.recv_pyobj()
+                if type_ == GUIDE_STOP:
                     sock.send_pyobj(0)
                     break
-                elif type == GUIDE_GET_SOURCES:
+                elif type_ == GUIDE_GET_SOURCES:
                     uuid = msg
                     sources = None
                     if uuid in self.guides:
@@ -81,7 +81,7 @@ class GuideManager(object):
                     else:
                         logger.warning('uuid %s NOT REGISTERED in guide server', uuid)
                     sock.send_pyobj(sources)
-                elif type == GUIDE_SET_SOURCES:
+                elif type_ == GUIDE_SET_SOURCES:
                     uuid, addr, bitmap = msg
                     if any(bitmap):
                         sources = None
@@ -93,7 +93,7 @@ class GuideManager(object):
                             self.guides[uuid] = {addr: bitmap}
                             self.register_addr[uuid] = addr
                     sock.send_pyobj(None)
-                elif type == GUIDE_REPORT_BAD:
+                elif type_ == GUIDE_REPORT_BAD:
                     uuid, addr = msg
                     sources = self.guides[uuid]
                     if addr in sources:
@@ -103,7 +103,7 @@ class GuideManager(object):
                             logger.warning('The addr %s to delete is the register Quit!!!', addr)
                     sock.send_pyobj(None)
                 else:
-                    logger.error('Unknown guide message: %s %s', type, msg)
+                    logger.error('Unknown guide message: %s %s', type_, msg)
                     sock.send_pyobj(None)
 
         return spawn(run)
@@ -201,12 +201,12 @@ class DownloadManager(object):
             while self._started:
                 if not sock.poll(1000, zmq.POLLIN):
                     continue
-                type, msg = sock.recv_pyobj()
-                logger.debug('server recv: %s %s', type, msg)
-                if type == SERVER_STOP:
+                type_, msg = sock.recv_pyobj()
+                logger.debug('server recv: %s %s', type_, msg)
+                if type_ == SERVER_STOP:
                     sock.send_pyobj(None)
                     break
-                elif type == SERVER_FETCH:
+                elif type_ == SERVER_FETCH:
                     uuid, indices, client_addr = msg
                     if uuid in self.master_broadcast_blocks:
                         block_num = len(self.master_broadcast_blocks[uuid])
@@ -244,7 +244,7 @@ class DownloadManager(object):
                                        'not exists in server %s from host %s',
                                        uuid, socket.gethostname(), client_addr)
                         sock.send_pyobj((SERVER_FETCH_FAIL, None))
-                elif type == DATA_GET:
+                elif type_ == DATA_GET:
                     uuid, compressed_size = msg
                     if uuid not in self.uuid_state_dict or not self.uuid_state_dict[uuid][1]:
                         if uuid not in self.download_threads:
@@ -261,12 +261,12 @@ class DownloadManager(object):
                             sock.send_pyobj(DATA_DOWNLOADING)
                     else:
                         sock.send_pyobj(DATA_GET_OK)
-                elif type == SERVER_CLEAR_ITEM:
+                elif type_ == SERVER_CLEAR_ITEM:
                     uuid = msg
                     self.clear(uuid)
                     sock.send_pyobj(None)
                 else:
-                    logger.error('Unknown server message: %s %s', type, msg)
+                    logger.error('Unknown server message: %s %s', type_, msg)
                     sock.send_pyobj(None)
 
             sock.close()
@@ -541,17 +541,17 @@ class BroadcastManager(object):
         try:
             if marshalable(obj):
                 buf = marshal.dumps((uuid, obj))
-                type = MARSHAL_TYPE
+                type_ = MARSHAL_TYPE
             else:
                 buf = six.moves.cPickle.dumps((uuid, obj), -1)
-                type = PICKLE_TYPE
+                type_ = PICKLE_TYPE
 
         except Exception:
             buf = six.moves.cPickle.dumps((uuid, obj), -1)
-            type = PICKLE_TYPE
+            type_ = PICKLE_TYPE
 
         checksum = binascii.crc32(buf) & 0xFFFF
-        stream = struct.pack(self.header_fmt, type, checksum) + buf
+        stream = struct.pack(self.header_fmt, type_, checksum) + buf
         blockNum = (len(stream) + (BLOCK_SIZE - 1)) >> BLOCK_SHIFT
         blocks = [compress(stream[i * BLOCK_SIZE:(i + 1) * BLOCK_SIZE]) for i in range(blockNum)]
         sizes = [len(block) for block in blocks]
@@ -561,19 +561,19 @@ class BroadcastManager(object):
 
     def from_blocks(self, uuid, blocks):
         stream = b''.join(map(decompress, blocks))
-        type, checksum = struct.unpack(self.header_fmt, stream[:self.header_len])
+        type_, checksum = struct.unpack(self.header_fmt, stream[:self.header_len])
         buf = stream[self.header_len:]
         _checksum = binascii.crc32(buf) & 0xFFFF
         if _checksum != checksum:
             raise RuntimeError('Wrong blocks: checksum: %s, expected: %s' % (
                 _checksum, checksum))
 
-        if type == MARSHAL_TYPE:
+        if type_ == MARSHAL_TYPE:
             _uuid, value = marshal.loads(buf)
-        elif type == PICKLE_TYPE:
+        elif type_ == PICKLE_TYPE:
             _uuid, value = six.moves.cPickle.loads(buf)
         else:
-            raise RuntimeError('Unknown serialization type: %s' % type)
+            raise RuntimeError('Unknown serialization type: %s' % type_)
 
         if uuid != _uuid:
             raise RuntimeError('Wrong blocks: uuid: %s, expected: %s' % (_uuid, uuid))

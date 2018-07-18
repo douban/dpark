@@ -14,8 +14,8 @@ class AccumulatorParam:
         return dump_func(self.addInPlace), self.zero
 
     def __setstate__(self, state):
-        add, self.zero = state
-        self.addInPlace = load_func(add)
+        add_, self.zero = state
+        self.addInPlace = load_func(add_)
 
 
 numAcc = AccumulatorParam(0, add)
@@ -75,14 +75,15 @@ class Accumulator:
 
     @classmethod
     def values(cls):
-        v = dict((id, accum.value) for id, accum in cls.localAccums.items())
+        v = dict((id_, accum.value) for id_, accum in cls.localAccums.items())
         cls.clear()
         return v
 
     @classmethod
     def merge(cls, values):
-        for id, value in values.items():
-            cls.originals[id].add(value)
+        for id_, value in values.items():
+            cls.originals[id_].add(value)
+
 
 
 ReadBytes = Accumulator()

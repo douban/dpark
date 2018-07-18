@@ -93,8 +93,8 @@ def mkdir_p(path):
             raise
 
 
-def memory_str_to_mb(str):
-    lower = str.lower()
+def memory_str_to_mb(s):
+    lower = s.lower()
     if lower[-1].isalpha():
         number, unit = float(lower[:-1]), lower[-1]
     else:
