@@ -337,7 +337,7 @@ class DownloadManager(object):
                         check_sock.connect(tuple(addr_list))
                     except Exception as e:
                         logger.warning('connect the addr %s failed with exception %s',
-                                       addr, e.message)
+                                       addr, e)
                         _report_bad(addr)
                     else:
                         logger.debug("%s recv broadcast %s from %s timeout",

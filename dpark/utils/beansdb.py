@@ -199,7 +199,7 @@ class BeansdbReader(object):
             try:
                 hint = quicklz.decompress(hint)
             except ValueError as e:
-                msg = str(e.message)
+                msg = str(e)
                 if msg.startswith('compressed length not match'):
                     hint = hint[:int(msg.split('!=')[1])]
                     hint = quicklz.decompress(hint)
