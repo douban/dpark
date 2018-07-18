@@ -166,7 +166,7 @@ class BeansdbReader(object):
         if not fullscan:
             hint = path[:-5] + '.hint'
             if not os.path.exists(hint) and not os.path.exists(hint + '.qlz'):
-                fullscan = True
+                self.fullscan = True
 
     def __getstate__(self):
         d = dict(self.__dict__)
