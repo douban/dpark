@@ -113,10 +113,8 @@ class TDigest(object):
         weight.append(incoming_weight[incoming_order[0]])
 
         w_so_far = 0.
-        k1 = 0.
         for ix in incoming_order[1:]:
             proposed_weight = weight[-1] + incoming_weight[ix]
-            prohected_w = w_so_far + proposed_weight
             z = proposed_weight * normalizer
             q0 = w_so_far / self._total_weight
             q2 = (w_so_far + proposed_weight) / self._total_weight

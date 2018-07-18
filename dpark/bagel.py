@@ -133,7 +133,7 @@ class Bagel(object):
         # else:
         #    processed = processed.cache()
         # force evaluation of processed RDD for accurate performance measurements
-        n = verts.count()
+        _ = verts.count()
         return verts, msgs, numMsgs.value, numActiveVerts.value
 
     @classmethod

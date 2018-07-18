@@ -208,7 +208,7 @@ class BeansdbReader(object):
         with open(self.path, 'rb') as dataf:
             p = 0
             while p < len(hint):
-                pos, ver, hash = struct.unpack("IiH", hint[p:p + 10])
+                pos, ver, _ = struct.unpack("IiH", hint[p:p + 10])
                 p += 10
                 ksz = pos & 0xff
                 key = hint[p: p + ksz]

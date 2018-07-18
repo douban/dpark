@@ -312,7 +312,7 @@ class RDD(object):
         """
         starts = [0]
         if len(self) > 1:
-            nums = self.mapPartitions(lambda it: [sum(1 for i in it)]).collect()
+            nums = self.mapPartitions(lambda it: [sum(1 for _ in it)]).collect()
             for i in range(len(nums) - 1):
                 starts.append(starts[-1] + nums[i])
 
@@ -1822,7 +1822,7 @@ class GZipFileRDD(TextFileRDD):
 
                 try:
                     io = BytesIO(dz.decompress(d))
-                except Exception as e:
+                except Exception:
                     if self.err < 1e-6:
                         logger.error("failed to decompress file: %s", self.path)
                         raise

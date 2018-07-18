@@ -82,7 +82,7 @@ def run_task(task_data):
         if marshalable(result):
             try:
                 flag, data = 0, marshal.dumps(result)
-            except Exception as e:
+            except Exception:
                 flag, data = 1, six.moves.cPickle.dumps(result, -1)
 
         else:
@@ -327,7 +327,6 @@ class MyExecutor(Executor):
             logger.error('no psutil module')
             return
 
-        mem_limit = {}
         idle_since = time.time()
 
         _DELAY, _KILLED, _LOST, _DISCARD = list(range(4))
@@ -345,7 +344,7 @@ class MyExecutor(Executor):
 
                 try:
                     p = psutil.Process(proc.pid)
-                except Exception as e:
+                except Exception:
                     st = _LOST
 
                 if st == _LOST or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):

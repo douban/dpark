@@ -207,7 +207,7 @@ class MutableDict(object):
             try:
                 os.makedirs(p)
                 os.symlink(p, path)
-            except OSError as e:
+            except OSError:
                 pass
 
             return path

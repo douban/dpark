@@ -11,7 +11,6 @@ from six.moves import urllib
 import weakref
 import threading
 import json
-import logging
 
 import zmq
 from addict import Dict
@@ -143,7 +142,6 @@ class Stage:
             self.finish_time = time.time()
 
     def _get_root_rdd(self):
-        from dpark.rdd import TextFileRDD
         roots = []
 
         def _(r):
@@ -308,7 +306,7 @@ class DAGScheduler(Scheduler):
         self.completionEvents.put(None)
 
     def getCacheLocs(self, rdd):
-        return self.cacheLocs.get(rdd.id, [[] for i in range(len(rdd))])
+        return self.cacheLocs.get(rdd.id, [[] for _ in range(len(rdd))])
 
     def updateCacheLocs(self):
         self.cacheLocs = self.cacheTracker.getLocationsSnapshot()

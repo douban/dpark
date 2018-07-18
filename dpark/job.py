@@ -75,7 +75,7 @@ class SimpleJob(Job):
         self.launched = [False] * len(tasks)
         self.finished = [False] * len(tasks)
         self.numFailures = [0] * len(tasks)
-        self.running_hosts = [[] for i in range(len(tasks))]
+        self.running_hosts = [[] for _ in range(len(tasks))]
         self.tidToIndex = {}
         self.numTasks = len(tasks)
         self.tasksLaunched = 0

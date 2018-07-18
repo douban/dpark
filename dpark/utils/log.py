@@ -156,7 +156,7 @@ def add_loghub(framework_id):
                 for i in infos:
                     f.write("DPARK_{} = {}\n".format(i[0], i[1]))
                 f.write("\n")
-        except Exception as e:
+        except:
             logger.exception("fail to write loghub: %s", log_path)
             return
 
@@ -164,5 +164,5 @@ def add_loghub(framework_id):
         file_handler.setFormatter(ColoredFormatter(LOG_FORMAT, DATE_FORMAT, True))
         file_handler.setLevel(logging.INFO)
         logger.addHandler(file_handler)
-    except Exception as e:
+    except:
         logger.exception("add_loghub fail")

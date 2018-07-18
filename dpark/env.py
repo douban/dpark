@@ -91,9 +91,9 @@ class DparkEnv:
 
         if 'TRACKER_ADDR' not in self.environ:
             from dpark.tracker import TrackerServer
-            trackerServer = self.trackerServer = TrackerServer()
+            self.trackerServer = TrackerServer()
             self.trackerServer.start()
-            self.register('TRACKER_ADDR', trackerServer.addr)
+            self.register('TRACKER_ADDR', self.trackerServer.addr)
 
         from dpark.tracker import TrackerClient
         addr = self.get('TRACKER_ADDR')

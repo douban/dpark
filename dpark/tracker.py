@@ -87,7 +87,6 @@ class TrackerServer(object):
             self.locs[key].remove(item)
 
     def run(self):
-        locs = self.locs
         sock = self.ctx.socket(zmq.REP)
         port = sock.bind_to_random_port("tcp://0.0.0.0")
         self.addr = "tcp://%s:%d" % (socket.gethostname(), port)
