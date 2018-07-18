@@ -150,7 +150,8 @@ class MutableDict(object):
         self.updated.clear()
         self.data = LRUDict(self.cacheLimit)
 
-    def _fetch_missing(self, key):
+    @classmethod
+    def _fetch_missing(cls, key):
         result = {}
         urls = env.trackerClient.call(GetValueMessage('mutable_dict:%s' % key))
         for url in urls:

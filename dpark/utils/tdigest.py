@@ -43,7 +43,8 @@ class TDigest(object):
 
         self._size = size
 
-    def _weighted_average(self, x1, w1, x2, w2):
+    @staticmethod
+    def _weighted_average(x1, w1, x2, w2):
         a, b = min(x1, x2), max(x1, x2)
         x = float(x1 * w1 + x2 * w2) / (w1 + w2)
         return max(a, min(b, x))

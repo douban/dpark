@@ -504,7 +504,8 @@ class BroadcastManager(object):
         value = self.from_blocks(uuid, blocks)
         return value
 
-    def _get_blocks_by_filename(self, file_name, block_map):
+    @staticmethod
+    def _get_blocks_by_filename(file_name, block_map):
         fp = open(file_name, 'rb')
         buf = fp.read()
         blocks = [buf[offset: offset + size] for offset, size in block_map]

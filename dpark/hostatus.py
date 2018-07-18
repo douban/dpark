@@ -113,7 +113,8 @@ class TaskHostManager:
             return host_offers[self._random_weighted_choice(fail_hosts)]
         return None, None
 
-    def _random_weighted_choice(self, w_list):
+    @staticmethod
+    def _random_weighted_choice(w_list):
         total = sum(w for h, w in w_list)
         chosen_w = random.uniform(0, total)
         cur_w = 0

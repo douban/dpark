@@ -71,7 +71,8 @@ class FileInfo:
     def is_symlink(self):
         return self.ftype == TYPE_SYMLINK
 
-    def _get_ftype(self, ftype):
+    @staticmethod
+    def _get_ftype(ftype):
         ftype_str_map = {1: TYPE_FILE, 2: TYPE_DIRECTORY, 3: TYPE_SYMLINK,
                          4: TYPE_FIFO, 5: TYPE_BLOCKDEV, 6: TYPE_CHARDEV,
                          7: TYPE_SOCKET, 8: TYPE_TRASH, 9: TYPE_SUSTAINED}

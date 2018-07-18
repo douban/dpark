@@ -219,7 +219,8 @@ class BucketDumper(object):
     def get_size(self):
         return sum(self.sizes)
 
-    def _mk_tmp(self, s, seq=None):
+    @staticmethod
+    def _mk_tmp(s, seq=None):
         if seq is not None:
             return "%s.tmp.%d" % (s, seq)
         else:
