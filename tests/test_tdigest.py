@@ -6,7 +6,6 @@ from functools import reduce
 from flaky import flaky
 from dpark.utils.tdigest import TDigest
 
-
 if sys.version_info.major < 3:
     range = xrange
 
@@ -186,6 +185,7 @@ def test_narrow_normal():
         digest, data, [0.001, 0.01, 0.1, 0.5, 0.9, 0.99, 0.999], 100
     )
 
+
 @flaky
 def test_repeated_values():
     digest = TDigest()
@@ -254,6 +254,7 @@ def test_singleton_in_a_crowd():
     assert digest.quantile(0.9) == 10.0
     assert digest.quantile(0.99) == 10.0
     assert digest.quantile(1) == 20.0
+
 
 @flaky
 def test_merge():

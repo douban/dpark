@@ -31,7 +31,7 @@ def pack(cmd, *args):
         elif isinstance(a, bytes):
             msg.append(a)
         else:
-            raise TypeError(str(type(a))+str(a))
+            raise TypeError(str(type(a)) + str(a))
     header = struct.pack("!II", cmd, sum(len(i) for i in msg))
     return header + b''.join(msg)
 
@@ -100,7 +100,7 @@ def _unpack_to_file_info(inode, attrs, name):
 def read_chunk(host, port, chunkid, version, size, offset=0):
     if offset + size > CHUNKSIZE:
         raise ValueError("size too large %s > %s" %
-                         (size, CHUNKSIZE-offset))
+                         (size, CHUNKSIZE - offset))
 
     conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     conn.settimeout(10)
@@ -118,7 +118,7 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
         def recv(n):
             d = conn.recv(n)
             while len(d) < n:
-                nd = conn.recv(n-len(d))
+                nd = conn.recv(n - len(d))
                 if not nd:
                     raise IOError("not enough data")
                 d += nd
@@ -137,14 +137,14 @@ def read_chunk(host, port, chunkid, version, size, offset=0):
                 return
 
             elif cmd == CSTOCL_READ_DATA:
-                if l < 20 :
+                if l < 20:
                     raise Exception("readblock; READ_DATA incorrect message size")
                 cid, bid, boff, bsize, crc = unpack("QHHII", recv(20))
                 if cid != chunkid:
                     raise Exception("readblock; READ_STATUS incorrect chunkid")
                 if l != 20 + bsize:
                     raise Exception("readblock; READ_DATA incorrect message size ")
-                if bsize == 0 : # FIXME
+                if bsize == 0:  # FIXME
                     raise Exception("readblock; empty block")
                 if bid != offset >> 16:
                     raise Exception("readblock; READ_DATA incorrect block number")

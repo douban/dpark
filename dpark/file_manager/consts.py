@@ -1,22 +1,22 @@
-CHUNKSIZE = 1<<26
+CHUNKSIZE = 1 << 26
 
-GETDIR_FLAG_WITHATTR   = 0x01
+GETDIR_FLAG_WITHATTR = 0x01
 GETDIR_FLAG_ADDTOCACHE = 0x02
 
-#type for readdir command
-TYPE_FILE      = 'f'
-TYPE_SYMLINK   = 'l'
+# type for readdir command
+TYPE_FILE = 'f'
+TYPE_SYMLINK = 'l'
 TYPE_DIRECTORY = 'd'
-TYPE_FIFO      = 'q'
-TYPE_BLOCKDEV  = 'b'
-TYPE_CHARDEV   = 'c'
-TYPE_SOCKET    = 's'
-TYPE_TRASH     = 't'
-TYPE_SUSTAINED  = 'r'
-TYPE_UNKNOWN   = '?'
+TYPE_FIFO = 'q'
+TYPE_BLOCKDEV = 'b'
+TYPE_CHARDEV = 'c'
+TYPE_SOCKET = 's'
+TYPE_TRASH = 't'
+TYPE_SUSTAINED = 'r'
+TYPE_UNKNOWN = '?'
 
-ERROR_MAX            = 38
-ERROR_LOCKED         = 11
+ERROR_MAX = 38
+ERROR_LOCKED = 11
 
 # CHUNKSERVER <-> CLIENT/CHUNKSERVER
 CLTOCS_READ = 200
@@ -94,11 +94,13 @@ errtab = [
     "Unknown MFS error",
 ]
 
+
 def strerror(code):
     if code > ERROR_MAX:
         code = ERROR_MAX
     return errtab[code]
 
-S_IFDIR  = 0o040000 # directory */
-S_IFREG  = 0o100000 # regular */
-S_IFLNK  = 0o120000 # symbolic link */
+
+S_IFDIR = 0o040000  # directory */
+S_IFREG = 0o100000  # regular */
+S_IFLNK = 0o120000  # symbolic link */

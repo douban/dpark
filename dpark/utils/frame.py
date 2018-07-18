@@ -13,8 +13,8 @@ def _get_user_call_site():
     for i in range(1, len(stack)):
         callee_path = stack[i][STACK_FILE_NAME]
         if src_dir == os.path.dirname(os.path.abspath(callee_path)):
-            caller_path = stack[i-1][STACK_FILE_NAME]
-            caller_lineno = stack[i-1][STACK_LINE_NUM]
+            caller_path = stack[i - 1][STACK_FILE_NAME]
+            caller_lineno = stack[i - 1][STACK_LINE_NUM]
             dpark_func_name = stack[i][STACK_FUNC_NAME]
             user_call_site = '%s:%d ' % (caller_path, caller_lineno)
             return dpark_func_name, user_call_site

@@ -53,10 +53,10 @@ class ProxyConn(object):
                 pass
             else:
                 if stb.st_ino in (0x7FFFFFFF, 0x7FFFFFFE) and \
-                                stb.st_nlink == 1 and \
-                                stb.st_uid == 0 and \
-                                stb.st_gid == 0 and \
-                                stb.st_size in (10, 14):
+                        stb.st_nlink == 1 and \
+                        stb.st_uid == 0 and \
+                        stb.st_gid == 0 and \
+                        stb.st_size in (10, 14):
                     sz = stb.st_size
                     with open(mp, 'rb', 0) as f:
                         proxyinfo = f.read(sz)
@@ -207,7 +207,7 @@ class ProxyConn(object):
                 raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
 
             if self.version >= (3, 0, 10):
-                assert (n - 21) % 14 == 0 , n
+                assert (n - 21) % 14 == 0, n
                 protocolid, length, id, version = unpack('BQQI', ans)
                 return Chunk(id, length, version, ans[21:], ele_width=14)
             elif self.version >= (1, 7, 32):
@@ -218,4 +218,3 @@ class ProxyConn(object):
                 assert (n - 20) % 6 == 0, n
                 length, id, version = unpack("QQI", ans)
                 return Chunk(id, length, version, ans[20:])
-

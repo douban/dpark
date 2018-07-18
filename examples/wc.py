@@ -13,7 +13,7 @@ def fm(x):
 
 
 (dc.textFile(infile)
-   .flatMap(fm)
-   .reduceByKey(lambda x, y: x + y, numSplits=6)
-   .map(lambda x: " ".join(list(map(str, x))))
-   .saveAsTextFile(outfile, overwrite=False))
+    .flatMap(fm)
+    .reduceByKey(lambda x, y: x + y, numSplits=6)
+    .map(lambda x: " ".join(list(map(str, x))))
+    .saveAsTextFile(outfile, overwrite=False))

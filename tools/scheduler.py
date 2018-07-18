@@ -15,6 +15,7 @@ import zmq
 import six
 from six.moves import range
 from six.moves import zip
+
 ctx = zmq.Context()
 
 from addict import Dict
@@ -35,11 +36,11 @@ class Task:
         self.state = -1
         self.state_time = 0
 
+
 REFUSE_FILTER = Dict()
 REFUSE_FILTER.refuse_seconds = 10 * 60  # 10 mins
 EXECUTOR_CPUS = 0.01
 EXECUTOR_MEMORY = 64  # cache
-
 
 EXIT_NOMAL = 0
 EXIT_TASKFAIL = 1
@@ -50,11 +51,11 @@ EXIT_EXCEPTION = 5
 
 
 def safe(f):
-
     def _(self, *a, **kw):
         with self.lock:
             r = f(self, *a, **kw)
         return r
+
     return _
 
 
@@ -366,8 +367,8 @@ class SubmitScheduler(BaseScheduler):
             tasks = []
             while (self.total_tasks and cpus >= self.cpus + EXECUTOR_CPUS and
                    mem >= self.mem + EXECUTOR_MEMORY and gpus >= self.gpus and (
-                       tpn == 0 or tpn > 0 and
-                       len(self.agentTasks.get(sid, set())) < tpn
+                           tpn == 0 or tpn > 0 and
+                           len(self.agentTasks.get(sid, set())) < tpn
                    )):
                 logger.debug('Accepting slot on agent %s (%s)',
                              offer.agent_id.value, offer.hostname)
@@ -650,7 +651,6 @@ class MPIScheduler(BaseScheduler):
             gpu.type = 'SCALAR'
             gpu.scalar.value = self.gpus * k
 
-
         return task
 
     def start_mpi(self):
@@ -690,7 +690,7 @@ class MPIScheduler(BaseScheduler):
                         return MPI_MPICH_OLD
                     elif b' manual ' in line:
                         return MPI_MPICH
-                elif  b'Open MPI' in line:
+                elif b'Open MPI' in line:
                     return MPI_OPENMPI
 
             else:
@@ -718,19 +718,18 @@ class MPIScheduler(BaseScheduler):
             postfix = b'HYDRA_LAUNCH_END\n'
             cmd = ['mpirun', '-prepend-rank', '-launcher', 'manual',
                    '-rmk', 'user', '-hosts', hosts, '-np', str(tasks)] \
-                   + command
+                  + command
         elif mpi_impl == MPI_OPENMPI:
             # OpenMPI
             hosts = ','.join('__DUMMY__%s:%d' % (i, slots)
                              for i, (hostname, slots) in enumerate(items))
             prefix = b'__DUMMY__'
             postfix = None
-            cmd  = ['mpirun', '-tag-output', '-mca', 'plm_rsh_agent', 'echo',
-                    '-host', hosts, '-np', str(tasks)] + command
+            cmd = ['mpirun', '-tag-output', '-mca', 'plm_rsh_agent', 'echo',
+                   '-host', hosts, '-np', str(tasks)] + command
 
         else:
             assert False
-
 
         self.p = p = subprocess.Popen(cmd, bufsize=0, stdout=subprocess.PIPE)
         agents = []
@@ -762,6 +761,7 @@ class MPIScheduler(BaseScheduler):
                     line = line.decode('utf-8')
 
                 sys.stdout.write(line)
+
         self.mpiout_t = t = threading.Thread(target=output,
                                              args=[p.stdout],
                                              name="collect_mpirun_out")
@@ -854,8 +854,8 @@ if __name__ == '__main__':
     logging.basicConfig(
         format='[drun] %(threadName)s %(asctime)-15s %(message)s',
         level=options.quiet and logging.ERROR
-        or options.verbose and logging.DEBUG
-        or logging.WARNING
+              or options.verbose and logging.DEBUG
+              or logging.WARNING
     )
 
     if options.mpi:
@@ -871,9 +871,11 @@ if __name__ == '__main__':
         sched, sched.framework, options.master, use_addict=True
     )
 
+
     def handler(signm, frame):
         logger.warning('got signal %d, exit now', signm)
         sched.stop(EXIT_SIGNAL)
+
 
     signal.signal(signal.SIGTERM, handler)
     signal.signal(signal.SIGHUP, handler)
@@ -890,6 +892,7 @@ if __name__ == '__main__':
         sched.stop(EXIT_KEYBORAD)
     except Exception as e:
         import traceback
+
         logger.warning('catch unexpected Exception, exit now. %s',
                        traceback.format_exc())
         sched.stop(EXIT_EXCEPTION)

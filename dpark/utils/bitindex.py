@@ -11,8 +11,9 @@ BYTE_SHIFT = 3
 BYTE_SIZE = 1 << BYTE_SHIFT
 BYTE_MASK = BYTE_SIZE - 1
 
-_table = [(), (0,), (1,), (0,1), (2,), (0,2), (1,2), (0,1,2), (3,),
-          (0,3), (1,3), (0,1,3), (2,3), (0,2,3), (1,2,3), (0,1,2,3)]
+_table = [(), (0,), (1,), (0, 1), (2,), (0, 2), (1, 2), (0, 1, 2), (3,),
+          (0, 3), (1, 3), (0, 1, 3), (2, 3), (0, 2, 3), (1, 2, 3), (0, 1, 2, 3)]
+
 
 class BitIndex(object):
     def __init__(self):
@@ -56,7 +57,7 @@ class BitIndex(object):
             for x in _table[byte >> 4]:
                 yield i * BYTE_SIZE + 4 + x
 
-    def set(self, pos, value = True):
+    def set(self, pos, value=True):
         if pos < 0:
             raise ValueError('pos must great or equal zero!')
 
@@ -72,11 +73,11 @@ class BitIndex(object):
 
         self.size = max(self.size, pos + 1)
 
-    def sets(self, positions, value = True):
+    def sets(self, positions, value=True):
         for pos in positions:
             self.set(pos, value)
 
-    def append(self, value = True):
+    def append(self, value=True):
         self.set(self.size, value)
 
     def appends(self, values):
@@ -108,7 +109,7 @@ class BitIndex(object):
 
     def xor(self, other):
         return self._bitwise(izip_longest(self.array, other.array, fillvalue=0),
-                        lambda x, y: x ^ y)
+                             lambda x, y: x ^ y)
 
     def excepts(self, *other):
         return self._bitwise(
@@ -117,6 +118,7 @@ class BitIndex(object):
 
     def positions(self):
         return self._bitwise(self.array, None)
+
 
 class Bloomfilter(object):
     def __init__(self, m, k):
@@ -133,17 +135,18 @@ class Bloomfilter(object):
     m = ceil((n * log(p)) / log(1.0 / (pow(2.0, log(2.0)))))
     k = round(log(2.0) * m / n)
     """
+
     @staticmethod
     def calculate_parameters(n, p):
         m = int(math.ceil(n * math.log(p) * -2.0813689810056073))
         k = int(round(0.6931471805599453 * m / n))
         return m, k
 
-
     '''
     we're using only two hash functions with different settings, as described
     by Kirsch & Mitzenmacher: https://www.eecs.harvard.edu/~michaelm/postscripts/tr-02-05.pdf
     '''
+
     def _get_offsets(self, obj):
         hash_1 = portable_hash(obj)
         hash_2 = portable_hash(marshal.dumps(obj))
@@ -164,4 +167,3 @@ class Bloomfilter(object):
 
     def __contains__(self, obj):
         return next(self._match([obj]))
-

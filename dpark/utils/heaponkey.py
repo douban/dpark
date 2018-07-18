@@ -5,7 +5,6 @@ import sys
 import operator
 from six.moves import range
 
-
 if sys.version_info[0] < 3:
     def next_func(it):
         return it.next
@@ -28,11 +27,11 @@ class HeapOnKey(object):
         def _ge0(x, y):
             return not (x < y)
 
-        def _lt(x,y):
+        def _lt(x, y):
             return key(x) < key(y)
 
         def _ge(x, y):
-            return not(key(x) < key(y))
+            return not (key(x) < key(y))
 
         if key is None:
             self.cmp_lt = operator.lt if min_heap else _ge0
@@ -69,7 +68,7 @@ class HeapOnKey(object):
 
     def heapify(self, heap):
         n = len(heap)
-        for i in range(n//2 - 1, -1, -1):
+        for i in range(n // 2 - 1, -1, -1):
             self._sift_up(heap, i)
 
     def _sift_down(self, heap, start_pos, pos):
@@ -100,7 +99,7 @@ class HeapOnKey(object):
             child_pos = 2 * pos + 1
 
     def replace(self, heap, item):
-        returnitem = heap[0]    # raises appropriate IndexError if heap is empty
+        returnitem = heap[0]  # raises appropriate IndexError if heap is empty
         heap[0] = item
         self._sift_up(heap, 0)
         return returnitem
@@ -136,10 +135,10 @@ class HeapOnKey(object):
                 while 1:
                     v, _, _next = s = h[0]
                     yield v
-                    s[0] = _next()               # raises StopIteration when exhausted
-                    _heapreplace(h, s)          # restore heap condition
+                    s[0] = _next()  # raises StopIteration when exhausted
+                    _heapreplace(h, s)  # restore heap condition
             except _StopIteration:
-                _heappop(h)                     # remove empty iterator
+                _heappop(h)  # remove empty iterator
         if h:
             # fast case when only a single iterator remains
             v, _, _next = h[0]
@@ -206,6 +205,7 @@ def test():
         global call_cnt
         call_cnt += 1
         return x
+
     h = HeapOnKey(key=cnt_key)
     import time
     start = time.time()

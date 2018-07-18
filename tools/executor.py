@@ -7,6 +7,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import sys
 import os.path
+
 P = 'site-packages'
 apath = os.path.abspath(__file__)
 if P in apath:
@@ -140,14 +141,14 @@ def launch_task(self, driver, task):
 
                 if rss > mem * 1.5:
                     print("task %s used too much memory: %dMB > %dMB * 1.5, kill it. " \
-                        "use -m argument to request more memory." % (
-                            tid, rss, mem), file=werr)
+                          "use -m argument to request more memory." % (
+                              tid, rss, mem), file=werr)
                     p.kill()
 
                 elif rss > mem:
                     print("task %s used too much memory: %dMB > %dMB, " \
-                        "use -m to request for more memory" % (
-                            tid, rss, mem), file=werr)
+                          "use -m to request for more memory" % (
+                              tid, rss, mem), file=werr)
 
             except Exception:
                 pass
@@ -203,6 +204,7 @@ class MyExecutor(Executor):
                 pass
         for t in self.ts.values():
             t.join()
+
 
 if __name__ == "__main__":
     if os.getuid() == 0:

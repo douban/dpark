@@ -34,9 +34,7 @@ from dpark.utils.heaponkey import HeapOnKey
 from dpark.dependency import AggregatorBase, GroupByAggregator
 from dpark.utils.nested_groupby import GroupByNestedIter, cogroup_no_dup
 
-
 logger = get_logger(__name__)
-
 
 # readable
 F_MAPPING = {
@@ -61,7 +59,7 @@ def unpack_header(head):
     flag = head[:1]
     is_marshal, is_sorted = F_MAPPING_R[flag]
     length, = struct.unpack("I", head[1:5])
-    return length,is_marshal, is_sorted
+    return length, is_marshal, is_sorted
 
 
 class LocalFileShuffle:
@@ -72,7 +70,6 @@ class LocalFileShuffle:
         d = random.choice(dirs[1:]) if dirs[1:] else dirs[0]
         mkdir_p(d)
         return os.path.join(d, 'shuffle-%s.tmp' % uuid.uuid4().hex)
-
 
     @classmethod
     def getOutputFile(cls, shuffle_id, input_id, output_id, datasize=0):
@@ -112,7 +109,6 @@ class LocalFileShuffle:
         return env.get('SERVER_URI')
 
 
-
 def write_buf(stream, buf, is_marshal):
     buf = compress(buf)
     size = len(buf)
@@ -142,10 +138,10 @@ class AutoBatchedSerializer(object):
             if not head:
                 return
             length, is_marshal, is_sorted = unpack_header(head)
-            assert(is_sorted)
+            assert (is_sorted)
             buf = stream.read(length)
             if len(buf) < length:
-                raise IOError( "length not match: expected %d, but got %d" % (length, len(buf)))
+                raise IOError("length not match: expected %d, but got %d" % (length, len(buf)))
 
             buf = decompress(buf)
             AutoBatchedSerializer.size_loaded += len(buf)
@@ -240,7 +236,6 @@ def get_serializer(rddconf):
 
 
 def fetch_with_retry(f):
-
     MAX_RETRY = 3
     RETRY_INTERVALS = [1, 10]
 
@@ -248,19 +243,21 @@ def fetch_with_retry(f):
     def _(self):
         self.num_batch_done = 0
         while True:
-           try:
-               for items in islice(f(self), self.num_batch_done, None):
+            try:
+                for items in islice(f(self), self.num_batch_done, None):
                     self.num_batch_done += 1
                     yield items
-               if self.num_retry > 0:
-                    logger.info("Fetch retry %d success for url %s, num_batch %d ", self.num_retry, self.url, self.num_batch_done)
-               break
-           except Exception as e:
+                if self.num_retry > 0:
+                    logger.info("Fetch retry %d success for url %s, num_batch %d ", self.num_retry, self.url,
+                                self.num_batch_done)
+                break
+            except Exception as e:
                 self.num_retry += 1
-                msg = "Fetch failed for url %s, tried %d/%d times. Exception: %s. " % (self.url, self.num_retry, MAX_RETRY, e)
+                msg = "Fetch failed for url %s, tried %d/%d times. Exception: %s. " % (
+                self.url, self.num_retry, MAX_RETRY, e)
                 fail_fast = False
                 emsg = str(e)
-                if not any([emsg.find(s) >= 0 for s in ["Connection refused",]]):
+                if not any([emsg.find(s) >= 0 for s in ["Connection refused", ]]):
                     # ["many open file", "404"]
                     fail_fast = True
                     msg += "no need to retry."
@@ -270,14 +267,14 @@ def fetch_with_retry(f):
                     raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
                 else:
                     sleep_time = RETRY_INTERVALS[self.num_retry - 1]
-                    msg += "sleep %d secs" % (sleep_time, )
+                    msg += "sleep %d secs" % (sleep_time,)
                     logger.debug(msg)
                     time.sleep(sleep_time)
+
     return _
 
 
 class RemoteFile(object):
-
     num_open = 0
 
     def __init__(self, uri, shuffle_id, map_id, reduce_id):
@@ -307,7 +304,7 @@ class RemoteFile(object):
     @fetch_with_retry
     def unsorted_batches(self):
         f = None
-        #TEST_RETRY = True
+        # TEST_RETRY = True
         try:
             f, exp_size = self.open()
             total_size = 0
@@ -317,7 +314,7 @@ class RemoteFile(object):
                 if len(head) == 0:
                     break
                 length, is_marshal, is_sorted = unpack_header(head)
-                assert(not is_sorted)
+                assert (not is_sorted)
                 total_size += length + 5
                 d = f.read(length)
                 if length != len(d):
@@ -335,7 +332,7 @@ class RemoteFile(object):
                         items = pickle.loads(d)
                 yield items
 
-                #if TEST_RETRY and self.num_retry == 0:
+                # if TEST_RETRY and self.num_retry == 0:
                 #    raise Exception("test_retry")
 
             if total_size != exp_size:
@@ -548,7 +545,6 @@ class SortedItemsOnDisk(object):
             pass
 
 
-
 class Merger(object):
 
     def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
@@ -718,6 +714,7 @@ class CoGroupDiskHashMerger(DiskHashMerger):
             for i in range(self.size):
                 x[i].extend(y[i])
             return x
+
         return _merge
 
     def _merge(self, items, map_id, dep_id, use_disk, meminfo, mem_limit):
@@ -914,6 +911,7 @@ def test():
         k, v = next(it)
         assert k == 'key'
         assert v == 'value'
+
     fetcher.fetch(1, 0, func)
 
     tracker = MapOutputTracker()
@@ -924,4 +922,5 @@ def test():
 
 if __name__ == '__main__':
     from dpark.shuffle import test
+
     test()

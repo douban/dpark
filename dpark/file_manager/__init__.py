@@ -31,6 +31,7 @@ class FileManager(object):
         fs = self._get_fs(path)
         return fs.walk(path, followlinks=followlinks)
 
+
 file_manager = FileManager()
 
 

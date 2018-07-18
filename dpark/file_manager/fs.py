@@ -10,6 +10,7 @@ from .mfs_proxy import ProxyConn
 from dpark.utils.log import get_logger
 import six
 from six.moves import range
+
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -358,7 +359,7 @@ class MooseFile(ReadableFile):
                 try:
                     for block in read_chunk(host, port, chunk.id,
                                             chunk.version,
-                                            length-offset,
+                                            length - offset,
                                             offset):
                         yield block
                         offset += len(block)

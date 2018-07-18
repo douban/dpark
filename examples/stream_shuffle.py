@@ -9,6 +9,7 @@ import sys
 import time
 import unittest
 import logging
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark import DparkContext
@@ -24,6 +25,7 @@ dc = DparkContext('mesos')
 RC = dpark.conf.rddconf
 M = 1024 * 1024
 
+
 def rss_func(p):
     if hasattr(p, "memory_info"):
         mem_info = getattr(p, "memory_info")
@@ -31,7 +33,7 @@ def rss_func(p):
         mem_info = getattr(p, 'get_memory_info')
 
     def _():
-        return mem_info().rss/M
+        return mem_info().rss / M
 
     return _
 
@@ -73,9 +75,9 @@ class BenchShuffle(object):
         exp_num_key = self.exp_num_key
         print_mem_interval = exp_num_key // 100
 
-        M = 1024*1024
+        M = 1024 * 1024
 
-        #@profile()
+        # @profile()
         def _count_time(it):
             st = time.time()
             nk = 0
@@ -89,25 +91,25 @@ class BenchShuffle(object):
             for x in it:
                 k, v = x
                 if count_value:
-                   if multi_value:
-                       for vv in v:
-                           for _ in vv:
-                               nv += 1
-                   else:
-                       for _ in v:
-                           nv += 1
+                    if multi_value:
+                        for vv in v:
+                            for _ in vv:
+                                nv += 1
+                    else:
+                        for _ in v:
+                            nv += 1
                 nk += 1
 
                 if print_mem_incr and nk % print_mem_interval == 0:
                     np += 1
                     print("%d%%: num=%d, key=%s, %s" % (np, nk, k, get_rss()))
 
-            mm = max_rss()/M
+            mm = max_rss() / M
 
             m0 = get_rss()
             gc.collect()
             m1 = get_rss()
-            mp = AutoBatchedSerializer.size_loaded/M
+            mp = AutoBatchedSerializer.size_loaded / M
             print("Mem(MB) before gc %d, after gc %d, max %d, size_loaed %d" % (m0, m1, mm, mp))
 
             ed = time.time()
@@ -147,7 +149,7 @@ class BenchShuffle(object):
 
     def test_join(self, rddconf, count_value=True, dup_key=True, taskMemory=None):
         rdd1 = self.gen_data(dup_key=dup_key)
-        rdd2= BenchShuffle(self.num_key, 2, 2).gen_data(dup_key=dup_key)
+        rdd2 = BenchShuffle(self.num_key, 2, 2).gen_data(dup_key=dup_key)
         rdd = rdd1.join(rdd2, numSplits=self.num_reduce, rddconf=rddconf, taskMemory=taskMemory)
         self.exp_num_key = self.exp_num_value = self.num_map * self.num_key * self.num_value_per_key * 2 * 2
         return self.count(rdd)
@@ -163,54 +165,54 @@ class TestShuffle(unittest.TestCase):
 
     def test_max_open_file(self):
         n = dpark.conf.MAX_OPEN_FILE
-        for num_map in [n, n+1]:
+        for num_map in [n, n + 1]:
             # should see waring 'fall back to SHUFFLE_DISK' for n+1
             rddconf = dpark.conf.rddconf(sort_merge=True)
             BenchShuffle(10, 10, num_map).test_groupbykey(rddconf=rddconf, taskMemory=50)
 
     def test_oom_many_key(self):
         params = [
-            (RC(), 2500), # 30 sec
-            (RC(disk_merge=True), 2500), # 30 sec
-            (RC(disk_merge=True, dump_mem_ratio=0.6), 1000), # 145 sec
-            (RC(sort_merge=True), 50), # 43 sec
-            ]
+            (RC(), 2500),  # 30 sec
+            (RC(disk_merge=True), 2500),  # 30 sec
+            (RC(disk_merge=True, dump_mem_ratio=0.6), 1000),  # 145 sec
+            (RC(sort_merge=True), 50),  # 43 sec
+        ]
         for rc, m in params:
-            BenchShuffle(1024*128, 2, 100).test_reducebykey(rddconf=rc, dup_key=False, taskMemory=m)
+            BenchShuffle(1024 * 128, 2, 100).test_reducebykey(rddconf=rc, dup_key=False, taskMemory=m)
 
     def test_oom_many_value(self):
         params = [
-            (RC(), 4000), # 16 sec
-            (RC(disk_merge=True, dump_mem_ratio=0.7), 1000), # 17 sec
-            (RC(sort_merge=True), 200), # 16 sec
-            (RC(sort_merge=True, iter_group=True), 50), # 16 sec
-            ]
+            (RC(), 4000),  # 16 sec
+            (RC(disk_merge=True, dump_mem_ratio=0.7), 1000),  # 17 sec
+            (RC(sort_merge=True), 200),  # 16 sec
+            (RC(sort_merge=True, iter_group=True), 50),  # 16 sec
+        ]
         for rc, m in params:
             BenchShuffle(1024, 1024, 100).test_groupbykey(rddconf=rc, taskMemory=m)
 
     def test_oom_onebigkey(self):
         params = [
-            (RC(), 3500), # 24 sec
-            (RC(sort_merge=True, iter_group=True), 50), # 15 sec
-            ]
+            (RC(), 3500),  # 24 sec
+            (RC(sort_merge=True, iter_group=True), 50),  # 15 sec
+        ]
         for rc, m in params:
             BenchShuffle(1, 1024 * 1024, 100).test_groupbykey(rddconf=rc, taskMemory=m)
 
     def test_cogroup(self):
         params = [
-            (RC(), 7000), # 40 sec
-            (RC(sort_merge=True, iter_group=True), 50), # 45 sec
-            ]
+            (RC(), 7000),  # 40 sec
+            (RC(sort_merge=True, iter_group=True), 50),  # 45 sec
+        ]
         for rc, m in params:
-            BenchShuffle(1, 1024*1024, 100).test_cogroup(rddconf=rc, taskMemory=m)
+            BenchShuffle(1, 1024 * 1024, 100).test_cogroup(rddconf=rc, taskMemory=m)
 
     def test_join(self):
         params = [
-            (RC(sort_merge=True, iter_group=True), 50), # 208 sec
-            (RC(), 3500), # 115 sec
-            ]
+            (RC(sort_merge=True, iter_group=True), 50),  # 208 sec
+            (RC(), 3500),  # 115 sec
+        ]
         for rc, m in params:
-            BenchShuffle(1, 1024*1024, 100).test_join(rddconf=rc, taskMemory=m)
+            BenchShuffle(1, 1024 * 1024, 100).test_join(rddconf=rc, taskMemory=m)
 
     def test_disk_merge(self):
 
@@ -235,8 +237,8 @@ class TestShuffle(unittest.TestCase):
 
             rdd1 = rdd0.groupByKey(numSplits=2, rddconf=RC(disk_merge=True, dump_mem_ratio=0.6)).mapPartition(mp2)
             res = rdd1.collect()
-            assert(sum(res) == num_key * values_per_key * 2)
-            st =  dc.scheduler.get_last_stats()
+            assert (sum(res) == num_key * values_per_key * 2)
+            st = dc.scheduler.get_last_stats()
             from pprint import pprint
             pprint(st)
 
@@ -245,6 +247,7 @@ class TestShuffle(unittest.TestCase):
 
 if __name__ == "__main__":
     import dpark.conf
+
     dpark.conf.MULTI_SEGMENT_DUMP = True
     rc = dpark.conf.default_rddconf
     rc.disk_merge = False

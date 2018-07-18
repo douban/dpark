@@ -8,7 +8,6 @@ LOG_FORMAT = '{GREEN}%(asctime)-15s{RESET}' \
              ' [%(levelname)s] [%(threadName)s] [%(name)-9s:%(lineno)d] %(message)s'
 DATE_FORMAT = '%Y-%m-%d %H:%M:%S'
 
-
 RESET = "\033[0m"
 BOLD = "\033[1m"
 BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE = [
@@ -36,10 +35,10 @@ COLORS = {
     'ERROR': RED
 }
 
-
 FORMAT_PATTERN = re.compile('|'.join('{%s}' % k for k in PALLETE))
 
-def formatter_message(message, use_color = True):
+
+def formatter_message(message, use_color=True):
     if use_color:
         return FORMAT_PATTERN.sub(
             lambda m: PALLETE[m.group(0)[1:-1]],
@@ -50,7 +49,7 @@ def formatter_message(message, use_color = True):
 
 
 class ColoredFormatter(logging.Formatter):
-    def __init__(self, fmt=None, datefmt=None, use_color = True):
+    def __init__(self, fmt=None, datefmt=None, use_color=True):
         if fmt:
             fmt = formatter_message(fmt, use_color)
 
@@ -67,11 +66,13 @@ class ColoredFormatter(logging.Formatter):
         record.msg = formatter_message(record.msg, self.use_color)
         return logging.Formatter.format(self, record)
 
+
 USE_UTF8 = getattr(sys.stderr, 'encoding', None) == 'UTF-8'
 
 ASCII_BAR = ('[ ', ' ]', '#', '-', '-\\|/-\\|')
 UNICODE_BAR = (u'[ ', u' ]', u'\u2589', u'-',
-    u'-\u258F\u258E\u258D\u258C\u258B\u258A')
+               u'-\u258F\u258E\u258D\u258C\u258B\u258A')
+
 
 def make_progress_bar(ratio, size=14):
     if USE_UTF8:
@@ -147,13 +148,13 @@ def add_loghub(framework_id):
             ("DPARK", dpark.__file__),
             ("DPARK_MTIME", dpark_mtime),
             ("PYTHONPATH", os.environ.get("PYTHONPATH", ""))
-            ]
+        ]
 
-        log_path = os.path.join(dir_path, framework_id + ".log") 
+        log_path = os.path.join(dir_path, framework_id + ".log")
         try:
             with open(log_path, "a") as f:
                 for i in infos:
-                    f.write("DPARK_{} = {}\n".format(i[0],i[1]))
+                    f.write("DPARK_{} = {}\n".format(i[0], i[1]))
                 f.write("\n")
         except Exception as e:
             logger.exception("fail to write loghub: %s", log_path)
@@ -165,4 +166,3 @@ def add_loghub(framework_id):
         logger.addHandler(file_handler)
     except Exception as e:
         logger.exception("add_loghub fail")
-

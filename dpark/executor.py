@@ -39,12 +39,11 @@ from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
 from dpark.utils.debug import spawn_rconsole
 
-
 logger = get_logger('dpark.executor')
 
 TASK_RESULT_LIMIT = 1024 * 256
 DEFAULT_WEB_PORT = 5055
-MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24 # 1 day
+MAX_EXECUTOR_IDLE_TIME = 60 * 60 * 24  # 1 day
 KILL_TIMEOUT = 0.1  # 0.1 sec, to reply to mesos fast
 TASK_LOST_JOIN_TIMEOUT = 3
 TASK_LOST_DISCARD_TIMEOUT = 60
@@ -158,13 +157,13 @@ def terminate(tid, proc):
     except ProcessLookupError:
         return
     except Exception as e:
-        if proc.join(timeout=KILL_TIMEOUT/2) is None:
+        if proc.join(timeout=KILL_TIMEOUT / 2) is None:
             try:
                 os.kill(proc.pid, signal.SIGKILL)
             except ProcessLookupError:
                 return
             except Exception as e:
-                if proc.join(KILL_TIMEOUT/2) is not None:
+                if proc.join(KILL_TIMEOUT / 2) is not None:
                     logger.exception('%s terminate fail', name)
 
 
@@ -181,6 +180,7 @@ def safe(f):
         with self.lock:
             r = f(self, *a, **kw)
         return r
+
     return _
 
 
@@ -320,7 +320,6 @@ class MyExecutor(Executor):
         self.stdout_redirect = None
         self.stderr_redirect = None
 
-
     def check_alive(self, driver):
         try:
             import psutil
@@ -332,7 +331,7 @@ class MyExecutor(Executor):
         idle_since = time.time()
 
         _DELAY, _KILLED, _LOST, _DISCARD = list(range(4))
-        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM,  ERROR_TASK_OOM]
+        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM, ERROR_TASK_OOM]
 
         while True:
             with self.lock:
@@ -498,7 +497,7 @@ class MyExecutor(Executor):
         logger.debug('launch task %s', task.task_id.value)
 
         def worker(name, q, task_id_value, task_data):
-            task_id_str = "task %s"  % (task_id_value, )
+            task_id_str = "task %s" % (task_id_value,)
             threading.current_thread().name = task_id_str
             setproctitle(name)
             env.start()
@@ -563,6 +562,7 @@ def run():
     executor = MyExecutor()
     driver = MesosExecutorDriver(executor, use_addict=True)
     driver.run()
+
 
 if __name__ == '__main__':
     fmt = '%(asctime)-15s [%(levelname)s] [%(threadName)s] [%(name)-9s] %(message)s'

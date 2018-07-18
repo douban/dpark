@@ -12,36 +12,46 @@ from contextlib import contextmanager
 from zlib import compress as _compress
 from dpark.utils.crc32c import crc32c
 
-
 try:
     from dpark.portable_hash import portable_hash as _hash
 except ImportError:
     import pyximport
+
     pyximport.install(inplace=True)
     from dpark.portable_hash import portable_hash as _hash
 
 try:
     import pwd
+
+
     def getuser():
         return pwd.getpwuid(os.getuid()).pw_name
 except:
     import getpass
+
+
     def getuser():
         return getpass.getuser()
 
 COMPRESS = 'zlib'
+
+
 def compress(s):
     return _compress(s, 1)
 
+
 try:
     from dpark.utils.lz4wrapper import compress, decompress
+
     COMPRESS = 'lz4'
 except ImportError:
     try:
         from snappy import compress, decompress
+
         COMPRESS = 'snappy'
     except ImportError:
         pass
+
 
 def spawn(target, *args, **kw):
     t = threading.Thread(target=target, name=target.__name__, args=args, kwargs=kw)
@@ -49,16 +59,19 @@ def spawn(target, *args, **kw):
     t.start()
     return t
 
+
 # hash(None) is id(None), different from machines
 # http://effbot.org/zone/python-hash.htm
 def portable_hash(value):
     return _hash(value)
+
 
 # similar to itertools.chain.from_iterable, but faster in PyPy
 def chain(it):
     for v in it:
         for vv in v:
             yield vv
+
 
 def izip(*its):
     its = [iter(it) for it in its]
@@ -67,6 +80,7 @@ def izip(*its):
             yield tuple([next(it) for it in its])
     except StopIteration:
         pass
+
 
 def mkdir_p(path):
     "like `mkdir -p`"
@@ -77,6 +91,7 @@ def mkdir_p(path):
             pass
         else:
             raise
+
 
 def memory_str_to_mb(str):
     lower = str.lower()
@@ -92,7 +107,10 @@ def memory_str_to_mb(str):
     }
     return number * scale_factors[unit]
 
+
 MIN_REMAIN_RECURSION_LIMIT = 80
+
+
 def recurion_limit_breaker(f):
     def _(*a, **kw):
         try:
@@ -104,6 +122,7 @@ def recurion_limit_breaker(f):
             result = []
             finished = []
             cond = threading.Condition(threading.Lock())
+
             def _run():
                 it = iter(f(*a, **kw))
                 with cond:
@@ -118,7 +137,6 @@ def recurion_limit_breaker(f):
 
                     finished.append(1)
                     cond.notify()
-
 
             t = spawn(_run)
 
@@ -141,8 +159,10 @@ def recurion_limit_breaker(f):
 
     return _
 
+
 class AbortFileReplacement(Exception):
     pass
+
 
 @contextmanager
 def atomic_file(filename, mode='w+b', bufsize=-1):
@@ -155,12 +175,12 @@ def atomic_file(filename, mode='w+b', bufsize=-1):
         try:
             mkdir_p(path)
         except (IOError, OSError):
-            time.sleep(1) # there are dir cache in mfs for 1 sec
+            time.sleep(1)  # there are dir cache in mfs for 1 sec
             mkdir_p(path)
 
         with tempfile.NamedTemporaryFile(
-            mode=mode, suffix=suffix, prefix=prefix,
-            dir=path, delete=False) as f:
+                mode=mode, suffix=suffix, prefix=prefix,
+                dir=path, delete=False) as f:
             tempname = f.name
             yield f
 

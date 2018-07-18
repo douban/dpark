@@ -39,7 +39,7 @@ from six.moves import range
 logger = get_logger(__name__)
 
 EXECUTOR_CPUS = 0.01
-EXECUTOR_MEMORY = 128 # cache
+EXECUTOR_MEMORY = 128  # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
@@ -115,9 +115,9 @@ class Stage:
     def addOutputLoc(self, partition, host):
         self.outputLocs[partition].append(host)
 
-#    def removeOutput(self, partition, host):
-#        prev = self.outputLocs[partition]
-#        self.outputLocs[partition] = [h for h in prev if h != host]
+    #    def removeOutput(self, partition, host):
+    #        prev = self.outputLocs[partition]
+    #        self.outputLocs[partition] = [h for h in prev if h != host]
 
     def removeHost(self, host):
         becameUnavailable = False
@@ -151,6 +151,7 @@ class Stage:
                 roots.append(r)
                 return False
             return True
+
         walk_dependencies(self.rdd, node_func=_)
         # TODO: maybe multi roots, e.g. union().mergeSplits()
         return roots[0]
@@ -188,7 +189,7 @@ class Stage:
 
             if sm > 0:
                 msg += k
-                vs = d['min'], sm/n, d['max']
+                vs = d['min'], sm / n, d['max']
                 vs = tuple(map(int, vs))
                 unit_s = " "
                 if unit == "bytes":
@@ -244,7 +245,7 @@ class CompletionEvent:
         self.stats = stats
 
 
-def walk_dependencies(rdd, edge_func=lambda r,d: True, node_func=lambda r: True):
+def walk_dependencies(rdd, edge_func=lambda r, d: True, node_func=lambda r: True):
     visited = set()
     to_visit = [rdd]
     while to_visit:
@@ -416,8 +417,8 @@ class DAGScheduler(Scheduler):
 
         if (allowLocal and
                 (
-                    not finalStage.parents or
-                    not self.getMissingParentStages(finalStage)
+                        not finalStage.parents or
+                        not self.getMissingParentStages(finalStage)
                 ) and numOutputParts == 1):
             split = finalRdd.splits[outputParts[0]]
             yield func(finalRdd.iterator(split))
@@ -485,7 +486,7 @@ class DAGScheduler(Scheduler):
                     time.sleep(0.1)
                 continue
 
-            if evt is None: # aborted
+            if evt is None:  # aborted
                 for job in list(self.activeJobsQueue):
                     self.jobFinished(job)
 
@@ -505,7 +506,7 @@ class DAGScheduler(Scheduler):
                     numFinished += 1
                     results[task.outputId] = evt.result
                     while lastFinished < numOutputParts and finished[
-                            lastFinished]:
+                        lastFinished]:
                         yield results[lastFinished]
                         results[lastFinished] = None
                         lastFinished += 1
@@ -582,21 +583,21 @@ class DAGScheduler(Scheduler):
 
     def get_stats(self, run_id):
         cmd = '[dpark] ' + \
-            os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
+              os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
         stages = sorted([s.get_stats() for s in self.idToStage.values()],
-                         key= lambda x: x['start_time'])
+                        key=lambda x: x['start_time'])
         run = {'framework': self.frameworkId,
-                   'scheduler': self.id,
-                   "run":run_id,
-                   'call_site': Scope().call_site,
-                   'stages': stages
-                   }
+               'scheduler': self.id,
+               "run": run_id,
+               'call_site': Scope().call_site,
+               'stages': stages
+               }
 
-        ret = { 'script': {
-                    'cmd': cmd,
-                    'env': {'PWD': os.getcwd()}},
-                'run': run}
+        ret = {'script': {
+            'cmd': cmd,
+            'env': {'PWD': os.getcwd()}},
+            'run': run}
         return ret
 
 
@@ -688,7 +689,7 @@ class MultiProcessScheduler(LocalScheduler):
                 start_download_manager()
                 self.pool = multiprocessing.Pool(
                     self.threads or 2,
-                    initializer = initializer
+                    initializer=initializer
                 )
 
             self.pool.apply_async(run_task_in_process,
@@ -707,6 +708,7 @@ def safe(f):
         with self.lock:
             r = f(self, *a, **kw)
         return r
+
     return _
 
 
@@ -789,7 +791,7 @@ class MesosScheduler(DAGScheduler):
 
     def start_driver(self):
         name = '[dpark] ' + \
-            os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
+               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
         if len(name) > 256:
             name = name[:256] + '...'
         framework = Dict()
@@ -957,7 +959,7 @@ class MesosScheduler(DAGScheduler):
             )
         ))
         assert len(info.data) < (50 << 20), \
-                'Info data too large: %s' % (len(info.data),)
+            'Info data too large: %s' % (len(info.data),)
         return info
 
     @safe
@@ -1027,9 +1029,9 @@ class MesosScheduler(DAGScheduler):
                 logger.exception("bad ban() func in dpark.conf")
 
             group = (
-                self.getAttribute(
-                    o.attributes,
-                    'group') or 'None')
+                    self.getAttribute(
+                        o.attributes,
+                        'group') or 'None')
             if (self.group or group.startswith(
                     '_')) and group not in self.group:
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
@@ -1045,9 +1047,9 @@ class MesosScheduler(DAGScheduler):
         gpus = [self.getResource(o.resources, 'gpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem')
                 - (o.agent_id.value not in self.agentTasks
-                    and EXECUTOR_MEMORY or 0)
+                   and EXECUTOR_MEMORY or 0)
                 for o in offers]
-        #logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
+        # logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
         #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.activeJobs))
 
         tasks = {}
@@ -1127,7 +1129,7 @@ class MesosScheduler(DAGScheduler):
                            t, len(task.data))
 
         assert len(task.data) < (50 << 20), \
-                'Task data too large: %s' % (len(task.data),)
+            'Task data too large: %s' % (len(task.data),)
 
         resources = task.resources = []
 

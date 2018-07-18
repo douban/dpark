@@ -1,8 +1,8 @@
-
 from __future__ import absolute_import
 import sys
 import os
 import unittest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dpark.utils.nested_groupby import (
     GroupByNestedIter, list_value, group_by_simple, cogroup_no_dup, list_nested_cogroup
@@ -53,7 +53,7 @@ class TestGroup(unittest.TestCase):
         self._test([(1, []), (1, []), (2, [1])])
         n = 10
         m = 3
-        lists = [(i//m, [i]) for i in range(n * m)]
+        lists = [(i // m, [i]) for i in range(n * m)]
         self._test(lists)
 
 
@@ -73,6 +73,7 @@ class TestCoGroup(unittest.TestCase):
         self.assertEqual(exp, res)
 
         # test empty iter
+
     def test_empty(self):
         lsts = [[(1, [1, 1])], [], [(1, [3, 3])]]
         res = cogroup_no_dup(lsts)
@@ -81,7 +82,6 @@ class TestCoGroup(unittest.TestCase):
         self.assertEqual(exp, res)
 
     def test_nested_cogroup(self):
-
         def _(i):
             v = list(range(i, 10, 3))
             lst = [('k1', v)] * 2 + [('k2', list(v))]
@@ -92,7 +92,7 @@ class TestCoGroup(unittest.TestCase):
         res = list_nested_cogroup(res)
 
         exp = [('k1', tuple([list(range(i, 10, 3)) * 2 for i in range(3)]))] + \
-                [('k2', tuple([list(range(i, 10, 3)) for i in range(3)]))]
+              [('k2', tuple([list(range(i, 10, 3)) for i in range(3)]))]
         self.assertEqual(exp, res)
 
 

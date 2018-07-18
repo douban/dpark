@@ -26,46 +26,57 @@ from six.moves import input
 
 dpark = DparkContext()
 
-########## Combinators ########## 
+
+########## Combinators ##########
 def result(v):
     return lambda tokens: iter([(v, tokens)])
 
+
 def zero():
     return lambda tokens: iter([])
+
 
 def item():
     def _(tokens):
         tokens = iter(tokens)
         yield next(tokens), tokens
+
     return _
+
 
 def bind(p, f):
     return lambda tokens: chain.from_iterable(f(v)(t) for v, t in p(tokens))
 
+
 def seq(p, q):
     return bind(p, lambda x:
-                bind(q, lambda y:
-                     result((x,y))
-                    )
-               )
+    bind(q, lambda y:
+    result((x, y))
+         )
+                )
+
+
 def seqs(*args):
     if not args:
         return zero()
     elif len(args) == 1:
         return bind(args[0], lambda x: result((x,)))
     return bind(args[0], lambda x:
-                bind(seqs(*args[1:]), lambda xs:
-                     result((x,) + xs)
-                    )
-               )
+    bind(seqs(*args[1:]), lambda xs:
+    result((x,) + xs)
+         )
+                )
+
 
 def sat(p):
     return bind(item(), lambda x:
-                result(x) if p(x) else zero()
-               )
+    result(x) if p(x) else zero()
+                )
+
 
 def plus(p, q):
     return lambda tokens: chain.from_iterable([f_k[0](f_k[1]) for f_k in zip((p, q), tee(tokens))])
+
 
 def pluses(*args):
     if not args:
@@ -74,58 +85,70 @@ def pluses(*args):
         return args[0]
     return plus(args[0], pluses(*args[1:]))
 
+
 def many(p):
     return plus(bind(p, lambda x:
-                bind(many(p), lambda xs:
-                     result ((x,) + xs)
-                    )
-               ), result(()))
+    bind(many(p), lambda xs:
+    result((x,) + xs)
+         )
+                     ), result(()))
+
+
 def many1(p):
     return bind(p, lambda x:
-                bind(many(p), lambda xs:
-                     result((x,) + xs)
-                    )
-               )
+    bind(many(p), lambda xs:
+    result((x,) + xs)
+         )
+                )
+
+
 def sepby1(p, sep):
     return bind(p, lambda x:
-                bind(many(
-                    bind(sep, lambda _:
-                         bind(p, lambda y:
-                              result(y)
-                             )
-                        )), lambda xs:
-                    result((x,) + xs)
+    bind(many(
+        bind(sep, lambda _:
+        bind(p, lambda y:
+        result(y)
+             )
+             )), lambda xs:
+    result((x,) + xs)
+    )
                 )
-               )
+
 
 def sepby(p, sep):
     return plus(sepby1(p, sep), result(()))
 
+
 def bracket(p, sep, open_, close_):
     return bind(open_, lambda _:
-                bind(sepby(p, sep), lambda x:
-                     bind(close_, lambda _:
-                          result(x)
-                         )
-                    )
-               )
+    bind(sepby(p, sep), lambda x:
+    bind(close_, lambda _:
+    result(x)
+         )
+         )
+                )
+
 
 def chainl1(p, op):
     def rest(x):
         return plus(bind(op, lambda f:
-                         bind(p, lambda y:
-                              rest(f(x,y))
-                             )
-                        ),
+        bind(p, lambda y:
+        rest(f(x, y))
+             )
+                         ),
                     result(x))
+
     return bind(p, rest)
 
-########## Lexer ########## 
+
+########## Lexer ##########
 def quote(s, c):
     return re.sub(r'([\\%s])' % c, r'\\\1', s)
 
+
 def unquote(s, c):
     return re.sub(r'\\([\\%s])' % c, r'\1', s)
+
 
 class Token(object):
     value = None
@@ -134,12 +157,14 @@ class Token(object):
     def sat(cls, v=None):
         return sat(lambda x: isinstance(x, cls) and (v is None or x.value == v))
 
+
 class Keyword(Token):
     def __init__(self, token):
         self.value = token.upper()
 
     def __repr__(self):
         return 'Keyword %s' % self.value
+
 
 class Identity(Token):
     def __init__(self, token):
@@ -148,17 +173,19 @@ class Identity(Token):
     def __repr__(self):
         return 'Identity %s' % self.value
 
+
 class Type(Token):
     STR, INT, FLOAT = list(range(3))
     mappping = {
-        'varchar':STR,
-        'char':STR,
-        'string':STR,
-        'int':INT,
-        'float':FLOAT,
-        'long':INT,
+        'varchar': STR,
+        'char': STR,
+        'string': STR,
+        'int': INT,
+        'float': FLOAT,
+        'long': INT,
     }
     reverse_mapping = dict(reversed(i) for i in mappping.items())
+
     @classmethod
     def to_str(cls, value):
         return cls.reverse_mapping[value]
@@ -169,12 +196,14 @@ class Type(Token):
     def __repr__(self):
         return 'Type %s' % self.value
 
+
 class Number(Token):
     def __init__(self, token):
         self.value = float(token)
 
     def __repr__(self):
         return 'Number %s' % self.value
+
 
 class Expression(Token):
     def __init__(self, token):
@@ -183,12 +212,14 @@ class Expression(Token):
     def __repr__(self):
         return 'Expression \'%s\'' % self.value
 
+
 class String(Token):
     def __init__(self, token):
         self.value = unquote(token[1:-1], '"')
 
     def __repr__(self):
         return 'String \'%s\'' % self.value
+
 
 class SpecialChar(Token):
     def __init__(self, token):
@@ -197,29 +228,32 @@ class SpecialChar(Token):
     def __repr__(self):
         return 'SpecialChar \'%s\'' % self.value
 
-KEYWORDS = r'select|from|where|like|having|order|not|and|or|group|by|desc|asc|'\
-        r'as|limit|in|sum|count|avg|max|min|adcount|outfile|into|drop|show|create|'\
-        r'table|if|exists|all|distinct|tables|inner|left|right|outer|join|using|long'
+
+KEYWORDS = r'select|from|where|like|having|order|not|and|or|group|by|desc|asc|' \
+           r'as|limit|in|sum|count|avg|max|min|adcount|outfile|into|drop|show|create|' \
+           r'table|if|exists|all|distinct|tables|inner|left|right|outer|join|using|long'
 
 lexer = re.Scanner([
-    (r'\b(' + KEYWORDS + r')\b', lambda _,t: Keyword(t)),
-    (r'\b(int|long|float|string|char|varchar)\b', lambda _,t: Type(t)),
-    (r'`(\\`|\\\\|[^\\`])+`', lambda _,t:Identity(t[1:-1])),
-    (r'\b([_a-z][.\w]*)\b', lambda _,t:Identity(t)),
-    (r'(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?', lambda _,t:Number(t)),
-    (r'\$"(\\"|\\\\|[^\\"])*"', lambda _,t:Expression(t)),
-    (r'"(\\"|\\\\|[^\\"])*"', lambda _,t:String(t)),
-    (r'[-()*+,;=/]|<>|>=?|<=?',lambda _,t:SpecialChar(t)),
+    (r'\b(' + KEYWORDS + r')\b', lambda _, t: Keyword(t)),
+    (r'\b(int|long|float|string|char|varchar)\b', lambda _, t: Type(t)),
+    (r'`(\\`|\\\\|[^\\`])+`', lambda _, t: Identity(t[1:-1])),
+    (r'\b([_a-z][.\w]*)\b', lambda _, t: Identity(t)),
+    (r'(\d+(\.\d*)?|\.\d+)(e[+-]?\d+)?', lambda _, t: Number(t)),
+    (r'\$"(\\"|\\\\|[^\\"])*"', lambda _, t: Expression(t)),
+    (r'"(\\"|\\\\|[^\\"])*"', lambda _, t: String(t)),
+    (r'[-()*+,;=/]|<>|>=?|<=?', lambda _, t: SpecialChar(t)),
     (r'\s+', None),
 ], re.I)
 
-########## Expressions ########## 
+
+########## Expressions ##########
 class Table(object):
     def get_columns(self):
         pass
 
     def gen_rdd(self, **kwargs):
         pass
+
 
 class PartialTable(Table):
     def __init__(self, table_name, alias, selectors):
@@ -239,7 +273,7 @@ class PartialTable(Table):
         table = tables[self.table_name]
         columns = table.columns
         if self.alias:
-            columns = [('%s.%s' % (self.alias, c), t) for c,t in columns]
+            columns = [('%s.%s' % (self.alias, c), t) for c, t in columns]
         return columns
 
     def gen_rdd(self, **kwargs):
@@ -247,11 +281,11 @@ class PartialTable(Table):
         converters = []
         for c, t in self.get_columns():
             if t == Type.INT:
-                converters.append(lambda x:int(x) if x else 0)
+                converters.append(lambda x: int(x) if x else 0)
             elif t == Type.FLOAT:
-                converters.append(lambda x:float(x) if x else 0)
+                converters.append(lambda x: float(x) if x else 0)
             else:
-                converters.append(lambda x:x)
+                converters.append(lambda x: x)
 
         expr = tables[self.table_name].expr
         if self.selectors:
@@ -275,10 +309,10 @@ class PartialTable(Table):
                 if names:
                     path = [os.path.join(root, name) for name in names]
                     break
-        
+
         rdd = dpark.textFile(path)
         if expr.expr:
-            rdd = eval('rdd.' + expr.expr, global_env, {'rdd':rdd})
+            rdd = eval('rdd.' + expr.expr, global_env, {'rdd': rdd})
 
         row = rdd.first()
         if isinstance(row, six.string_types):
@@ -287,9 +321,10 @@ class PartialTable(Table):
             elif ',' in row:
                 rdd = rdd.fromCsv('excel')
             else:
-                rdd = rdd.map(lambda l:l.split(' '))
+                rdd = rdd.map(lambda l: l.split(' '))
 
-        return rdd.map(lambda x:[c(x[i]) for i, c in enumerate(converters)])
+        return rdd.map(lambda x: [c(x[i]) for i, c in enumerate(converters)])
+
 
 class CartesianTable(Table):
     def __init__(self, tables):
@@ -305,12 +340,13 @@ class CartesianTable(Table):
         tables = self.tables
         if len(self.tables) == 1:
             return tables[0].gen_rdd(**kwargs)
-        
+
         rdd = tables[0].gen_rdd()
         for t in tables[1:]:
-            rdd = rdd.cartesian(t.gen_rdd()).map(lambda x:list(chain.from_iterable(x)))
+            rdd = rdd.cartesian(t.gen_rdd()).map(lambda x: list(chain.from_iterable(x)))
 
         return rdd
+
 
 class SubqueryTable(Table):
     def __init__(self, st, alias):
@@ -322,7 +358,7 @@ class SubqueryTable(Table):
 
     def get_columns(self):
         if self.st.select_list == '*':
-            return [('%s.%s' % (self.alias, c), t) for c,t in self.st.table.get_columns()]
+            return [('%s.%s' % (self.alias, c), t) for c, t in self.st.table.get_columns()]
         else:
             return [('%s.%s' % (self.alias, a or c), Type.STR)
                     for c, a in self.st.select_list]
@@ -335,6 +371,7 @@ class SubqueryTable(Table):
 
         return rdd
 
+
 class InnerJoinTable(Table):
     def __init__(self, x, y):
         self.x = x
@@ -342,7 +379,7 @@ class InnerJoinTable(Table):
 
     def __repr__(self):
         return '%s INNER JOIN %s USING (%s, %s)' % (
-           str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
+            str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
         )
 
     def get_columns(self):
@@ -355,9 +392,10 @@ class InnerJoinTable(Table):
         y_c_len = len(y_columns)
         x_index = x_columns.index(self.x[1])
         y_index = y_columns.index(self.y[1])
-        x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
-        y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
-        return x_rdd.join(y_rdd).map(lambda __x_y: __x_y[1][0]+__x_y[1][1])
+        x_rdd = self.x[0].gen_rdd().map(lambda x: (x[x_index], x))
+        y_rdd = self.y[0].gen_rdd().map(lambda y: (y[y_index], y))
+        return x_rdd.join(y_rdd).map(lambda __x_y: __x_y[1][0] + __x_y[1][1])
+
 
 class LeftJoinTable(Table):
     def __init__(self, x, y):
@@ -366,7 +404,7 @@ class LeftJoinTable(Table):
 
     def __repr__(self):
         return '%s LEFT JOIN %s USING (%s, %s)' % (
-           str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
+            str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
         )
 
     def get_columns(self):
@@ -379,10 +417,11 @@ class LeftJoinTable(Table):
         y_c_len = len(y_columns)
         x_index = x_columns.index(self.x[1])
         y_index = y_columns.index(self.y[1])
-        x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
-        y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
-        return x_rdd.leftOuterJoin(y_rdd)\
-                .map(lambda __x_y2: __x_y2[1][0] + (__x_y2[1][1] if __x_y2[1][1] is not None else ([None] * y_c_len)))
+        x_rdd = self.x[0].gen_rdd().map(lambda x: (x[x_index], x))
+        y_rdd = self.y[0].gen_rdd().map(lambda y: (y[y_index], y))
+        return x_rdd.leftOuterJoin(y_rdd) \
+            .map(lambda __x_y2: __x_y2[1][0] + (__x_y2[1][1] if __x_y2[1][1] is not None else ([None] * y_c_len)))
+
 
 class RightJoinTable(Table):
     def __init__(self, x, y):
@@ -391,7 +430,7 @@ class RightJoinTable(Table):
 
     def __repr__(self):
         return '%s RIGHT JOIN %s USING (%s, %s)' % (
-           str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
+            str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
         )
 
     def get_columns(self):
@@ -404,10 +443,10 @@ class RightJoinTable(Table):
         y_c_len = len(y_columns)
         x_index = x_columns.index(self.x[1])
         y_index = y_columns.index(self.y[1])
-        x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
-        y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
-        return x_rdd.rightOuterJoin(y_rdd)\
-                .map(lambda __x_y3: (__x_y3[1][0] if __x_y3[1][0] is not None else ([None] * x_c_len)) + __x_y3[1][1])
+        x_rdd = self.x[0].gen_rdd().map(lambda x: (x[x_index], x))
+        y_rdd = self.y[0].gen_rdd().map(lambda y: (y[y_index], y))
+        return x_rdd.rightOuterJoin(y_rdd) \
+            .map(lambda __x_y3: (__x_y3[1][0] if __x_y3[1][0] is not None else ([None] * x_c_len)) + __x_y3[1][1])
 
 
 class OuterJoinTable(Table):
@@ -417,7 +456,7 @@ class OuterJoinTable(Table):
 
     def __repr__(self):
         return '%s OUTER JOIN %s USING (%s, %s)' % (
-           str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
+            str(self.x[0]), str(self.y[0]), self.x[1], self.y[1]
         )
 
     def get_columns(self):
@@ -430,19 +469,19 @@ class OuterJoinTable(Table):
         y_c_len = len(y_columns)
         x_index = x_columns.index(self.x[1])
         y_index = y_columns.index(self.y[1])
-        x_rdd = self.x[0].gen_rdd().map(lambda x:(x[x_index], x))
-        y_rdd = self.y[0].gen_rdd().map(lambda y:(y[y_index], y))
-        return x_rdd.outerJoin(y_rdd)\
-                .map(lambda __x_y4: (__x_y4[1][0] if __x_y4[1][0] is not None else ([None] * x_c_len)) +
-                     (__x_y4[1][1] if __x_y4[1][1] is not None else ([None] * y_c_len)))
+        x_rdd = self.x[0].gen_rdd().map(lambda x: (x[x_index], x))
+        y_rdd = self.y[0].gen_rdd().map(lambda y: (y[y_index], y))
+        return x_rdd.outerJoin(y_rdd) \
+            .map(lambda __x_y4: (__x_y4[1][0] if __x_y4[1][0] is not None else ([None] * x_c_len)) +
+                                (__x_y4[1][1] if __x_y4[1][1] is not None else ([None] * y_c_len)))
 
 
 class Schema(object):
     def __init__(self, table, select_list):
         mappers = {}
         self.mappers = mappers
-        for i, (c,_) in enumerate(table.get_columns()):
-            mappers[c] = lambda _, i=i:lambda row:row[i]
+        for i, (c, _) in enumerate(table.get_columns()):
+            mappers[c] = lambda _, i=i: lambda row: row[i]
 
         if select_list != '*':
             for (e, n) in select_list:
@@ -452,10 +491,12 @@ class Schema(object):
     def get_mapper(self, v):
         return self.mappers[v]
 
+
 def combine(rep, fun, *args):
     if all(isinstance(arg, LiteralExpr) for arg in args):
         return LiteralExpr(fun(*[arg.value for arg in args]))
     return CombineExpr(rep, fun, *args)
+
 
 class Expr(object):
     def get_subexpr(self):
@@ -478,34 +519,35 @@ class Expr(object):
 
     def __ne__(self, other):
         return combine('<>', operator.ne, self, other)
-                                
+
     def __gt__(self, other):
         return combine('>', operator.gt, self, other)
-                                
+
     def __lt__(self, other):
         return combine('<', operator.lt, self, other)
-                                
+
     def __ge__(self, other):
         return combine('>=', operator.ge, self, other)
-                                
+
     def __le__(self, other):
         return combine('<=', operator.le, self, other)
-                                
+
     def and_(self, other):
         return combine('AND', operator.and_, self, other)
-                                
+
     def or_(self, other):
         return combine('OR', operator.or_, self, other)
-                                
+
     def not_(self):
         return combine('NOT', operator.not_, self)
 
     def like(self, pattern):
-        return combine('LIKE', lambda x,y: re.match(y, x) is not None, self, pattern)
+        return combine('LIKE', lambda x, y: re.match(y, x) is not None, self, pattern)
 
     def in_(self, values):
         def _in(x, *y):
             return any((operator.eq(x, i) for i in y))
+
         return combine('IN', _in, self, *values)
 
 
@@ -528,15 +570,17 @@ class CombineExpr(Expr):
     def get_subexpr(self):
         return self.args
 
+
 class LiteralExpr(Expr):
     def __init__(self, x):
         self.value = x
 
     def __call__(self, schema):
-        return lambda _, v = self.value: v
+        return lambda _, v=self.value: v
 
     def __repr__(self):
         return str(self.value)
+
 
 class ColumnRefExpr(Expr):
     def __init__(self, x):
@@ -555,9 +599,9 @@ class NativeExpr(Expr):
         self.value = unquote(x, '"').replace('\n', ' ')
 
     def __call__(self, schema):
-        funs = [(k,v(schema)) for k,v in schema.mappers.items()
+        funs = [(k, v(schema)) for k, v in schema.mappers.items()
                 if not isinstance(v, (NativeExpr, SetExpr))]
-        return lambda row, v=self.value:eval(v, global_env, dict((k, v(row)) for k,v in funs))
+        return lambda row, v=self.value: eval(v, global_env, dict((k, v(row)) for k, v in funs))
 
     def __repr__(self):
         return '$"%s"' % self.value
@@ -570,6 +614,7 @@ class SetExpr(Expr):
 
     def compute(self, schema):
         pass
+
 
 class CountAllExpr(SetExpr):
     def __init__(self):
@@ -586,6 +631,7 @@ class CountAllExpr(SetExpr):
     def __repr__(self):
         return 'COUNT (*)'
 
+
 class CountExpr(SetExpr):
     def __init__(self, expr, is_distinct):
         SetExpr.__init__(self)
@@ -594,7 +640,7 @@ class CountExpr(SetExpr):
 
     def compute(self, schema):
         if not self.is_distinct:
-            return   (
+            return (
                 lambda x: 1,
                 lambda r, x: r + 1,
                 lambda r1, r2: r1 + r2,
@@ -615,6 +661,7 @@ class CountExpr(SetExpr):
     def get_subexpr(self):
         return [self.expr]
 
+
 class SumExpr(SetExpr):
     def __init__(self, expr, is_distinct):
         SetExpr.__init__(self)
@@ -628,7 +675,7 @@ class SumExpr(SetExpr):
                 lambda x: expr(x),
                 lambda r, x: r + expr(x),
                 lambda r1, r2: r1 + r2,
-                lambda r : r,
+                lambda r: r,
             )
         else:
             return (
@@ -644,6 +691,7 @@ class SumExpr(SetExpr):
     def get_subexpr(self):
         return [self.expr]
 
+
 class AvgExpr(SetExpr):
     def __init__(self, expr, is_distinct):
         SetExpr.__init__(self)
@@ -657,15 +705,15 @@ class AvgExpr(SetExpr):
                 lambda x: (expr(x), 1),
                 lambda r, x: (r[0] + expr(x), r[1] + 1),
                 lambda r1, r2: (r1[0] + r2[0], r1[1] + r2[1]),
-                lambda r: float(r[0]) / r[1], 
+                lambda r: float(r[0]) / r[1],
             )
-                
+
         else:
             return (
                 lambda x: set([expr(x)]),
                 lambda r, x: r.add(expr(x)) or r,
                 lambda r1, r2: r1.union(r2),
-                lambda r: float(sum(r)) / len(r), 
+                lambda r: float(sum(r)) / len(r),
             )
 
     def __repr__(self):
@@ -673,6 +721,7 @@ class AvgExpr(SetExpr):
 
     def get_subexpr(self):
         return [self.expr]
+
 
 class MaxExpr(SetExpr):
     def __init__(self, expr, _):
@@ -694,6 +743,7 @@ class MaxExpr(SetExpr):
     def get_subexpr(self):
         return [self.expr]
 
+
 class MinExpr(SetExpr):
     def __init__(self, expr, _):
         SetExpr.__init__(self)
@@ -713,6 +763,7 @@ class MinExpr(SetExpr):
 
     def get_subexpr(self):
         return [self.expr]
+
 
 class AdcountExpr(SetExpr):
     def __init__(self, expr=None):
@@ -739,7 +790,8 @@ class AdcountExpr(SetExpr):
     def get_subexpr(self):
         return [self.expr] if self.expr is not None else []
 
-########## Parsers ########## 
+
+########## Parsers ##########
 def number():
     return bind(
         pluses(
@@ -748,20 +800,23 @@ def number():
             result(None),
         ), lambda sign:
         bind(Number.sat(), lambda x:
-             result(LiteralExpr(x.value)) if not sign or sign.value != '-'
-             else result(LiteralExpr(-x.value))
-            )
+        result(LiteralExpr(x.value)) if not sign or sign.value != '-'
+        else result(LiteralExpr(-x.value))
+             )
     )
+
 
 def set_fun(name, cls):
     return bind(seq(Keyword.sat(name), SpecialChar.sat('(')), lambda _:
-             bind(pluses(Keyword.sat('DISTINCT'), Keyword.sat('ALL'), result(None)), lambda q:
-                  bind(value_expression(), lambda expr:
-                       bind(SpecialChar.sat(')'), lambda _:
-                            result(cls(expr, q and q.value =='DISTINCT')))
-                      )
-                 )
-            )
+    bind(pluses(Keyword.sat('DISTINCT'), Keyword.sat('ALL'), result(None)), lambda q:
+    bind(value_expression(), lambda expr:
+    bind(SpecialChar.sat(')'), lambda _:
+    result(cls(expr, q and q.value == 'DISTINCT')))
+         )
+         )
+                )
+
+
 def set_functions():
     return pluses(
         bind(seqs(Keyword.sat('COUNT'), SpecialChar.sat('('), SpecialChar.sat('*'),
@@ -774,79 +829,90 @@ def set_functions():
         bind(seqs(Keyword.sat('ADCOUNT'), SpecialChar.sat('('), SpecialChar.sat('*'),
                   SpecialChar.sat(')')), lambda _: result(AdcountExpr())),
         bind(seq(Keyword.sat('ADCOUNT'), SpecialChar.sat('(')), lambda _:
-             bind(value_expression(), lambda x:
-                  bind(SpecialChar.sat(')'), lambda _:
-                       result(AdcountExpr(x))
-                      )
-                 )
-            ),
+        bind(value_expression(), lambda x:
+        bind(SpecialChar.sat(')'), lambda _:
+        result(AdcountExpr(x))
+             )
+             )
+             ),
     )
+
 
 def factor():
     return pluses(
         number(),
-        bind(Identity.sat(), lambda x:result(ColumnRefExpr(x.value))),
+        bind(Identity.sat(), lambda x: result(ColumnRefExpr(x.value))),
         bind(SpecialChar.sat('('), lambda _:
-             bind(numberic_value_expression(), lambda x:
-                  bind(SpecialChar.sat(')'), lambda _:
-                       result(x)
-                      )
-                 )
-            ),
+        bind(numberic_value_expression(), lambda x:
+        bind(SpecialChar.sat(')'), lambda _:
+        result(x)
+             )
+             )
+             ),
         set_functions(),
-        bind(Expression.sat(), lambda x:result(NativeExpr(x.value))),
+        bind(Expression.sat(), lambda x: result(NativeExpr(x.value))),
     )
+
 
 def mul_or_div():
     return plus(
-        bind(SpecialChar.sat('*'), lambda _:result(lambda x,y:x*y)),
-        bind(SpecialChar.sat('/'), lambda _:result(lambda x,y:x/y))
+        bind(SpecialChar.sat('*'), lambda _: result(lambda x, y: x * y)),
+        bind(SpecialChar.sat('/'), lambda _: result(lambda x, y: x / y))
     )
+
 
 def term():
     return chainl1(factor(), mul_or_div())
 
+
 def add_or_sub():
     return plus(
-        bind(SpecialChar.sat('+'), lambda _:result(lambda x,y:x+y)),
-        bind(SpecialChar.sat('-'), lambda _:result(lambda x,y:x-y))
+        bind(SpecialChar.sat('+'), lambda _: result(lambda x, y: x + y)),
+        bind(SpecialChar.sat('-'), lambda _: result(lambda x, y: x - y))
     )
+
 
 def numberic_value_expression():
     return chainl1(term(), add_or_sub())
 
+
 def string_factor():
     return pluses(
-        bind(String.sat(), lambda x:result(LiteralExpr(x.value))),
-        bind(Identity.sat(), lambda x:result(ColumnRefExpr(x.value))),
+        bind(String.sat(), lambda x: result(LiteralExpr(x.value))),
+        bind(Identity.sat(), lambda x: result(ColumnRefExpr(x.value))),
         bind(SpecialChar.sat('('), lambda _:
-             bind(string_value_expression(), lambda x:
-                  bind(SpecialChar.sat(')'), lambda _:
-                       result(x)
-                      )
-                 )
-            ),
-        bind(Expression.sat(), lambda x:result(NativeExpr(x.value))),
+        bind(string_value_expression(), lambda x:
+        bind(SpecialChar.sat(')'), lambda _:
+        result(x)
+             )
+             )
+             ),
+        bind(Expression.sat(), lambda x: result(NativeExpr(x.value))),
     )
+
 
 def string_value_expression():
     return chainl1(string_factor(),
-                   bind(SpecialChar.sat('+'), lambda _:result(lambda x,y:x+y)))
+                   bind(SpecialChar.sat('+'), lambda _: result(lambda x, y: x + y)))
+
 
 def value_expression():
     return pluses(numberic_value_expression(), string_value_expression())
 
+
 def select_sublist():
     return seq(value_expression(), plus(
-        bind(seq(Keyword.sat('AS'), Identity.sat()), lambda __x:result(__x[1].value)),
+        bind(seq(Keyword.sat('AS'), Identity.sat()), lambda __x: result(__x[1].value)),
         result(None)
     ))
 
+
 def select_list():
     return plus(
-        bind(SpecialChar.sat('*'), lambda _:result('*')),
+        bind(SpecialChar.sat('*'), lambda _: result('*')),
         sepby(select_sublist(), SpecialChar.sat(','))
     )
+
 
 def partial_table():
     return bind(
@@ -870,16 +936,18 @@ def partial_table():
         )
     )
 
+
 def table_subquery():
     return bind(SpecialChar.sat('('), lambda _:
-                bind(select_statement(), lambda st:
-                     bind(seq(SpecialChar.sat(')'), Keyword.sat('AS')), lambda _:
-                          bind(Identity.sat(), lambda alias:
-                               result(SubqueryTable(st, alias.value))
-                              )
-                         )
-                    )
-               )
+    bind(select_statement(), lambda st:
+    bind(seq(SpecialChar.sat(')'), Keyword.sat('AS')), lambda _:
+    bind(Identity.sat(), lambda alias:
+    result(SubqueryTable(st, alias.value))
+         )
+         )
+         )
+                )
+
 
 def table_reference():
     return plus(
@@ -887,28 +955,31 @@ def table_reference():
         table_subquery()
     );
 
+
 def table_references():
     return bind(sepby1(
         table_reference(),
         SpecialChar.sat(',')
     ), lambda x: result(CartesianTable(x)))
 
+
 def join_table(word, cls):
     return bind(table_reference(), lambda x:
-                bind(seq(Keyword.sat(word), Keyword.sat('JOIN')), lambda _:
-                     bind(table_reference(), lambda y:
-                          bind(seqs(
-                              Keyword.sat('USING'),
-                              SpecialChar.sat('('),
-                              Identity.sat(),
-                              SpecialChar.sat(','),
-                              Identity.sat(),
-                              SpecialChar.sat(')'),
-                          ), lambda ___1_x_c__2_y_c__3:
-                              result(cls((x, ___1_x_c__2_y_c__3[2].value), (y, ___1_x_c__2_y_c__3[4].value)))
-                          ))
-                    )
-               )
+    bind(seq(Keyword.sat(word), Keyword.sat('JOIN')), lambda _:
+    bind(table_reference(), lambda y:
+    bind(seqs(
+        Keyword.sat('USING'),
+        SpecialChar.sat('('),
+        Identity.sat(),
+        SpecialChar.sat(','),
+        Identity.sat(),
+        SpecialChar.sat(')'),
+    ), lambda ___1_x_c__2_y_c__3:
+    result(cls((x, ___1_x_c__2_y_c__3[2].value), (y, ___1_x_c__2_y_c__3[4].value)))
+    ))
+         )
+                )
+
 
 def from_clause():
     return bind(
@@ -922,100 +993,113 @@ def from_clause():
         )
     )
 
+
 def compare_op():
     return pluses(
-        bind(SpecialChar.sat('='), lambda _:result(lambda x,y: x==y)),
-        bind(SpecialChar.sat('<>'), lambda _:result(lambda x,y: x!=y)),
-        bind(SpecialChar.sat('<'), lambda _:result(lambda x,y: x<y)),
-        bind(SpecialChar.sat('>'), lambda _:result(lambda x,y: x>y)),
-        bind(SpecialChar.sat('<='), lambda _:result(lambda x,y: x<=y)),
-        bind(SpecialChar.sat('>='), lambda _:result(lambda x,y: x>=y)),
+        bind(SpecialChar.sat('='), lambda _: result(lambda x, y: x == y)),
+        bind(SpecialChar.sat('<>'), lambda _: result(lambda x, y: x != y)),
+        bind(SpecialChar.sat('<'), lambda _: result(lambda x, y: x < y)),
+        bind(SpecialChar.sat('>'), lambda _: result(lambda x, y: x > y)),
+        bind(SpecialChar.sat('<='), lambda _: result(lambda x, y: x <= y)),
+        bind(SpecialChar.sat('>='), lambda _: result(lambda x, y: x >= y)),
     )
+
 
 def comparison_predicate():
     return bind(value_expression(), lambda x:
-                bind(compare_op(), lambda op:
-                     bind(value_expression(), lambda y:
-                          result(op(x,y))
-                         )
-                    )
-               )
+    bind(compare_op(), lambda op:
+    bind(value_expression(), lambda y:
+    result(op(x, y))
+         )
+         )
+                )
+
 
 def like_predicate():
     return bind(string_value_expression(), lambda x:
-                bind(seq(plus(Keyword.sat('NOT'), result(None)),Keyword.sat('LIKE')), lambda n__:
-                    bind(String.sat(), lambda y:
-                         result(x.like(LiteralExpr(y.value)))
-                         if n__[0] is None else
-                         result(x.like(LiteralExpr(y.value)).not_())
-                        )
-                    )
-               )
+    bind(seq(plus(Keyword.sat('NOT'), result(None)), Keyword.sat('LIKE')), lambda n__:
+    bind(String.sat(), lambda y:
+    result(x.like(LiteralExpr(y.value)))
+    if n__[0] is None else
+    result(x.like(LiteralExpr(y.value)).not_())
+         )
+         )
+                )
+
 
 def in_predicate():
     return bind(value_expression(), lambda x:
-                bind(seq(plus(Keyword.sat('NOT'), result(None)),Keyword.sat('IN')), lambda n__1:
-                    bind(bracket(
-                        value_expression(),
-                        SpecialChar.sat(','),
-                        SpecialChar.sat('('),
-                        SpecialChar.sat(')')), lambda values:
-                            result(x.in_(values) if n__1[0] is None else x.in_(values).not_())
-                        )
-                    )
+    bind(seq(plus(Keyword.sat('NOT'), result(None)), Keyword.sat('IN')), lambda n__1:
+    bind(bracket(
+        value_expression(),
+        SpecialChar.sat(','),
+        SpecialChar.sat('('),
+        SpecialChar.sat(')')), lambda values:
+    result(x.in_(values) if n__1[0] is None else x.in_(values).not_())
+    )
+         )
                 )
 
 
 def predict():
     return pluses(
         comparison_predicate(),
-        bind(Expression.sat(), lambda x:result(NativeExpr(x.value))),
+        bind(Expression.sat(), lambda x: result(NativeExpr(x.value))),
         like_predicate(),
         in_predicate(),
     )
 
+
 def boolean_primary():
     return plus(predict(),
                 bind(SpecialChar.sat('('), lambda _:
-                     bind(search_condition(), lambda x:
-                          bind(SpecialChar.sat(')'), lambda _:
-                               result(x)
-                              )
-                         )
-                    )
-               )
+                bind(search_condition(), lambda x:
+                bind(SpecialChar.sat(')'), lambda _:
+                result(x)
+                     )
+                     )
+                     )
+                )
+
 
 def boolean_factor():
     return bind(seq(plus(Keyword.sat('NOT'), result(None)),
                     boolean_primary()),
                 lambda n_x: result(n_x[1] if n_x[0] is None else n_x[1].not_()))
 
+
 def boolean_term():
     return chainl1(boolean_factor(),
-                   bind(Keyword.sat('AND'), lambda _:result(lambda x,y:x.and_(y))))
+                   bind(Keyword.sat('AND'), lambda _: result(lambda x, y: x.and_(y))))
+
 
 def search_condition():
     return chainl1(boolean_term(),
-                   bind(Keyword.sat('OR'), lambda _:result(lambda x,y:x.or_(y))))
+                   bind(Keyword.sat('OR'), lambda _: result(lambda x, y: x.or_(y))))
+
 
 def where_clause():
     return bind(seq(Keyword.sat('WHERE'), search_condition()), lambda __x5: result(__x5[1]))
 
+
 def group_by_clause():
     return bind(seq(Keyword.sat('GROUP'), Keyword.sat('BY')), lambda _:
-                bind(sepby1(value_expression(), SpecialChar.sat(',')), lambda x:
-                     result(x)
-                    )
-               )
+    bind(sepby1(value_expression(), SpecialChar.sat(',')), lambda x:
+    result(x)
+         )
+                )
+
 
 def having_clause():
     return bind(seq(Keyword.sat('HAVING'), search_condition()), lambda __x6: result(__x6[1]))
 
+
 def table_expression():
     return seqs(from_clause(),
-                plus(where_clause(), result(None)), 
-                plus(group_by_clause(), result(None)), 
+                plus(where_clause(), result(None)),
+                plus(group_by_clause(), result(None)),
                 plus(having_clause(), result(None)))
+
 
 def select_statement():
     return bind(seqs(
@@ -1030,70 +1114,78 @@ def select_statement():
                           Keyword.sat('DESC'),
                           result(None)
                       )
-                     ),
-                lambda _____r_s:result((_____r_s[2], _____r_s[3].value if _____r_s[3] else 'ASC'))),
+                      ),
+                 lambda _____r_s: result((_____r_s[2], _____r_s[3].value if _____r_s[3] else 'ASC'))),
             result(None),
         ),
         plus(
-            bind(seq(Keyword.sat('LIMIT'), Number.sat()), lambda __l:result(__l[1].value)),
+            bind(seq(Keyword.sat('LIMIT'), Number.sat()), lambda __l: result(__l[1].value)),
             result(None),
         ),
         plus(
             bind(seqs(Keyword.sat('INTO'), Keyword.sat('OUTFILE'), String.sat()),
-                 lambda _____f:result(_____f[2].value)),
+                 lambda _____f: result(_____f[2].value)),
             result(None),
         ),
     ), lambda __select_list_table_expression_order_limit_outfile:
-        result(SelectSt(__select_list_table_expression_order_limit_outfile[1], __select_list_table_expression_order_limit_outfile[2], __select_list_table_expression_order_limit_outfile[3], __select_list_table_expression_order_limit_outfile[4], __select_list_table_expression_order_limit_outfile[5]))
+    result(SelectSt(__select_list_table_expression_order_limit_outfile[1],
+                    __select_list_table_expression_order_limit_outfile[2],
+                    __select_list_table_expression_order_limit_outfile[3],
+                    __select_list_table_expression_order_limit_outfile[4],
+                    __select_list_table_expression_order_limit_outfile[5]))
     )
 
 
 def textfile_expr():
     return bind(seqs(Keyword.sat('FROM'), String.sat(),
                      plus(Expression.sat(), result(None))),
-                lambda __textFile_expr: result(TextFileExpr(__textFile_expr[1],__textFile_expr[2])))
+                lambda __textFile_expr: result(TextFileExpr(__textFile_expr[1], __textFile_expr[2])))
+
 
 def create_table_statement():
     return bind(seqs(
         Keyword.sat('CREATE'),
-        Keyword.sat('TABLE'), 
+        Keyword.sat('TABLE'),
         plus(seqs(Keyword.sat('IF'), Keyword.sat('NOT'), Keyword.sat('EXISTS')), result(None)),
         Identity.sat(),
     ), lambda _____exists_table_name:
-        bind(bracket(
-            seq(Identity.sat(), plus(Type.sat(),result(Type()))),
-            SpecialChar.sat(','),
-            SpecialChar.sat('('), 
-            SpecialChar.sat(')')), lambda columns:
-            bind(textfile_expr(), lambda expr:
-                 result(CreateTableSt(_____exists_table_name[3], columns,
-                                      expr, _____exists_table_name[2] is not None))
-                )
-        )
+    bind(bracket(
+        seq(Identity.sat(), plus(Type.sat(), result(Type()))),
+        SpecialChar.sat(','),
+        SpecialChar.sat('('),
+        SpecialChar.sat(')')), lambda columns:
+    bind(textfile_expr(), lambda expr:
+    result(CreateTableSt(_____exists_table_name[3], columns,
+                         expr, _____exists_table_name[2] is not None))
+         )
     )
+    )
+
 
 def drop_table_statement():
     return bind(seq(
         Keyword.sat('DROP'),
         Keyword.sat('TABLE')
     ), lambda _:
-        bind(sepby1(Identity.sat(), SpecialChar.sat(',')),
-             lambda table_names:
-             result(DropTableSt([x.value for x in table_names]))
-            )
+    bind(sepby1(Identity.sat(), SpecialChar.sat(',')),
+         lambda table_names:
+         result(DropTableSt([x.value for x in table_names]))
+         )
     )
+
 
 def show_tables_statement():
     return bind(seq(
         Keyword.sat('SHOW'),
         Keyword.sat('TABLES'),
     ), lambda _:
-        bind(plus(bind(seq(Keyword.sat('LIKE'), String.sat()),
-                       lambda x: result(x[1].value)),
-                  result(None)), lambda patten:
-             result(ShowTablesSt(patten))
-            )
+    bind(plus(bind(seq(Keyword.sat('LIKE'), String.sat()),
+                   lambda x: result(x[1].value)),
+              result(None)), lambda patten:
+         result(ShowTablesSt(patten))
+         )
     )
+
 
 def show_create_table_statement():
     return bind(seqs(
@@ -1101,15 +1193,17 @@ def show_create_table_statement():
         Keyword.sat('CREATE'),
         Keyword.sat('TABLE'),
     ), lambda _:
-        bind(Identity.sat(), lambda table_name:
-             result(ShowCreateTablesSt(table_name.value))
-            )
+    bind(Identity.sat(), lambda table_name:
+    result(ShowCreateTablesSt(table_name.value))
+         )
     )
+
 
 def python_statement():
     return bind(Expression.sat(), lambda x:
-                result(PythonSt(x.value))
-               )
+    result(PythonSt(x.value))
+                )
+
 
 def statement_parser():
     return bind(pluses(
@@ -1120,22 +1214,25 @@ def statement_parser():
         show_create_table_statement(),
         python_statement(),
     ), lambda x:
-        bind(SpecialChar.sat(';'), lambda _:
-             result(x)
-            )
+    bind(SpecialChar.sat(';'), lambda _:
+    result(x)
+         )
     )
+
 
 def script_parser():
     return many(statement_parser())
 
-########## Runtimes ########## 
+
+########## Runtimes ##########
 tables = {}
 global_env = {'__builtins__': globals()['__builtins__']}
+
 
 def take(rdd, n):
     def take_(n, splits):
         return list(chain.from_iterable(
-            dpark.runJob(rdd, lambda x:list(islice(x, n)), splits)))
+            dpark.runJob(rdd, lambda x: list(islice(x, n)), splits)))
 
     n = int(n)
     if n == 0:
@@ -1143,7 +1240,7 @@ def take(rdd, n):
 
     r = take_(n, [0])
     if len(r) < n:
-        for _, splits in groupby(range(1, len(rdd)), lambda x:int(log(x + 15)/log(4))):
+        for _, splits in groupby(range(1, len(rdd)), lambda x: int(log(x + 15) / log(4))):
             splits = list(splits)
             r.extend(take_(n - len(r), splits))
             if len(r) >= n:
@@ -1164,6 +1261,7 @@ class TextFileExpr(object):
             ' $"%s"' % self.expr if self.expr is not None else ''
         )
 
+
 class SQLStatement(object):
     def do_execute(self):
         pass
@@ -1173,10 +1271,11 @@ class SQLStatement(object):
         self.do_execute()
         print('OK. (%.2f sec)' % (time.time() - start_time))
 
+
 class CreateTableSt(SQLStatement):
     def __init__(self, table_name, columns, expr, check_exists):
         self.table_name = table_name.value
-        self.columns = [(c.value, t.value) for c,t in columns]
+        self.columns = [(c.value, t.value) for c, t in columns]
         self.expr = expr
         self.check_exists = check_exists
 
@@ -1189,8 +1288,9 @@ class CreateTableSt(SQLStatement):
     def __repr__(self):
         return 'CREATE TABLE `%s` (%s) %s' % (
             quote(self.table_name, '`'),
-            ','.join('%s %s' % (c,Type.to_str(t)) for c,t in self.columns),
+            ','.join('%s %s' % (c, Type.to_str(t)) for c, t in self.columns),
             self.expr)
+
 
 class DropTableSt(SQLStatement):
     def __init__(self, table_names):
@@ -1204,6 +1304,7 @@ class DropTableSt(SQLStatement):
             if name in tables:
                 del tables[name]
 
+
 class SelectSt(SQLStatement):
     def __init__(self, select_list, table_expression, order, limit, outfile):
         self.select_list = select_list
@@ -1214,15 +1315,15 @@ class SelectSt(SQLStatement):
 
     def __repr__(self):
         return 'SELECT %s FROM %s%s%s%s%s%s%s' % (
-            self.select_list, self.table, 
-            ' WHERE %s'  % self.where if self.where else '',
+            self.select_list, self.table,
+            ' WHERE %s' % self.where if self.where else '',
             ' GROUP BY %s' % self.group_by if self.group_by else '',
             ' HAVING %s' % self.having if self.having else '',
             ' ORDER BY %s %s' % self.order if self.order else '',
             ' LIMIT %s' % self.limit if self.limit else '',
             ' INTO OUTFILE "%s"' % self.outfile if self.outfile else '',
         )
-    
+
     def gen_rdd(self, **kwargs):
         use_limit = kwargs.get('use_limist', False)
         table = self.table
@@ -1238,21 +1339,21 @@ class SelectSt(SQLStatement):
 
         schema = Schema(table, self.select_list)
         use_limit = use_limit or (
-            self.limit is not None and not scope and self.group_by is None \
-            and self.where is None and self.having is None
+                self.limit is not None and not scope and self.group_by is None \
+                and self.where is None and self.having is None
         )
         rdd = table.gen_rdd(use_limit=use_limit)
         if self.where:
             rdd = rdd.filter(self.where(schema))
-        
+
         if scope or self.group_by is not None:
             column_len = len(table.get_columns())
-            creators = [lambda x:x]
+            creators = [lambda x: x]
             mergers = [lambda r, x: r]
             combiners = [lambda r1, r2: r1]
             mappers = [lambda r: r]
             for i, s in enumerate(scope):
-                schema.mappers[s] = lambda _, i=column_len+i:lambda row: row[i]
+                schema.mappers[s] = lambda _, i=column_len + i: lambda row: row[i]
                 creator, merger, combiner, mapper = s.compute(schema)
                 creators.append(creator)
                 mergers.append(merger)
@@ -1261,15 +1362,15 @@ class SelectSt(SQLStatement):
 
             if self.group_by is not None:
                 keys = [c(schema) for c in self.group_by]
-                key = lambda row:tuple(k(row) for k in keys)
+                key = lambda row: tuple(k(row) for k in keys)
                 agg = Aggregator(
-                    lambda x:[c(x) for c in creators],
-                    lambda r, x:[m(r[i], x) for i, m in enumerate(mergers)],
-                    lambda r1, r2:[c(r1[i], r2[i]) for i, c in enumerate(combiners)],
+                    lambda x: [c(x) for c in creators],
+                    lambda r, x: [m(r[i], x) for i, m in enumerate(mergers)],
+                    lambda r1, r2: [c(r1[i], r2[i]) for i, c in enumerate(combiners)],
                 )
-                rdd = rdd.map(lambda x:(key(x), x)).combineByKey(agg)\
-                        .mapValue(lambda r:[m(r[i]) for i, m in enumerate(mappers)])\
-                        .map(lambda k_v: k_v[1][0] + k_v[1][1:])
+                rdd = rdd.map(lambda x: (key(x), x)).combineByKey(agg) \
+                    .mapValue(lambda r: [m(r[i]) for i, m in enumerate(mappers)]) \
+                    .map(lambda k_v: k_v[1][0] + k_v[1][1:])
             else:
                 def fun(split):
                     r = None
@@ -1283,24 +1384,23 @@ class SelectSt(SQLStatement):
 
                 rdd = rdd.mapPartitions(fun).filter(lambda x: x is not None)
                 result = rdd.reduce(
-                    lambda r1, r2:[c(r1[i], r2[i]) for i, c in enumerate(combiners)])
+                    lambda r1, r2: [c(r1[i], r2[i]) for i, c in enumerate(combiners)])
                 result = [m(result[i]) for i, m in enumerate(mappers)]
                 rdd = dpark.makeRDD([result[0] + result[1:]])
 
         if self.select_list == '*':
             output_mapper = lambda row: row
         else:
-            fun_list = [c(schema) for c,_ in self.select_list]
+            fun_list = [c(schema) for c, _ in self.select_list]
             output_mapper = lambda row: [f(row) for f in fun_list]
-
 
         if self.having:
             rdd = rdd.filter(self.having(schema))
 
         if self.order:
             reverse = (self.order[1] == 'DESC')
-            rdd = rdd.sort(key = self.order[0](schema), reverse=reverse)
-            
+            rdd = rdd.sort(key=self.order[0](schema), reverse=reverse)
+
         rdd = rdd.map(output_mapper)
         return rdd
 
@@ -1316,7 +1416,7 @@ class SelectSt(SQLStatement):
                 result = rdd.collect()
 
             if self.select_list == '*':
-                output_field_names = [c for c,t in self.table.get_columns()]
+                output_field_names = [c for c, t in self.table.get_columns()]
             else:
                 output_field_names = [n if n else str(c) for c, n in self.select_list]
 
@@ -1330,6 +1430,7 @@ class SelectSt(SQLStatement):
                     for row in result:
                         writer.writerow(row)
 
+
 class PythonSt(SQLStatement):
     def __init__(self, statements):
         self.statements = statements
@@ -1339,6 +1440,7 @@ class PythonSt(SQLStatement):
 
     def do_execute(self):
         exec(self.statements, global_env)
+
 
 class ShowTablesSt(SQLStatement):
     def __init__(self, pattern):
@@ -1355,6 +1457,7 @@ class ShowTablesSt(SQLStatement):
         t = [[x] for x in t]
         pprint(['Tables'], t)
 
+
 class ShowCreateTablesSt(SQLStatement):
     def __init__(self, table_name):
         self.table_name = table_name
@@ -1365,10 +1468,13 @@ class ShowCreateTablesSt(SQLStatement):
     def do_execute(self):
         pprint(['Table', 'Create Table'], [[self.table_name, tables[self.table_name]]])
 
+
 def first(it):
     def _():
         yield next(it)
+
     return list(_())
+
 
 def pprint(fields, table):
     width = [max(5, len(f)) for f in fields]
@@ -1376,15 +1482,17 @@ def pprint(fields, table):
         for i, c in enumerate(row):
             width[i] = max(width[i], len(str(c)))
 
-    splitter = '+%s+' % '+'.join(''.join(['-']*w) for w in width)
+    splitter = '+%s+' % '+'.join(''.join(['-'] * w) for w in width)
+
     def print_row(row):
         pr = []
         for i, c in enumerate(row):
             s = str(c)
             l = width[i] - len(s)
-            pr.append(''.join([' ']*l+[s]))
+            pr.append(''.join([' '] * l + [s]))
 
         print('|%s|' % '|'.join(pr))
+
     print(splitter)
     print_row(fields)
     print(splitter)
@@ -1393,8 +1501,9 @@ def pprint(fields, table):
 
     print(splitter)
 
+
 class Console(object):
-    CMDS = ['help', 'quit',]
+    CMDS = ['help', 'quit', ]
 
     def __init__(self):
         main = sys.modules.pop('__main__')
@@ -1421,7 +1530,7 @@ class Console(object):
             readline.read_history_file(hist_file)
         except IOError:
             pass
-        
+
         atexit.register(readline.write_history_file, hist_file)
 
         init_file = os.path.join(base_dir, 'init')
@@ -1439,11 +1548,11 @@ class Console(object):
                 quote = len(buffer)
                 while quote >= 0:
                     quote = buffer[:quote].rfind('"')
-                    if quote > 0 and buffer[quote-1] == '\\':
+                    if quote > 0 and buffer[quote - 1] == '\\':
                         continue
                     break
 
-                if quote > 0 and buffer[quote-1] == '$':
+                if quote > 0 and buffer[quote - 1] == '$':
                     self.dummy_main.__dict__.update(global_env)
                     self.do_complete = self.python_completer.complete
                 else:
@@ -1451,18 +1560,19 @@ class Console(object):
 
             return self.do_complete(text, state)
         except Exception as e:
-            import traceback; traceback.print_exc()
+            import traceback;
+            traceback.print_exc()
 
     def _complete(self, text, state):
         if state == 0:
             if '/' in text:
-                options = glob.glob(text+'*')
+                options = glob.glob(text + '*')
                 self.matches = options
             else:
                 options = [quote(c, '`') for c in tables.keys()
                            if c.lower().startswith(text.lower())]
                 options += [c.upper() + ' ' for c in KEYWORDS.split('|')
-                           if c.lower().startswith(text.lower())]
+                            if c.lower().startswith(text.lower())]
                 self.matches = options
 
         if state < len(self.matches):
@@ -1498,9 +1608,9 @@ Use Python expression:
         st, remain = result[0]
         remain = list(remain)
         if remain:
-            raise Exception('Fail to parse statement: %s' 
+            raise Exception('Fail to parse statement: %s'
                             % ' '.join(str(t) for t in remain))
-        
+
         st.execute()
 
     def run_script(self, script):
@@ -1517,7 +1627,7 @@ Use Python expression:
         if remain:
             raise Exception('Fail to parse script: %s'
                             % ' '.join(str(t) for t in remain))
-        
+
         for s in st:
             s.execute()
 
@@ -1528,17 +1638,17 @@ Use Python expression:
                 if self.sql:
                     self.sql += '\n' + input('... ')
                 else:
-                    self.sql  = input('>>> ')
+                    self.sql = input('>>> ')
             except EOFError:
                 print('quit')
                 break
-            
+
             try:
                 for c in self.CMDS:
                     s = self.sql.strip()
                     if s.lower().startswith(c):
                         arg = s[len(c):].strip()
-                        getattr(self,c)(arg)
+                        getattr(self, c)(arg)
                         self.sql = ''
                         continue
 
@@ -1547,16 +1657,19 @@ Use Python expression:
 
                 self.run_sql()
             except Exception as e:
-                import traceback; traceback.print_exc()
+                import traceback;
+                traceback.print_exc()
             self.sql = ''
+
 
 if __name__ == '__main__':
     from dpark import optParser
+
     optParser.set_default('master', 'mesos')
     optParser.add_option('-e', '--query', type='string', default='',
-            help='execute the SQL qeury then exit')
+                         help='execute the SQL qeury then exit')
     optParser.add_option('-s', '--script', type='string', default='',
-            help='execute the SQL script file then exit')
+                         help='execute the SQL script file then exit')
     options, args = optParser.parse_args()
     console = Console()
     if options.query:

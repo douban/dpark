@@ -40,9 +40,9 @@ class TestSerialize(unittest.TestCase):
                                'd = {(str(i),):i for i in range(10000)}',
                                repeat=3, number=1))
         _import = ('from pickle import dumps;'
-                   if six.PY2 else
-                   'from pickle import _dumps as dumps;'
-                  )
+        if six.PY2 else
+        'from pickle import _dumps as dumps;'
+        )
         t2 = max(timeit.repeat('dumps(d, 2)',
                                _import +
                                'd = {(str(i),):i for i in range(10000)}',
@@ -96,7 +96,6 @@ func3 = foo.func3
             assert _func1() == MAIN.x
             assert _func2() == MAIN.x + 1
             assert _func3() == MAIN.x + 2
-
 
     def testLocalMethodCallChain(self):
         exec_str = """

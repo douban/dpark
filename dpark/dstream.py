@@ -12,6 +12,7 @@ from collections import deque
 from contextlib import closing
 import six
 from six.moves import range
+
 try:
     import six.moves.cPickle as pickle
 except ImportError:
@@ -33,10 +34,10 @@ try:
     from thrift.server import TNonblockingServer
     from collections import deque
     from kazoo.client import KazooClient
+
     WITH_SCRIBE = True
 except:
     WITH_SCRIBE = False
-
 
 logger = get_logger(__name__)
 
@@ -115,7 +116,7 @@ class DStreamGraph(object):
 
     def generateRDDs(self, time):
         return [_f for _f in [out.generateJob(time)
-                             for out in self.outputStreams] if _f]
+                              for out in self.outputStreams] if _f]
 
     def forgetOldRDDs(self, time):
         for out in self.outputStreams:
@@ -343,6 +344,7 @@ class RecurringTimer(object):
                 self.nextTime += self.period
             else:
                 time.sleep(max(min(self.nextTime - now, 1), 0.01))
+
 
 _STOP, _EVENT = list(range(2))
 
@@ -579,6 +581,7 @@ class DStream(object):
             if len(some) > 10:
                 print('...')
             print()
+
         return self.foreach(forFunc)
 
     def window(self, duration, slideDuration=None):
@@ -657,6 +660,7 @@ class DStream(object):
                 nr = func(vs, r)
                 if nr is not None:
                     yield (k, nr)
+
         return StateDStream(self, newF, partitioner, remember)
 
     def mapValues(self, func):
@@ -923,6 +927,7 @@ class ReducedWindowedDStream(DerivedDStream):
                 if newValues:
                     tmp = reduceF(tmp, reduce(reduceF, newValues))
                 return tmp
+
         return cogroupedRDD.mapValue(mergeValues)
 
 
@@ -1091,7 +1096,6 @@ class RotatingFilesInputDStream(InputDStream):
                                   for path, (begin, end) in six.iteritems(offsets)])
 
 
-
 class QueueInputDStream(InputDStream):
 
     def __init__(self, ssc, queue, oneAtAtime=True, defaultRDD=None):
@@ -1189,6 +1193,7 @@ class SocketInputDStream(NetworkInputDStream):
                 f.close()
             if client:
                 client.close()
+
 
 if WITH_SCRIBE:
     class ScribeHandler(Iface):

@@ -6,9 +6,7 @@ import resource
 import threading
 from dpark.utils.log import get_logger
 
-
 logger = get_logger(__name__)
-
 
 ERROR_TASK_OOM = 3
 
@@ -48,8 +46,8 @@ class MemoryChecker(object):
 
     def _kill(self, rss, from_main_thread):
         template = "task used too much memory: %d MB > %d MB * 1.5," \
-                "kill it. use -M argument or taskMemory " \
-                "to request more memory."
+                   "kill it. use -M argument or taskMemory " \
+                   "to request more memory."
         msg = template % (rss >> 20, self.mem >> 20)
 
         logger.warning(msg)
@@ -105,7 +103,7 @@ class MemoryChecker(object):
         self.task_id = task_id
         if not self.thread:
             self._start()
-        self.thread.name = "task-%s-checkmem" % (task_id, )
+        self.thread.name = "task-%s-checkmem" % (task_id,)
 
     def stop(self):
         self._stop = True

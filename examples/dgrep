@@ -8,7 +8,7 @@ from dpark import DparkContext, optParser
 
 optParser.set_usage("%prog [options] pattern filepath...")
 optParser.add_option('-e', '--regexp', action='store_true',
-                  help="indicate the pattern is a regular expression")
+                     help="indicate the pattern is a regular expression")
 optParser.set_default('master', 'mesos')
 
 dpark = DparkContext()
@@ -21,7 +21,10 @@ else:
 
 if options.regexp:
     import re
+
     ptn = re.compile(pattern)
+
+
     def match(line):
         return ptn.search(line)
 
@@ -29,10 +32,13 @@ else:
     def match(line):
         return pattern in line
 
+
 def include_path(path):
     def _(line):
         return '%s:%s' % (path, line)
+
     return _
+
 
 if len(filepaths) == 1:
     path = filepaths[0]

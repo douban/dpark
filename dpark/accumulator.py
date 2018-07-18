@@ -4,6 +4,7 @@ import copy
 
 from dpark.serialize import load_func, dump_func
 
+
 class AccumulatorParam:
     def __init__(self, zero, addInPlace):
         self.zero = zero
@@ -16,10 +17,11 @@ class AccumulatorParam:
         add, self.zero = state
         self.addInPlace = load_func(add)
 
+
 numAcc = AccumulatorParam(0, add)
-listAcc = AccumulatorParam([], lambda x,y:x.extend(y) or x)
-mapAcc = AccumulatorParam({}, lambda x,y:x.update(y) or x)
-setAcc = AccumulatorParam(set(), lambda x,y:x.update(y) or x)
+listAcc = AccumulatorParam([], lambda x, y: x.extend(y) or x)
+mapAcc = AccumulatorParam({}, lambda x, y: x.update(y) or x)
+setAcc = AccumulatorParam(set(), lambda x, y: x.update(y) or x)
 
 
 class Accumulator:
@@ -49,6 +51,7 @@ class Accumulator:
         self.register(self, False)
 
     nextId = 0
+
     @classmethod
     def newId(cls):
         cls.nextId += 1
@@ -56,6 +59,7 @@ class Accumulator:
 
     originals = {}
     localAccums = {}
+
     @classmethod
     def register(cls, acc, original):
         if original:
@@ -71,7 +75,7 @@ class Accumulator:
 
     @classmethod
     def values(cls):
-        v = dict((id, accum.value) for id,accum in cls.localAccums.items())
+        v = dict((id, accum.value) for id, accum in cls.localAccums.items())
         cls.clear()
         return v
 
@@ -79,6 +83,7 @@ class Accumulator:
     def merge(cls, values):
         for id, value in values.items():
             cls.originals[id].add(value)
+
 
 ReadBytes = Accumulator()
 WriteBytes = Accumulator()

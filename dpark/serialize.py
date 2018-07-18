@@ -2,6 +2,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import sys
 import types
+
 try:
     from cStringIO import StringIO
 except ImportError:
@@ -11,6 +12,7 @@ import marshal
 import types
 import six.moves.cPickle
 import itertools
+
 if six.PY2:
     from pickle import Pickler
 else:
@@ -24,6 +26,7 @@ import six
 from six.moves import range
 from six.moves import copyreg
 from six import int2byte
+
 logger = get_logger(__name__)
 
 
@@ -38,16 +41,18 @@ class LazySave(object):
     def __repr__(self):
         return '<LazySave %s>' % repr(self.obj)
 
+
 class LazyMemo(object):
     '''Out of band marker for lazy memos among lazy writes.'''
 
     __slots__ = ['obj']
 
-    def __init__( self, obj ):
+    def __init__(self, obj):
         self.obj = obj
 
-    def __repr__( self ):
+    def __repr__(self):
         return '<LazyMemo %s>' % repr(self.obj)
+
 
 class MyPickler(Pickler):
     def __init__(self, file, protocol=None):
@@ -97,10 +102,10 @@ class MyPickler(Pickler):
             Pickler.save(self, obj)
         except TypeError:
             logger.error('Failed to serialize %s%s%s',
-                type(obj), _name(obj), _loc(obj))
+                         type(obj), _name(obj), _loc(obj))
             raise
 
-    def lazymemoize( self, obj ):
+    def lazymemoize(self, obj):
         """Store an object in the memo."""
         if self.lazywrites:
             self.lazywrites.append(LazyMemo(obj))
@@ -146,6 +151,7 @@ class MyPickler(Pickler):
                 self.save_global(obj, rv)
             else:
                 self.save_reduce(obj=obj, *rv)
+
         cls.dispatch[type] = dispatcher
 
 
@@ -158,17 +164,19 @@ def dumps(o):
 def loads(s):
     return six.moves.cPickle.loads(s)
 
+
 dump_func = dumps
 load_func = loads
 
 
 def reduce_module(mod):
-    return load_module, (mod.__name__, )
+    return load_module, (mod.__name__,)
 
 
 def load_module(name):
     __import__(name)
     return sys.modules[name]
+
 
 MyPickler.register(types.ModuleType, reduce_module)
 
@@ -181,6 +189,7 @@ class RecursiveFunctionPlaceholder(object):
 
     def __eq__(self, other):
         return isinstance(other, RecursiveFunctionPlaceholder)
+
 
 RECURSIVE_FUNCTION_PLACEHOLDER = RecursiveFunctionPlaceholder()
 
@@ -202,6 +211,7 @@ def marshalable(o):
                 return False
         return True
     return False
+
 
 OBJECT_SIZE_LIMIT = 100 << 10
 
@@ -313,8 +323,8 @@ def reduce_function(obj):
         module = whichmodule(obj, name)
 
     if module == '__main__' and \
-       name not in ('load_closure', 'load_module',
-                    'load_method', 'load_local_class'):  # fix for test
+            name not in ('load_closure', 'load_module',
+                         'load_method', 'load_local_class'):  # fix for test
         return load_closure, (dump_closure(obj),)
 
     try:
@@ -325,6 +335,7 @@ def reduce_function(obj):
         if f is not obj:
             return load_closure, (dump_closure(obj),)
         return name
+
 
 classes_dumping = set()
 internal_fields = {
@@ -338,6 +349,7 @@ member_descripter_types = (
     types.MemberDescriptorType,
     type(LazySave.obj)
 )
+
 
 def dump_local_class(cls):
     name = cls.__name__
@@ -378,6 +390,7 @@ def dump_local_class(cls):
         classes_dumping.remove(cls)
 
     return result
+
 
 classes_loaded = {}
 
@@ -447,7 +460,8 @@ def load_method(bytes):
 
 def reduce_method(method):
     module = method.__func__.__module__
-    return load_method, (dump_method(method), )
+    return load_method, (dump_method(method),)
+
 
 MyPickler.register(types.LambdaType, reduce_function)
 if six.PY2:
@@ -473,8 +487,10 @@ if __name__ == "__main__":
 
     some_global = 'some global'
 
+
     def glob_func(s):
         return "glob:" + s
+
 
     def get_closure(x):
         glob_func(some_global)
@@ -485,7 +501,9 @@ if __name__ == "__main__":
         def the_closure(a, b=1):
             marshal.dumps(a)
             return (a * x + int(b), glob_func(foo(some_global) + last))
+
         return the_closure
+
 
     f = get_closure(10)
     ff = loads(dumps(f))
@@ -495,25 +513,33 @@ if __name__ == "__main__":
     glob_func = loads(dumps(glob_func))
     get_closure = loads(dumps(get_closure))
 
+
     # Test recursive functions
-    def fib(n): return n if n <= 1 else fib(n - 1) + fib(n - 2)
+    def fib(n):
+        return n if n <= 1 else fib(n - 1) + fib(n - 2)
+
+
     assert fib(8) == loads(dumps(fib))(8)
+
 
     class Foo1:
 
         def foo(self):
             return 1234
 
+
     class Foo2(object):
 
         def foo(self):
             return 5678
+
 
     class Foo3(Foo2):
         x = 1111
 
         def foo(self):
             return super(Foo3, self).foo() + Foo3.x
+
 
     class Foo4(object):
 
@@ -534,6 +560,7 @@ if __name__ == "__main__":
                 return x
             else:
                 return self.recursive(x - 1)
+
 
     df1 = dumps(Foo1)
     df2 = dumps(Foo2)

@@ -30,12 +30,12 @@ req = [
 setup(name='DPark',
       version=version,
       description="Python clone of Spark, MapReduce like "
-      + "computing framework supporting iterative algorithms.",
+                  + "computing framework supporting iterative algorithms.",
       classifiers=[
           "Programming Language :: Python",
           'Intended Audience :: Developers',
-        'License :: OSI Approved :: BSD License',
-        'Operating System :: POSIX',
+          'License :: OSI Approved :: BSD License',
+          'Operating System :: POSIX',
       ],
       keywords='dpark python mapreduce spark',
       author='Davies Liu',
@@ -47,7 +47,7 @@ setup(name='DPark',
       setup_requires=['Cython >= 0.20'],
       url="https://github.com/douban/dpark",
       download_url=(
-          'https://github.com/douban/dpark/archive/%s.tar.gz' % version
+              'https://github.com/douban/dpark/archive/%s.tar.gz' % version
       ),
       install_requires=req,
       tests_require=[

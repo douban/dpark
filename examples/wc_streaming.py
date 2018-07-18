@@ -4,6 +4,7 @@ import logging
 from dpark.dstream import StreamingContext
 from dpark import optParser
 
+
 def load_context(checkpointDir=None):
     if checkpointDir:
         try:
@@ -11,9 +12,10 @@ def load_context(checkpointDir=None):
             return ssc, start_time
         except:
             logging.warning('Failed to load checkpoint from %s, start fresh', checkpointDir)
-            
+
     ssc = StreamingContext(1)
     return ssc, None
+
 
 if __name__ == '__main__':
     options, args = optParser.parse_args()
@@ -24,10 +26,10 @@ if __name__ == '__main__':
     if start_time is None:
         ssc.checkpoint(options.checkpoint_dir, 20)
         st = ssc.networkTextStream(host, port) \
-                .flatMap(lambda x: x.split()) \
-                .map(lambda x: (x,1)) \
-                .updateStateByKey(lambda vs, state: sum(vs) + (state or 0)) \
-                .show()
+            .flatMap(lambda x: x.split()) \
+            .map(lambda x: (x, 1)) \
+            .updateStateByKey(lambda vs, state: sum(vs) + (state or 0)) \
+            .show()
 
     ssc.start(start_time)
     ssc.awaitTermination()

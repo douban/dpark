@@ -20,6 +20,7 @@ from dpark.serialize import marshalable
 from dpark.env import env
 import six
 from six.moves import range, map
+
 try:
     from itertools import izip
 except ImportError:
@@ -35,7 +36,7 @@ DOWNLOAD_ADDR = 'NewDownloadAddr'
 BATCHED_BLOCKS = 3
 GUIDE_STOP, GUIDE_GET_SOURCES, GUIDE_SET_SOURCES, GUIDE_REPORT_BAD = list(range(4))
 SERVER_STOP, SERVER_FETCH, SERVER_FETCH_FAIL, SERVER_FETCH_OK, \
-    DATA_GET, DATA_GET_OK, DATA_GET_FAIL, DATA_DOWNLOADING, SERVER_CLEAR_ITEM = list(range(9))
+DATA_GET, DATA_GET_OK, DATA_GET_FAIL, DATA_DOWNLOADING, SERVER_CLEAR_ITEM = list(range(9))
 
 
 class GuideManager(object):
@@ -52,7 +53,7 @@ class GuideManager(object):
         if self._started:
             return
 
-        self._started=True
+        self._started = True
         self.guide_thread = self.start_guide()
         env.register(GUIDE_ADDR, self.guide_addr)
 
@@ -112,7 +113,7 @@ class GuideManager(object):
             return
 
         self._started = False
-        if self.guide_thread and self.guide_addr.\
+        if self.guide_thread and self.guide_addr. \
                 startswith('tcp://%s:' % socket.gethostname()):
             self.guide_thread.join(timeout=1)
             if self.guide_thread.is_alive():
@@ -291,7 +292,7 @@ class DownloadManager(object):
     def _get_sources(self, uuid, source_sock):
         try:
             source_sock.send_pyobj((GUIDE_GET_SOURCES,
-                                   uuid))
+                                    uuid))
             sources = source_sock.recv_pyobj()
         except:
             logger.warning('GET sources failed for addr %s with ZMQ ERR',
@@ -302,7 +303,7 @@ class DownloadManager(object):
     def _update_sources(self, uuid, bitmap, source_sock):
         try:
             source_sock.send_pyobj((GUIDE_SET_SOURCES,
-                                   (uuid, self.server_addr, bitmap)))
+                                    (uuid, self.server_addr, bitmap)))
             source_sock.recv_pyobj()
         except:
             pass
@@ -411,7 +412,7 @@ class DownloadManager(object):
             return
 
         self._started = False
-        if self.server_thread and self.server_addr.\
+        if self.server_thread and self.server_addr. \
                 startswith('tcp://%s:' % socket.gethostname()):
             for _, th in six.iteritems(self.download_threads):
                 th.join(timeout=0.1)  # only in executor, not needed
@@ -419,7 +420,7 @@ class DownloadManager(object):
             if self.server_thread.is_alive():
                 logger.warning("Download mananger server_thread not stopped.")
 
-        self.manager.shutdown() # shutdown will try join and terminate server process
+        self.manager.shutdown()  # shutdown will try join and terminate server process
 
 
 def accumulate_list(l):
@@ -552,14 +553,14 @@ class BroadcastManager(object):
         checksum = binascii.crc32(buf) & 0xFFFF
         stream = struct.pack(self.header_fmt, type, checksum) + buf
         blockNum = (len(stream) + (BLOCK_SIZE - 1)) >> BLOCK_SHIFT
-        blocks = [compress(stream[i*BLOCK_SIZE:(i+1)*BLOCK_SIZE]) for i in range(blockNum)]
+        blocks = [compress(stream[i * BLOCK_SIZE:(i + 1) * BLOCK_SIZE]) for i in range(blockNum)]
         sizes = [len(block) for block in blocks]
         size_l = accumulate_list(sizes)
         block_map = list(izip(size_l[:-1], sizes))
         return blocks, size_l[-1], block_map
 
     def from_blocks(self, uuid, blocks):
-        stream = b''.join(map(decompress,  blocks))
+        stream = b''.join(map(decompress, blocks))
         type, checksum = struct.unpack(self.header_fmt, stream[:self.header_len])
         buf = stream[self.header_len:]
         _checksum = binascii.crc32(buf) & 0xFFFF
@@ -585,15 +586,19 @@ class BroadcastManager(object):
 
         self._started = False
 
+
 _manager = BroadcastManager()
 _download_manager = DownloadManager()
 _guide_manager = GuideManager()
 
+
 def start_guide_manager():
     _guide_manager.start()
 
+
 def start_download_manager():
     _download_manager.start()
+
 
 def stop_manager():
     _manager.shutdown()

@@ -2,7 +2,6 @@ from __future__ import absolute_import
 import os
 from dpark.utils.log import get_logger
 
-
 logger = get_logger(__name__)
 
 # workdir used in slaves for internal files
@@ -41,7 +40,6 @@ _named_only_start = object()
 
 
 class RDDConf(object):
-
     # use default_rddconf to set default values, do NOT change ATTRS
     ATTRS = {
         "disk_merge": False,
@@ -50,11 +48,11 @@ class RDDConf(object):
         "ordered_group": False,
         "dump_mem_ratio": 0.9,
         "op": OP_UDF,
-        "_dummy":_named_only_start,
+        "_dummy": _named_only_start,
     }
 
     def __init__(self, _dummy, disk_merge, sort_merge, iter_group, ordered_group, dump_mem_ratio, op):
-        if _dummy !=_named_only_start:
+        if _dummy != _named_only_start:
             raise TypeError("DO NOT use RDDConf directly; use dpark.conf.rddconf() instead. ")
 
         self.disk_merge = disk_merge
@@ -93,24 +91,24 @@ class RDDConf(object):
 
 
 default_rddconf = RDDConf(**RDDConf.ATTRS)  # for user
-_rdd = default_rddconf # for etc
+_rdd = default_rddconf  # for etc
 
 
 def rddconf(_dummy=_named_only_start,
-        disk_merge=None, sort_merge=None,
-        iter_group=False, ordered_group=None,
-        dump_mem_ratio=None,
-        op=OP_UDF):
+            disk_merge=None, sort_merge=None,
+            iter_group=False, ordered_group=None,
+            dump_mem_ratio=None,
+            op=OP_UDF):
     """ Return new RDDConfig object based on default values.
         Only takes named arguments.
         e.g. groupByKey(.., rddconf=dpark.conf.rddconf(...))
     """
-    if _dummy !=_named_only_start:
+    if _dummy != _named_only_start:
         raise TypeError("rddconf() only takes named arguments")
     kwargs = locals()
     kwargs.pop("_dummy")
     kwargs = dict([kv for kv in kwargs.items() if kv[1] is not None])
-    res  = default_rddconf.dup(**kwargs)
+    res = default_rddconf.dup(**kwargs)
     return res
 
 
@@ -131,5 +129,5 @@ def load_conf(path):
         logger.error("error while load conf from %s: %s", path, e)
         raise
 
-load_conf(os.environ.get('DPARK_CONF', '/etc/dpark.conf'))
 
+load_conf(os.environ.get('DPARK_CONF', '/etc/dpark.conf'))

@@ -5,7 +5,6 @@ from dpark.utils.log import get_logger
 
 logger = get_logger(__name__)
 
-
 if sys.version_info[0] < 3:
     def next_func(it):
         return it.next
@@ -98,7 +97,6 @@ class GroupBySubIter(object):
 
 
 class GroupByNestedIter(object):
-
     NO_CACHE = False
 
     def __init__(self, it, owner_info=None):
@@ -143,7 +141,7 @@ class GroupByNestedIter(object):
             if prev_sub_it is not None:
                 if prev_sub_it.get_all_blocks() and not self.is_cached:
                     self.is_cached = True
-                    msg = "GroupByNestedIter caching values. owner: %s" % (self.owner_info, )
+                    msg = "GroupByNestedIter caching values. owner: %s" % (self.owner_info,)
                     if GroupByNestedIter.NO_CACHE:  # for test
                         raise Exception(msg)
                     else:
@@ -195,5 +193,5 @@ def cogroup_no_dup(iters):
                     to_del.append(j)
                     n -= 1
         for j, i in enumerate(to_del):
-            del curr[i-j]
+            del curr[i - j]
         r += 1

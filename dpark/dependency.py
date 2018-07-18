@@ -6,6 +6,7 @@ from dpark.serialize import load_func, dump_func
 from dpark.utils.heaponkey import HeapOnKey
 from six.moves import range
 
+
 class Dependency:
     def __init__(self, rdd):
         self.rdd = rdd
@@ -13,14 +14,18 @@ class Dependency:
     def __getstate__(self):
         raise ValueError("Should not pickle dependency: %r" % self)
 
+
 class NarrowDependency(Dependency):
     isShuffle = False
+
     def getParents(self, outputPartition):
         raise NotImplementedError
+
 
 class OneToOneDependency(NarrowDependency):
     def getParents(self, pid):
         return [pid]
+
 
 class OneToRangeDependency(NarrowDependency):
     def __init__(self, rdd, splitSize, length):
@@ -30,7 +35,8 @@ class OneToRangeDependency(NarrowDependency):
 
     def getParents(self, pid):
         return list(range(pid * self.splitSize,
-                min((pid+1) * self.splitSize, self.length)))
+                          min((pid + 1) * self.splitSize, self.length)))
+
 
 class CartesianDependency(NarrowDependency):
     def __init__(self, rdd, first, numSplitsInRdd2):
@@ -114,15 +120,15 @@ class GroupByAggregator(AggregatorBase):
 
 class Aggregator(object):
     def __init__(self, createCombiner, mergeValue,
-            mergeCombiners):
+                 mergeCombiners):
         self.createCombiner = createCombiner
         self.mergeValue = mergeValue
         self.mergeCombiners = mergeCombiners
 
     def __getstate__(self):
         return (dump_func(self.createCombiner),
-            dump_func(self.mergeValue),
-            dump_func(self.mergeCombiners))
+                dump_func(self.mergeValue),
+                dump_func(self.mergeCombiners))
 
     def __setstate__(self, state):
         c1, c2, c3 = state
@@ -134,8 +140,10 @@ class Aggregator(object):
 class AddAggregator:
     def createCombiner(self, x):
         return x
+
     def mergeValue(self, s, x):
         return s + x
+
     def mergeCombiners(self, x, y):
         return x + y
 
@@ -143,9 +151,11 @@ class AddAggregator:
 class MergeAggregator:
     def createCombiner(self, x):
         return [x]
+
     def mergeValue(self, s, x):
         s.append(x)
         return s
+
     def mergeCombiners(self, x, y):
         x.extend(y)
         return x
@@ -156,7 +166,7 @@ class HeapAggregator:
     def __init__(self, heap_limit, key=None, order_reverse=False):
         self.heap = HeapOnKey(key=key, min_heap=order_reverse)
         self.heap_limit = heap_limit
-        assert(heap_limit > 0)
+        assert (heap_limit > 0)
 
     def __getstate__(self):
         return self.heap, self.heap_limit
@@ -186,19 +196,24 @@ class HeapAggregator:
 class UniqAggregator:
     def createCombiner(self, x):
         return set([x])
+
     def mergeValue(self, s, x):
         s.add(x)
         return s
+
     def mergeCombiners(self, x, y):
         x |= y
         return x
+
 
 class Partitioner:
     @property
     def numPartitions(self):
         raise NotImplementedError
+
     def getPartition(self, key):
         raise NotImplementedError
+
 
 class HashPartitioner(Partitioner):
     def __init__(self, partitions, thresholds=None):
@@ -206,7 +221,7 @@ class HashPartitioner(Partitioner):
         self.thresholds = thresholds
         assert self.partitions != 0
         assert self.thresholds is None or \
-            len(self.thresholds) == self.partitions - 1
+               len(self.thresholds) == self.partitions - 1
 
     @property
     def numPartitions(self):
@@ -221,8 +236,9 @@ class HashPartitioner(Partitioner):
     def __eq__(self, other):
         if isinstance(other, HashPartitioner):
             return other.numPartitions == self.numPartitions and \
-                other.thresholds == self.thresholds
+                   other.thresholds == self.thresholds
         return False
+
 
 class RangePartitioner(Partitioner):
     def __init__(self, keys, reverse=False):

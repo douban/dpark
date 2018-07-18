@@ -11,7 +11,6 @@ from datetime import datetime
 
 
 def profile(hostname=None, to_stdout=False):
-
     def print_stats(stats):
         stats.strip_dirs()
         stats.sort_stats('time', 'calls')

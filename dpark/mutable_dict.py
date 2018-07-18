@@ -13,6 +13,7 @@ from dpark.dependency import HashPartitioner
 from collections import OrderedDict
 import six
 
+
 class LRUDict(object):
     def __init__(self, limit=None):
         self.limit = limit
@@ -39,8 +40,9 @@ class ConflictValues(object):
     def __repr__(self):
         return '<ConflictValues %s>' % self.value
 
+
 class MutableDict(object):
-    def __init__(self, partition_num , cacheLimit=None):
+    def __init__(self, partition_num, cacheLimit=None):
         self.uuid = str(uuid.uuid4())
         self.partitioner = HashPartitioner(partition_num)
         self.data = LRUDict(cacheLimit)
@@ -90,17 +92,17 @@ class MutableDict(object):
         uri = env.get('SERVER_URI')
         server_uri = '%s/%s' % (uri, os.path.basename(path))
 
-        for k,v in self.updated.items():
+        for k, v in self.updated.items():
             key = self._get_key(k)
             if key in updated_keys:
                 updated_keys[key][k] = v
             else:
-                updated_keys[key] = {k:v}
+                updated_keys[key] = {k: v}
 
         uid = uuid.uuid4().get_hex()
         for key, updated in updated_keys.items():
             new = self._fetch_missing(key)
-            for k,v in updated.items():
+            for k, v in updated.items():
                 if v is None:
                     new.pop(k)
                 else:
@@ -114,13 +116,13 @@ class MutableDict(object):
             url = '%s/%s' % (server_uri, filename)
             with atomic_file(fn) as f:
                 data = compress(six.moves.cPickle.dumps(new))
-                f.write(struct.pack('<I', len(data)+4) + data)
+                f.write(struct.pack('<I', len(data) + 4) + data)
 
             env.trackerClient.call(AddItemMessage('mutable_dict_new:%s' % key, url))
 
-            files = glob.glob(os.path.join(path, '%s-*' % self.uuid ))
+            files = glob.glob(os.path.join(path, '%s-*' % self.uuid))
             for f in files:
-                if int(f.split('_')[-2]) < self.generation -1:
+                if int(f.split('_')[-2]) < self.generation - 1:
                     try:
                         os.remove(f)
                     except OSError:
@@ -162,10 +164,10 @@ class MutableDict(object):
             length, = struct.unpack('<I', data[:4])
             if length != len(data):
                 raise IOError('Transfer %s failed: %s received, %s expected' % (url,
-                    len(data), length))
+                                                                                len(data), length))
 
             data = six.moves.cPickle.loads(decompress(data[4:]))
-            for k,v in data.items():
+            for k, v in data.items():
                 if k in result:
                     r = result[k]
                     if v[1] == r[1]:
@@ -183,7 +185,7 @@ class MutableDict(object):
 
     def _get_key(self, key):
         return '%s-%s' % (self.uuid,
-                self.partitioner.getPartition(key))
+                          self.partitioner.getPartition(key))
 
     def _get_path(self):
         dirs = env.get('WORKDIR')
@@ -213,6 +215,7 @@ class MutableDict(object):
         raise RuntimeError('Cannot find suitable workdir')
 
     _all_mutable_dicts = {}
+
     @classmethod
     def register(cls, md):
         uuid = md.uuid
@@ -232,4 +235,3 @@ class MutableDict(object):
     def merge(cls):
         for md in cls._all_mutable_dicts.values():
             md._merge()
-

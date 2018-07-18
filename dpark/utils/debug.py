@@ -13,4 +13,3 @@ def spawn_rconsole(env):
         rconsole.spawn_server(env, 0)
     except ImportError:
         pass
-

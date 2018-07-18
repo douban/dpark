@@ -19,6 +19,7 @@ from six.moves import urllib
 
 logger = get_logger(__name__)
 
+
 class Cache:
     data = {}
 
@@ -36,6 +37,7 @@ class Cache:
 
     def clear(self):
         self.data.clear()
+
 
 class DiskCache(Cache):
     def __init__(self, tracker, path):
@@ -122,8 +124,8 @@ class DiskCache(Cache):
                 yield v
 
             bytes = f.tell()
-            if bytes > 10<<20:
-                logger.warning("cached result is %dMB (larger than 10MB)", bytes>>20)
+            if bytes > 10 << 20:
+                logger.warning("cached result is %dMB (larger than 10MB)", bytes >> 20)
             # count
             f.seek(0)
             f.write(struct.pack("I", c))
@@ -173,6 +175,7 @@ class BaseCacheTracker(object):
     def stop(self):
         self.clear()
 
+
 class CacheTracker(BaseCacheTracker):
     def __init__(self):
         cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
@@ -189,7 +192,7 @@ class CacheTracker(BaseCacheTracker):
         result = {}
         for rdd_id, partitions in self.rdds.items():
             result[rdd_id] = [self.locs.get('cache:%s-%s' % (rdd_id, index), [])
-                    for index in range(partitions)]
+                              for index in range(partitions)]
 
         return result
 
@@ -199,6 +202,7 @@ class CacheTracker(BaseCacheTracker):
                 h = uri.split(':')[1].rsplit('/', 1)[-1]
                 return h
             return ''
+
         return list(map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), [])))
 
     def getCacheUri(self, rdd_id, index):
@@ -245,6 +249,7 @@ def test():
     print(list(tracker.getOrCompute(nums, split)))
     print(tracker.getLocationsSnapshot())
     tracker.stop()
+
 
 if __name__ == '__main__':
     test()

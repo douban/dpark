@@ -95,44 +95,45 @@ class TestJob(unittest.TestCase):
 
 
 class TestHostStatus(unittest.TestCase):
-        def test_single_hostatus(self):
-            ht = HostStatus('localhost', purge_elapsed=3)
-            ht.task_succeed(2)
-            assert len(ht.succeeded_log) == 1
-            assert ht.recent_succeed_rate() == 1.0
-            time.sleep(1)
-            ht.task_succeed(1)
-            ht.task_failed(3)
-            assert len(ht.succeeded_log) == 2
-            assert len(ht.failed_log) == 1
-            assert 3 in ht.failed_tasks
-            assert ht.recent_succeed_rate() == 2.0 / 3
-            time.sleep(2)
-            ht.purge_old()
-            assert len(ht.succeeded_log) == 1
-            assert len(ht.failed_log) == 1
-            assert ht.recent_succeed_rate() == 0.5
-            assert ht.should_forbit(3)
-            time.sleep(4)
-            assert not ht.should_forbit(3)
+    def test_single_hostatus(self):
+        ht = HostStatus('localhost', purge_elapsed=3)
+        ht.task_succeed(2)
+        assert len(ht.succeeded_log) == 1
+        assert ht.recent_succeed_rate() == 1.0
+        time.sleep(1)
+        ht.task_succeed(1)
+        ht.task_failed(3)
+        assert len(ht.succeeded_log) == 2
+        assert len(ht.failed_log) == 1
+        assert 3 in ht.failed_tasks
+        assert ht.recent_succeed_rate() == 2.0 / 3
+        time.sleep(2)
+        ht.purge_old()
+        assert len(ht.succeeded_log) == 1
+        assert len(ht.failed_log) == 1
+        assert ht.recent_succeed_rate() == 0.5
+        assert ht.should_forbit(3)
+        time.sleep(4)
+        assert not ht.should_forbit(3)
 
-        def test_task_host_manager(self):
-            manager = TaskHostManager()
-            manager.register_host('fake1', purge_elapsed=1)
-            manager.register_host('fake2', purge_elapsed=1)
-            manager.register_host('fake3', purge_elapsed=1)
-            host_offers = {'fake1': (1, None), 'fake2': (2, None),
-                           'fake3': (3, None)}
-            manager.task_failed(1, 'fake2', OtherFailure('Mock failed'))
-            assert manager.offer_choice(1, host_offers, ['fake3'])[0] == 1
-            time.sleep(1)
-            manager.task_failed(1, 'fake1', OtherFailure('Mock failed'))
-            assert manager.offer_choice(1, host_offers, [])[0] == 3
-            assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
-            manager.task_succeed(2, 'fake2', Success())
-            assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
-            time.sleep(1)
-            assert manager.offer_choice(1, host_offers, ['fake3'])[0] == 2
+    def test_task_host_manager(self):
+        manager = TaskHostManager()
+        manager.register_host('fake1', purge_elapsed=1)
+        manager.register_host('fake2', purge_elapsed=1)
+        manager.register_host('fake3', purge_elapsed=1)
+        host_offers = {'fake1': (1, None), 'fake2': (2, None),
+                       'fake3': (3, None)}
+        manager.task_failed(1, 'fake2', OtherFailure('Mock failed'))
+        assert manager.offer_choice(1, host_offers, ['fake3'])[0] == 1
+        time.sleep(1)
+        manager.task_failed(1, 'fake1', OtherFailure('Mock failed'))
+        assert manager.offer_choice(1, host_offers, [])[0] == 3
+        assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
+        manager.task_succeed(2, 'fake2', Success())
+        assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
+        time.sleep(1)
+        assert manager.offer_choice(1, host_offers, ['fake3'])[0] == 2
+
 
 if __name__ == '__main__':
     sys.path.append('../')

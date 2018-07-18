@@ -5,6 +5,7 @@ if platform.python_implementation() == 'PyPy':
         from lz4framed import compress as _compress
         return _compress(*a, **kw)
 
+
     def decompress(*a, **kw):
         from lz4framed import decompress as _decompress
         return _decompress(*a, **kw)

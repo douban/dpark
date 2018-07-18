@@ -46,6 +46,7 @@ def singleton(cls):
             instances[key] = cls(*a, **kw)
 
         return instances[key]
+
     getinstance._instances = instances
     return getinstance
 
@@ -158,9 +159,9 @@ class DparkContext(object):
 
             if master.startswith('mesos://'):
                 if '@' in master:
-                    master = master[master.rfind('@')+1:]
+                    master = master[master.rfind('@') + 1:]
                 else:
-                    master = master[master.rfind('//')+2:]
+                    master = master[master.rfind('//') + 2:]
             elif master.startswith('zoo://'):
                 master = 'zk' + master[3:]
 
@@ -183,7 +184,7 @@ class DparkContext(object):
         self.initialized = True
 
         logger.info("DparkContext initialized, use master %s -> %s, default_rddconf = %s",
-                    origin_master,  master,
+                    origin_master, master,
                     conf.default_rddconf)
 
     @staticmethod
@@ -207,7 +208,7 @@ class DparkContext(object):
         self.init()
         if isinstance(path, (list, tuple)):
             return self.union([self.textFile(p, ext, followLink, maxdepth, cls, *ka, **kws)
-                for p in path])
+                               for p in path])
 
         path = os.path.realpath(path)
 
@@ -221,7 +222,7 @@ class DparkContext(object):
 
         if os.path.isdir(path):
             paths = []
-            for root,dirs,names in walk(path, followlinks=followLink):
+            for root, dirs, names in walk(path, followlinks=followLink):
                 if maxdepth > 0:
                     depth = len([_f for _f in root[len(path):].split('/') if _f]) + 1
                     if depth > maxdepth:
@@ -237,7 +238,7 @@ class DparkContext(object):
                         dirs.remove(d)
 
             rdds = [create_rdd(cls, p, *ka, **kws)
-                     for p in paths]
+                    for p in paths]
             return self.union(rdds)
         else:
             return create_rdd(cls, path, *ka, **kws)
@@ -332,7 +333,7 @@ class DparkContext(object):
                                       for p in subs])
                 else:
                     subs = [os.path.join(path, '%x' % i) for i in range(16)]
-                    rdd = self.union([self.beansdb(p, depth and depth-1, key_filter,
+                    rdd = self.union([self.beansdb(p, depth and depth - 1, key_filter,
                                                    fullscan, raw=True, only_latest=False)
                                       for p in subs if os.path.exists(p)])
             else:
@@ -340,7 +341,7 @@ class DparkContext(object):
 
         # choose only latest version
         if only_latest:
-            num_splits = min(int(ceil(len(rdd)/4)), 800)
+            num_splits = min(int(ceil(len(rdd) / 4)), 800)
             rdd = rdd.reduceByKey(lambda v1, v2: v1[2] > v2[2] and v1 or v2,
                                   numSplits=num_splits)
         if not raw:

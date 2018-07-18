@@ -14,6 +14,7 @@ from six.moves import range
 
 logger = get_logger(__name__)
 
+
 def readable(size):
     units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
     unit = 0
@@ -45,10 +46,12 @@ class Job:
         cls.nextJobId += 1
         return cls.nextJobId
 
+
 LOCALITY_WAIT = 0
 WAIT_FOR_RUNNING = 10
 MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
+
 
 # A Job that runs a set of tasks with no interdependencies.
 
@@ -93,7 +96,7 @@ class SimpleJob(Job):
         for i in range(len(tasks)):
             self.addPendingTask(i)
         self.host_cache = {}
-        self.task_host_manager = task_host_manager if task_host_manager is not None\
+        self.task_host_manager = task_host_manager if task_host_manager is not None \
             else TaskHostManager()
         self.id_retry_host = {}
         self.task_local_set = set()
@@ -193,7 +196,6 @@ class SimpleJob(Job):
             return i, o, t
         return None
 
-
     def statusUpdate(self, tid, tried, status, reason=None,
                      result=None, update=None, stats=None):
         logger.debug('job status update %s %s %s', tid, status, reason)
@@ -212,7 +214,6 @@ class SimpleJob(Job):
         if not self.launched[i]:
             self.launched[i] = True
             self.tasksLaunched += 1
-
 
         if status == 'TASK_FINISHED':
             self.taskFinished(tid, tried, result, update, stats)
@@ -235,9 +236,9 @@ class SimpleJob(Job):
             h, m = divmod(m, 60)
 
             fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
-                ' ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'.format(
-                    width=int(math.log10(self.numTasks)) + 1,
-                )
+                  ' ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'.format(
+                width=int(math.log10(self.numTasks)) + 1,
+            )
 
             msg = fmt % (
                 self.id, bar, ratio * 100, self.tasksFinished, n, h, m, s,
@@ -247,9 +248,9 @@ class SimpleJob(Job):
             logger.info(msg)
         else:
             fmt = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s)' \
-                ' ETA:--:--:-- AVG:N/A\x1b[K%s'.format(
-                    width=int(math.log10(self.numTasks)) + 1,
-                )
+                  ' ETA:--:--:-- AVG:N/A\x1b[K%s'.format(
+                width=int(math.log10(self.numTasks)) + 1,
+            )
 
             msg = fmt % (
                 self.id, bar, ratio * 100, self.tasksFinished, n, ending
@@ -287,11 +288,11 @@ class SimpleJob(Job):
             tried = [t.tried for t in self.tasks]
             elasped = time.time() - self.start
             logger.info('Job %d finished in %.1fs: min=%.1fs, '
-                'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
-                self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
-                max(tried), self.total_used / elasped,
-                len(self.task_local_set) * 100. / len(self.tasks)
-            )
+                        'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
+                        self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
+                        max(tried), self.total_used / elasped,
+                        len(self.task_local_set) * 100. / len(self.tasks)
+                        )
             self.sched.jobFinished(self)
 
     def taskLost(self, tid, tried, status, reason):
@@ -335,7 +336,7 @@ class SimpleJob(Job):
                             t.mem = max(mem90, t.mem)
 
         elif status == 'TASK_FAILED':
-            _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES\
+            _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES \
                 else logger.warning
             if reason not in self.reasons:
                 _logger(
@@ -384,7 +385,7 @@ class SimpleJob(Job):
             if (self.launched[i] and task.status == 'TASK_STAGING'
                     and task.start + WAIT_FOR_RUNNING < now):
                 logger.info('task %d timeout %.1f (at %s), re-assign it',
-                             task.id, now - task.start, task.host)
+                            task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
 

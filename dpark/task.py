@@ -16,11 +16,13 @@ from six.moves import range
 
 logger = get_logger(__name__)
 
+
 class Task:
     def __init__(self):
         self.id = Task.newId()
 
     nextId = 0
+
     @classmethod
     def newId(cls):
         cls.nextId += 1
@@ -40,7 +42,7 @@ class DAGTask(Task):
         self.mem = 0
 
     def __repr__(self):
-        return '<task %d:%d>'%(self.stageId, self.id)
+        return '<task %d:%d>' % (self.stageId, self.id)
 
     def run(self, task_id):
         try:
@@ -133,7 +135,7 @@ class ShuffleMapTask(DAGTask):
     def _run(self, task_id):
         mem_limit = env.meminfo.mem_limit_soft
         t0 = time.time()
-        logger.debug("run task with shuffle_flag %r" % (self.rddconf, ))
+        logger.debug("run task with shuffle_flag %r" % (self.rddconf,))
         rdd = self.rdd
         meminfo = env.meminfo
         n = self.partitioner.numPartitions
@@ -143,7 +145,7 @@ class ShuffleMapTask(DAGTask):
         dumper_cls = SortMergeBucketDumper if self.rddconf.sort_merge else BucketDumper
         dumper = dumper_cls(self.shuffleId, self.partition, n, self.rddconf)
         buckets = [{} for _ in range(n)]
-        env.meminfo.ratio = min(float(n) / (n+1), env.meminfo.ratio)
+        env.meminfo.ratio = min(float(n) / (n + 1), env.meminfo.ratio)
 
         last_i = 0
         for i, item in enumerate(rdd.iterator(self.split)):
@@ -221,7 +223,7 @@ class BucketDumper(object):
         if seq is not None:
             return "%s.tmp.%d" % (s, seq)
         else:
-            return "%s.tmp" % (s, )
+            return "%s.tmp" % (s,)
 
     def _get_next_tmp(self, reduce_id, is_final, size):
         i = reduce_id
@@ -289,7 +291,7 @@ class BucketDumper(object):
             self.sizes[i] += size
 
         self.num_dump += 1
-        t =  time.time() - t
+        t = time.time() - t
         env.task_stats.secs_dump += t
         env.task_stats.num_dump_rotate += 1
 

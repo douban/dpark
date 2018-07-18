@@ -24,13 +24,19 @@ except ImportError:
 try:
     from fnv1a import get_hash
     from fnv1a import get_hash_beansdb
+
+
     def fnv1a(d):
         return get_hash(d) & 0xffffffff
+
+
     def fnv1a_beansdb(d):
         return get_hash_beansdb(d) & 0xffffffff
 except ImportError:
     FNV_32_PRIME = 0x01000193
     FNV_32_INIT = 0x811c9dc5
+
+
     def fnv1a(d):
         h = FNV_32_INIT
         for c in six.iterbytes(d):
@@ -38,16 +44,17 @@ except ImportError:
             h *= FNV_32_PRIME
             h &= 0xffffffff
         return h
+
+
     fnv1a_beansdb = fnv1a
 
-
-FLAG_PICKLE   = 0x00000001
-FLAG_INTEGER  = 0x00000002
-FLAG_LONG     = 0x00000004
-FLAG_BOOL     = 0x00000008
-FLAG_COMPRESS1= 0x00000010 # by cmemcached
-FLAG_MARSHAL  = 0x00000020
-FLAG_COMPRESS = 0x00010000 # by beansdb
+FLAG_PICKLE = 0x00000001
+FLAG_INTEGER = 0x00000002
+FLAG_LONG = 0x00000004
+FLAG_BOOL = 0x00000008
+FLAG_COMPRESS1 = 0x00000010  # by cmemcached
+FLAG_MARSHAL = 0x00000020
+FLAG_COMPRESS = 0x00010000  # by beansdb
 
 PADDING = 256
 BEANSDB_MAX_KEY_LENGTH = 250
@@ -75,6 +82,7 @@ def restore_value(flag, val):
     elif flag & FLAG_PICKLE:
         val = six.moves.cPickle.loads(val)
     return val
+
 
 def prepare_value(val, compress):
     flag = 0
@@ -109,14 +117,14 @@ def read_record(f, check_crc=False):
     if len(block) < 24:  #
         return None, "EOF"
     crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
-    if not (0 < ksz < 255 and 0 <= vsz < (100<<20)):
+    if not (0 < ksz < 255 and 0 <= vsz < (100 << 20)):
         return None, 'bad key/value size %d %d' % (ksz, vsz)
 
     rsize = 24 + ksz + vsz
     if rsize & 0xff:
         rsize = ((rsize >> 8) + 1) << 8
     if rsize > PADDING:
-        n = rsize-PADDING
+        n = rsize - PADDING
         remain = f.read(n)
         if len(remain) != n:
             return None, "EOF data"
@@ -125,8 +133,8 @@ def read_record(f, check_crc=False):
         crc32 = binascii.crc32(block[4:24 + ksz + vsz]) & 0xffffffff
         if crc32 != crc:
             return None, "crc wrong"
-    key = block[24:24+ksz]
-    value = block[24+ksz:24+ksz+vsz]
+    key = block[24:24 + ksz]
+    value = block[24 + ksz:24 + ksz + vsz]
     return (rsize, key, ((flag, value), ver, tstamp)), None
 
 
@@ -200,10 +208,10 @@ class BeansdbReader(object):
         with open(self.path, 'rb') as dataf:
             p = 0
             while p < len(hint):
-                pos, ver, hash = struct.unpack("IiH", hint[p:p+10])
+                pos, ver, hash = struct.unpack("IiH", hint[p:p + 10])
                 p += 10
                 ksz = pos & 0xff
-                key = hint[p: p+ksz]
+                key = hint[p: p + ksz]
                 if key_filter(key):
                     dataf.seek(pos & 0xffffff00)
                     r, err = read_record(dataf)
@@ -215,7 +223,7 @@ class BeansdbReader(object):
                         value, err = self.restore(value)
                         if not err:
                             yield key, value
-                p += ksz + 1 # \x00
+                p += ksz + 1  # \x00
 
     def restore(self, value):
         err = None
@@ -250,7 +258,7 @@ class BeansdbReader(object):
                 r, err = read_record(f)
                 if err:
                     logger.error('read error at %s pos: %d err: %s',
-                                self.path, begin, err)
+                                 self.path, begin, err)
                     if err == "EOF":
                         return
                     begin += PADDING
@@ -267,7 +275,6 @@ class BeansdbReader(object):
                     if not err:
                         yield key, value
                 begin += size
-
 
 
 class BeansdbWriter(object):
@@ -330,7 +337,7 @@ class BeansdbWriter(object):
         p = [os.path.join(d, pname) for d in ds]
         tp = [os.path.join(d, tname) for d in ds]
         pos = [0] * N
-        f = [open(t, 'wb', 1<<20) for t in tp]
+        f = [open(t, 'wb', 1 << 20) for t in tp]
         now = int(time.time())
         hint = [[] for d in ds]
 
@@ -350,7 +357,7 @@ class BeansdbWriter(object):
 
             hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, 0) + key + b'\x00')
             pos[i] += self.write_record(f[i], key, value, now)
-            if pos[i] > (4000<<20):
+            if pos[i] > (4000 << 20):
                 raise Exception("beansdb data file is larger than 4000M")
         for i in f:
             i.close()

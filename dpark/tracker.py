@@ -8,30 +8,37 @@ from dpark.utils.log import get_logger
 
 logger = get_logger(__name__)
 
+
 class TrackerMessage(object):
     pass
 
+
 class StopTrackerMessage(TrackerMessage):
     pass
+
 
 class SetValueMessage(TrackerMessage):
     def __init__(self, key, value):
         self.key = key
         self.value = value
 
+
 class AddItemMessage(TrackerMessage):
     def __init__(self, key, item):
         self.key = key
         self.item = item
+
 
 class RemoveItemMessage(TrackerMessage):
     def __init__(self, key, item):
         self.key = key
         self.item = item
 
+
 class GetValueMessage(TrackerMessage):
     def __init__(self, key):
         self.key = key
+
 
 class TrackerServer(object):
     locs = {}

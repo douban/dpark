@@ -26,13 +26,14 @@ v = V / d
 
 GAMMA = 0.02
 LAMBDA = 0.1
-STEP=0.9
-
+STEP = 0.9
 
 W = MutableDict(d)
 H = MutableDict(d)
 
 ori_b = dpark.broadcast(ori)
+
+
 def sgd(i_j):
     (i, j) = i_j
     Wi = W.get(i)
@@ -46,14 +47,14 @@ def sgd(i_j):
         H.put(j, Hj)
 
     ori = ori_b.value
-    Oij = ori[i*m:(i+1)*m, j*v:(j+1)*v]
+    Oij = ori[i * m:(i + 1) * m, j * v:(j + 1) * v]
 
     for x in range(m):
         for y in range(v):
             pred = Wi[x].dot(Hj[y])
             err = int(Oij[x][y]) - int(pred)
-            w = Wi[x] + GAMMA * (Hj[y]*err - LAMBDA*Wi[x])
-            h = Hj[y] + GAMMA * (Wi[x]*err - LAMBDA*Hj[y])
+            w = Wi[x] + GAMMA * (Hj[y] * err - LAMBDA * Wi[x])
+            h = Hj[y] + GAMMA * (Wi[x] * err - LAMBDA * Hj[y])
 
             Wi[x] = w
             Hj[y] = h
@@ -61,8 +62,10 @@ def sgd(i_j):
     W.put(i, Wi)
     H.put(j, Hj)
 
+
 rdd = dpark.makeRDD(list(range(d)))
 rdd = rdd.cartesian(rdd).cache()
+
 
 def calc_err(i_j):
     (i, j) = i_j
@@ -71,8 +74,9 @@ def calc_err(i_j):
 
     ori = ori_b.value
     Rij = Wi.dot(Hj.T)
-    Oij = ori[i*m:(i+1)*m, j*v:(j+1)*v]
+    Oij = ori[i * m:(i + 1) * m, j * v:(j + 1) * v]
     return ((Rij - Oij) ** 2).sum()
+
 
 J = list(range(d))
 while True:
@@ -82,9 +86,8 @@ while True:
 
     GAMMA *= STEP
     shuffle(J)
-    err = rdd.map(calc_err).reduce(lambda x,y:x+y)
-    rmse = numpy.sqrt(err/(M*V))
+    err = rdd.map(calc_err).reduce(lambda x, y: x + y)
+    rmse = numpy.sqrt(err / (M * V))
     print(rmse)
     if rmse < 0.01:
         break
-

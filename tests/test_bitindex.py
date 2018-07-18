@@ -3,9 +3,11 @@ import os, sys
 import unittest
 import random
 from six.moves import range
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dpark.utils.bitindex import BitIndex, Bloomfilter
+
 
 class TestBitIndex(unittest.TestCase):
     def test_sets(self):
@@ -20,9 +22,9 @@ class TestBitIndex(unittest.TestCase):
         self.assertEqual(len(a.array), (a.size + 7) >> 3)
         self.assertEqual(a.array, b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10')
         self.assertTrue(bool(a))
-        self.assertEqual(str(a), ''.join(['0']*100 + ['1']))
+        self.assertEqual(str(a), ''.join(['0'] * 100 + ['1']))
 
-        a.sets([1,3,16])
+        a.sets([1, 3, 16])
         self.assertEqual(a.size, 101)
         self.assertEqual(len(a.array), (a.size + 7) >> 3)
         self.assertEqual(a.array, b'\x0a\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x10')
@@ -37,7 +39,7 @@ class TestBitIndex(unittest.TestCase):
         self.assertEqual(len(a.array), (a.size + 7) >> 3)
         self.assertEqual(a.array, b'\x0a\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x30')
 
-        a.appends([1,0,1,True,1, None])
+        a.appends([1, 0, 1, True, 1, None])
         self.assertEqual(a.size, 109)
         self.assertEqual(len(a.array), (a.size + 7) >> 3)
         self.assertEqual(a.array, b'\x0a\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\xb0\x0e')
@@ -83,5 +85,3 @@ class TestBitIndex(unittest.TestCase):
         self.assertTrue(keys[0] in b)
         self.assertTrue(all(b.match(keys)))
         self.assertTrue(len([_f for _f in b.match(range(80000, 100000)) if _f]) < 100000 * 0.01)
-
-

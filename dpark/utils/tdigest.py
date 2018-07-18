@@ -1,6 +1,7 @@
 from math import isnan, ceil, pi
 from six.moves import range
 
+
 class Centroid(object):
 
     def __init__(self, x, w=1):
@@ -106,7 +107,6 @@ class TDigest(object):
 
         normalizer = self.compression / (pi * self._total_weight)
 
-
         mean = []
         weight = []
         mean.append(incoming_mean[incoming_order[0]])
@@ -123,8 +123,8 @@ class TDigest(object):
             if z * z <= q0 * (1 - q0) and z * z <= q2 * (1 - q2):
                 weight[-1] += incoming_weight[ix]
                 mean[-1] = mean[-1] + \
-                        (incoming_mean[ix] - mean[-1]) * \
-                        incoming_weight[ix] / weight[-1]
+                           (incoming_mean[ix] - mean[-1]) * \
+                           incoming_weight[ix] / weight[-1]
 
             else:
                 w_so_far += weight[-1]
@@ -133,7 +133,7 @@ class TDigest(object):
 
         self._mean = mean
         self._weight = weight
-        #assert sum(weight) == self._total_weight
+        # assert sum(weight) == self._total_weight
 
         if self._total_weight > 0:
             self._min = mean[0] if self._min is None else min(self._min, mean[0])
@@ -154,7 +154,7 @@ class TDigest(object):
             return mean[0]
 
         index = q * self._total_weight
-        if index < weight[0] /2:
+        if index < weight[0] / 2:
             return self._min + 2. * index / weight[0] * (mean[0] - self._min)
 
         weight_so_far = weight[0] / 2.
@@ -167,14 +167,12 @@ class TDigest(object):
 
             weight_so_far += dw
 
-
         assert index <= self._total_weight
         assert index >= self._total_weight - weight[-1] / 2.
 
         z1 = index - self._total_weight - weight[-1] / 2.
         z2 = weight[-1] / 2. - z1
         return self._weighted_average(mean[-1], z1, self._max, z2)
-
 
     def cdf(self, x):
         x = float(x)
@@ -204,21 +202,20 @@ class TDigest(object):
         if x <= mean[0]:
             if mean[0] - self._min > 0:
                 return (x - self._min) / (mean[0] - self._min) * \
-                        weight[0] / self._total_weight/ 2.
+                       weight[0] / self._total_weight / 2.
             else:
                 return 0.
 
         if x >= mean[-1]:
             if self._max - mean[-1] > 0:
                 return (
-                    1. -
-                    (self._max - x) / (self.max - mean[-1]) *
-                    weight[-1] / self._total_weight / 2.
+                        1. -
+                        (self._max - x) / (self.max - mean[-1]) *
+                        weight[-1] / self._total_weight / 2.
                 )
 
             else:
                 return 1.
-
 
         weight_so_far = weight[0] / 2.
         for it in range(len(weight) - 1):
@@ -229,15 +226,15 @@ class TDigest(object):
                     for i in range(it, len(weight) - 1)
                     if mean[i + 1] == x
                 )
-                return (w0 +  weight_so_far) / 2. / self._total_weight
+                return (w0 + weight_so_far) / 2. / self._total_weight
 
             if mean[it] <= x and mean[it + 1] > x:
                 if mean[it + 1] - mean[it] > 0:
                     dw = (weight[it] + weight[it + 1]) / 2.
                     return (
-                        weight_so_far + \
-                        dw * (x - mean[it]) / (mean[it + 1] - mean[it])
-                    ) / self._total_weight
+                                   weight_so_far + \
+                                   dw * (x - mean[it]) / (mean[it + 1] - mean[it])
+                           ) / self._total_weight
                 else:
                     dw = (weight[it] + weight[it + 1]) / 2.
                     return weight_so_far + dw / self._total_weight
