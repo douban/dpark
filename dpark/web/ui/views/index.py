@@ -15,7 +15,8 @@ def stages():
 def stage(stage_id):
     try:
         id_ = int(stage_id)
-    except:
+    except ValueError:
+        id_ = 0
         abort(404)
     if id_ not in app.context.scheduler.idToRunJob:
         abort(404)
