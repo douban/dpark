@@ -49,11 +49,7 @@ def bind(p, f):
 
 
 def seq(p, q):
-    return bind(p, lambda x:
-    bind(q, lambda y:
-    result((x, y))
-         )
-                )
+    return bind(p, lambda x: bind(q, lambda y:result((x, y))))
 
 
 def seqs(*args):
