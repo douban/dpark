@@ -14,11 +14,11 @@ def stages():
 @bp.route('/stages/<stage_id>/')
 def stage(stage_id):
     try:
-        id = int(stage_id)
+        id_ = int(stage_id)
     except:
         abort(404)
-    if id not in app.context.scheduler.idToRunJob:
+    if id_ not in app.context.scheduler.idToRunJob:
         abort(404)
     return tmpl('stages.html', id=stage_id,
                 stage_tuples=app.context.scheduler.
-                idToRunJob[id].get_stage_tuples())
+                idToRunJob[id_].get_stage_tuples())
