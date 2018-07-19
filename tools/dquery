@@ -1658,7 +1658,7 @@ Use Python expression:
             self.sql = ''
 
 
-if __name__ == '__main__':
+def main():
     from dpark import optParser
 
     optParser.set_default('master', 'mesos')
@@ -1675,3 +1675,7 @@ if __name__ == '__main__':
             console.run_script(f.read())
     else:
         console.run()
+
+
+if __name__ == '__main__':
+    main()
