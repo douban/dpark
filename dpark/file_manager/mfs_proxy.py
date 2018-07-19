@@ -144,15 +144,15 @@ class ProxyConn(object):
             ans = self.sendAndReceive(CLTOMA_FUSE_READDIR, inode, self.uid, self.gids[0], uint8(flag))
         else:
             gidsize = len(self.gids)
-            l = [gid for gid in self.gids]
-            l.append(uint8(flag))
-            l.append(max_entries)
-            l.append(uint64(nedgeid))
+            gids = [gid for gid in self.gids]
+            gids.append(uint8(flag))
+            gids.append(max_entries)
+            gids.append(uint64(nedgeid))
             ans = self.sendAndReceive(CLTOMA_FUSE_READDIR, inode,
-                                      self.uid, gidsize, *l)
+                                      self.uid, gidsize, *gids)
         p = 0
         infos = {}
-        rnedgeid, = unpack('Q', ans[p: p + 8])
+        # rnedgeid, = unpack('Q', ans[p: p + 8])
         p += 8
         while p < len(ans):
             length, = unpack('B', ans[p: p + 1])
