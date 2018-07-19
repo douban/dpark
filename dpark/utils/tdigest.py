@@ -198,18 +198,13 @@ class TDigest(object):
 
         if x <= mean[0]:
             if mean[0] - self._min > 0:
-                return (x - self._min) / (mean[0] - self._min) * \
-                       weight[0] / self._total_weight / 2.
+                return (x - self._min) / (mean[0] - self._min) * weight[0] / self._total_weight / 2.
             else:
                 return 0.
 
         if x >= mean[-1]:
             if self._max - mean[-1] > 0:
-                return (
-                        1. -
-                        (self._max - x) / (self._max - mean[-1]) *
-                        weight[-1] / self._total_weight / 2.
-                )
+                return 1. - (self._max - x) / (self._max - mean[-1]) * weight[-1] / self._total_weight / 2.
 
             else:
                 return 1.
