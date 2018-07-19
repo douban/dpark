@@ -9,6 +9,10 @@ from .consts import *
 import six
 from six.moves import range
 
+from dpark.utils.log import get_logger
+
+logger = get_logger(__name__)
+
 
 class ProtocolError(Exception):
     pass
