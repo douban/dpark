@@ -282,7 +282,7 @@ class MooseFile(ReadableFile):
             offset = self.length + offset
         assert offset >= 0, 'offset should greater than 0'
         off = offset - self.roff
-        if off > 0 and off < len(self.rbuf):
+        if 0 < off < len(self.rbuf):
             self.rbuf = self.rbuf[off:]
         else:
             self.rbuf = b''
