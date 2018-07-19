@@ -20,8 +20,8 @@ class ProtocolError(Exception):
 
 class Chunk:
 
-    def __init__(self, id, length, version, csdata, ele_width=6):
-        self.id = id
+    def __init__(self, id_, length, version, csdata, ele_width=6):
+        self.id = id_
         self.length = length
         self.version = version
         self.ele_width = ele_width
@@ -212,13 +212,13 @@ class ProxyConn(object):
 
             if self.version >= (3, 0, 10):
                 assert (n - 21) % 14 == 0, n
-                protocolid, length, id, version = unpack('BQQI', ans)
-                return Chunk(id, length, version, ans[21:], ele_width=14)
+                protocolid, length, id_, version = unpack('BQQI', ans)
+                return Chunk(id_, length, version, ans[21:], ele_width=14)
             elif self.version >= (1, 7, 32):
                 assert (n - 21) % 10 == 0, n
-                protocolid, length, id, version = unpack('BQQI', ans)
-                return Chunk(id, length, version, ans[21:], ele_width=10)
+                protocolid, length, id_, version = unpack('BQQI', ans)
+                return Chunk(id_, length, version, ans[21:], ele_width=10)
             else:
                 assert (n - 20) % 6 == 0, n
-                length, id, version = unpack("QQI", ans)
-                return Chunk(id, length, version, ans[20:])
+                length, id_, version = unpack("QQI", ans)
+                return Chunk(id_, length, version, ans[20:])
