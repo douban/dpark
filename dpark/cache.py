@@ -2,7 +2,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 import os
 import marshal
-import six.moves.cPickle
+from six.moves import cPickle
 import shutil
 import struct
 
@@ -100,7 +100,7 @@ class DiskCache(Cache):
             if _type == 0:
                 yield marshal.loads(data)
             else:
-                yield six.moves.cPickle.loads(data)
+                yield cPickle.loads(data)
         f.close()
 
     def save(self, path, items):
@@ -115,10 +115,10 @@ class DiskCache(Cache):
                     try:
                         r = 0, marshal.dumps(v)
                     except Exception:
-                        r = 1, six.moves.cPickle.dumps(v, -1)
+                        r = 1, cPickle.dumps(v, -1)
                         can_marshal = False
                 else:
-                    r = 1, six.moves.cPickle.dumps(v, -1)
+                    r = 1, cPickle.dumps(v, -1)
                 f.write(msgpack.packb(r))
                 c += 1
                 yield v

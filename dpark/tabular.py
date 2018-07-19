@@ -5,7 +5,6 @@ import types
 import socket
 import struct
 import marshal
-import six.moves.cPickle
 from dpark.rdd import RDD, MultiSplit, TextFileRDD, Split, ParallelCollection, cached
 from dpark.utils import chain, atomic_file
 from dpark.file_manager import walk
@@ -14,9 +13,7 @@ from dpark.serialize import dumps, loads
 from dpark.dependency import OneToOneDependency, OneToRangeDependency
 from contextlib import closing
 import six
-from six.moves import map
-from six.moves import range
-from six.moves import zip
+from six.moves import map, range, zip, cPickle
 from dpark.utils.lz4wrapper import compress, decompress
 
 '''
@@ -219,7 +216,7 @@ class FilteredByIndexRDD(RDD):
                 f.seek(-8, 2)
                 footer_fields_size, footer_indices_size = struct.unpack('II', f.read(8))
                 f.seek(-8 - footer_fields_size - footer_indices_size, 2)
-                indices = six.moves.cPickle.loads(zlib.decompress(f.read(footer_indices_size)))
+                indices = cPickle.loads(zlib.decompress(f.read(footer_indices_size)))
                 _fields = marshal.loads(decompress(f.read(footer_fields_size)))
                 for k, v in six.iteritems(filters):
                     result = set()
@@ -429,7 +426,7 @@ class OutputTabularRDD(RDD):
                 _sizes = tuple(map(len, compressed))
                 write_stripe(f, compressed, _sizes, False)
 
-            footer_indices = zlib.compress(six.moves.cPickle.dumps(indices, -1))
+            footer_indices = zlib.compress(cPickle.dumps(indices, -1))
             footer_fields = compress(marshal.dumps(self.fields))
             f.write(footer_indices)
             f.write(footer_fields)

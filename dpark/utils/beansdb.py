@@ -7,13 +7,12 @@ import socket
 import time
 import struct
 import zlib
-import six.moves.cPickle
 from dpark.utils.log import get_logger
 from dpark.file_manager import open_file
 from dpark.serialize import load_func, dump_func
 from contextlib import closing
 import six
-from six.moves import range
+from six.moves import range, cPickle
 
 logger = get_logger(__name__)
 try:
@@ -80,7 +79,7 @@ def restore_value(flag, val):
     elif flag & FLAG_MARSHAL:
         val = marshal.loads(val)
     elif flag & FLAG_PICKLE:
-        val = six.moves.cPickle.loads(val)
+        val = cPickle.loads(val)
     return val
 
 
@@ -102,7 +101,7 @@ def prepare_value(val, compress):
             val = marshal.dumps(val, 2)
             flag = FLAG_MARSHAL
         except ValueError:
-            val = six.moves.cPickle.dumps(val, -1)
+            val = cPickle.dumps(val, -1)
             flag = FLAG_PICKLE
 
     if compress and len(val) > 1024:

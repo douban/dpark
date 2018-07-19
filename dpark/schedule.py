@@ -1,13 +1,12 @@
 from __future__ import absolute_import
-import six.moves.queue
-import six.moves.cPickle
 import marshal
 import multiprocessing
 import os
 import socket
 import sys
 import time
-from six.moves import urllib
+import six
+from six.moves import map, range, urllib, queue, cPickle
 import weakref
 import threading
 import json
@@ -31,9 +30,7 @@ from dpark.utils import (
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
 
-import six
-from six.moves import map
-from six.moves import range
+
 
 logger = get_logger(__name__)
 
@@ -261,7 +258,7 @@ class DAGScheduler(Scheduler):
 
     def __init__(self):
         self.id = self.new_id()
-        self.completionEvents = six.moves.queue.Queue()
+        self.completionEvents = queue.Queue()
         self.idToStage = weakref.WeakValueDictionary()
         self.shuffleToMapStage = {}
         self.cacheLocs = {}
@@ -472,7 +469,7 @@ class DAGScheduler(Scheduler):
         while num_finished != numOutputParts:
             try:
                 evt = self.completionEvents.get(False)
-            except six.moves.queue.Empty:
+            except queue.Empty:
                 if (failed and
                         time.time() > lastFetchFailureTime + RESUBMIT_TIMEOUT):
                     self.updateCacheLocs()
@@ -624,7 +621,7 @@ class LocalScheduler(DAGScheduler):
     def submitTasks(self, tasks):
         logger.debug('submit tasks %s in LocalScheduler', tasks)
         for task in tasks:
-            task_copy = six.moves.cPickle.loads(six.moves.cPickle.dumps(task, -1))
+            task_copy = cPickle.loads(cPickle.dumps(task, -1))
             _, reason, result, update = run_task(task_copy, self.nextAttempId())
             self.taskEnded(task, reason, result, update)
 
@@ -1119,7 +1116,7 @@ class MesosScheduler(DAGScheduler):
         task.task_id.value = tid
         task.agent_id.value = o.agent_id.value
         task.data = encode_data(
-            compress(six.moves.cPickle.dumps((t, (job.id, t.tried)), -1))
+            compress(cPickle.dumps((t, (job.id, t.tried)), -1))
         )
         task.executor = self.executor
         if len(task.data) > 1000 * 1024:
@@ -1203,7 +1200,7 @@ class MesosScheduler(DAGScheduler):
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
             try:
-                reason, result, accUpdate, task_stats = six.moves.cPickle.loads(
+                reason, result, accUpdate, task_stats = cPickle.loads(
                     decode_data(data))
                 if result:
                     flag, data = result
@@ -1218,7 +1215,7 @@ class MesosScheduler(DAGScheduler):
                     if flag == 0:
                         result = marshal.loads(data)
                     else:
-                        result = six.moves.cPickle.loads(data)
+                        result = cPickle.loads(data)
             except Exception as e:
                 logger.warning(
                     'error when cPickle.loads(): %s, data:%s', e, len(data))

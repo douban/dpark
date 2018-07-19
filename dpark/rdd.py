@@ -8,7 +8,8 @@ import csv
 import itertools
 import collections
 import math
-import six.moves.cPickle
+import six
+from six.moves import filter, map, range, zip, cPickle
 import random
 import bz2
 import gzip
@@ -45,11 +46,6 @@ from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
 from dpark.utils.beansdb import BeansdbReader, BeansdbWriter
 from contextlib import closing
-import six
-from six.moves import filter
-from six.moves import map
-from six.moves import range
-from six.moves import zip
 from functools import reduce
 
 if not six.PY2:
@@ -213,7 +209,7 @@ class RDD(object):
                 p = os.path.join(self.checkpoint_path, str(split.index))
                 v = list(self.compute(split))
                 with atomic_file(p) as f:
-                    f.write(six.moves.cPickle.dumps(v, -1))
+                    f.write(cPickle.dumps(v, -1))
 
                 return v
             else:
@@ -1487,7 +1483,7 @@ class CSVReaderRDD(DerivedRDD):
 class ParallelCollectionSplit:
     def __init__(self, ctx, index, values):
         self.index = index
-        _values = six.moves.cPickle.dumps(values, -1)
+        _values = cPickle.dumps(values, -1)
         length = len(_values)
         data_limit = ctx.data_limit
         if data_limit is None or length < data_limit:
@@ -1516,7 +1512,7 @@ class ParallelCollection(RDD):
         else:
             _values = split.values
 
-        return six.moves.cPickle.loads(_values)
+        return cPickle.loads(_values)
 
     @classmethod
     def slice(cls, data, numSlices):
@@ -1561,11 +1557,11 @@ class CheckpointRDD(RDD):
     def compute(self, split):
         try:
             with open(os.path.join(self.path, self.files[split.index]), 'rb') as f:
-                return six.moves.cPickle.loads(f.read())
+                return cPickle.loads(f.read())
         except IOError:
             time.sleep(1)
             with open(os.path.join(self.path, self.files[split.index]), 'rb') as f:
-                return six.moves.cPickle.loads(f.read())
+                return cPickle.loads(f.read())
 
 
 class PartialSplit(Split):

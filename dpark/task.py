@@ -1,7 +1,8 @@
 from __future__ import absolute_import
 import marshal
 import time
-import six.moves.cPickle
+import six
+from six.moves import range, cPickle
 import os
 import os.path
 
@@ -12,7 +13,6 @@ from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
 from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header
-from six.moves import range
 
 logger = get_logger(__name__)
 
@@ -268,9 +268,9 @@ class BucketDumper(object):
             if marshalable(items):
                 is_marshal, d = True, marshal.dumps(items)
             else:
-                is_marshal, d = False, six.moves.cPickle.dumps(items, -1)
+                is_marshal, d = False, cPickle.dumps(items, -1)
         except ValueError:
-            is_marshal, d = False, six.moves.cPickle.dumps(items, -1)
+            is_marshal, d = False, cPickle.dumps(items, -1)
         data = compress(d)
         size = len(data)
         return (is_marshal, data), size

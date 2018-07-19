@@ -3,20 +3,16 @@ from __future__ import print_function
 import os
 import os.path
 import random
-from six.moves import urllib
+import six
+from six.moves import urllib, queue, range, zip, reduce, cPickle as pickle
 import marshal
 import struct
 import time
-import six.moves.cPickle as pickle
-import six.moves.queue
 import heapq
 import uuid
-import gc
-import six
 import itertools
 from operator import itemgetter
 from itertools import islice
-from six.moves import range, zip, reduce
 from functools import wraps
 
 try:
@@ -31,7 +27,7 @@ from dpark.utils.log import get_logger
 from dpark.env import env
 from dpark.tracker import GetValueMessage, SetValueMessage
 from dpark.utils.heaponkey import HeapOnKey
-from dpark.dependency import AggregatorBase, GroupByAggregator
+from dpark.dependency import AggregatorBase
 from dpark.utils.nested_groupby import GroupByNestedIter, cogroup_no_dup
 
 logger = get_logger(__name__)
@@ -406,8 +402,8 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             return
 
         self._started = True
-        self.requests = six.moves.queue.Queue()
-        self.results = six.moves.queue.Queue(self.nthreads)
+        self.requests = queue.Queue()
+        self.results = queue.Queue(self.nthreads)
         self.threads = [spawn(self._fetch_thread)
                         for i in range(self.nthreads)]
 
@@ -898,7 +894,7 @@ def test():
     env.start()
 
     path = LocalFileShuffle.getOutputFile(1, 0, 0)
-    d = compress(six.moves.cPickle.dumps({'key': 'value'}, -1))
+    d = compress(pickle.dumps({'key': 'value'}, -1))
     f = open(path, 'w')
     f.write(pack_header(len(d), False, False) + d)
     f.close()

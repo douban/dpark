@@ -5,12 +5,10 @@ import types
 import marshal
 import types
 import six
-import six.moves.cPickle
 import itertools
 from collections import deque
 from functools import partial
-from six.moves import range
-from six.moves import copyreg
+from six.moves import range, cPickle
 from six import int2byte
 from dpark.utils.log import get_logger
 from pickle import whichmodule, PROTO, STOP
@@ -160,7 +158,7 @@ def dumps(o):
 
 
 def loads(s):
-    return six.moves.cPickle.loads(s)
+    return cPickle.loads(s)
 
 
 dump_func = dumps
