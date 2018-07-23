@@ -62,7 +62,7 @@ class TrackerServer(object):
         confirm_msg = sock.recv_pyobj()
         sock.close()
         self.thread.join()
-        if self.ctx is None:
+        if self.ctx is not None:
             self.ctx.destroy()
             self.ctx = None
         return confirm_msg
