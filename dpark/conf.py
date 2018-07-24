@@ -14,6 +14,9 @@ if os.path.exists('/dev/shm'):
 MESOS_MASTER = 'localhost'
 MESOS_MASTERS = {}
 
+# used for mrun, allow it to get all resources quickly, maybe more than a fair share.
+MESOS_MPI_ROLE = "mpi"
+
 # mount points of MooseFS, must be available on all slaves
 # for example:  '/mfs' : 'mfsmaster',
 MOOSEFS_MOUNT_POINTS = {

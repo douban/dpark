@@ -66,7 +66,7 @@ def safejoin(t):
 
 class BaseScheduler(object):
 
-    def __init__(self, name, options, command):
+    def __init__(self, name, options, command, role=None):
         self.framework_id = None
         self.executor = None
         self.framework = Dict()
@@ -76,6 +76,8 @@ class BaseScheduler(object):
 
         self.framework.name = name
         self.framework.hostname = socket.gethostname()
+        if role is not None:
+            self.framework.role = role
         self.cpus = options.cpus
         self.gpus = options.gpus
         self.mem = memory_str_to_mb(options.mem)
@@ -487,7 +489,7 @@ class MPIScheduler(BaseScheduler):
         if len(name) > 256:
             name = name[:256] + '...'
 
-        super(MPIScheduler, self).__init__(name, options, command)
+        super(MPIScheduler, self).__init__(name, options, command, role=conf.MESOS_MPI_ROLE)
         self.used_tasks = {}
         self.id = 0
         self.p = None
