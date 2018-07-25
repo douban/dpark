@@ -19,17 +19,16 @@ import dpark.conf as conf
 from dpark.accumulator import Accumulator
 from dpark.dependency import ShuffleDependency
 from dpark.env import env
-from dpark.job import SimpleJob
+from dpark.job import Job
 from dpark.rdd import ShuffledRDD, CoGroupedRDD
 from dpark.mutable_dict import MutableDict
-from dpark.task import ResultTask, ShuffleMapTask
+from dpark.task import ResultTask, ShuffleMapTask, TTID
 from dpark.hostatus import TaskHostManager
 from dpark.utils import (
     compress, decompress, spawn, getuser
 )
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
-
 
 
 logger = get_logger(__name__)
@@ -85,13 +84,13 @@ class Stage:
 
     def __init__(self, rdd, shuffleDep, parents):
         self.id = self.new_id()
+        self.num_try = 0
         self.rdd = rdd
         self.shuffleDep = shuffleDep
         self.parents = parents
         self.numPartitions = len(rdd)
         self.outputLocs = [[] for _ in range(self.numPartitions)]
         self.task_stats = [[] for _ in range(self.numPartitions)]
-        self.try_times = 0
         self.submit_time = 0
         self.finish_time = 0
         self.root_rdd = self._get_root_rdd()
@@ -101,6 +100,10 @@ class Stage:
 
     def __getstate__(self):
         raise Exception('should not pickle stage')
+
+    @property
+    def try_id(self):
+        return TTID.make_job_id(self.id, self.num_try + 1)  # incr num_try After create Job
 
     @property
     def isAvailable(self):
@@ -391,7 +394,7 @@ class DAGScheduler(Scheduler):
         waiting = set()
         running = set()
         failed = set()
-        pendingTasks = {}
+        pendingTasks = {}  # stage -> set([task_id..])
         lastFetchFailureTime = 0
 
         self.updateCacheLocs()
@@ -447,19 +450,19 @@ class DAGScheduler(Scheduler):
                                 have_prefer = False
                         else:
                             locs = []
-                        tasks.append(ResultTask(finalStage.id, finalRdd,
-                                                func, part, locs, i))
+                        tasks.append(ResultTask(finalStage.id, finalStage.try_id, part, finalRdd,
+                                                func, locs, i))
             else:
-                for p in range(stage.numPartitions):
-                    if not stage.outputLocs[p]:
+                for part in range(stage.numPartitions):
+                    if not stage.outputLocs[part]:
                         if have_prefer:
-                            locs = self.getPreferredLocs(stage.rdd, p)
+                            locs = self.getPreferredLocs(stage.rdd, part)
                             if not locs:
                                 have_prefer = False
                         else:
                             locs = []
-                        tasks.append(ShuffleMapTask(stage.id, stage.rdd,
-                                                    stage.shuffleDep, p, locs))
+                        tasks.append(ShuffleMapTask(stage.id, stage.try_id, part, stage.rdd,
+                                                    stage.shuffleDep, locs))
             logger.debug('add to pending %s tasks', len(tasks))
             myPending |= set(t.id for t in tasks)
             self.submitTasks(tasks)
@@ -488,7 +491,7 @@ class DAGScheduler(Scheduler):
                 raise RuntimeError('Job aborted!')
 
             task, reason = evt.task, evt.reason
-            stage = self.idToStage[task.stageId]
+            stage = self.idToStage[task.stage_id]
             if stage not in pendingTasks:  # stage from other job
                 continue
             logger.debug('remove from pending %s from %s', task, stage)
@@ -509,7 +512,7 @@ class DAGScheduler(Scheduler):
                     stage.finish()
 
                 elif isinstance(task, ShuffleMapTask):
-                    stage = self.idToStage[task.stageId]
+                    stage = self.idToStage[task.stage_id]
                     stage.addOutputLoc(task.partition, evt.result)
                     if all(stage.outputLocs):
                         stage.finish()
@@ -767,9 +770,11 @@ class MesosScheduler(DAGScheduler):
     def init_job(self):
         self.activeJobs = {}
         self.activeJobsQueue = []
+
         self.taskIdToJobId = {}
-        self.taskIdToAgentId = {}
         self.jobTasks = {}
+
+        self.taskIdToAgentId = {}
         self.agentTasks = {}
 
     def clear(self):
@@ -965,8 +970,8 @@ class MesosScheduler(DAGScheduler):
         rdd = tasks[0].rdd
         assert all(t.rdd is rdd for t in tasks)
 
-        job = SimpleJob(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
-                        rdd.gpus, self.task_host_manager)
+        job = Job(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
+                  rdd.gpus, self.task_host_manager)
         self.activeJobs[job.id] = job
         self.activeJobsQueue.append(job)
         self.jobTasks[job.id] = set()
@@ -976,15 +981,14 @@ class MesosScheduler(DAGScheduler):
             stage_scope = StageInfo.idToRDDNode[tasks[0].rdd.id].scope.call_site
         except:
             pass
-        stage = self.idToStage[tasks[0].stageId]
-        stage.try_times += 1
+        stage = self.idToStage[tasks[0].stage_id]
+        stage.num_try += 1
         logger.info(
-            'Got job %d with %d tasks for stage: %d(try %d times) '
+            'Got job %s with %d tasks for stage: %d '
             'at scope[%s] and rdd:%s',
             job.id,
             len(tasks),
-            tasks[0].stageId,
-            stage.try_times,
+            tasks[0].stage_id,
             stage_scope,
             tasks[0].rdd)
 
@@ -1065,7 +1069,7 @@ class MesosScheduler(DAGScheduler):
                 if not assigned_list:
                     break
                 for i, o, t in assigned_list:
-                    task = self.createTask(o, job, t)
+                    task = self.createTask(o, t)
                     tasks.setdefault(o.id.value, []).append(task)
                     logger.debug('dispatch %s into %s', t, o.hostname)
                     tid = task.task_id.value
@@ -1109,14 +1113,14 @@ class MesosScheduler(DAGScheduler):
             if r.name == name:
                 return r.text.value
 
-    def createTask(self, o, job, t):
+    def createTask(self, o, t):
         task = Dict()
-        tid = '%s:%s:%s' % (job.id, t.id, t.tried)
+        tid = t.try_id
         task.name = 'task %s' % tid
         task.task_id.value = tid
         task.agent_id.value = o.agent_id.value
         task.data = encode_data(
-            compress(cPickle.dumps((t, (job.id, t.tried)), -1))
+            compress(cPickle.dumps((t, tid), -1))
         )
         task.executor = self.executor
         if len(task.data) > 1000 * 1024:
@@ -1164,38 +1168,37 @@ class MesosScheduler(DAGScheduler):
                     jobs = self.activeJobs[job_id]
                     jobs.progress(ending)
 
-        tid = status.task_id.value
+        mesos_task_id = status.task_id.value
         state = status.state
-        logger.debug('status update: %s %s', tid, state)
+        logger.debug('status update: %s %s', mesos_task_id, state)
 
-        jid = self.taskIdToJobId.get(tid)
-        _, task_id, tried = list(map(int, tid.split(':')))
+        ttid = TTID(mesos_task_id)
         if state == 'TASK_RUNNING':
-            if jid in self.activeJobs:
-                job = self.activeJobs[jid]
-                job.statusUpdate(task_id, tried, state)
+            if ttid.job_id in self.activeJobs:
+                job = self.activeJobs[ttid.job_id]
+                job.statusUpdate(ttid.task_id, ttid.task_try, state)
                 if job.tasksFinished == 0:
                     plot_progresses()
             else:
-                logger.debug('kill task %s as its job has gone', tid)
-                self.driver.killTask(Dict(value=tid))
+                logger.debug('kill task %s as its job has gone', mesos_task_id)
+                self.driver.killTask(Dict(value=mesos_task_id))
 
             return
 
-        self.taskIdToJobId.pop(tid, None)
-        if jid in self.jobTasks:
-            self.jobTasks[jid].remove(tid)
-        if tid in self.taskIdToAgentId:
-            agent_id = self.taskIdToAgentId[tid]
+        self.taskIdToJobId.pop(mesos_task_id, None)
+        if ttid.job_id in self.jobTasks:
+            self.jobTasks[ttid.job_id].remove(mesos_task_id)
+        if mesos_task_id in self.taskIdToAgentId:
+            agent_id = self.taskIdToAgentId[mesos_task_id]
             if agent_id in self.agentTasks:
                 self.agentTasks[agent_id] -= 1
-            del self.taskIdToAgentId[tid]
+            del self.taskIdToAgentId[mesos_task_id]
 
-        if jid not in self.activeJobs:
-            logger.debug('ignore task %s as its job has gone', tid)
+        if ttid.job_id not in self.activeJobs:
+            logger.debug('ignore task %s as its job has gone', ttid.job_id)
             return
 
-        job = self.activeJobs[jid]
+        job = self.activeJobs[ttid.job_id]
         reason = status.get('message')
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
@@ -1220,16 +1223,16 @@ class MesosScheduler(DAGScheduler):
                 logger.warning(
                     'error when cPickle.loads(): %s, data:%s', e, len(data))
                 state = 'TASK_FAILED'
-                job.statusUpdate(task_id, tried, state, 'load failed: %s' % e)
+                job.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
                 return
             else:
-                job.statusUpdate(task_id, tried, state, reason, result, accUpdate, task_stats)
+                job.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
                 if state == 'TASK_FINISHED':
                     plot_progresses()
                 return
 
         # killed, lost, load failed
-        job.statusUpdate(task_id, tried, state, reason or data)
+        job.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
 
     @safe
     def jobFinished(self, job):
@@ -1238,17 +1241,17 @@ class MesosScheduler(DAGScheduler):
             self.last_finish_time = time.time()
             del self.activeJobs[job.id]
             self.activeJobsQueue.remove(job)
-            for tid in self.jobTasks[job.id]:
-                self.driver.killTask(Dict(value=tid))
+            for mesos_task_id in self.jobTasks[job.id]:
+                self.driver.killTask(Dict(value=mesos_task_id))
             del self.jobTasks[job.id]
 
             if not self.activeJobs:
                 self.agentTasks.clear()
 
-        for tid, jid in six.iteritems(self.taskIdToJobId):
+        for mesos_task_id, jid in six.iteritems(self.taskIdToJobId):
             if jid not in self.activeJobs:
-                logger.debug('kill task %s, because it is orphan', tid)
-                self.driver.killTask(Dict(value=tid))
+                logger.debug('kill task %s, because it is orphan', mesos_task_id)
+                self.driver.killTask(Dict(value=mesos_task_id))
 
     @safe
     def error(self, driver, message):
@@ -1287,7 +1290,7 @@ class MesosScheduler(DAGScheduler):
         logger.warning('agent %s lost', agent_id.value)
         self.agentTasks.pop(agent_id.value, None)
 
-    def killTask(self, job_id, task_id, tried):
+    def killTask(self, task_id, num_try):
         tid = Dict()
-        tid.value = '%s:%s:%s' % (job_id, task_id, tried)
+        tid.value = TTID.make_ttid(task_id, num_try)
         self.driver.killTask(tid)

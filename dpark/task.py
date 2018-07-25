@@ -17,40 +17,69 @@ from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header
 logger = get_logger(__name__)
 
 
-class Task:
-    def __init__(self):
-        self.id = Task.new_id()
+class TTID(object):
+    """"Task Try ID
 
-    next_id = 0
+    1.2_3.4: ttid
 
-    @classmethod
-    def new_id(cls):
-        cls.next_id += 1
-        return cls.next_id
+    1: stage id, start from 1
+    2: stage try counter (for fetch fail), start from 1
+    3: task partition of the stage, start from 0
+    4: task retry counter
 
-    def run(self, task_id):
-        raise NotImplementedError
+    1.2: job id
+    1.2_3: task id
+    """
 
-    def preferredLocations(self):
-        raise NotImplementedError
+    def __init__(self, ttid):
+        self.ttid = ttid
+        self.job_id, part_try = ttid.split("_")
+        self.stage_id, self.stage_try = list(map(int, self.job_id.split(".")))
+        self.part, self.task_try = list(map(int, part_try.split(".")))
+        self.task_id = ttid.rsplit(".", 1)[0]
+
+    @staticmethod
+    def make_job_id(stage_id, stage_num_try):
+        return "{}.{}".format(stage_id, stage_num_try)
+
+    @staticmethod
+    def make_task_id(job_id, partition):
+        return "{}_{}".format(job_id, partition)
+
+    @staticmethod
+    def make_ttid(task_id, task_num_try):
+        return "{}.{}".format(task_id, task_num_try)
 
 
-class DAGTask(Task):
-    def __init__(self, stageId):
-        Task.__init__(self)
-        self.stageId = stageId
+class DAGTask(object):
+    def __init__(self, stage_id, job_id, partition):
+        self.id = TTID.make_task_id(job_id, partition)
+        self.stage_id = stage_id
+        self.job_id = job_id
+        self.partition = partition
+        self.num_try = 0
+
+        self.status = None
+        self.time_used = 0  # sum up time of mulity retry
+
         self.mem = 0
+        self.cpus = 0
+        self.gpus = 0
 
     def __repr__(self):
-        return '<task %d:%d>' % (self.stageId, self.id)
+        return '<task %s>'.format(self.id)
 
-    def run(self, task_id):
+    @property
+    def try_id(self):
+        return TTID.make_ttid(self.id, self.num_try)
+
+    def run(self, task_try_id):
         try:
             if self.mem != 0:
-                env.meminfo.start(task_id, int(self.mem))
+                env.meminfo.start(task_try_id, int(self.mem))
                 if dpark.conf.MULTI_SEGMENT_DUMP:
                     env.meminfo.check = False
-            return self._run(task_id)
+            return self._run(task_try_id)
         except KeyboardInterrupt as e:
             if self.mem != 0 and env.meminfo.oom:
                 os._exit(ERROR_TASK_OOM)
@@ -61,7 +90,7 @@ class DAGTask(Task):
                 env.meminfo.check = True
                 env.meminfo.stop()
 
-    def _run(self, task_id):
+    def _run(self, task_try_id):
         raise NotImplementedError
 
     def preferredLocations(self):
@@ -69,11 +98,10 @@ class DAGTask(Task):
 
 
 class ResultTask(DAGTask):
-    def __init__(self, stageId, rdd, func, partition, locs, outputId):
-        DAGTask.__init__(self, stageId)
+    def __init__(self, stage_id, job_id, partition, rdd, func, locs, outputId):
+        DAGTask.__init__(self, stage_id, job_id, partition)
         self.rdd = rdd
         self.func = func
-        self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
         self.outputId = outputId
@@ -106,14 +134,13 @@ class ResultTask(DAGTask):
 
 
 class ShuffleMapTask(DAGTask):
-    def __init__(self, stageId, rdd, dep, partition, locs):
-        DAGTask.__init__(self, stageId)
+    def __init__(self, stage_id, job_id, partition, rdd, dep, locs):
+        DAGTask.__init__(self, stage_id, job_id, partition)
         self.rdd = rdd
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator
         self.partitioner = dep.partitioner
         self.rddconf = dep.rddconf
-        self.partition = partition
         self.split = rdd.splits[partition]
         self.locs = locs
 

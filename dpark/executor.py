@@ -34,6 +34,7 @@ from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
+from dpark.task import TTID
 from dpark.utils.debug import spawn_rconsole
 
 logger = get_logger('dpark.executor')
@@ -68,10 +69,10 @@ def reply_status(driver, task_id, state, data=None):
 def run_task(task_data):
     try:
         gc.disable()
-        task, (job_id, ntry) = loads(decompress(task_data))
-        tid = '%s:%s:%s' % (job_id, task.id, ntry)
+        task, task_try_id = loads(decompress(task_data))
+        ttid = TTID(task_try_id)
         Accumulator.clear()
-        result = task.run(tid)
+        result = task.run(ttid.ttid)
         env.task_stats.bytes_max_rss = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024
         accUpdate = Accumulator.values()
         MutableDict.flush()
@@ -87,7 +88,7 @@ def run_task(task_data):
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
-            path = LocalFileShuffle.getOutputFile(0, ntry, task.id, len(data))
+            path = LocalFileShuffle.getOutputFile(0, task.id, ttid.num_try, len(data))
             f = open(path, 'wb')
             f.write(data)
             f.close()

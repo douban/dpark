@@ -5,7 +5,7 @@ import math
 import unittest
 import logging
 
-from dpark.job import SimpleJob
+from dpark.job import Job
 from dpark.hostatus import HostStatus, TaskHostManager
 from dpark.schedule import OtherFailure, Success
 from six.moves import range
@@ -25,7 +25,7 @@ class MockSchduler:
     def jobFinished(self, job):
         pass
 
-    def killTask(self, job_id, task_id, tried):
+    def killTask(self, task_id, tried):
         pass
 
 
@@ -33,6 +33,8 @@ class MockTask:
 
     def __init__(self, id):
         self.id = id
+        self.job_id = "1.1_{}".format(id)
+        self.try_id = 0
 
     def preferredLocations(self):
         return []
@@ -49,7 +51,7 @@ class TestJob(unittest.TestCase):
     def test_job(self):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
-        job = SimpleJob(sched, tasks, 1, 10)
+        job = Job(sched, tasks, 1, 10)
         offer = create_offer('localhost')
         host_offers = {'localhost': (0, offer)}
         job.task_host_manager.register_host('localhost')
@@ -69,7 +71,7 @@ class TestJob(unittest.TestCase):
     def test_retry(self):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
-        job = SimpleJob(sched, tasks, 1, 10)
+        job = Job(sched, tasks, 1, 10)
         offer = create_offer('localhost')
         host_offers = {'localhost': (0, offer)}
         # the host register should with purge elapsed 0, otherwise the failure

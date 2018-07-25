@@ -23,40 +23,31 @@ def readable(size):
     return '%.1f%s' % (size, units[unit])
 
 
-class Job(object):
-
-    next_job_id = 0
-
-    def __init__(self):
-        self.id = self.new_job_id()
-        self.start = time.time()
-
-    @classmethod
-    def new_job_id(cls):
-        cls.next_job_id += 1
-        return cls.next_job_id
-
-
 LOCALITY_WAIT = 0
 WAIT_FOR_RUNNING = 10
 MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
 
 
-# A Job that runs a set of tasks with no interdependencies.
+class Job(object):
+    """ A Job runs a set of tasks of a Stage with retry.
 
-
-class SimpleJob(Job):
+        - Task_id seen by Job not include task.num_try
+        - Each task try four times before abort.
+        - Enlarge task.mem if fail for OOM.
+        - Retry for lagging tasks.
+    """
 
     def __init__(self, sched, tasks, cpus=1, mem=100, gpus=0,
                  task_host_manager=None):
-        Job.__init__(self)
+        self.start = time.time()
         self.sched = sched
         self.tasks = tasks
+        self.id = tasks[0].job_id
 
         for t in self.tasks:
             t.status = None
-            t.tried = 0
+            t.num_try = 0
             t.time_used = 0
             t.cpus = cpus
             t.mem = mem
@@ -173,10 +164,10 @@ class SimpleJob(Job):
             t.status = 'TASK_STAGING'
             t.start = time.time()
             t.host = o.hostname
-            t.tried += 1
-            self.id_retry_host[(t.id, t.tried)] = o.hostname
-            logger.debug('Starting task %d:%d as TID %s on slave %s',
-                         self.id, task_idx, t, o.hostname)
+            t.num_try += 1
+            self.id_retry_host[(t.id, t.num_try)] = o.hostname
+            logger.debug('Starting task %s on slave %s',
+                         t.try_id, o.hostname)
             self.tidToIndex[t.id] = task_idx
             self.launched[task_idx] = True
             self.tasksLaunched += 1
@@ -187,16 +178,16 @@ class SimpleJob(Job):
             return i, o, t
         return None
 
-    def statusUpdate(self, tid, tried, status, reason=None,
+    def statusUpdate(self, task_id, num_try, status, reason=None,
                      result=None, update=None, stats=None):
-        logger.debug('job status update %s %s %s', tid, status, reason)
-        if tid not in self.tidToIndex:
-            logger.error('invalid tid: %s', tid)
+        logger.debug('job status update %s, status %s, reason %s', task_id, status, reason)
+        if task_id not in self.tidToIndex:
+            logger.error('invalid task_id: %s, status %s, reason %s', task_id, status, reason)
             return
-        i = self.tidToIndex[tid]
+        i = self.tidToIndex[task_id]
         if self.finished[i]:
             if status == 'TASK_FINISHED':
-                logger.debug('Task %d is already finished, ignore it', tid)
+                logger.debug('Task %s is already finished, ignore it', task_id)
             return
 
         task = self.tasks[i]
@@ -207,9 +198,9 @@ class SimpleJob(Job):
             self.tasksLaunched += 1
 
         if status == 'TASK_FINISHED':
-            self._task_finished(tid, tried, result, update, stats)
+            self._task_finished(task_id, num_try, result, update, stats)
         elif status in ('TASK_LOST', 'TASK_FAILED', 'TASK_KILLED'):
-            self._task_lost(tid, tried, status, reason)
+            self._task_lost(task_id, num_try, status, reason)
 
         task.start = time.time()
         if stats:
@@ -244,18 +235,18 @@ class SimpleJob(Job):
             msg = msg.ljust(80)
             logger.info(msg)
 
-    def _task_finished(self, tid, tried, result, update, stats):
-        i = self.tidToIndex[tid]
+    def _task_finished(self, task_id, num_try, result, update, stats):
+        i = self.tidToIndex[task_id]
         self.finished[i] = True
         self.tasksFinished += 1
         task = self.tasks[i]
-        hostname = self.id_retry_host[(task.id, tried)] \
-            if (task.id, tried) in self.id_retry_host else task.host
+        hostname = self.id_retry_host[(task.id, num_try)] \
+            if (task.id, num_try) in self.id_retry_host else task.host
         task.time_used += time.time() - task.start
         self.total_time_used += task.time_used
         if getattr(self.sched, 'color', False):
-            title = 'Job %d: task %s finished in %.1fs (%d/%d)     ' % (
-                self.id, tid, task.time_used, self.tasksFinished, self.numTasks)
+            title = 'Job %s: task %s finished in %.1fs (%d/%d)     ' % (
+                self.id, task_id, task.time_used, self.tasksFinished, self.numTasks)
             msg = '\x1b]2;%s\x07\x1b[1A' % title
             logger.info(msg)
 
@@ -265,29 +256,29 @@ class SimpleJob(Job):
         self.task_host_manager.task_succeed(task.id, hostname,
                                             Success())
 
-        for t in range(task.tried):
-            if t + 1 != tried:
-                self.sched.killTask(self.id, task.id, t + 1)
+        for t in range(task.num_try):
+            if t + 1 != num_try:
+                self.sched.killTask(task.id, t + 1)
 
         if self.tasksFinished == self.numTasks:
             ts = [t.time_used for t in self.tasks]
-            tried = [t.tried for t in self.tasks]
+            num_try = [t.num_try for t in self.tasks]
             elasped = time.time() - self.start
-            logger.info('Job %d finished in %.1fs: min=%.1fs, '
+            logger.info('Job %s finished in %.1fs: min=%.1fs, '
                         'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
                         self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
-                        max(tried), self.total_time_used / elasped,
+                        max(num_try), self.total_time_used / elasped,
                         len(self.task_local_set) * 100. / len(self.tasks)
                         )
             self.sched.jobFinished(self)
 
-    def _task_lost(self, tid, tried, status, reason):
-        index = self.tidToIndex[tid]
+    def _task_lost(self, task_id, num_try, status, reason):
+        index = self.tidToIndex[task_id]
 
         from dpark.schedule import FetchFailed
         if isinstance(reason, FetchFailed) and self.numFailures[index] >= 1:
             logger.warning('Cancel task %s after fetch fail twice from %s',
-                           tid, reason.serverUri)
+                           task_id, reason.serverUri)
             self.sched.taskEnded(self.tasks[index], reason, None, None)
             # cancel tasks
             if not self.finished[index]:
@@ -304,8 +295,8 @@ class SimpleJob(Job):
             return
 
         task = self.tasks[index]
-        hostname = self.id_retry_host[(task.id, tried)] \
-            if (task.id, tried) in self.id_retry_host else task.host
+        hostname = self.id_retry_host[(task.id, num_try)] \
+            if (task.id, num_try) in self.id_retry_host else task.host
 
         if status == 'TASK_KILLED' or str(reason).startswith('Memory limit exceeded:'):
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
@@ -336,14 +327,14 @@ class SimpleJob(Job):
                 _logger('task %s failed @ %s: %s', task.id, hostname, task)
 
         elif status == 'TASK_LOST':
-            logger.warning('Lost Task %d (task %d:%d:%s) %s at %s',
-                           index, self.id, tid, tried, reason, task.host)
+            logger.warning('Lost Task %s try %s at %s, reason %s',
+                           task_id, num_try, task.host, reason)
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:
-            logger.error('Task %d failed more than %d times; aborting job',
+            logger.error('Task %s failed more than %d times; aborting job',
                          self.tasks[index].id, MAX_TASK_FAILURES)
-            self._abort('Task %d failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
+            self._abort('Task %s failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
         self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
         if self.tasksLaunched == self.numTasks:
@@ -369,7 +360,7 @@ class SimpleJob(Job):
             task = self.tasks[i]
             if (self.launched[i] and task.status == 'TASK_STAGING'
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.info('task %d timeout %.1f (at %s), re-assign it',
+                logger.info('task %s timeout %.1f (at %s), re-assign it',
                             task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
@@ -382,11 +373,11 @@ class SimpleJob(Job):
                            if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
                 time_used = now - task.start
-                if time_used > avg * (2 ** task.tried) * scale:
+                if time_used > avg * (2 ** task.num_try) * scale:
                     # re-submit timeout task
-                    if task.tried <= MAX_TASK_FAILURES:
+                    if task.num_try <= MAX_TASK_FAILURES:
                         logger.info('re-submit task %s for timeout %.1f, '
-                                    'try %d', task.id, time_used, task.tried)
+                                    'try %d', task.id, time_used, task.num_try)
                         task.time_used += time_used
                         task.start = now
                         self.launched[idx] = False

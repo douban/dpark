@@ -125,19 +125,19 @@ class TaskHostManager:
         assert False, 'Should not get here'
 
     def task_succeed(self, task_id, hostname, reason):
-        logger.debug('task %d %s', task_id, str(reason))
+        logger.debug('task %s %s', task_id, str(reason))
         if hostname in self.host_dict:
             host_status = self.host_dict[hostname]
             host_status.task_succeed(task_id)
         if task_id in self.task_host_failed_dict:
             for host in self.task_host_failed_dict[task_id]:
                 self.host_dict[host].erase_failed_task(task_id)
-            logger.info('the failed hosts %s for task %d',
+            logger.info('the failed hosts %s for task %s',
                         str(self.task_host_failed_dict[task_id]), task_id)
             del self.task_host_failed_dict[task_id]
 
     def task_failed(self, task_id, hostname, reason):
-        logger.debug('task %d failed with message %s', task_id, str(reason))
+        logger.debug('task %s failed with message %s', task_id, str(reason))
         if hostname in self.host_dict:
             host_status = self.host_dict[hostname]
             host_status.task_failed(task_id)
