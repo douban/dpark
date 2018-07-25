@@ -84,7 +84,7 @@ class SimpleJob(Job):
         self.last_check = 0
 
         for i in range(len(tasks)):
-            self.addPendingTask(i)
+            self._addPendingTask(i)
         self.host_cache = {}
         self.task_host_manager = task_host_manager if task_host_manager is not None \
             else TaskHostManager()
@@ -99,7 +99,7 @@ class SimpleJob(Job):
             return 10
         return max(self.total_used / self.tasksFinished, 5)
 
-    def addPendingTask(self, i):
+    def _addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
         if not loc:
             self.pendingTasksWithNoPrefs.append(i)
@@ -108,13 +108,14 @@ class SimpleJob(Job):
                 self.pendingTasksForHost.setdefault(host, []).append(i)
         self.allPendingTasks.append(i)
 
-    def getPendingTasksForHost(self, host):
-        try:
-            return self.host_cache[host]
-        except KeyError:
-            v = self._getPendingTasksForHost(host)
-            self.host_cache[host] = v
-            return v
+    def _getPendingTasksForHostWithCache(self, host):
+        tasks = self.host_cache.get(host)
+        if tasks:
+            return tasks
+        else:
+            tasks = self._getPendingTasksForHost(host)
+            self.host_cache[host] = tasks
+            return tasks
 
     def _getPendingTasksForHost(self, host):
         try:
@@ -129,7 +130,7 @@ class SimpleJob(Job):
         ts = sorted(list(st.items()), key=itemgetter(1), reverse=True)
         return [t for t, _ in ts]
 
-    def findTaskFromList(self, l, host, cpus, mem, gpus):
+    def _findTaskFromList(self, l, host, cpus, mem, gpus):
         for i in l:
             if self.launched[i] or self.finished[i]:
                 continue
@@ -145,8 +146,8 @@ class SimpleJob(Job):
         prefer_list = []
         for host in host_offers:
             i, o = host_offers[host]
-            local_task = self.findTaskFromList(
-                self.getPendingTasksForHost(host), host,
+            local_task = self._findTaskFromList(
+                self._getPendingTasksForHostWithCache(host), host,
                 cpus[i], mems[i], gpus[i])
             if local_task is not None:
                 result_tuple = self._try_update_task_offer(local_task, i, o, cpus, mems, gpus)
