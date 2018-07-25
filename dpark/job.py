@@ -57,7 +57,7 @@ class SimpleJob(Job):
         for t in self.tasks:
             t.status = None
             t.tried = 0
-            t.used = 0
+            t.time_used = 0
             t.cpus = cpus
             t.mem = mem
             t.gpus = gpus
@@ -70,7 +70,7 @@ class SimpleJob(Job):
         self.numTasks = len(tasks)
         self.tasksLaunched = 0
         self.tasksFinished = 0
-        self.total_used = 0
+        self.total_time_used = 0
 
         self.lastPreferredLaunchTime = time.time()
 
@@ -91,13 +91,13 @@ class SimpleJob(Job):
         self.id_retry_host = {}
         self.task_local_set = set()
         self.mem_digest = TDigest()
-        self.mem90 = 0
+        self.mem90 = 0  # TODO: move to stage
 
     @property
     def taskEverageTime(self):
         if not self.tasksFinished:
             return 10
-        return max(self.total_used / self.tasksFinished, 5)
+        return max(self.total_time_used / self.tasksFinished, 5)
 
     def _addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
@@ -221,7 +221,7 @@ class SimpleJob(Job):
         bar = make_progress_bar(ratio)
         if self.tasksFinished:
             elasped = time.time() - self.start
-            avg = self.total_used / self.tasksFinished
+            avg = self.total_time_used / self.tasksFinished
             eta = (n - self.tasksFinished) * elasped / self.tasksFinished
             m, s = divmod(int(eta), 60)
             h, m = divmod(m, 60)
@@ -251,11 +251,11 @@ class SimpleJob(Job):
         task = self.tasks[i]
         hostname = self.id_retry_host[(task.id, tried)] \
             if (task.id, tried) in self.id_retry_host else task.host
-        task.used += time.time() - task.start
-        self.total_used += task.used
+        task.time_used += time.time() - task.start
+        self.total_time_used += task.time_used
         if getattr(self.sched, 'color', False):
             title = 'Job %d: task %s finished in %.1fs (%d/%d)     ' % (
-                self.id, tid, task.used, self.tasksFinished, self.numTasks)
+                self.id, tid, task.time_used, self.tasksFinished, self.numTasks)
             msg = '\x1b]2;%s\x07\x1b[1A' % title
             logger.info(msg)
 
@@ -270,13 +270,13 @@ class SimpleJob(Job):
                 self.sched.killTask(self.id, task.id, t + 1)
 
         if self.tasksFinished == self.numTasks:
-            ts = [t.used for t in self.tasks]
+            ts = [t.time_used for t in self.tasks]
             tried = [t.tried for t in self.tasks]
             elasped = time.time() - self.start
             logger.info('Job %d finished in %.1fs: min=%.1fs, '
                         'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
                         self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
-                        max(tried), self.total_used / elasped,
+                        max(tried), self.total_time_used / elasped,
                         len(self.task_local_set) * 100. / len(self.tasks)
                         )
             self.sched.jobFinished(self)
@@ -381,13 +381,13 @@ class SimpleJob(Job):
                            for i, task in enumerate(self.tasks)
                            if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
-                used = now - task.start
-                if used > avg * (2 ** task.tried) * scale:
+                time_used = now - task.start
+                if time_used > avg * (2 ** task.tried) * scale:
                     # re-submit timeout task
                     if task.tried <= MAX_TASK_FAILURES:
                         logger.info('re-submit task %s for timeout %.1f, '
-                                    'try %d', task.id, used, task.tried)
-                        task.used += used
+                                    'try %d', task.id, time_used, task.tried)
+                        task.time_used += time_used
                         task.start = now
                         self.launched[idx] = False
                         self.tasksLaunched -= 1
