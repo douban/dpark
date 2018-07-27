@@ -16,6 +16,7 @@ import shutil
 import logging
 from math import ceil
 import binascii
+import uuid
 import tempfile
 import contextlib
 import dpark.conf
@@ -49,7 +50,8 @@ else:
 
 @contextlib.contextmanager
 def temppath(name):
-    path = os.path.join(tempfile.gettempdir(), name)
+    random_name = str(uuid.uuid4())[:8] + '-' + name
+    path = os.path.join(tempfile.gettempdir(), random_name)
     try:
         yield path
     finally:
