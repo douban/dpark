@@ -15,7 +15,7 @@ ext_modules = [
               extra_compile_args=['-msse4.2']),
 ]
 
-version = '0.4.2'
+version = '0.5.0'
 req = [
     'pymesos>=0.2.10',
     'pyzmq',
