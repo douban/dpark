@@ -6,6 +6,21 @@ DPark
 DPark is a Python clone of Spark, MapReduce(R) alike computing framework
 supporting iterative computation.
 
+Installation:
+
+.. code:: bash
+
+    ## Due to the use of C extensions, some libraries need to be installed first.
+    
+    $ sudo apt-get install libtool pkg-config build-essential autoconf automake
+    $ sudo apt-get install python-dev
+    $ sudo apt-get install libzmq-dev
+    
+    ## Then just pip install dpark (``sudo`` maybe needed if you encounter permission problem).
+    
+    $ pip install dpark
+
+
 Example for word counting (``wc.py``):
 
 .. code:: python
