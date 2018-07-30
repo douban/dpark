@@ -88,7 +88,7 @@ def run_task(task_data):
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
-            path = LocalFileShuffle.getOutputFile(0, task.id, ttid.num_try, len(data))
+            path = LocalFileShuffle.getOutputFile(0, task.id, ttid.task_try, len(data))
             f = open(path, 'wb')
             f.write(data)
             f.close()
