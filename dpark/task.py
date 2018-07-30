@@ -27,24 +27,24 @@ class TTID(object):
     3: task partition of the stage, start from 0
     4: task retry counter
 
-    1.2: job id
+    1.2: taskset id
     1.2_3: task id
     """
 
     def __init__(self, ttid):
         self.ttid = ttid
-        self.job_id, part_try = ttid.split("_")
-        self.stage_id, self.stage_try = list(map(int, self.job_id.split(".")))
+        self.taskset_id, part_try = ttid.split("_")
+        self.stage_id, self.stage_try = list(map(int, self.taskset_id.split(".")))
         self.part, self.task_try = list(map(int, part_try.split(".")))
         self.task_id = ttid.rsplit(".", 1)[0]
 
     @staticmethod
-    def make_job_id(stage_id, stage_num_try):
+    def make_taskset_id(stage_id, stage_num_try):
         return "{}.{}".format(stage_id, stage_num_try)
 
     @staticmethod
-    def make_task_id(job_id, partition):
-        return "{}_{}".format(job_id, partition)
+    def make_task_id(taskset_id, partition):
+        return "{}_{}".format(taskset_id, partition)
 
     @staticmethod
     def make_ttid(task_id, task_num_try):
@@ -52,10 +52,10 @@ class TTID(object):
 
 
 class DAGTask(object):
-    def __init__(self, stage_id, job_id, partition):
-        self.id = TTID.make_task_id(job_id, partition)
+    def __init__(self, stage_id, taskset_id, partition):
+        self.id = TTID.make_task_id(taskset_id, partition)
         self.stage_id = stage_id
-        self.job_id = job_id
+        self.taskset_id = taskset_id
         self.partition = partition
         self.num_try = 0
 
@@ -98,8 +98,8 @@ class DAGTask(object):
 
 
 class ResultTask(DAGTask):
-    def __init__(self, stage_id, job_id, partition, rdd, func, locs, outputId):
-        DAGTask.__init__(self, stage_id, job_id, partition)
+    def __init__(self, stage_id, taskset_id, partition, rdd, func, locs, outputId):
+        DAGTask.__init__(self, stage_id, taskset_id, partition)
         self.rdd = rdd
         self.func = func
         self.split = rdd.splits[partition]
@@ -134,8 +134,8 @@ class ResultTask(DAGTask):
 
 
 class ShuffleMapTask(DAGTask):
-    def __init__(self, stage_id, job_id, partition, rdd, dep, locs):
-        DAGTask.__init__(self, stage_id, job_id, partition)
+    def __init__(self, stage_id, taskset_id, partition, rdd, dep, locs):
+        DAGTask.__init__(self, stage_id, taskset_id, partition)
         self.rdd = rdd
         self.shuffleId = dep.shuffleId
         self.aggregator = dep.aggregator

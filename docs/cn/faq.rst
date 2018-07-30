@@ -13,7 +13,7 @@ FAQ
 2. 为什么我的用dpark写的文件会损坏？
 ------------------------------------------
 
-因为dpark并不保证每个task同时只有一个在运行，特别是当某个task执行的比这个job的其他task慢很多，dpark会尝试重新提交这个task，这样就会有相同的task在同时运行。此时当这个task有对共享存储的文件的写操作时，文件就很可能损坏。解决办法是在写文件时先写到一个文件名随机（或者用机器名+PID生成）的临时文件中，最后再将临时文件rename成最终文件
+因为dpark并不保证每个task同时只有一个在运行，特别是当某个task执行的比这个 taskset 的其他task慢很多，dpark会尝试重新提交这个task，这样就会有相同的task在同时运行。此时当这个task有对共享存储的文件的写操作时，文件就很可能损坏。解决办法是在写文件时先写到一个文件名随机（或者用机器名+PID生成）的临时文件中，最后再将临时文件rename成最终文件
 
 3. 为什么我在集群上的任务都会卡住或者失败？
 --------------------------------------------------
@@ -31,7 +31,7 @@ FAQ
 ``parallelize(list_foo, num_split)`` 方式对 ``list_foo`` 进行分块时，会先将其传输到master节点，当 ``list_foo`` 非常大(say 100 MB)时，过长的网络传输时间可能会引发如下ERROR或WARNING:
 ``Lost Task`` ,  ``use too much time in slaveOffer`` , ``Connection dropped`` , ``Session has expired`` ，这时不管怎么调节 ``num_split`` 都是没有用的。一种可能的解决办法是将list_foo写入文本文件，最后以 ``textFile`` 读出进行分块。
 
-6. 很多 “[WARNING] [dpark.job] Lost Task”
+6. 很多 “[WARNING] [dpark.taskset] Lost Task”
 -----------------------------------------------
 
 原因可能因为你在计算集群上没有账号，解决方法参考问题 3。

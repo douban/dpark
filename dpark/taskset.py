@@ -29,10 +29,10 @@ MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
 
 
-class Job(object):
-    """ A Job runs a set of tasks of a Stage with retry.
+class TaskSet(object):
+    """ A TaskSet runs a set of tasks of a Stage with retry.
 
-        - Task_id seen by Job not include task.num_try
+        - Task_id seen by TaskSet not include task.num_try
         - Each task try four times before abort.
         - Enlarge task.mem if fail for OOM.
         - Retry for lagging tasks.
@@ -43,7 +43,7 @@ class Job(object):
         self.start = time.time()
         self.sched = sched
         self.tasks = tasks
-        self.id = tasks[0].job_id
+        self.id = tasks[0].taskset_id
 
         for t in self.tasks:
             t.status = None
@@ -180,7 +180,7 @@ class Job(object):
 
     def statusUpdate(self, task_id, num_try, status, reason=None,
                      result=None, update=None, stats=None):
-        logger.debug('job status update %s, status %s, reason %s', task_id, status, reason)
+        logger.debug('taskset status update %s, status %s, reason %s', task_id, status, reason)
         if task_id not in self.tidToIndex:
             logger.error('invalid task_id: %s, status %s, reason %s', task_id, status, reason)
             return
@@ -217,7 +217,7 @@ class Job(object):
             m, s = divmod(int(eta), 60)
             h, m = divmod(m, 60)
 
-            tmpl = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'
+            tmpl = 'taskset:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'
             fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
 
             msg = fmt % (
@@ -228,7 +228,7 @@ class Job(object):
             logger.info(msg)
         else:
 
-            tmpl = 'Job:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:--:--:-- AVG:N/A\x1b[K%s'
+            tmpl = 'taskset:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:--:--:-- AVG:N/A\x1b[K%s'
             fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
 
             msg = fmt % (self.id, bar, ratio * 100, self.tasksFinished, n, ending)
@@ -245,7 +245,7 @@ class Job(object):
         task.time_used += time.time() - task.start
         self.total_time_used += task.time_used
         if getattr(self.sched, 'color', False):
-            title = 'Job %s: task %s finished in %.1fs (%d/%d)     ' % (
+            title = 'taskset %s: task %s finished in %.1fs (%d/%d)     ' % (
                 self.id, task_id, task.time_used, self.tasksFinished, self.numTasks)
             msg = '\x1b]2;%s\x07\x1b[1A' % title
             logger.info(msg)
@@ -264,13 +264,13 @@ class Job(object):
             ts = [t.time_used for t in self.tasks]
             num_try = [t.num_try for t in self.tasks]
             elasped = time.time() - self.start
-            logger.info('Job %s finished in %.1fs: min=%.1fs, '
+            logger.info('taskset %s finished in %.1fs: min=%.1fs, '
                         'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
                         self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
                         max(num_try), self.total_time_used / elasped,
                         len(self.task_local_set) * 100. / len(self.tasks)
                         )
-            self.sched.jobFinished(self)
+            self.sched.tasksetFinished(self)
 
     def _task_lost(self, task_id, num_try, status, reason):
         index = self.tidToIndex[task_id]
@@ -291,7 +291,7 @@ class Job(object):
                     self.finished[i] = True
                     self.tasksFinished += 1
             if self.tasksFinished == self.numTasks:
-                self.sched.jobFinished(self)  # cancel job
+                self.sched.tasksetFinished(self)  # cancel taskset
             return
 
         task = self.tasks[index]
@@ -332,7 +332,7 @@ class Job(object):
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:
-            logger.error('Task %s failed more than %d times; aborting job',
+            logger.error('Task %s failed more than %d times; aborting taskset',
                          self.tasks[index].id, MAX_TASK_FAILURES)
             self._abort('Task %s failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
         self.task_host_manager.task_failed(task.id, hostname, reason)
@@ -383,7 +383,7 @@ class Job(object):
                         self.launched[idx] = False
                         self.tasksLaunched -= 1
                     else:
-                        logger.error('task %s timeout, aborting job %s',
+                        logger.error('task %s timeout, aborting taskset %s',
                                      task, self.id)
                         self._abort('task %s timeout' % task)
                 else:
@@ -391,11 +391,11 @@ class Job(object):
         return self.tasksLaunched < n
 
     def _abort(self, message):
-        logger.error('abort the job: %s', message)
+        logger.error('abort the taskset: %s', message)
         tasks = ' '.join(str(i) for i in range(len(self.finished))
                          if not self.finished[i])
         logger.error('not finished tasks: %s', tasks)
         self.failed = True
         self.causeOfFailure = message
-        self.sched.jobFinished(self)
+        self.sched.tasksetFinished(self)
         self.sched.abort()

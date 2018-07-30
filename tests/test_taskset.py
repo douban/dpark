@@ -5,7 +5,7 @@ import math
 import unittest
 import logging
 
-from dpark.job import Job
+from dpark.taskset import TaskSet
 from dpark.hostatus import HostStatus, TaskHostManager
 from dpark.schedule import OtherFailure, Success
 from six.moves import range
@@ -22,7 +22,7 @@ class MockSchduler:
     def requestMoreResources(self):
         pass
 
-    def jobFinished(self, job):
+    def tasksetFinished(self, taskset):
         pass
 
     def killTask(self, task_id, tried):
@@ -33,7 +33,7 @@ class MockTask:
 
     def __init__(self, id):
         self.id = id
-        self.job_id = "1.1_{}".format(id)
+        self.taskset_id = "1.1_{}".format(id)
         self.try_id = 0
 
     def preferredLocations(self):
@@ -46,54 +46,54 @@ def create_offer(hostname):
     return offer
 
 
-class TestJob(unittest.TestCase):
+class TestTaskSet(unittest.TestCase):
 
-    def test_job(self):
+    def test_taskset(self):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
-        job = Job(sched, tasks, 1, 10)
+        taskset = TaskSet(sched, tasks, 1, 10)
         offer = create_offer('localhost')
         host_offers = {'localhost': (0, offer)}
-        job.task_host_manager.register_host('localhost')
+        taskset.task_host_manager.register_host('localhost')
         cpus = [10]
         mems = [10]
         gpus = [0]
         # the return of taskOffer is a list whose item is TUPLE with Index of offer,
         # information of Offer,
         # description of Task
-        ts = sum([job.taskOffer(host_offers, cpus, mems, gpus) for i in range(10)], [])
+        ts = sum([taskset.taskOffer(host_offers, cpus, mems, gpus) for i in range(10)], [])
         assert len(ts) == 10
-        assert job.tasksLaunched == 10
-        assert not job.taskOffer(host_offers, cpus, mems, gpus)
-        [job.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts]
-        assert job.tasksFinished == 10
+        assert taskset.tasksLaunched == 10
+        assert not taskset.taskOffer(host_offers, cpus, mems, gpus)
+        [taskset.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts]
+        assert taskset.tasksFinished == 10
 
     def test_retry(self):
         sched = MockSchduler()
         tasks = [MockTask(i) for i in range(10)]
-        job = Job(sched, tasks, 1, 10)
+        taskset = TaskSet(sched, tasks, 1, 10)
         offer = create_offer('localhost')
         host_offers = {'localhost': (0, offer)}
         # the host register should with purge elapsed 0, otherwise the failure
         # will forbit the localhost
-        job.task_host_manager.register_host('localhost', purge_elapsed=0)
+        taskset.task_host_manager.register_host('localhost', purge_elapsed=0)
         cpus = [1]
         mems = [10]
         gpus = [0]
-        ts = sum([job.taskOffer(host_offers=host_offers, cpus=cpus,
+        ts = sum([taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                                 mems=mems, gpus=gpus) for i in range(10)], [])
-        [job.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts[1:]]
-        assert job.tasksFinished == 9
-        job.statusUpdate(ts[0][2].id, 0, 'TASK_FAILED')
-        t = job.taskOffer(host_offers=host_offers, cpus=cpus,
+        [taskset.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts[1:]]
+        assert taskset.tasksFinished == 9
+        taskset.statusUpdate(ts[0][2].id, 0, 'TASK_FAILED')
+        t = taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                           mems=mems, gpus=gpus)[0]
         assert t[2].id == 0
-        assert not job.taskOffer(
+        assert not taskset.taskOffer(
             host_offers=host_offers, cpus=cpus, mems=mems, gpus=gpus
         )
-        assert job.tasksLaunched == 10
-        job.statusUpdate(t[2].id, 1, 'TASK_FINISHED')
-        assert job.tasksFinished == 10
+        assert taskset.tasksLaunched == 10
+        taskset.statusUpdate(t[2].id, 1, 'TASK_FINISHED')
+        assert taskset.tasksFinished == 10
 
 
 class TestHostStatus(unittest.TestCase):

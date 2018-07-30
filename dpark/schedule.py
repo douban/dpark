@@ -19,7 +19,7 @@ import dpark.conf as conf
 from dpark.accumulator import Accumulator
 from dpark.dependency import ShuffleDependency
 from dpark.env import env
-from dpark.job import Job
+from dpark.taskset import TaskSet
 from dpark.rdd import ShuffledRDD, CoGroupedRDD
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask, TTID
@@ -103,7 +103,7 @@ class Stage:
 
     @property
     def try_id(self):
-        return TTID.make_job_id(self.id, self.num_try + 1)  # incr num_try After create Job
+        return TTID.make_taskset_id(self.id, self.num_try + 1)  # incr num_try After create TaskSet
 
     @property
     def isAvailable(self):
@@ -485,14 +485,14 @@ class DAGScheduler(Scheduler):
                 continue
 
             if evt is None:  # aborted
-                for job in list(self.activeJobsQueue):
-                    self.jobFinished(job)
+                for taskset in list(self.active_tasksets_queue):
+                    self.tasksetFinished(taskset)
 
-                raise RuntimeError('Job aborted!')
+                raise RuntimeError('TaskSet aborted!')
 
             task, reason = evt.task, evt.reason
             stage = self.idToStage[task.stage_id]
-            if stage not in pendingTasks:  # stage from other job
+            if stage not in pendingTasks:  # stage from other taskset
                 continue
             logger.debug('remove from pending %s from %s', task, stage)
             pendingTasks[stage].remove(task.id)
@@ -648,7 +648,7 @@ class MultiProcessScheduler(LocalScheduler):
         if not tasks:
             return
 
-        logger.info('Got a job with %d tasks: %s', len(tasks), tasks[0].rdd)
+        logger.info('Got a taskset with %d tasks: %s', len(tasks), tasks[0].rdd)
 
         total, self.finished, start = len(tasks), 0, time.time()
 
@@ -674,7 +674,7 @@ class MultiProcessScheduler(LocalScheduler):
                         tid, self.finished, total)
             if self.finished == total:
                 logger.info(
-                    'Job finished in %.1f seconds' + ' ' * 20,
+                    'TaskSet finished in %.1f seconds' + ' ' * 20,
                     time.time() - start)
             self.taskEnded(task, reason, result, update)
 
@@ -765,21 +765,21 @@ class MesosScheduler(DAGScheduler):
         self.err_logger = LogReceiver(sys.stderr)
         self.lock = threading.RLock()
         self.task_host_manager = TaskHostManager()
-        self.init_job()
+        self.init_tasksets()
 
-    def init_job(self):
-        self.activeJobs = {}
-        self.activeJobsQueue = []
+    def init_tasksets(self):
+        self.active_tasksets = {}
+        self.active_tasksets_queue = []
 
-        self.taskIdToJobId = {}
-        self.jobTasks = {}
+        self.ttid_to_taskset = {}
+        self.taskset_to_ttid = {}
 
-        self.taskIdToAgentId = {}
-        self.agentTasks = {}
+        self.ttid_to_agent_id = {}
+        self.agent_id_to_ttids = {}
 
     def clear(self):
         DAGScheduler.clear(self)
-        self.init_job()
+        self.init_tasksets()
 
     def processHeartBeat(self):
         # no need in dpark now, just for compatibility with pymesos
@@ -818,15 +818,15 @@ class MesosScheduler(DAGScheduler):
             while self.started:
                 with self.lock:
                     now = time.time()
-                    if (not self.activeJobs and
+                    if (not self.active_tasksets and
                             now - self.last_finish_time > MAX_IDLE_TIME):
                         logger.info('stop mesos scheduler after %d seconds idle',
                                     now - self.last_finish_time)
                         self.stop()
                         break
 
-                    for job in self.activeJobs.values():
-                        if job.check_task_timeout():
+                    for taskset in self.active_tasksets.values():
+                        if taskset.check_task_timeout():
                             self.requestMoreResources()
                 time.sleep(1)
 
@@ -970,11 +970,11 @@ class MesosScheduler(DAGScheduler):
         rdd = tasks[0].rdd
         assert all(t.rdd is rdd for t in tasks)
 
-        job = Job(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
+        taskset = TaskSet(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
                   rdd.gpus, self.task_host_manager)
-        self.activeJobs[job.id] = job
-        self.activeJobsQueue.append(job)
-        self.jobTasks[job.id] = set()
+        self.active_tasksets[taskset.id] = taskset
+        self.active_tasksets_queue.append(taskset)
+        self.taskset_to_ttid[taskset.id] = set()
         stage_scope = ''
         try:
             from dpark.web.ui.views.rddopgraph import StageInfo
@@ -984,9 +984,9 @@ class MesosScheduler(DAGScheduler):
         stage = self.idToStage[tasks[0].stage_id]
         stage.num_try += 1
         logger.info(
-            'Got job %s with %d tasks for stage: %d '
+            'Got taskset %s with %d tasks for stage: %d '
             'at scope[%s] and rdd:%s',
-            job.id,
+            taskset.id,
             len(tasks),
             tasks[0].stage_id,
             stage_scope,
@@ -1010,7 +1010,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def resourceOffers(self, driver, offers):
         rf = Dict()
-        if not self.activeJobs:
+        if not self.active_tasksets:
             driver.suppressOffers()
             rf.refuse_seconds = 60 * 5
             for o in offers:
@@ -1045,19 +1045,19 @@ class MesosScheduler(DAGScheduler):
         cpus = [self.getResource(o.resources, 'cpus') for o in offers]
         gpus = [self.getResource(o.resources, 'gpus') for o in offers]
         mems = [self.getResource(o.resources, 'mem')
-                - (o.agent_id.value not in self.agentTasks
+                - (o.agent_id.value not in self.agent_id_to_ttids
                    and EXECUTOR_MEMORY or 0)
                 for o in offers]
-        # logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d jobs',
-        #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.activeJobs))
+        # logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d tasksets',
+        #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.active_tasksets))
 
         tasks = {}
-        for job in self.activeJobsQueue:
+        for taskset in self.active_tasksets_queue:
             while True:
                 host_offers = {}
                 for i, o in enumerate(offers):
                     sid = o.agent_id.value
-                    if self.agentTasks.get(sid, 0) >= self.task_per_node:
+                    if self.agent_id_to_ttids.get(sid, 0) >= self.task_per_node:
                         logger.debug('the task limit exceeded at host %s',
                                      o.hostname)
                         continue
@@ -1065,7 +1065,7 @@ class MesosScheduler(DAGScheduler):
                             or cpus[i] < self.cpus + EXECUTOR_CPUS):
                         continue
                     host_offers[o.hostname] = (i, o)
-                assigned_list = job.taskOffer(host_offers, cpus, mems, gpus)
+                assigned_list = taskset.taskOffer(host_offers, cpus, mems, gpus)
                 if not assigned_list:
                     break
                 for i, o, t in assigned_list:
@@ -1074,10 +1074,10 @@ class MesosScheduler(DAGScheduler):
                     logger.debug('dispatch %s into %s', t, o.hostname)
                     tid = task.task_id.value
                     sid = o.agent_id.value
-                    self.jobTasks[job.id].add(tid)
-                    self.taskIdToJobId[tid] = job.id
-                    self.taskIdToAgentId[tid] = sid
-                    self.agentTasks[sid] = self.agentTasks.get(sid, 0) + 1
+                    self.taskset_to_ttid[taskset.id].add(tid)
+                    self.ttid_to_taskset[tid] = taskset.id
+                    self.ttid_to_agent_id[tid] = sid
+                    self.agent_id_to_ttids[sid] = self.agent_id_to_ttids.get(sid, 0) + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
                     gpus[i] -= t.gpus
@@ -1099,7 +1099,7 @@ class MesosScheduler(DAGScheduler):
     @safe
     def offerRescinded(self, driver, offer_id):
         logger.debug('rescinded offer: %s', offer_id)
-        if self.activeJobs:
+        if self.active_tasksets:
             self.requestMoreResources()
 
     def getResource(self, res, name):
@@ -1157,16 +1157,16 @@ class MesosScheduler(DAGScheduler):
 
         def plot_progresses():
             if self.color:
-                total = len(self.activeJobs)
+                total = len(self.active_tasksets)
                 logger.info('\x1b[2K\x1b[J\x1b[1A')
-                for i, job_id in enumerate(self.activeJobs):
+                for i, taskset_id in enumerate(self.active_tasksets):
                     if i == total - 1:
                         ending = '\x1b[%sA' % total
                     else:
                         ending = ''
 
-                    jobs = self.activeJobs[job_id]
-                    jobs.progress(ending)
+                    tasksets = self.active_tasksets[taskset_id]
+                    tasksets.progress(ending)
 
         mesos_task_id = status.task_id.value
         state = status.state
@@ -1174,31 +1174,31 @@ class MesosScheduler(DAGScheduler):
 
         ttid = TTID(mesos_task_id)
         if state == 'TASK_RUNNING':
-            if ttid.job_id in self.activeJobs:
-                job = self.activeJobs[ttid.job_id]
-                job.statusUpdate(ttid.task_id, ttid.task_try, state)
-                if job.tasksFinished == 0:
+            if ttid.taskset_id in self.active_tasksets:
+                taskset = self.active_tasksets[ttid.taskset_id]
+                taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
+                if taskset.tasksFinished == 0:
                     plot_progresses()
             else:
-                logger.debug('kill task %s as its job has gone', mesos_task_id)
+                logger.debug('kill task %s as its taskset has gone', mesos_task_id)
                 self.driver.killTask(Dict(value=mesos_task_id))
 
             return
 
-        self.taskIdToJobId.pop(mesos_task_id, None)
-        if ttid.job_id in self.jobTasks:
-            self.jobTasks[ttid.job_id].remove(mesos_task_id)
-        if mesos_task_id in self.taskIdToAgentId:
-            agent_id = self.taskIdToAgentId[mesos_task_id]
-            if agent_id in self.agentTasks:
-                self.agentTasks[agent_id] -= 1
-            del self.taskIdToAgentId[mesos_task_id]
+        self.ttid_to_taskset.pop(mesos_task_id, None)
+        if ttid.taskset_id in self.taskset_to_ttid:
+            self.taskset_to_ttid[ttid.taskset_id].remove(mesos_task_id)
+        if mesos_task_id in self.ttid_to_agent_id:
+            agent_id = self.ttid_to_agent_id[mesos_task_id]
+            if agent_id in self.agent_id_to_ttids:
+                self.agent_id_to_ttids[agent_id] -= 1
+            del self.ttid_to_agent_id[mesos_task_id]
 
-        if ttid.job_id not in self.activeJobs:
-            logger.debug('ignore task %s as its job has gone', ttid.job_id)
+        if ttid.taskset_id not in self.active_tasksets:
+            logger.debug('ignore task %s as its taskset has gone', ttid.taskset_id)
             return
 
-        job = self.activeJobs[ttid.job_id]
+        taskset = self.active_tasksets[ttid.taskset_id]
         reason = status.get('message')
         data = status.get('data')
         if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
@@ -1223,33 +1223,33 @@ class MesosScheduler(DAGScheduler):
                 logger.warning(
                     'error when cPickle.loads(): %s, data:%s', e, len(data))
                 state = 'TASK_FAILED'
-                job.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
+                taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
                 return
             else:
-                job.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
+                taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
                 if state == 'TASK_FINISHED':
                     plot_progresses()
                 return
 
         # killed, lost, load failed
-        job.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
+        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
 
     @safe
-    def jobFinished(self, job):
-        logger.debug('job %s finished', job.id)
-        if job.id in self.activeJobs:
+    def tasksetFinished(self, taskset):
+        logger.debug('taskset %s finished', taskset.id)
+        if taskset.id in self.active_tasksets:
             self.last_finish_time = time.time()
-            del self.activeJobs[job.id]
-            self.activeJobsQueue.remove(job)
-            for mesos_task_id in self.jobTasks[job.id]:
+            del self.active_tasksets[taskset.id]
+            self.active_tasksets_queue.remove(taskset)
+            for mesos_task_id in self.taskset_to_ttid[taskset.id]:
                 self.driver.killTask(Dict(value=mesos_task_id))
-            del self.jobTasks[job.id]
+            del self.taskset_to_ttid[taskset.id]
 
-            if not self.activeJobs:
-                self.agentTasks.clear()
+            if not self.active_tasksets:
+                self.agent_id_to_ttids.clear()
 
-        for mesos_task_id, jid in six.iteritems(self.taskIdToJobId):
-            if jid not in self.activeJobs:
+        for mesos_task_id, jid in six.iteritems(self.ttid_to_taskset):
+            if jid not in self.active_tasksets:
                 logger.debug('kill task %s, because it is orphan', mesos_task_id)
                 self.driver.killTask(Dict(value=mesos_task_id))
 
@@ -1284,11 +1284,11 @@ class MesosScheduler(DAGScheduler):
             agent_id.value,
             executor_id.value,
             status)
-        self.agentTasks.pop(agent_id.value, None)
+        self.agent_id_to_ttids.pop(agent_id.value, None)
 
     def slaveLost(self, driver, agent_id):
         logger.warning('agent %s lost', agent_id.value)
-        self.agentTasks.pop(agent_id.value, None)
+        self.agent_id_to_ttids.pop(agent_id.value, None)
 
     def killTask(self, task_id, num_try):
         tid = Dict()
