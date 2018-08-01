@@ -4,6 +4,8 @@ import time
 import psutil
 import resource
 import threading
+import platform
+
 from dpark.utils.log import get_logger
 
 logger = get_logger(__name__)
@@ -109,3 +111,16 @@ class MemoryChecker(object):
         self._stop = True
         self.thread.join()
         self.thread = None
+
+
+def set_oom_score(score=100):
+    if platform.system() == 'Linux':
+        pid = os.getpid()
+        entry = "oom_score_adj"
+        path = "/proc/{}/{}".format(pid, entry)
+
+        try:
+            with open(path, "w") as f:
+                f.write("{}".format(score))
+        except:
+            pass

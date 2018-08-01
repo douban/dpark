@@ -26,7 +26,7 @@ from dpark.utils import (
     compress, decompress, spawn, mkdir_p
 )
 from dpark.utils.log import get_logger, init_dpark_logger, formatter_message
-from dpark.utils.memory import ERROR_TASK_OOM
+from dpark.utils.memory import ERROR_TASK_OOM, set_oom_score
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.schedule import Success, FetchFailed, OtherFailure
@@ -497,6 +497,7 @@ class MyExecutor(Executor):
             task_id_str = "task %s" % (task_id_value,)
             threading.current_thread().name = task_id_str
             setproctitle(procname)
+            set_oom_score(100)
             env.start()
             q.put((task_id_value, run_task(task_data)))
 
