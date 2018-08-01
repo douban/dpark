@@ -186,6 +186,14 @@ class ProxyConn(object):
         return ans[4: -1]
 
     def readchunk(self, inode, index, chunkopflags=0):
+        """
+        // msgid:32 length:64 chunkid:64 version:32 N*[ ip:32 port:16 ]
+        // msgid:32 protocolid:8 length:64 chunkid:64 version:32 N*[ ip:32 port:16 cs_ver:32 ]
+                (master and client both versions >= 1.7.32 - protocolid==1)
+        // msgid:32 protocolid:8 length:64 chunkid:64 version:32 N*[ ip:32 port:16 cs_ver:32 labelmask:32 ]
+                (master and client both versions >= 3.0.10 - protocolid==2)
+        """
+
         cnt = 0
         while True:
             cnt += 1
@@ -210,15 +218,16 @@ class ProxyConn(object):
             if n < 20:
                 raise Exception('read chunk invalid length: %s(expected 20 above)' % n)
 
-            if self.version >= (3, 0, 10):
-                assert (n - 21) % 14 == 0, n
+            # self.version is master`s version, not mfsmount`s
+            if self.version >= (1, 7, 32) and ((n - 21) % 14 == 0 or (n - 21) % 10 == 0):
                 protocolid, length, id_, version = unpack('BQQI', ans)
-                return Chunk(id_, length, version, ans[21:], ele_width=14)
-            elif self.version >= (1, 7, 32):
-                assert (n - 21) % 10 == 0, n
-                protocolid, length, id_, version = unpack('BQQI', ans)
-                return Chunk(id_, length, version, ans[21:], ele_width=10)
-            else:
-                assert (n - 20) % 6 == 0, n
-                length, id_, version = unpack("QQI", ans)
-                return Chunk(id_, length, version, ans[20:])
+                if protocolid == 2:
+                    assert (n - 21) % 14 == 0, n
+                    return Chunk(id_, length, version, ans[21:], ele_width=14)
+                elif protocolid == 1:
+                    assert (n - 21) % 10 == 0, n
+                    return Chunk(id_, length, version, ans[21:], ele_width=10)
+
+            assert (n - 20) % 6 == 0, n
+            length, id_, version = unpack("QQI", ans)
+            return Chunk(id_, length, version, ans[20:])
