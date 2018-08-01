@@ -1161,7 +1161,7 @@ class MesosScheduler(DAGScheduler):
 
         mesos_task_id = status.task_id.value
         state = status.state
-        reason = status.get('message')
+        reason = status.get('message')  # set by mesos
         data = status.get('data')
 
         logger.debug('status update: %s %s', mesos_task_id, state)
@@ -1195,8 +1195,7 @@ class MesosScheduler(DAGScheduler):
 
                 if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
                     try:
-                        reason, result, accUpdate, task_stats = cPickle.loads(
-                            decode_data(data))
+                        reason, result, accUpdate, task_stats = cPickle.loads(decode_data(data))
                         if result:
                             flag, data = result
                             if flag >= 2:
@@ -1211,16 +1210,13 @@ class MesosScheduler(DAGScheduler):
                                 result = marshal.loads(data)
                             else:
                                 result = cPickle.loads(data)
-                    except Exception as e:
-                        logger.error('error when cPickle.loads(): %s, data:%s', e, len(data))
-                        state = 'TASK_FAILED'
-                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
-                        return
-                    else:
                         taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
                         if state == 'TASK_FINISHED':
                             plot_progresses()
-                        return
+                    except Exception as e:
+                        logger.warning('error when cPickle.loads(): %s, data:%s', e, len(data))
+                        state = 'TASK_FAILED'
+                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
                 else:
                     # killed, lost
                     taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
