@@ -485,7 +485,7 @@ class DAGScheduler(Scheduler):
                 continue
 
             if evt is None:  # aborted
-                for taskset in list(self.active_tasksets_queue):
+                for taskset in self.active_tasksets.values():
                     self.tasksetFinished(taskset)
 
                 raise RuntimeError('TaskSet aborted!')
@@ -769,7 +769,6 @@ class MesosScheduler(DAGScheduler):
 
     def init_tasksets(self):
         self.active_tasksets = {}
-        self.active_tasksets_queue = []
 
         self.ttid_to_taskset = {}
         self.taskset_to_ttid = {}
@@ -973,7 +972,6 @@ class MesosScheduler(DAGScheduler):
         taskset = TaskSet(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
                   rdd.gpus, self.task_host_manager)
         self.active_tasksets[taskset.id] = taskset
-        self.active_tasksets_queue.append(taskset)
         self.taskset_to_ttid[taskset.id] = set()
         stage_scope = ''
         try:
@@ -1052,7 +1050,7 @@ class MesosScheduler(DAGScheduler):
         #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.active_tasksets))
 
         tasks = {}
-        for taskset in self.active_tasksets_queue:
+        for taskset in self.active_tasksets.values():
             while True:
                 host_offers = {}
                 for i, o in enumerate(offers):
@@ -1240,7 +1238,6 @@ class MesosScheduler(DAGScheduler):
         if taskset.id in self.active_tasksets:
             self.last_finish_time = time.time()
             del self.active_tasksets[taskset.id]
-            self.active_tasksets_queue.remove(taskset)
             for mesos_task_id in self.taskset_to_ttid[taskset.id]:
                 self.driver.killTask(Dict(value=mesos_task_id))
             del self.taskset_to_ttid[taskset.id]
