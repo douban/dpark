@@ -375,17 +375,17 @@ class MyExecutor(Executor):
                     tids_to_pop.append(tid)
                     reply_status(driver, task_id, 'TASK_KILLED' if st == _KILLED else 'TASK_LOST')
 
-                with self.lock:
-                    for tid_ in tids_to_pop:
-                        try:
-                            self.tasks.pop(tid_)
-                        except:
-                            pass
-                now = time.time()
-                if self.tasks:
-                    idle_since = now
-                elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
-                    os._exit(0)
+            with self.lock:
+                for tid_ in tids_to_pop:
+                    try:
+                        self.tasks.pop(tid_)
+                    except:
+                        pass
+            now = time.time()
+            if self.tasks:
+                idle_since = now
+            elif idle_since + MAX_EXECUTOR_IDLE_TIME < now:
+                os._exit(0)
 
             time.sleep(1)
 
