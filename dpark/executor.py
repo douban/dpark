@@ -348,6 +348,9 @@ class MyExecutor(Executor):
                 if st == _LOST or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):
                     proc.join(TASK_LOST_JOIN_TIMEOUT)  # join in py2 not return exitcode
                     ec = proc.exitcode
+                    if ec == 0:  # p.status() == psutil.STATUS_ZOMBIE
+                        continue
+
                     if ec is not None:
                         if ec in kill_ecs:
                             st = _KILLED
