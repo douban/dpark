@@ -366,9 +366,7 @@ class MyExecutor(Executor):
                                 logger.exception('%s lost, raise exception when waitpid', tid)
                         else:
                             t = self.finished_tasks.get(tid)
-                            if t is None:
-                                self.finished_tasks[tid] = t
-                            elif time.time() - t > TASK_LOST_DISCARD_TIMEOUT:
+                            if t is not None and time.time() - t > TASK_LOST_DISCARD_TIMEOUT:
                                 logger.warning('%s is zombie for %d secs, discard it!', name, TASK_LOST_DISCARD_TIMEOUT)
 
                 if st != _DELAY:
