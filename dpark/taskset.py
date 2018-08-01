@@ -44,6 +44,7 @@ class TaskSet(object):
         self.sched = sched
         self.tasks = tasks
         self.id = tasks[0].taskset_id
+        self.ttids = set()
 
         for t in self.tasks:
             t.status = None

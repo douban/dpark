@@ -769,10 +769,6 @@ class MesosScheduler(DAGScheduler):
 
     def init_tasksets(self):
         self.active_tasksets = {}
-
-        self.ttid_to_taskset = {}
-        self.taskset_to_ttid = {}
-
         self.ttid_to_agent_id = {}
         self.agent_id_to_ttids = {}
 
@@ -972,7 +968,6 @@ class MesosScheduler(DAGScheduler):
         taskset = TaskSet(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
                   rdd.gpus, self.task_host_manager)
         self.active_tasksets[taskset.id] = taskset
-        self.taskset_to_ttid[taskset.id] = set()
         stage_scope = ''
         try:
             from dpark.web.ui.views.rddopgraph import StageInfo
@@ -1070,11 +1065,10 @@ class MesosScheduler(DAGScheduler):
                     task = self.createTask(o, t)
                     tasks.setdefault(o.id.value, []).append(task)
                     logger.debug('dispatch %s into %s', t, o.hostname)
-                    tid = task.task_id.value
+                    ttid = task.task_id.value
                     sid = o.agent_id.value
-                    self.taskset_to_ttid[taskset.id].add(tid)
-                    self.ttid_to_taskset[tid] = taskset.id
-                    self.ttid_to_agent_id[tid] = sid
+                    taskset.ttids.add(ttid)
+                    self.ttid_to_agent_id[ttid] = sid
                     self.agent_id_to_ttids[sid] = self.agent_id_to_ttids.get(sid, 0) + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
@@ -1168,87 +1162,81 @@ class MesosScheduler(DAGScheduler):
 
         mesos_task_id = status.task_id.value
         state = status.state
+        reason = status.get('message')
+        data = status.get('data')
+
         logger.debug('status update: %s %s', mesos_task_id, state)
 
         ttid = TTID(mesos_task_id)
-        if state == 'TASK_RUNNING':
-            if ttid.taskset_id in self.active_tasksets:
-                taskset = self.active_tasksets[ttid.taskset_id]
-                taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
-                if taskset.tasksFinished == 0:
-                    plot_progresses()
-            else:
+
+        taskset = self.active_tasksets.get(ttid.taskset_id)
+
+        if taskset is None:
+            if state == 'TASK_RUNNING':
                 logger.debug('kill task %s as its taskset has gone', mesos_task_id)
                 self.driver.killTask(Dict(value=mesos_task_id))
-
-            return
-
-        self.ttid_to_taskset.pop(mesos_task_id, None)
-        if ttid.taskset_id in self.taskset_to_ttid:
-            self.taskset_to_ttid[ttid.taskset_id].remove(mesos_task_id)
-        if mesos_task_id in self.ttid_to_agent_id:
-            agent_id = self.ttid_to_agent_id[mesos_task_id]
-            if agent_id in self.agent_id_to_ttids:
-                self.agent_id_to_ttids[agent_id] -= 1
-            del self.ttid_to_agent_id[mesos_task_id]
-
-        if ttid.taskset_id not in self.active_tasksets:
-            logger.debug('ignore task %s as its taskset has gone', ttid.taskset_id)
-            return
-
-        taskset = self.active_tasksets[ttid.taskset_id]
-        reason = status.get('message')
-        data = status.get('data')
-        if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
-            try:
-                reason, result, accUpdate, task_stats = cPickle.loads(
-                    decode_data(data))
-                if result:
-                    flag, data = result
-                    if flag >= 2:
-                        try:
-                            data = urllib.request.urlopen(data).read()
-                        except IOError:
-                            # try again
-                            data = urllib.request.urlopen(data).read()
-                        flag -= 2
-                    data = decompress(data)
-                    if flag == 0:
-                        result = marshal.loads(data)
-                    else:
-                        result = cPickle.loads(data)
-            except Exception as e:
-                logger.warning(
-                    'error when cPickle.loads(): %s, data:%s', e, len(data))
-                state = 'TASK_FAILED'
-                taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
-                return
             else:
-                taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
-                if state == 'TASK_FINISHED':
-                    plot_progresses()
+                logger.debug('ignore task %s as its taskset has gone', mesos_task_id)
                 return
 
-        # killed, lost, load failed
-        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
+        if state == 'TASK_RUNNING':
+            taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
+            if taskset.tasksFinished == 0:
+                plot_progresses()
+        else:
+            if mesos_task_id not in taskset.ttids:
+                logger.debug('ignore task %s as it has finished or failed, new msg: %s', mesos_task_id, (state, reason))
+            else:
+                taskset.ttids.remove(mesos_task_id)
+                if mesos_task_id in self.ttid_to_agent_id:
+                    agent_id = self.ttid_to_agent_id[mesos_task_id]
+                    if agent_id in self.agent_id_to_ttids:
+                        self.agent_id_to_ttids[agent_id] -= 1
+                    del self.ttid_to_agent_id[mesos_task_id]
+
+                if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
+                    try:
+                        reason, result, accUpdate, task_stats = cPickle.loads(
+                            decode_data(data))
+                        if result:
+                            flag, data = result
+                            if flag >= 2:
+                                try:
+                                    data = urllib.request.urlopen(data).read()
+                                except IOError:
+                                    # try again
+                                    data = urllib.request.urlopen(data).read()
+                                flag -= 2
+                            data = decompress(data)
+                            if flag == 0:
+                                result = marshal.loads(data)
+                            else:
+                                result = cPickle.loads(data)
+                    except Exception as e:
+                        logger.error('error when cPickle.loads(): %s, data:%s', e, len(data))
+                        state = 'TASK_FAILED'
+                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
+                        return
+                    else:
+                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
+                        if state == 'TASK_FINISHED':
+                            plot_progresses()
+                        return
+                else:
+                    # killed, lost
+                    taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
 
     @safe
     def tasksetFinished(self, taskset):
         logger.debug('taskset %s finished', taskset.id)
         if taskset.id in self.active_tasksets:
             self.last_finish_time = time.time()
-            del self.active_tasksets[taskset.id]
-            for mesos_task_id in self.taskset_to_ttid[taskset.id]:
+            for mesos_task_id in taskset.ttids:
                 self.driver.killTask(Dict(value=mesos_task_id))
-            del self.taskset_to_ttid[taskset.id]
+            del self.active_tasksets[taskset.id]
 
             if not self.active_tasksets:
                 self.agent_id_to_ttids.clear()
-
-        for mesos_task_id, jid in six.iteritems(self.ttid_to_taskset):
-            if jid not in self.active_tasksets:
-                logger.debug('kill task %s, because it is orphan', mesos_task_id)
-                self.driver.killTask(Dict(value=mesos_task_id))
 
     @safe
     def error(self, driver, message):
