@@ -1049,8 +1049,7 @@ class MesosScheduler(DAGScheduler):
             while True:
                 host_offers = {}
                 for i, o in enumerate(offers):
-                    sid = o.agent_id.value
-                    if self.agent_id_to_ttids.get(sid, 0) >= self.task_per_node:
+                    if self.agent_id_to_ttids.get(o.agent_id.value, 0) >= self.task_per_node:
                         logger.debug('the task limit exceeded at host %s',
                                      o.hostname)
                         continue
@@ -1066,10 +1065,10 @@ class MesosScheduler(DAGScheduler):
                     tasks.setdefault(o.id.value, []).append(task)
                     logger.debug('dispatch %s into %s', t, o.hostname)
                     ttid = task.task_id.value
-                    sid = o.agent_id.value
+                    agent_id = o.agent_id.value
                     taskset.ttids.add(ttid)
-                    self.ttid_to_agent_id[ttid] = sid
-                    self.agent_id_to_ttids[sid] = self.agent_id_to_ttids.get(sid, 0) + 1
+                    self.ttid_to_agent_id[ttid] = agent_id
+                    self.agent_id_to_ttids[agent_id] = self.agent_id_to_ttids.get(agent_id, 0) + 1
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
                     gpus[i] -= t.gpus
