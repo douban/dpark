@@ -149,10 +149,12 @@ class StreamingContext(object):
         self.batchCallback = batchCallback
 
     @classmethod
-    def load(cls, path):
+    def load(cls, path, sc=None):
         cp = Checkpoint.read(path)
         graph = cp.graph
-        ssc = cls(cp.batchDuration, cp.master, graph)
+        if not sc:
+            sc = cp.master
+        ssc = cls(cp.batchDuration, sc, graph)
         ssc.checkpointDir = path
         ssc.checkpointDuration = cp.checkpointDuration
         graph.setContext(ssc)
@@ -253,7 +255,7 @@ class StreamingContext(object):
         except KeyboardInterrupt:
             pass
         finally:
-            self.sc.stop()
+            #  self.sc.stop()
             logger.info("StreamingContext stopped successfully")
 
     def stop(self):

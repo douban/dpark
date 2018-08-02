@@ -8,12 +8,13 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from tempfile import mkdtemp
 from dpark.dstream import *
+from dpark import DparkContext
 
 logging.getLogger('dpark').setLevel(logging.ERROR)
 dpark_master = os.environ.get("TEST_DPARK_MASTER", "local")
 
 
-class TestInputStream(InputDStream):
+class DemoInputStream(InputDStream):
     def __init__(self, ssc, input, numPart=2):
         InputDStream.__init__(self, ssc)
         self.input = input
@@ -40,7 +41,7 @@ def collect(output):
     return _
 
 
-class TestOutputStream(ForEachDStream):
+class DemoOutputStream(ForEachDStream):
     def __init__(self, parent, output):
         ForEachDStream.__init__(self, parent, collect(output))
         self.output = output
@@ -51,18 +52,21 @@ class TestOutputStream(ForEachDStream):
         self.func = collect(self.output)
 
 
+sc = DparkContext(dpark_master)
+
+
 class TestDStream(unittest.TestCase):
     def _setupStreams(self, intput1, input2, operation):
-        ssc = StreamingContext(2, dpark_master)
-        is1 = TestInputStream(ssc, intput1)
+        ssc = StreamingContext(2, sc)
+        is1 = DemoInputStream(ssc, intput1)
         ssc.registerInputStream(is1)
         if input2:
-            is2 = TestInputStream(ssc, input2)
+            is2 = DemoInputStream(ssc, input2)
             ssc.registerInputStream(is2)
             os = operation(is1, is2)
         else:
             os = operation(is1)
-        output = TestOutputStream(os, [])
+        output = DemoOutputStream(os, [])
         ssc.registerOutputStream(output)
         return ssc
 
@@ -78,7 +82,7 @@ class TestDStream(unittest.TestCase):
         # print 'start', first, numBatches
         ssc.start(first)
         ssc.batchCallback = _
-        ssc.awaitTermination(timeout=10)
+        ssc.awaitTermination(timeout=180)
 
         return output
 
@@ -410,7 +414,7 @@ class TestCheckpoint(TestDStream):
             ssc.checkpoint(checkpoint_path, 3 * ssc.batchDuration)
             output = self._runStreams(ssc, 4, 4)
             self._verifyOutput(output, r, False)
-            ssc, first = StreamingContext.load(checkpoint_path)
+            ssc, first = StreamingContext.load(checkpoint_path, sc)
             d = [list(range(i * 4, i * 4 + 4)) for i in range(4, 6)]
             r = [[str(i) for i in row] for row in d]
             ssc.graph.inputStreams[0].input[:] = d
@@ -462,7 +466,7 @@ class TestCheckpoint(TestDStream):
 
             output = self._runStreams(ssc, len(d), len(r))
             self._verifyOutput(output, r, False)
-            ssc, first = StreamingContext.load(checkpoint_path)
+            ssc, first = StreamingContext.load(checkpoint_path, sc)
             d = [['a'], []]
             r = [[("a", 6), ("b", 3), ("c", 1)],
                  [("a", 6), ("b", 3), ("c", 1)],
