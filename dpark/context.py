@@ -471,7 +471,6 @@ def add_default_options():
 
     group.add_option("--profile", action="store_true",
                      help="do profiling")
-    group.add_option("--stats_dir", type="string", default="")
     group.add_option("--role", type="string", default="")
 
     group.add_option("-I", "--image", type="string",

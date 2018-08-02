@@ -268,6 +268,8 @@ class DAGScheduler(Scheduler):
         self.idToRunJob = {}
         self.runJobTimes = 0
         self.frameworkId = None
+        self.loghub_dir = None
+        self._last_stats = None
 
     nextId = 0
 
@@ -358,12 +360,6 @@ class DAGScheduler(Scheduler):
         return list(missing)
 
     def runJob(self, finalRdd, func, partitions, allowLocal):
-        stats_dirpath = None
-        if isinstance(self, MesosScheduler) and self.options.stats_dir:
-            stats_dirpath = os.path.abspath(self.options.stats_dir)
-            if not os.path.exists(stats_dirpath):
-                os.makedirs(stats_dirpath)
-
         run_id = self.runJobTimes
         self.runJobTimes += 1
         outputParts = list(partitions)
@@ -563,10 +559,10 @@ class DAGScheduler(Scheduler):
         onStageFinished(finalStage)
 
         self._last_stats = self.get_stats(run_id)
-        if stats_dirpath:
-            names = ['dpark', self.frameworkId, self.id, run_id]
+        if self.loghub_dir:
+            names = ['sched', self.id, "job", run_id]
             name = "_".join(map(str, names)) + ".json"
-            path = os.path.join(stats_dirpath, name)
+            path = os.path.join(self.loghub_dir, name)
             logger.info("writing profile to %s", path)
             with open(path, 'w') as f:
                 json.dump(self._last_stats, f, indent=4)
@@ -765,7 +761,6 @@ class MesosScheduler(DAGScheduler):
         self.err_logger = LogReceiver(sys.stderr)
         self.lock = threading.RLock()
         self.task_host_manager = TaskHostManager()
-        self.loghub_dir = None
         self.init_tasksets()
 
     def init_tasksets(self):
