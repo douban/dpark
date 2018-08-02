@@ -148,6 +148,7 @@ def add_loghub(framework_id):
         infos = [
             ("CMD", ' '.join(sys.argv)),
             ("USER", getuser()),
+            ("PWD", os.getcwd()),
             ("DPARK", dpark.__file__),
             ("DPARK_MTIME", dpark_mtime),
             ("PYTHONPATH", os.environ.get("PYTHONPATH", ""))
