@@ -765,6 +765,7 @@ class MesosScheduler(DAGScheduler):
         self.err_logger = LogReceiver(sys.stderr)
         self.lock = threading.RLock()
         self.task_host_manager = TaskHostManager()
+        self.loghub_dir = None
         self.init_tasksets()
 
     def init_tasksets(self):
@@ -835,7 +836,7 @@ class MesosScheduler(DAGScheduler):
                      masterInfo.hostname, masterInfo.port, frameworkId.value)
         self.executor = self.getExecutorInfo(str(frameworkId.value))
         from dpark.utils.log import add_loghub
-        add_loghub(self.frameworkId)
+        self.loghub_dir = add_loghub(self.frameworkId)
 
     @safe
     def reregistered(self, driver, masterInfo):

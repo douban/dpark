@@ -135,10 +135,13 @@ def add_loghub(framework_id):
         from dpark.conf import LOGHUB
         from dpark.utils import getuser
         date_str = datetime.now().strftime("%Y/%m/%d/%H")
-        dir_path = os.path.join(LOGHUB, date_str)
-        if not os.path.exists(dir_path):
-            logger.error("loghub dir not ready: %s", dir_path)
+        date_dir_path = os.path.join(LOGHUB, date_str)
+        if not os.path.exists(date_dir_path):
+            logger.error("loghub dir not ready: %s", date_dir_path)
             return
+
+        dir_path = os.path.join(date_dir_path, framework_id)
+        os.mkdir(dir_path)
 
         dpark_mtime = datetime.fromtimestamp(os.stat(dpark.__file__).st_mtime).strftime('%Y-%m-%dT%H:%M:%S')
 
@@ -150,7 +153,7 @@ def add_loghub(framework_id):
             ("PYTHONPATH", os.environ.get("PYTHONPATH", ""))
         ]
 
-        log_path = os.path.join(dir_path, framework_id + ".log")
+        log_path = os.path.join(dir_path,  "log")
         try:
             with open(log_path, "a") as f:
                 for i in infos:
@@ -164,5 +167,6 @@ def add_loghub(framework_id):
         file_handler.setFormatter(ColoredFormatter(LOG_FORMAT, DATE_FORMAT, True))
         file_handler.setLevel(logging.INFO)
         logger.addHandler(file_handler)
+        return dir_path
     except:
         logger.exception("add_loghub fail")
