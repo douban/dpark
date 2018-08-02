@@ -168,6 +168,7 @@ def add_loghub(framework_id):
         file_handler.setFormatter(ColoredFormatter(LOG_FORMAT, DATE_FORMAT, True))
         file_handler.setLevel(logging.INFO)
         logger.addHandler(file_handler)
+        logger.info("logging/prof to %s", dir_path)
         return dir_path
     except:
         logger.exception("add_loghub fail")
