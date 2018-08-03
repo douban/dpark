@@ -1172,7 +1172,7 @@ class MesosScheduler(DAGScheduler):
                 self.driver.killTask(Dict(value=mesos_task_id))
             else:
                 logger.debug('ignore task %s as its taskset has gone', mesos_task_id)
-                return
+            return
 
         if state == 'TASK_RUNNING':
             taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
