@@ -119,6 +119,7 @@ class DparkContext(object):
         self.is_local = True
         self.defaultParallelism = 2
         self.defaultMinSplits = 2
+        self.is_dstream = False
 
     def init(self):
         if self.initialized:
@@ -183,6 +184,7 @@ class DparkContext(object):
         self.defaultMinSplits = max(self.defaultParallelism, 2)
 
         self.initialized = True
+        self.scheduler.is_dstream = self.is_dstream
 
         logger.info("DparkContext initialized, use master %s -> %s, default_rddconf = %s",
                     origin_master, master,

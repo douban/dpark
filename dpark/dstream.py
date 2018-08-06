@@ -137,6 +137,8 @@ class StreamingContext(object):
         if isinstance(sc, str) or not sc:  # None
             sc = DparkContext(sc)
         self.sc = sc
+        sc.is_dstream = True
+
         batchDuration = int(batchDuration)
         self.batchDuration = batchDuration
         self.graph = graph or DStreamGraph(batchDuration)
