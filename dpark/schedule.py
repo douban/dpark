@@ -560,14 +560,17 @@ class DAGScheduler(Scheduler):
         onStageFinished(finalStage)
 
         if not self.is_dstream:
-            self.last_jobstats = self.get_stats(run_id)
-            if self.loghub_dir:
-                names = ['sched', self.id, "job", run_id]
-                name = "_".join(map(str, names)) + ".json"
-                path = os.path.join(self.loghub_dir, name)
-                logger.info("writing profile to %s", path)
-                with open(path, 'w') as f:
-                    json.dump(self.last_jobstats, f, indent=4)
+            try:
+                self.last_jobstats = self.get_stats(run_id)
+                if self.loghub_dir:
+                    names = ['sched', self.id, "job", run_id]
+                    name = "_".join(map(str, names)) + ".json"
+                    path = os.path.join(self.loghub_dir, name)
+                    logger.info("writing profile to %s", path)
+                    with open(path, 'w') as f:
+                        json.dump(self.last_jobstats, f, indent=4)
+            except Exception as e:
+                logger.error("Fail to dump job stats: %s.", e)
 
         assert all(finished)
         return
