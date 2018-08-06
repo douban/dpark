@@ -269,7 +269,7 @@ class DAGScheduler(Scheduler):
         self.runJobTimes = 0
         self.frameworkId = None
         self.loghub_dir = None
-        self._last_stats = None
+        self.last_jobstats = None
 
     nextId = 0
 
@@ -558,19 +558,16 @@ class DAGScheduler(Scheduler):
 
         onStageFinished(finalStage)
 
-        self._last_stats = self.get_stats(run_id)
+        self.last_jobstats = self.get_stats(run_id)
         if self.loghub_dir:
             names = ['sched', self.id, "job", run_id]
             name = "_".join(map(str, names)) + ".json"
             path = os.path.join(self.loghub_dir, name)
             logger.info("writing profile to %s", path)
             with open(path, 'w') as f:
-                json.dump(self._last_stats, f, indent=4)
+                json.dump(self.last_jobstats, f, indent=4)
         assert all(finished)
         return
-
-    def get_last_stats(self):
-        return self._last_stats
 
     def getPreferredLocs(self, rdd, partition):
         return rdd.preferredLocations(rdd.splits[partition])
