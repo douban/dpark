@@ -2,6 +2,7 @@
 
 # C extensions
 /dpark/portable_hash.c
+/dpark/utils/recursion.c
 *.so
 
 # Packages

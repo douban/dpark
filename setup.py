@@ -15,6 +15,9 @@ ext_modules = [
               extra_compile_args=['-msse4.2']),
 ]
 
+if platform.python_implementation() != 'PyPy':
+    ext_modules.append(Extension('dpark.utils.recursion', ['dpark/utils/recursion.pyx']))
+
 version = '0.5.0'
 req = [
     'pymesos>=0.2.10',

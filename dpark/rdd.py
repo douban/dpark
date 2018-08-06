@@ -35,7 +35,7 @@ except ImportError:
 import dpark.conf
 from dpark.dependency import *
 from dpark.utils import (
-    spawn, chain, mkdir_p, recurion_limit_breaker, atomic_file,
+    spawn, chain, mkdir_p, recursion_limit_breaker, atomic_file,
     AbortFileReplacement, portable_hash,
     masked_crc32c
 )
@@ -195,7 +195,7 @@ class RDD(object):
             return False
         return True
 
-    @recurion_limit_breaker
+    @recursion_limit_breaker
     def iterator(self, split):
 
         def _compute(rdd, split_):

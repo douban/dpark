@@ -6,6 +6,7 @@ import threading
 import errno
 import uuid
 import time
+import platform
 import tempfile
 import os.path
 from contextlib import contextmanager
@@ -108,14 +109,21 @@ def memory_str_to_mb(s):
     return number * scale_factors[unit]
 
 
-MIN_REMAIN_RECURSION_LIMIT = 80
+MIN_REMAIN_RECURSION_LIMIT = 150
 
 
-def recurion_limit_breaker(f):
+if platform.python_implementation() == 'PyPy':
+    MIN_REMAIN_RECURSION_LIMIT = 300
+    def get_recursion_depth():
+        import inspect
+        return len(inspect.stack())
+else:
+    from dpark.utils.recursion import get_recursion_depth
+
+
+def recursion_limit_breaker(f):
     def _(*a, **kw):
-        try:
-            sys._getframe(sys.getrecursionlimit() - MIN_REMAIN_RECURSION_LIMIT)
-        except ValueError:
+        if get_recursion_depth() < sys.getrecursionlimit() - MIN_REMAIN_RECURSION_LIMIT:
             return f(*a, **kw)
 
         def __():
