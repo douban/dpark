@@ -7,7 +7,7 @@ import logging
 
 from dpark.taskset import TaskSet
 from dpark.hostatus import HostStatus, TaskHostManager
-from dpark.schedule import OtherFailure, Success
+from dpark.task import TaskState, OtherFailure, TaskEndReason
 from six.moves import range
 from addict import Dict
 
@@ -65,7 +65,7 @@ class TestTaskSet(unittest.TestCase):
         assert len(ts) == 10
         assert taskset.tasksLaunched == 10
         assert not taskset.taskOffer(host_offers, cpus, mems, gpus)
-        [taskset.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts]
+        [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts]
         assert taskset.tasksFinished == 10
 
     def test_retry(self):
@@ -82,9 +82,9 @@ class TestTaskSet(unittest.TestCase):
         gpus = [0]
         ts = sum([taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                                 mems=mems, gpus=gpus) for i in range(10)], [])
-        [taskset.statusUpdate(t[2].id, 0, 'TASK_FINISHED') for t in ts[1:]]
+        [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts[1:]]
         assert taskset.tasksFinished == 9
-        taskset.statusUpdate(ts[0][2].id, 0, 'TASK_FAILED')
+        taskset.statusUpdate(ts[0][2].id, 0, TaskState.failed)
         t = taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                           mems=mems, gpus=gpus)[0]
         assert t[2].id == 0
@@ -92,7 +92,7 @@ class TestTaskSet(unittest.TestCase):
             host_offers=host_offers, cpus=cpus, mems=mems, gpus=gpus
         )
         assert taskset.tasksLaunched == 10
-        taskset.statusUpdate(t[2].id, 1, 'TASK_FINISHED')
+        taskset.statusUpdate(t[2].id, 1, TaskState.finished)
         assert taskset.tasksFinished == 10
 
 
@@ -131,7 +131,7 @@ class TestHostStatus(unittest.TestCase):
         manager.task_failed(1, 'fake1', OtherFailure('Mock failed'))
         assert manager.offer_choice(1, host_offers, [])[0] == 3
         assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
-        manager.task_succeed(2, 'fake2', Success())
+        manager.task_succeed(2, 'fake2', TaskEndReason.success)
         assert manager.offer_choice(1, host_offers, ['fake3'])[0] is None
         time.sleep(1)
         assert manager.offer_choice(1, host_offers, ['fake3'])[0] == 2

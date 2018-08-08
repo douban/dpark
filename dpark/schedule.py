@@ -22,13 +22,14 @@ from dpark.env import env
 from dpark.taskset import TaskSet
 from dpark.rdd import ShuffledRDD, CoGroupedRDD
 from dpark.mutable_dict import MutableDict
-from dpark.task import ResultTask, ShuffleMapTask, TTID
+from dpark.task import ResultTask, ShuffleMapTask, TTID, TaskState, TaskEndReason
 from dpark.hostatus import TaskHostManager
 from dpark.utils import (
     compress, decompress, spawn, getuser,
     sec2nanosec)
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
+
 
 logger = get_logger(__name__)
 
@@ -37,45 +38,6 @@ EXECUTOR_MEMORY = 128  # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
-
-class TaskEndReason:
-
-    def __hash__(self):
-        return hash(str(self))
-
-    def __eq__(self, o):
-        return str(self) == str(o)
-
-
-class Success(TaskEndReason):
-    pass
-
-
-class FetchFailed(TaskEndReason, Exception):
-
-    def __init__(self, serverUri, shuffleId, mapId, reduceId):
-        self.serverUri = serverUri
-        self.shuffleId = shuffleId
-        self.mapId = mapId
-        self.reduceId = reduceId
-
-    def __str__(self):
-        return '<FetchFailed(%s, %d, %d, %d)>' % (
-            self.serverUri, self.shuffleId, self.mapId, self.reduceId
-        )
-
-    def __reduce__(self):
-        return FetchFailed, (self.serverUri, self.shuffleId,
-                             self.mapId, self.reduceId)
-
-
-class OtherFailure(TaskEndReason):
-
-    def __init__(self, message):
-        self.message = message
-
-    def __str__(self):
-        return '<OtherFailure %s>' % self.message
 
 
 class Stage:
@@ -491,7 +453,7 @@ class DAGScheduler(Scheduler):
                 continue
             logger.debug('remove from pending %s from %s', task, stage)
             pendingTasks[stage].remove(task.id)
-            if isinstance(reason, Success):
+            if reason == TaskEndReason.success:
                 Accumulator.merge(evt.accumUpdates)
                 stage.task_stats[task.partition].append(evt.stats)
                 if isinstance(task, ResultTask):
@@ -538,12 +500,13 @@ class DAGScheduler(Scheduler):
                             'newly runnable: %s, %s', waiting, newlyRunnable)
                         for stage in newlyRunnable:
                             submitMissingTasks(stage)
-            elif isinstance(reason, FetchFailed):
+            elif reason == TaskEndReason.fetch_failed:
+                exception = evt.result
                 if stage in running:
                     waiting.add(stage)
                     running.remove(stage)
-                mapStage = self.shuffleToMapStage[reason.shuffleId]
-                mapStage.removeHost(reason.serverUri)
+                mapStage = self.shuffleToMapStage[exception.shuffleId]
+                mapStage.removeHost(exception.serverUri)
                 failed.add(mapStage)
                 lastFetchFailureTime = time.time()
             else:
@@ -604,12 +567,13 @@ def run_task(task, aid):
         result = task.run(aid)
         accumUpdates = Accumulator.values()
         MutableDict.flush()
-        return task.id, Success(), result, accumUpdates
+        return task.id, result, accumUpdates
     except Exception as e:
         logger.error('error in task %s', task)
         import traceback
         traceback.print_exc()
-        return task.id, OtherFailure('exception:' + str(e)), None, None
+        e.task_id = task.id
+        raise e
 
 
 class LocalScheduler(DAGScheduler):
@@ -623,15 +587,20 @@ class LocalScheduler(DAGScheduler):
         logger.debug('submit tasks %s in LocalScheduler', tasks)
         for task in tasks:
             task_copy = cPickle.loads(cPickle.dumps(task, -1))
-            _, reason, result, update = run_task(task_copy, self.nextAttempId())
-            self.taskEnded(task, reason, result, update)
+            try:
+                _, result, update = run_task(task_copy, self.nextAttempId())
+                self.taskEnded(task, TaskEndReason.success, result, update)
+            except Exception:
+                self.taskEnded(task, TaskEndReason.other_failure, None, None)
 
 
 def run_task_in_process(task, tid, environ):
     try:
-        return run_task(task, tid)
+        return TaskEndReason.success, run_task(task, tid)
     except KeyboardInterrupt:
         sys.exit(0)
+    except Exception as e:
+        return TaskEndReason.other_failure, e
 
 
 class MultiProcessScheduler(LocalScheduler):
@@ -664,8 +633,15 @@ class MultiProcessScheduler(LocalScheduler):
                     signal.signal(sig, signal.SIG_IGN)
 
         def callback(args):
-            logger.debug('got answer: %s', args)
-            tid, reason, result, update = args
+            state, data = args
+            logger.debug('task end: %s', state)
+
+            if state == TaskEndReason.other_failure:
+                logger.warning('task failed: %s', data)
+                self.taskEnded(data.task_id, TaskEndReason.other_failure, result=None, accumUpdates=None)
+                return
+
+            tid, result, update = data
             task = self.tasks.pop(tid)
             self.finished += 1
             logger.info('Task %s finished (%d/%d)        \x1b[1A',
@@ -674,7 +650,7 @@ class MultiProcessScheduler(LocalScheduler):
                 logger.info(
                     'TaskSet finished in %.1f seconds' + ' ' * 20,
                     time.time() - start)
-            self.taskEnded(task, reason, result, update)
+            self.taskEnded(task, TaskEndReason.success, result, update)
 
         for task in tasks:
             logger.debug('put task async: %s', task)
@@ -1182,65 +1158,76 @@ class MesosScheduler(DAGScheduler):
 
         mesos_task_id = status.task_id.value
         state = status.state
-        reason = status.get('message')  # set by mesos
-        data = status.get('data')
+        source = status.source
+        reason = status.get('reason')
 
-        logger.debug('status update: %s %s', mesos_task_id, state)
+        msg = status.get('message')  # type: str
+        if source == 'SOURCE_EXECUTOR' and msg:
+            reason, msg = msg.split(':', 1)
+
+        data = status.get('data')
+        if data is not None:
+            data = cPickle.loads(decode_data(data))
+
+        logger.debug('status update: %s %s %s %s', mesos_task_id, state, reason, msg)
 
         ttid = TTID(mesos_task_id)
 
-        taskset = self.active_tasksets.get(ttid.taskset_id)
+        taskset = self.active_tasksets.get(ttid.taskset_id)  # type: TaskSet
 
         if taskset is None:
-            if state == 'TASK_RUNNING':
+            if state == TaskState.running:
                 logger.debug('kill task %s as its taskset has gone', mesos_task_id)
                 self.driver.killTask(Dict(value=mesos_task_id))
             else:
                 logger.debug('ignore task %s as its taskset has gone', mesos_task_id)
             return
 
-        if state == 'TASK_RUNNING':
+        if mesos_task_id not in taskset.ttids:
+            logger.debug('ignore task %s as it has finished or failed, new msg: %s', mesos_task_id, (state, reason))
+            return
+
+        if state == TaskState.running:
             taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
             if taskset.tasksFinished == 0:
                 plot_progresses()
-        else:
-            if mesos_task_id not in taskset.ttids:
-                logger.debug('ignore task %s as it has finished or failed, new msg: %s', mesos_task_id, (state, reason))
-            else:
-                taskset.ttids.remove(mesos_task_id)
-                if mesos_task_id in self.ttid_to_agent_id:
-                    agent_id = self.ttid_to_agent_id[mesos_task_id]
-                    if agent_id in self.agent_id_to_ttids:
-                        self.agent_id_to_ttids[agent_id] -= 1
-                    del self.ttid_to_agent_id[mesos_task_id]
+            return
 
-                if state in ('TASK_FINISHED', 'TASK_FAILED') and data:
+        # terminal state
+        taskset.ttids.discard(mesos_task_id)
+        if mesos_task_id in self.ttid_to_agent_id:
+            agent_id = self.ttid_to_agent_id[mesos_task_id]
+            if agent_id in self.agent_id_to_ttids:
+                self.agent_id_to_ttids[agent_id] -= 1
+            del self.ttid_to_agent_id[mesos_task_id]
+
+        if state == TaskState.finished:
+            try:
+                result, accUpdate, task_stats = data
+                flag, data = result
+                if flag >= 2:
                     try:
-                        reason, result, accUpdate, task_stats = cPickle.loads(decode_data(data))
-                        if result:
-                            flag, data = result
-                            if flag >= 2:
-                                try:
-                                    data = urllib.request.urlopen(data).read()
-                                except IOError:
-                                    # try again
-                                    data = urllib.request.urlopen(data).read()
-                                flag -= 2
-                            data = decompress(data)
-                            if flag == 0:
-                                result = marshal.loads(data)
-                            else:
-                                result = cPickle.loads(data)
-                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, result, accUpdate, task_stats)
-                        if state == 'TASK_FINISHED':
-                            plot_progresses()
-                    except Exception as e:
-                        logger.warning('error when cPickle.loads(): %s, data:%s', e, len(data))
-                        state = 'TASK_FAILED'
-                        taskset.statusUpdate(ttid.task_id, ttid.task_try, state, 'load failed: %s' % e)
+                        data = urllib.request.urlopen(data).read()
+                    except IOError:
+                        # try again
+                        data = urllib.request.urlopen(data).read()
+                    flag -= 2
+                data = decompress(data)
+                if flag == 0:
+                    result = marshal.loads(data)
                 else:
-                    # killed, lost
-                    taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason or data)
+                    result = cPickle.loads(data)
+                taskset.statusUpdate(ttid.task_id, ttid.task_try, state,
+                                     result=result, update=accUpdate, stats=task_stats)
+                plot_progresses()
+            except Exception as e:
+                logger.warning('error when cPickle.loads(): %s, data:%s', e, len(data))
+                state = TaskState.failed
+                taskset.statusUpdate(ttid.task_id, ttid.task_try, state,
+                                     reason=TaskEndReason.load_failed, message='load failed: %s' % e)
+        else:
+            exception = data if source == 'SOURCE_EXECUTOR' else None  # type: Optional[Exception]
+            taskset.statusUpdate(ttid.task_id, ttid.task_try, state, reason, msg, result=exception)
 
     @safe
     def tasksetFinished(self, taskset):

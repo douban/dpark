@@ -29,12 +29,11 @@ from dpark.utils.log import get_logger, init_dpark_logger, formatter_message
 from dpark.utils.memory import ERROR_TASK_OOM, set_oom_score
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
-from dpark.schedule import Success, FetchFailed, OtherFailure
 from dpark.env import env
 from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
-from dpark.task import TTID
+from dpark.task import TTID, TaskState, TaskEndReason, FetchFailed
 from dpark.utils.debug import spawn_rconsole
 
 logger = get_logger('dpark.executor')
@@ -56,10 +55,12 @@ def setproctitle(x):
         pass
 
 
-def reply_status(driver, task_id, state, data=None):
+def reply_status(driver, task_id, state, reason=None, msg=None, data=None):
     status = Dict()
     status.task_id = task_id
     status.state = state
+    if reason is not None:
+        status.message = '{}:{}'.format(reason, msg)
     status.timestamp = time.time()
     if data is not None:
         status.data = encode_data(data)
@@ -97,15 +98,14 @@ def run_task(task_data):
             )
             flag += 2
 
-        return 'TASK_FINISHED', cPickle.dumps(
-            (Success(), (flag, data), accUpdate, env.task_stats), -1)
+        return TaskState.finished, cPickle.dumps(((flag, data), accUpdate, env.task_stats), -1)
     except FetchFailed as e:
-        return 'TASK_FAILED', cPickle.dumps((e, None, None, None), -1)
-    except:
+        return TaskState.failed, TaskEndReason.fetch_failed, str(e), cPickle.dumps(e)
+    except Exception as e:
         import traceback
         msg = traceback.format_exc()
-        return 'TASK_FAILED', cPickle.dumps(
-            (OtherFailure(msg), None, None, None), -1)
+        ename = e.__class__.__name__
+        return TaskState.failed, 'FAILED_EXCEPTION_{}'.format(ename), msg, cPickle.dumps(e)
     finally:
         gc.collect()
         gc.enable()
@@ -152,14 +152,10 @@ def terminate(tid, proc):
     name = 'worker(tid: %s, pid: %s)' % (tid, proc.pid)
     try:
         os.kill(proc.pid, signal.SIGTERM)
-    except ProcessLookupError:
-        return
     except Exception as e:
         if proc.join(timeout=KILL_TIMEOUT / 2) is None:
             try:
                 os.kill(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                return
             except Exception as e:
                 if proc.join(KILL_TIMEOUT / 2) is not None:
                     logger.exception('%s terminate fail', name)
@@ -327,8 +323,7 @@ class MyExecutor(Executor):
 
         idle_since = time.time()
 
-        _DELAY, _KILLED, _LOST, _DISCARD = list(range(4))
-        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM, ERROR_TASK_OOM]
+        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM]
 
         while True:
             with self.lock:
@@ -338,30 +333,36 @@ class MyExecutor(Executor):
             for tid, (task, proc) in tasks:
                 task_id = task.task_id
                 name = "task %s (pid = %d)" % (tid, proc.pid)
-                st = _DELAY
+                proc_end = False
+                reason = None
+                msg = None
 
                 try:
                     p = psutil.Process(proc.pid)
                 except Exception:
-                    st = _LOST
+                    proc_end = True
 
-                if st == _LOST or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):
+                if proc_end or p.status() == psutil.STATUS_ZOMBIE or (not p.is_running()):
                     proc.join(TASK_LOST_JOIN_TIMEOUT)  # join in py2 not return exitcode
                     ec = proc.exitcode
                     if ec == 0:  # p.status() == psutil.STATUS_ZOMBIE
-                        continue
+                        continue  # handled in replier
 
                     if ec is not None:
+                        proc_end = True
+                        msg = 'exitcode: {}'.format(ec)
                         if ec in kill_ecs:
-                            st = _KILLED
+                            reason = TaskEndReason.recv_sig
+                        elif ec == ERROR_TASK_OOM:
+                            reason = TaskEndReason.task_oom
                         else:
-                            st = _LOST
+                            reason = TaskEndReason.other_ecs
                             logger.warning('%s lost with exit code: %s', tid, ec)
                     else:
                         try:
                             os.waitpid(proc.pid, os.WNOHANG)
                         except OSError as e:
-                            st = _LOST
+                            proc_end = True
                             if e.errno != errno.ECHILD:
                                 logger.exception('%s lost, raise exception when waitpid', tid)
                         else:
@@ -369,9 +370,9 @@ class MyExecutor(Executor):
                             if t is not None and time.time() - t > TASK_LOST_DISCARD_TIMEOUT:
                                 logger.warning('%s is zombie for %d secs, discard it!', name, TASK_LOST_DISCARD_TIMEOUT)
 
-                if st != _DELAY:
+                if proc_end:
                     tids_to_pop.append(tid)
-                    reply_status(driver, task_id, 'TASK_KILLED' if st == _KILLED else 'TASK_LOST')
+                    reply_status(driver, task_id, TaskState.failed, reason, msg)
 
             with self.lock:
                 for tid_ in tids_to_pop:
@@ -476,14 +477,21 @@ class MyExecutor(Executor):
                 result = self.result_queue.get()
                 if result is None:
                     return
-                (task_id_value, result) = result
-                state, data = result
+
+                reason = None
+                message = None
+
+                task_id_value, result = result
+                if result[0] == TaskState.failed:
+                    state, reason, message, data = result
+                else:
+                    state, data = result
 
                 with self.lock:
                     task, _ = self.tasks.pop(task_id_value)
                     self.finished_tasks[task_id_value] = time.time()
 
-                reply_status(driver, task.task_id, state, data)
+                reply_status(driver, task.task_id, state, reason, message, data)
 
             except Exception as e:
                 logger.warning('reply fail %s', e)
@@ -491,7 +499,7 @@ class MyExecutor(Executor):
     @safe
     def launchTask(self, driver, task):
         task_id = task.task_id
-        reply_status(driver, task_id, 'TASK_RUNNING')
+        reply_status(driver, task_id, TaskState.running)
         logger.debug('launch task %s', task.task_id.value)
 
         def worker(procname, q, task_id_value, task_data):
@@ -514,14 +522,14 @@ class MyExecutor(Executor):
             proc.start()
             self.tasks[task.task_id.value] = (task, proc)
 
-        except Exception:
+        except Exception as e:
             import traceback
             msg = traceback.format_exc()
-            reply_status(driver, task_id, 'TASK_LOST', msg)
+            reply_status(driver, task_id, TaskState.failed, TaskEndReason.launch_failed, msg, cPickle.dumps(e))
 
     @safe
     def killTask(self, driver, taskId):
-        reply_status(driver, taskId, 'TASK_KILLED')
+        reply_status(driver, taskId, TaskState.killed)
         if taskId.value in self.tasks:
             _, proc = self.tasks.pop(taskId.value)
             terminate(taskId.value, proc)

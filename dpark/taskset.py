@@ -9,6 +9,7 @@ from dpark.utils.log import (
     get_logger, make_progress_bar
 )
 from dpark.hostatus import TaskHostManager
+from dpark.task import TaskState, TaskEndReason
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -162,7 +163,7 @@ class TaskSet(object):
     def _try_update_task_offer(self, task_idx, i, o, cpus, mem, gpus):
         t = self.tasks[task_idx]
         if t.cpus <= cpus[i] + 1e-4 and t.mem <= mem[i] and t.gpus <= gpus[i]:
-            t.status = 'TASK_STAGING'
+            t.status = TaskState.staging
             t.start = time.time()
             t.host = o.hostname
             t.num_try += 1
@@ -179,7 +180,7 @@ class TaskSet(object):
             return i, o, t
         return None
 
-    def statusUpdate(self, task_id, num_try, status, reason=None,
+    def statusUpdate(self, task_id, num_try, status, reason=None, message=None,
                      result=None, update=None, stats=None):
         logger.debug('taskset status update %s, status %s, reason %s', task_id, status, reason)
         if task_id not in self.tidToIndex:
@@ -187,7 +188,7 @@ class TaskSet(object):
             return
         i = self.tidToIndex[task_id]
         if self.finished[i]:
-            if status == 'TASK_FINISHED':
+            if status == TaskState.finished:
                 logger.debug('Task %s is already finished, ignore it', task_id)
             return
 
@@ -198,14 +199,15 @@ class TaskSet(object):
             self.launched[i] = True
             self.tasksLaunched += 1
 
-        if status == 'TASK_FINISHED':
+        if status == TaskState.running:
+            task.start = time.time()
+        elif status == TaskState.finished:
+            if stats:
+                self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
             self._task_finished(task_id, num_try, result, update, stats)
-        elif status in ('TASK_LOST', 'TASK_FAILED', 'TASK_KILLED'):
-            self._task_lost(task_id, num_try, status, reason)
+        else:  # failed, killed, lost, error
+            self._task_lost(task_id, num_try, status, reason, message, exception=result)
 
-        task.start = time.time()
-        if stats:
-            self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
 
     def progress(self, ending=''):
         n = self.numTasks
@@ -251,11 +253,10 @@ class TaskSet(object):
             msg = '\x1b]2;%s\x07\x1b[1A' % title
             logger.info(msg)
 
-        from dpark.schedule import Success
-        self.sched.taskEnded(task, Success(), result, update, stats)
+        self.sched.taskEnded(task, TaskEndReason.success, result, update, stats)
         self.running_hosts[i] = []
         self.task_host_manager.task_succeed(task.id, hostname,
-                                            Success())
+                                            TaskEndReason.success)
 
         for t in range(task.num_try):
             if t + 1 != num_try:
@@ -273,14 +274,13 @@ class TaskSet(object):
                         )
             self.sched.tasksetFinished(self)
 
-    def _task_lost(self, task_id, num_try, status, reason):
+    def _task_lost(self, task_id, num_try, status, reason, message, exception=None):
         index = self.tidToIndex[task_id]
 
-        from dpark.schedule import FetchFailed
-        if isinstance(reason, FetchFailed) and self.numFailures[index] >= 1:
+        if reason == TaskEndReason.fetch_failed and self.numFailures[index] >= 1:
             logger.warning('Cancel task %s after fetch fail twice from %s',
-                           task_id, reason.serverUri)
-            self.sched.taskEnded(self.tasks[index], reason, None, None)
+                           task_id, exception.serverUri)
+            self.sched.taskEnded(self.tasks[index], reason, exception, None)
             # cancel tasks
             if not self.finished[index]:
                 self.finished[index] = True
@@ -299,7 +299,7 @@ class TaskSet(object):
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
 
-        if status == 'TASK_KILLED' or str(reason).startswith('Memory limit exceeded:'):
+        if reason in (TaskEndReason.task_oom, TaskEndReason.mesos_cgroup_oom):
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
             logger.info("task %s oom, enlarge memory limit to %d, origin %d", task.id, task.mem, task.rdd.mem)
 
@@ -313,21 +313,22 @@ class TaskSet(object):
                         if not self.launched[i]:
                             t.mem = max(mem90, t.mem)
 
-        elif status == 'TASK_FAILED':
+        elif status == TaskState.failed:
             _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES \
                 else logger.warning
             if reason not in self.reasons:
                 _logger(
-                    'task %s failed @ %s: %s : %s',
+                    'task %s failed @ %s: %s : %s : %s',
                     task.id,
                     hostname,
                     task,
-                    reason)
+                    reason,
+                    message)
                 self.reasons.add(reason)
             else:
                 _logger('task %s failed @ %s: %s', task.id, hostname, task)
 
-        elif status == 'TASK_LOST':
+        elif status == TaskState.lost:
             logger.warning('Lost Task %s try %s at %s, reason %s',
                            task_id, num_try, task.host, reason)
 
@@ -359,7 +360,7 @@ class TaskSet(object):
 
         for i in range(self.numTasks):
             task = self.tasks[i]
-            if (self.launched[i] and task.status == 'TASK_STAGING'
+            if (self.launched[i] and task.status == TaskState.staging
                     and task.start + WAIT_FOR_RUNNING < now):
                 logger.info('task %s timeout %.1f (at %s), re-assign it',
                             task.id, now - task.start, task.host)

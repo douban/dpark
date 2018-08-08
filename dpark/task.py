@@ -369,3 +369,58 @@ class SortMergeBucketDumper(BucketDumper):
             serializer.dump_stream(sorted(items), f)
             size = f.tell()
         return size
+
+
+class TaskState:
+    # non terminal states
+    staging = 'TASK_STAGING'
+    running = 'TASK_RUNNING'
+
+    # terminal states
+    finished = 'TASK_FINISHED'
+    failed = 'TASK_FAILED'
+    killed = 'TASK_KILLED'
+    lost = 'TASK_LOST'
+    error = 'TASK_ERROR'
+
+
+class TaskEndReason:
+    # generated on the executor
+    success = 'FINISHED_SUCCESS'
+    other_ecs = 'FAILED_UNKNOWN_EXITCODE'
+    load_failed = 'FAILED_PICKLE_LOAD'
+    other_failure = 'FAILED_OTHER_FAILURE'
+    fetch_failed = 'FAILED_FETCH_FAILED'
+    task_oom = 'FAILED_TASK_OOM'
+    recv_sig = 'FAILED_RECV_SIG'
+    launch_failed = 'FAILED_LAUNCH_FAILED'
+
+    # generated on the agent
+    mesos_cgroup_oom = 'REASON_CONTAINER_LIMITATION_MEMORY'
+
+
+class FetchFailed(Exception):
+
+    def __init__(self, serverUri, shuffleId, mapId, reduceId):
+        self.serverUri = serverUri
+        self.shuffleId = shuffleId
+        self.mapId = mapId
+        self.reduceId = reduceId
+
+    def __str__(self):
+        return '<FetchFailed(%s, %d, %d, %d)>' % (
+            self.serverUri, self.shuffleId, self.mapId, self.reduceId
+        )
+
+    def __reduce__(self):
+        return FetchFailed, (self.serverUri, self.shuffleId,
+                             self.mapId, self.reduceId)
+
+
+class OtherFailure(Exception):
+
+    def __init__(self, message):
+        self.message = message
+
+    def __str__(self):
+        return '<OtherFailure %s>' % self.message

@@ -259,7 +259,7 @@ def fetch_with_retry(f):
                     msg += "no need to retry."
                 if fail_fast or self.num_retry >= MAX_RETRY:
                     logger.warning(msg)
-                    from dpark.schedule import FetchFailed
+                    from dpark.task import FetchFailed
                     raise FetchFailed(self.uri, self.sid, self.mid, self.rid)
                 else:
                     sleep_time = RETRY_INTERVALS[self.num_retry - 1]
@@ -408,7 +408,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
                         for i in range(self.nthreads)]
 
     def _fetch_thread(self):
-        from dpark.schedule import FetchFailed
+        from dpark.task import FetchFailed
 
         while True:
             f = self.requests.get()
@@ -435,7 +435,7 @@ class ParallelShuffleFetcher(SimpleShuffleFetcher):
             self.requests.put(f)
 
         t = time.time()
-        from dpark.schedule import FetchFailed
+        from dpark.task import FetchFailed
         num_done = 0
         while num_done < len(files):
             r = self.results.get()
