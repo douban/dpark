@@ -24,6 +24,7 @@ branches:
         - legacy
 deploy:
     provider: pypi
+    skip_existing: true
     user: windreamer
     password:
         secure: Qo9ucolE2ajQSbgifbqzfDYD5J09FgYEntXpak1ffPUWxJyeR6H2/uChCGqXC3+ZEkTpzc/MHshHQRRymtPZeHn5etnSHzshWu8njBVLr4I7ft2d5dNGJDxfK2j79HPVnib1MoPNC8kiqP05QD+hyMMQNZDFCHwG1D5bnWNhZYI=
