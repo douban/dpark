@@ -1134,11 +1134,11 @@ class MesosScheduler(DAGScheduler):
         mem.type = 'SCALAR'
         mem.scalar.value = t.mem
 
-        cpu = Dict()
-        resources.append(cpu)
-        cpu.name = 'gpus'
-        cpu.type = 'SCALAR'
-        cpu.scalar.value = t.gpus
+        gpu = Dict()
+        resources.append(gpu)
+        gpu.name = 'gpus'
+        gpu.type = 'SCALAR'
+        gpu.scalar.value = t.gpus
 
         return task
 
