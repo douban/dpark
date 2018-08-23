@@ -39,6 +39,8 @@ OP_UDF = "udf"
 OP_GROUPBY = "groupby"
 OP_COGROUP = "cogroup"
 
+DEFAULT_TASK_TIME = 3600  # 1 hour
+
 _named_only_start = object()
 
 

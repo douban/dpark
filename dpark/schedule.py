@@ -25,8 +25,8 @@ from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask, TTID
 from dpark.hostatus import TaskHostManager
 from dpark.utils import (
-    compress, decompress, spawn, getuser
-)
+    compress, decompress, spawn, getuser,
+    sec2nanosec)
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
 
@@ -1027,6 +1027,10 @@ class MesosScheduler(DAGScheduler):
             if (self.group or group.startswith(
                     '_')) and group not in self.group:
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
+                continue
+            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= o.unavailability.start.nanoseconds:
+                logger.debug('the host %s plan to maintain, so skip it', o.hostname)
+                driver.declineOffer(o.id, filters=Dict(refuse_seconds=600))
                 continue
             if self.task_host_manager.is_unhealthy_host(o.hostname):
                 logger.warning('the host %s is unhealthy so skip it', o.hostname)

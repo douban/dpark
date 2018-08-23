@@ -207,3 +207,7 @@ def atomic_file(filename, mode='w+b', bufsize=-1):
 def masked_crc32c(s):
     crc = crc32c(s)
     return (((crc >> 15) | (crc << 17)) + 0xa282ead8) & 0xffffffff
+
+
+def sec2nanosec(t):
+    return t * 10**9

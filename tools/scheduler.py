@@ -22,7 +22,7 @@ from addict import Dict
 from optparse import OptionParser
 from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
-from dpark.utils import getuser, memory_str_to_mb
+from dpark.utils import getuser, memory_str_to_mb, sec2nanosec
 from dpark.utils.debug import spawn_rconsole
 
 logger = logging.getLogger('dpark.scheduler')
@@ -355,6 +355,10 @@ class SubmitScheduler(BaseScheduler):
             except:
                 logger.exception("bad ban() func in dpark.conf")
 
+            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= o.unavailability.start.nanoseconds:
+                logger.debug('the host %s plan to maintain, so skip it', o.hostname)
+                driver.declineOffer(o.id, filters=Dict(refuse_seconds=600))
+                continue
             attrs = self.getAttributes(offer)
             group = attrs.get('group', 'None')
             if (self.options.group or group.startswith(
@@ -538,6 +542,10 @@ class MPIScheduler(BaseScheduler):
             cpus, mem, gpus = self.getResource(offer)
             logger.debug('got resource offer %s: cpus:%s, mem:%s, gpus:%s at %s',
                          offer.id.value, cpus, mem, gpus, offer.hostname)
+            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= o.unavailability.start.nanoseconds:
+                logger.debug('the host %s plan to maintain, so skip it', o.hostname)
+                driver.declineOffer(o.id, filters=Dict(refuse_seconds=600))
+                continue
             if launched >= self.options.tasks:
                 driver.declineOffer(offer.id, REFUSE_FILTER)
                 continue
