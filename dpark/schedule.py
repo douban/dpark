@@ -1088,6 +1088,11 @@ class MesosScheduler(DAGScheduler):
         #             sum(cpus), sum(mems), sum(gpus))
 
     @safe
+    def inverseOffers(self, driver, offers):
+        for o in offers:
+            driver.acceptInverseOffers(o.id)
+
+    @safe
     def offerRescinded(self, driver, offer_id):
         logger.debug('rescinded offer: %s', offer_id)
         if self.active_tasksets:

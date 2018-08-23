@@ -393,6 +393,11 @@ class SubmitScheduler(BaseScheduler):
                 offer.hostname)
             driver.launchTasks(offer.id, tasks, REFUSE_FILTER)
 
+    @safe
+    def inverseOffers(self, driver, offers):
+        for o in offers:
+            driver.acceptInverseOffers(o.id)
+
     def create_task(self, offer, t):
         task = Dict()
         task.task_id.value = '%d-%d' % (t.id, t.tried)
@@ -567,6 +572,11 @@ class MPIScheduler(BaseScheduler):
             logger.warning('not enough offers: need %d offer %d, '
                            'waiting more resources',
                            self.options.tasks, launched)
+
+    @safe
+    def inverseOffers(self, driver, offers):
+        for o in offers:
+            driver.acceptInverseOffers(o.id)
 
     @safe
     def statusUpdate(self, driver, update):
