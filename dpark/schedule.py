@@ -1015,6 +1015,7 @@ class MesosScheduler(DAGScheduler):
             try:
                 if conf.ban(o.hostname):
                     logger.debug("skip offer on banned node: %s", o.hostname)
+                    driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
                     continue
             except:
                 logger.exception("bad ban() func in dpark.conf")
