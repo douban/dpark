@@ -30,7 +30,6 @@ from dpark.utils import (
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
 
-
 logger = get_logger(__name__)
 
 EXECUTOR_CPUS = 0.01
@@ -38,7 +37,6 @@ EXECUTOR_MEMORY = 128  # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
-
 
 class TaskEndReason:
 
@@ -757,6 +755,8 @@ class MesosScheduler(DAGScheduler):
         self.webui_url = webui_url
         self.started = False
         self.last_finish_time = 0
+        self.last_task_launch_time = None
+        self.is_suppressed = False
         self.isRegistered = False
         self.executor = None
         self.driver = None
@@ -965,7 +965,7 @@ class MesosScheduler(DAGScheduler):
         assert all(t.rdd is rdd for t in tasks)
 
         taskset = TaskSet(self, tasks, rdd.cpus or self.cpus, rdd.mem or self.mem,
-                  rdd.gpus, self.task_host_manager)
+                          rdd.gpus, self.task_host_manager)
         self.active_tasksets[taskset.id] = taskset
         stage_scope = ''
         try:
@@ -998,12 +998,19 @@ class MesosScheduler(DAGScheduler):
     def requestMoreResources(self):
         logger.debug('reviveOffers')
         self.driver.reviveOffers()
+        self.is_suppressed = False
 
     @safe
     def resourceOffers(self, driver, offers):
         rf = Dict()
-        if not self.active_tasksets:
+        now = time.time()
+        if not self.active_tasksets or (all(taskset.tasksLaunched == taskset.numTasks
+                                            for taskset in self.active_tasksets.values())
+                                        and self.last_task_launch_time is not None
+                                        and self.last_task_launch_time + conf.TIME_TO_SUPPRESS < now):
+            logger.debug('suppressOffers')
             driver.suppressOffers()
+            self.is_suppressed = True
             rf.refuse_seconds = 60 * 5
             for o in offers:
                 driver.declineOffer(o.id, rf)
@@ -1028,7 +1035,8 @@ class MesosScheduler(DAGScheduler):
                     '_')) and group not in self.group:
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
                 continue
-            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= o.unavailability.start.nanoseconds:
+            unavail_start = o.get('unavailability', {}).get('start', {}).get('nanoseconds', 0)
+            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavail_start:
                 logger.debug('the host %s plan to maintain, so skip it', o.hostname)
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=600))
                 continue
@@ -1086,6 +1094,8 @@ class MesosScheduler(DAGScheduler):
                 driver.launchTasks(o.id, tasks[o.id.value])
             else:
                 driver.declineOffer(o.id)
+        if tasks:
+            self.last_task_launch_time = time.time()
 
         # logger.debug('reply with %d tasks, %s cpus %s mem %s gpus left',
         #            sum(len(ts) for ts in tasks.values()),

@@ -35,6 +35,9 @@ MAX_OPEN_FILE = 900
 LOG_ROTATE = True
 MULTI_SEGMENT_DUMP = True
 
+TIME_TO_SUPPRESS = 60  # sec
+
+
 OP_UDF = "udf"
 OP_GROUPBY = "groupby"
 OP_COGROUP = "cogroup"
