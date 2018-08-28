@@ -355,8 +355,9 @@ class SubmitScheduler(BaseScheduler):
             except:
                 logger.exception("bad ban() func in dpark.conf")
 
-            unavail_start = offer.get('unavailability', {}).get('start', {}).get('nanoseconds', 0)
-            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavail_start:
+            unavailability = offer.get('unavailability')
+            if (unavailability is not None and
+                    sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavailability['start']['nanoseconds']):
                 logger.debug('the host %s plan to maintain, so skip it', offer.hostname)
                 driver.declineOffer(offer.id, filters=Dict(refuse_seconds=600))
                 continue
@@ -543,8 +544,9 @@ class MPIScheduler(BaseScheduler):
             cpus, mem, gpus = self.getResource(offer)
             logger.debug('got resource offer %s: cpus:%s, mem:%s, gpus:%s at %s',
                          offer.id.value, cpus, mem, gpus, offer.hostname)
-            unavail_start = offer.get('unavailability', {}).get('start', {}).get('nanoseconds', 0)
-            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavail_start:
+            unavailability = offer.get('unavailability')
+            if (unavailability is not None and
+                    sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavailability['start']['nanoseconds']):
                 logger.debug('the host %s plan to maintain, so skip it', offer.hostname)
                 driver.declineOffer(offer.id, filters=Dict(refuse_seconds=600))
                 continue

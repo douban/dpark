@@ -1035,8 +1035,9 @@ class MesosScheduler(DAGScheduler):
                     '_')) and group not in self.group:
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=0xFFFFFFFF))
                 continue
-            unavail_start = o.get('unavailability', {}).get('start', {}).get('nanoseconds', 0)
-            if sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavail_start:
+            unavailability = o.get('unavailability')
+            if (unavailability is not None and
+                    sec2nanosec(time.time() + conf.DEFAULT_TASK_TIME) >= unavailability['start']['nanoseconds']):
                 logger.debug('the host %s plan to maintain, so skip it', o.hostname)
                 driver.declineOffer(o.id, filters=Dict(refuse_seconds=600))
                 continue
