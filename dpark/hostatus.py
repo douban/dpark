@@ -132,8 +132,8 @@ class TaskHostManager:
         if task_id in self.task_host_failed_dict:
             for host in self.task_host_failed_dict[task_id]:
                 self.host_dict[host].erase_failed_task(task_id)
-            logger.info('the failed hosts %s for task %s',
-                        str(self.task_host_failed_dict[task_id]), task_id)
+            logger.debug('the failed hosts %s for task %s',
+                         str(self.task_host_failed_dict[task_id]), task_id)
             del self.task_host_failed_dict[task_id]
 
     def task_failed(self, task_id, hostname, reason):
