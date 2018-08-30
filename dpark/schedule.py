@@ -556,10 +556,11 @@ class DAGScheduler(Scheduler):
                 raise Exception(reason.message)
 
         onStageFinished(finalStage)
+        callsite = Scope.get().call_site
 
         if not self.is_dstream:
             try:
-                self.last_jobstats = self.get_stats(run_id)
+                self.last_jobstats = self.get_stats(run_id, callsite)
                 if self.loghub_dir:
                     names = ['sched', self.id, "job", run_id]
                     name = "_".join(map(str, names)) + ".json"
@@ -576,7 +577,7 @@ class DAGScheduler(Scheduler):
     def getPreferredLocs(self, rdd, partition):
         return rdd.preferredLocations(rdd.splits[partition])
 
-    def get_stats(self, run_id):
+    def get_stats(self, run_id, callsite):
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
@@ -585,7 +586,7 @@ class DAGScheduler(Scheduler):
         run = {'framework': self.frameworkId,
                'scheduler': self.id,
                "run": run_id,
-               'call_site': Scope().call_site,
+               'call_site': callsite,
                'stages': stages
                }
 

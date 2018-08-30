@@ -88,7 +88,7 @@ class RDD(object):
         self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
-        self.scope = Scope()
+        self.scope = Scope.get()
         self.rddconf = None
 
     nextId = 0
