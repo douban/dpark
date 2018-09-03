@@ -24,6 +24,7 @@ from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
 from dpark.utils import getuser, memory_str_to_mb, sec2nanosec
 from dpark.utils.debug import spawn_rconsole
+from dpark.utils.log import add_loghub
 
 logger = logging.getLogger('dpark.scheduler')
 
@@ -234,6 +235,7 @@ class BaseScheduler(object):
     def registered(self, driver, fid, master_info):
         logger.debug('Registered with Mesos, FID = %s' % fid.value)
         self.framework_id = fid.value
+        add_loghub(self.framework_id)
         self.executor = self.getExecutorInfo()
         self.stdout_t, self.stdout_port = self.create_port(sys.stdout)
         self.stderr_t, self.stderr_port = self.create_port(sys.stderr)
