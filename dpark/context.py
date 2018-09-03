@@ -148,9 +148,11 @@ class DparkContext(object):
 
         origin_master = master = self.master or options.master
         if master == 'local':
+            logger.info("use local scheduler: %s", master)
             self.scheduler = LocalScheduler()
             self.is_local = True
         elif master == 'process':
+            logger.info("use process scheduler: %s", master)
             self.scheduler = MultiProcessScheduler(options.parallel)
             self.is_local = False
         else:
@@ -174,6 +176,7 @@ class DparkContext(object):
             )
             self.data_limit = 1024 * 1024  # 1MB
             self.is_local = False
+            logger.info("use mesos scheduler: %s", master)
 
         self.master = master
 

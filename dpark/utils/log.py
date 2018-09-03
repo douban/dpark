@@ -160,7 +160,7 @@ def add_loghub(framework_id):
                 for i in infos:
                     f.write("DPARK_{} = {}\n".format(i[0], i[1]))
                 f.write("\n")
-        except:
+        except IOError:
             logger.exception("fail to write loghub: %s", log_path)
             return
 
@@ -169,6 +169,19 @@ def add_loghub(framework_id):
         file_handler.setLevel(logging.INFO)
         logger.addHandler(file_handler)
         logger.info("logging/prof to %s", dir_path)
-        return dir_path
-    except:
+        return file_handler, dir_path
+    except Exception:
         logger.exception("add_loghub fail")
+
+
+def create_logger(stream, handler=None):
+    logger = get_logger('dpark.' + str(stream.fileno()))
+    logger.propagate = False
+    stream_handler = logging.StreamHandler(stream=stream)
+    stream_handler.setFormatter(logging.Formatter())
+    stream_handler.setLevel(logging.INFO)
+    logger.addHandler(stream_handler)
+    if handler:
+        logger.addHandler(handler)
+
+    return logger

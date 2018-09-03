@@ -24,7 +24,7 @@ from pymesos import MesosSchedulerDriver, encode_data
 import dpark.conf as conf
 from dpark.utils import getuser, memory_str_to_mb, sec2nanosec
 from dpark.utils.debug import spawn_rconsole
-from dpark.utils.log import add_loghub
+from dpark.utils.log import add_loghub, create_logger
 
 logger = logging.getLogger('dpark.scheduler')
 
@@ -185,7 +185,7 @@ class BaseScheduler(object):
 
         return execInfo
 
-    def create_port(self, output):
+    def create_port(self, logger):
         sock = ctx.socket(zmq.PULL)
         host = socket.gethostname()
         port = sock.bind_to_random_port('tcp://0.0.0.0')
@@ -202,7 +202,8 @@ class BaseScheduler(object):
                 line = sock.recv()
                 if not six.PY2:
                     line = line.decode('utf-8')
-                output.write(line)
+                line = line.rstrip()
+                logger.info(line)
 
         t = threading.Thread(target=redirect, name="redirect")
         t.daemon = True
@@ -235,10 +236,13 @@ class BaseScheduler(object):
     def registered(self, driver, fid, master_info):
         logger.debug('Registered with Mesos, FID = %s' % fid.value)
         self.framework_id = fid.value
-        add_loghub(self.framework_id)
+        f_handler, _ = add_loghub(self.framework_id)
         self.executor = self.getExecutorInfo()
-        self.stdout_t, self.stdout_port = self.create_port(sys.stdout)
-        self.stderr_t, self.stderr_port = self.create_port(sys.stderr)
+        self.logger_stdout = create_logger(sys.stdout)
+        self.logger_stderr = create_logger(sys.stderr, f_handler)
+
+        self.stdout_t, self.stdout_port = self.create_port(self.logger_stdout)
+        self.stderr_t, self.stderr_port = self.create_port(self.logger_stderr)
 
     @safe
     def reregistered(self, driver, master_info):
@@ -885,7 +889,7 @@ if __name__ == '__main__':
         format='[drun] %(threadName)s %(asctime)-15s %(message)s',
         level=options.quiet and logging.ERROR
               or options.verbose and logging.DEBUG
-              or logging.WARNING
+              or logging.INFO
     )
 
     if options.mpi:
