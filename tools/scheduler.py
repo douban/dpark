@@ -321,6 +321,10 @@ class BaseScheduler(object):
                 self.stop(EXIT_TIMEOUT)
                 break
 
+    def processHeartBeat(self):
+        # no need in dpark now, just for compatibility with pymesos
+        pass
+
 
 class SubmitScheduler(BaseScheduler):
 
