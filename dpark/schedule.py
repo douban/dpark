@@ -818,7 +818,6 @@ class MesosScheduler(DAGScheduler):
         logger.warning('re-connect to mesos master %s:%s',
                        masterInfo.hostname, masterInfo.port)
 
-    @safe
     def disconnected(self, driver):
         logger.debug('framework is disconnected')
 
