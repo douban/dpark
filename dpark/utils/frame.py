@@ -26,7 +26,8 @@ class Frame(object):
 
 class Scope(object):
 
-    scopes = {}
+    scopes_by_id = {}
+    scopes_by_callsite = {}
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
 
@@ -65,8 +66,9 @@ class Scope(object):
 
         dpark_func_name = callee.func_name
         call_site = "{}:{}@{}:{}".format(callee.func_name, seq, caller.path, caller.lineno)
-        scope = cls.scopes.get(call_site)
+        scope = cls.scopes_by_callsite.get(call_site)
         if scope is None:
             scope = Scope(caller, call_site, dpark_func_name)
-            cls.scopes[call_site] = scope
+            cls.scopes_by_callsite[call_site] = scope
+            cls.scopes_by_id[scope.id] = scope
         return scope

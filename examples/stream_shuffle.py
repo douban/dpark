@@ -238,7 +238,7 @@ class TestShuffle(unittest.TestCase):
             rdd1 = rdd0.groupByKey(numSplits=2, rddconf=RC(disk_merge=True, dump_mem_ratio=0.6)).mapPartition(mp2)
             res = rdd1.collect()
             assert (sum(res) == num_key * values_per_key * 2)
-            st = dc.scheduler.last_jobstats
+            st = dc.scheduler.jobstats[-1]
             from pprint import pprint
             pprint(st)
 

@@ -10,6 +10,7 @@ from six.moves import map, range, urllib, queue, cPickle
 import weakref
 import threading
 import json
+from collections import Counter
 
 import zmq
 from addict import Dict
@@ -229,7 +230,7 @@ class DAGScheduler(Scheduler):
         self.runJobTimes = 0
         self.frameworkId = None
         self.loghub_dir = None
-        self.last_jobstats = None
+        self.jobstats = []
         self.is_dstream = False
 
     nextId = 0
@@ -320,8 +321,42 @@ class DAGScheduler(Scheduler):
         walk_dependencies(stage.rdd, _)
         return list(missing)
 
+    @classmethod
+    def get_call_graph(cls, final_rdd):
+        edges = Counter()  # <parent, child > : count
+        visited = set()
+        to_visit = [final_rdd]
+
+        while to_visit:
+            r = to_visit.pop(0)
+            if r.id in visited:
+                continue
+            visited.add(r.id)
+            for dep in r.dependencies:
+                to_visit.append(dep.rdd)
+                if dep.rdd.scope.id != r.scope.id:
+                    edges[(dep.rdd.scope.id, r.scope.id)] += 1
+        nodes = set()
+        run_scope = Scope.get()
+        edges[(final_rdd.scope.id, run_scope.id)] = 1
+        for s, d in edges.keys():
+            nodes.add(s)
+            nodes.add(d)
+        return sorted(list(nodes)), dict(edges)
+
+    @classmethod
+    def fmt_call_graph(cls, g0):
+        nodes0, edges0 = g0
+        nodes = []
+        edges = [{'id': "{}_{}".format(parent, child), "source": parent, "target": child, "count": count}
+                 for ((parent, child), count) in edges0.items()]
+
+        for n in nodes0:
+            nodes.append({"id": n, "name": Scope.scopes_by_id[n].call_site})
+
+        return {"nodes": nodes, "edges": edges}
+
     def runJob(self, finalRdd, func, partitions, allowLocal):
-        run_id = self.runJobTimes
         self.runJobTimes += 1
         outputParts = list(partitions)
         numOutputParts = len(partitions)
@@ -519,28 +554,36 @@ class DAGScheduler(Scheduler):
                 raise Exception(reason.message)
 
         onStageFinished(finalStage)
-        callsite = Scope.get().call_site
 
         if not self.is_dstream:
-            try:
-                self.last_jobstats = self.get_stats(run_id, callsite)
-                if self.loghub_dir:
-                    names = ['sched', self.id, "job", run_id]
-                    name = "_".join(map(str, names)) + ".json"
-                    path = os.path.join(self.loghub_dir, name)
-                    logger.info("writing profile to %s", path)
-                    with open(path, 'w') as f:
-                        json.dump(self.last_jobstats, f, indent=4)
-            except Exception as e:
-                logger.error("Fail to dump job stats: %s.", e)
-
+            self._keep_stats(finalRdd)
         assert all(finished)
         return
 
     def getPreferredLocs(self, rdd, partition):
         return rdd.preferredLocations(rdd.splits[partition])
 
-    def get_stats(self, run_id, callsite):
+    def _keep_stats(self, final_rdd):
+        try:
+
+            stats = self._get_stats(final_rdd)
+            self.jobstats.append(stats)
+            if self.loghub_dir:
+                self._dump_stats(stats)
+        except Exception as e:
+            logger.error("Fail to dump job stats: %s.", e)
+
+    def _dump_stats(self, stats):
+        name = "_".join(map(str, ['sched', self.id, "job", self.runJobTimes])) + ".json"
+        path = os.path.join(self.loghub_dir, name)
+        logger.info("writing profile to %s", path)
+        with open(path, 'w') as f:
+            json.dump(stats, f, indent=4)
+
+    def _get_stats(self, final_rdd):
+
+        callsite = Scope.get().call_site
+        call_graph = self.fmt_call_graph(self.get_call_graph(final_rdd))
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
@@ -548,9 +591,10 @@ class DAGScheduler(Scheduler):
                         key=lambda x: x['start_time'])
         run = {'framework': self.frameworkId,
                'scheduler': self.id,
-               "run": run_id,
+               "run": self.runJobTimes,
                'call_site': callsite,
-               'stages': stages
+               'stages': stages,
+               "call_graph": call_graph,
                }
 
         ret = {'script': {
