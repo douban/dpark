@@ -1,4 +1,4 @@
-import os.path
+import os
 import sys
 import logging
 import re
@@ -143,14 +143,12 @@ def add_loghub(framework_id):
         dir_path = os.path.join(date_dir_path, framework_id)
         os.mkdir(dir_path)
 
-        dpark_mtime = datetime.fromtimestamp(os.stat(dpark.__file__).st_mtime).strftime('%Y-%m-%dT%H:%M:%S')
-
         infos = [
             ("CMD", ' '.join(sys.argv)),
             ("USER", getuser()),
             ("PWD", os.getcwd()),
+            ("CTIME", datetime.strftime(datetime.now(), "%Y-%m-%d %H:%M:%S")),
             ("DPARK", dpark.__file__),
-            ("DPARK_MTIME", dpark_mtime),
             ("PYTHONPATH", os.environ.get("PYTHONPATH", ""))
         ]
 
