@@ -41,9 +41,9 @@ RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
 
 
-class Stage:
+class Stage(object):
 
-    def __init__(self, rdd, shuffleDep, parents):
+    def __init__(self, rdd, shuffleDep, parents, pipelines, pipeline_edges):
         self.id = self.new_id()
         self.num_try = 0
         self.rdd = rdd
@@ -55,6 +55,8 @@ class Stage:
         self.submit_time = 0
         self.finish_time = 0
         self.root_rdd = self._get_root_rdd()
+        self.pipelines = pipelines
+        self.pipeline_edges = pipeline_edges
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -275,26 +277,77 @@ class DAGScheduler(Scheduler):
     def updateCacheLocs(self):
         self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
 
-    def newStage(self, rdd, shuffleDep):
-        stage = Stage(rdd, shuffleDep, self.getParentStages(rdd))
+    def newStage(self, output_rdd, shuffleDep):
+        """ A stage may contain multi data pipeline, which form a tree with one final output pipline as root.
+            Zip, CartesianRDD, and Union may commine diff data sources, so lead to a split of the tree.
+            The leaves of the tree may be one of:
+                1. a pipeline start from a source RDD (TextFileRDD, Collection)
+                2. a root pipeline of a parent stage .
+            Unioned rdds with same lineage  keep only one by add it to dep_rdds and assign a pipeline_id.
+        """
+        parent_stages = set()
+
+        pipelines = {output_rdd.id: [output_rdd]}
+        pipeline_edges = []
+
+        rdd_pipelines = {output_rdd.id: output_rdd.id}  # tmp
+
+        to_visit = [output_rdd]
+        visited = set()
+
+        while to_visit:
+            r = to_visit.pop(0)
+            if r.id in visited:
+                continue
+            visited.add(r.id)
+            my_pipeline_id = rdd_pipelines.get(r.id)
+            if my_pipeline_id is not None:  # not all rdd have my_pipeline_id
+                my_pipeline = pipelines.get(my_pipeline_id)
+                if my_pipeline is None:
+                    logger.warning("miss pipeline: {} ".format(r.scope.key))
+
+            if r.shouldCache:
+                self.cacheTracker.registerRDD(r.id, len(r))
+
+            dep_rdds = []
+            dep_stages = []
+            for dep in r.dependencies:
+                if isinstance(dep, ShuffleDependency):
+                    stage = self.getShuffleMapStage(dep)
+                    parent_stages.add(stage)
+                    dep_stages.append(stage)
+                    if my_pipeline_id is not None:
+                        pipeline_edges.append(((stage.id, stage.rdd.id), (-1, my_pipeline_id)))  # -1 : current_stage
+                    else:
+                        logger.warning("miss pipeline: {} {}".format(r.scope.key, dep.rdd.scope.key))
+                else:
+                    to_visit.append(dep.rdd)
+                    from dpark.rdd import UnionRDD
+                    if isinstance(r, UnionRDD) and (dep.rdd.id not in r.lineage_ids):
+                        continue
+                    dep_rdds.append(dep.rdd)
+
+            if my_pipeline is None:
+                continue
+
+            ns, nr = len(dep_stages), len(dep_rdds)
+
+            if ns + nr <= 1:
+                if nr == 1:
+                    dep_rdd = dep_rdds[0]
+                    my_pipeline.append(dep_rdd)
+                    rdd_pipelines[dep_rdd.id] = my_pipeline_id
+            else:
+                for dep_rdd in dep_rdds:
+                    did = dep_rdd.id
+                    pipelines[did] = [dep_rdd]  # create a new pipeline/branch
+                    rdd_pipelines[did] = did
+                    pipeline_edges.append(((-1, did), (-1, my_pipeline_id)))  # -1 : current_stage
+
+        stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, pipeline_edges)
         self.idToStage[stage.id] = stage
         logger.debug('new stage: %s', stage)
         return stage
-
-    def getParentStages(self, rdd):
-        parents = set()
-
-        def _(r, dep):
-            if r.shouldCache:
-                self.cacheTracker.registerRDD(r.id, len(r))
-            if isinstance(dep, ShuffleDependency):
-                parents.add(self.getShuffleMapStage(dep))
-                return False
-
-            return True
-
-        walk_dependencies(rdd, _)
-        return list(parents)
 
     def getShuffleMapStage(self, dep):
         stage = self.shuffleToMapStage.get(dep.shuffleId, None)
