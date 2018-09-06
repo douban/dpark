@@ -36,11 +36,12 @@ class Scope(object):
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
 
-    def __init__(self, name, stack, api, api_callsite):
+    def __init__(self, name, stack, stackhash, api, api_callsite):
         self.id = Scope.gid
         Scope.gid += 1
         self.name = name
         self.stack = stack
+        self.stackhash = stackhash
         self.api = api
         self.api_callsite = api_callsite
         self.key = "{}@{}".format(name, self.api_callsite)
@@ -96,7 +97,7 @@ class Scope(object):
         scope = cls.scopes_by_stackhash.get(stackhash)
         if scope is None:
             api, api_callsite = cls.get_callsite(api_caller, api_callee)
-            scope = Scope(name, stack, api, api_callsite)
+            scope = Scope(name, stack, stackhash, api, api_callsite)
             cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope

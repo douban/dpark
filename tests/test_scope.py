@@ -60,3 +60,15 @@ def test_call_graph():
     assert g == ([0, 1, 2, 3, 4, 5], {(0, 1): 2, (1, 4): 1, (2, 3): 2, (3, 4): 1, (4, 5): 1})
 
 
+def test_lineage():
+    dc = DparkContext()
+    rdd1 = dc.union([dc.makeRDD([(1, 2)]) for _ in range(2)])
+    assert len(rdd1.lineages) == 1
+
+    rdd2 = dc.union([dc.makeRDD([(1, 2)]) for _ in range(2)])
+    rdd3 = rdd1.union(rdd2)
+    assert len(rdd3.lineages) == 2
+
+    rdd4 = dc.union([dc.union([dc.makeRDD([(1, 2)]) for _ in range(2)]) for _ in range(2)])
+    assert len(rdd4.lineages) == 1
+    assert len(list(rdd4.lineages.values())[0].lineages) == 1

@@ -90,6 +90,7 @@ class RDD(object):
         self.repr_name = '<%s>' % (self.__class__.__name__,)
         self.scope = Scope.get(self.__class__.__name__,)
         self.rddconf = None
+        self.lineage = self.scope.stackhash
 
     nextId = 0
 
@@ -832,6 +833,7 @@ class DerivedRDD(RDD):
         self._splits = self.prev.splits
         self._preferred_locs = self.prev._preferred_locs
         self.repr_name = '<%s %s>' % (self.__class__.__name__, rdd)
+        self.lineage += rdd.lineage
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -1069,6 +1071,8 @@ class ShuffledRDD(RDD):
         if isinstance(aggregator, GroupByAggregator):
             self.rddconf.op = 'groupby'
 
+        self.lineage += parent.lineage
+
     @cached
     def __getstate__(self):
         d = RDD.__getstate__(self)
@@ -1141,6 +1145,7 @@ class CartesianRDD(RDD):
             self._preferred_locs[split] = rdd1.preferredLocations(split.s1) + rdd2.preferredLocations(split.s2)
 
         self.repr_name = '<Cartesian %s and %s>' % (self.rdd1, self.rdd2)
+        self.lineage += rdd1.lineage + rdd2.lineage
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -1226,6 +1231,8 @@ class CoGroupedRDD(RDD):
         self._preferred_locs = {}
         self.set_rddconf(rddconf)
         self.rddconf.op = dpark.conf.OP_COGROUP
+        for rdd in rdds:
+            self.lineage += rdd.lineage
 
         def _get_rdd_deps():
             return [rdd.partitioner == partitioner
@@ -1372,6 +1379,13 @@ class UnionRDD(RDD):
         for split in self._splits:
             self._preferred_locs[split] = split.rdd.preferredLocations(split.split)
 
+        lineages = {}
+        for rdd in rdds:
+            if rdd.lineage not in lineages:
+                lineages[rdd.lineage] = rdd
+        self.lineages = list(lineages.values())
+        self.lineage_ids = set([r.id for r in self.lineages])
+
     def compute(self, split):
         return split.rdd.iterator(split.split)
 
@@ -1394,6 +1408,7 @@ class SliceRDD(RDD):
             self._preferred_locs[split] = rdd.preferredLocations(split)
 
         self.repr_name = '<SliceRDD [%d:%d] of %s>' % (i, j, rdd)
+        self.lineage += rdd.lineage
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -1431,6 +1446,7 @@ class MergedRDD(RDD):
             self._preferred_locs[split] = sum([rdd.preferredLocations(sp) for sp in split.splits], [])
 
         self.repr_name = '<MergedRDD %s:1 of %s>' % (splitSize, rdd)
+        self.lineage += rdd.lineage
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
@@ -1456,6 +1472,8 @@ class ZippedRDD(RDD):
             self._preferred_locs[split] = sum(
                 [rdd.preferredLocations(sp) for rdd, sp in zip(self.rdds, split.splits)], [])
         self.repr_name = '<Zipped %s>' % (','.join(str(rdd) for rdd in rdds))
+        for rdd in rdds:
+            self.lineage += rdd.lineage
 
     def _clear_dependencies(self):
         RDD._clear_dependencies(self)
