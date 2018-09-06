@@ -4,28 +4,41 @@ from dpark import DparkContext
 from dpark.utils.frame import Scope
 from pprint import pprint
 
+
 def test_scope():
-    gid = Scope.gid
+
+    Scope.gid = 0
     dc = DparkContext()
     rdd = dc.makeRDD([1, 2, 3]).map(int).map(int).map(int)
 
     for i, r in enumerate([rdd.prev.prev, rdd.prev, rdd]):
-        assert r.scope.id == gid + i + 1
-        assert r.scope.call_site.startswith("map:{}".format(i))
+        assert r.scope.id == i + 1
+        assert r.scope.api_callsite.startswith("map:{}".format(i))
 
+    Scope.gid = 0
     rdd = dc.makeRDD([1, 2, 3]) \
         .map(int) \
         .map(int) \
         .map(int)
 
     for i, r in enumerate([rdd.prev.prev, rdd.prev, rdd]):
-        assert r.scope.id == gid + 4 + i + 1
-        assert r.scope.call_site.startswith("map:0")
+        assert r.scope.id == i + 1
+        assert r.scope.api_callsite.startswith("map:0")
+
+    def get_rdd(n):
+        return dc.makeRDD([n, n]).map(int).map(int).map(int)
+
+    rdds = [get_rdd(1), get_rdd(2)]
+    assert rdds[0].scope.id + 4 == rdds[1].scope.id
+
+    rdds = [get_rdd(i) for i in range(2)]
+    assert rdds[0].scope.id == rdds[1].scope.id
 
 
 def test_call_graph():
     dc = DparkContext()
     Scope.gid = 0
+    Scope.api_callsites = {}
     rdd = dc.makeRDD([(1, 1), (1, 2)]).map(lambda x: x)
     rdd = rdd.join(rdd)
     g = dc.scheduler.get_call_graph(rdd)
@@ -36,6 +49,7 @@ def test_call_graph():
     pprint(fg)
 
     Scope.gid = 0
+    Scope.api_callsites = {}
     r1 = dc.union([dc.makeRDD([(1, 2)]) for _ in range(2)])
     r2 = dc.union([dc.makeRDD([(3, 4)]) for _ in range(2)])
     rdd = r1.union(r2)

@@ -543,14 +543,14 @@ class SortedItemsOnDisk(object):
 
 class Merger(object):
 
-    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
+    def __init__(self, rddconf, aggregator=None, size=None, api_callsite=None):
         self.rddconf = rddconf
         self.aggregator = aggregator
         self.size = size
-        self.call_site = call_site
+        self.api_callsite = api_callsite
 
     @classmethod
-    def get(cls, rddconf, aggregator=None, size=0, call_site=None):
+    def get(cls, rddconf, aggregator=None, size=0, api_callsite=None):
         if rddconf.sort_merge:
             # all mergers keep order
             c = SortMerger
@@ -571,13 +571,13 @@ class Merger(object):
                 else:
                     c = CoGroupDiskHashMerger
         logger.debug("%s %s", c, rddconf)
-        return c(rddconf, aggregator, size, call_site)
+        return c(rddconf, aggregator, size, api_callsite)
 
 
 class DiskHashMerger(Merger):
 
-    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
-        Merger.__init__(self, rddconf, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, api_callsite=None):
+        Merger.__init__(self, rddconf, aggregator, size, api_callsite)
 
         self.combined = {}
 
@@ -701,8 +701,8 @@ class OrderedGroupByDiskHashMerger(DiskHashMerger):
 
 class CoGroupDiskHashMerger(DiskHashMerger):
 
-    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
-        DiskHashMerger.__init__(self, rddconf, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, api_callsite=None):
+        DiskHashMerger.__init__(self, rddconf, aggregator, size, api_callsite)
         self.direct_upstreams = []
 
     def _get_merge_function(self):
@@ -799,8 +799,8 @@ class CoGroupSortMergeAggregator(AggregatorBase):
 
 class SortMerger(Merger):
 
-    def __init__(self, rddconf, aggregator=None, size=None, call_site=None):
-        Merger.__init__(self, rddconf, aggregator, size, call_site)
+    def __init__(self, rddconf, aggregator=None, size=None, api_callsite=None):
+        Merger.__init__(self, rddconf, aggregator, size, api_callsite)
 
         if aggregator:
             self.aggregator = SortMergeAggregator(self.aggregator.mergeCombiners)
@@ -849,7 +849,7 @@ class IterGroupBySortMerger(SortMerger):
 
     def _merge_sorted(self, iters):
         heap = HeapOnKey(key=lambda x: x[0], min_heap=True)
-        return GroupByNestedIter(heap.merge(iters), self.call_site)
+        return GroupByNestedIter(heap.merge(iters), self.api_callsite)
 
 
 class IterCoGroupSortMerger(SortMerger):

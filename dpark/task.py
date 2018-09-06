@@ -205,7 +205,7 @@ class ShuffleMapTask(DAGTask):
                     mem_limit = env.meminfo.mem_limit_soft
                     last_i = i
             except ValueError as e:
-                logger.exception('The ValueError exception: %s at %s', str(e), str(rdd.scope.call_site))
+                logger.exception('The ValueError exception: %s at %s', str(e), str(rdd.scope.api_callsite))
                 raise
 
         t1 = time.time()
@@ -346,7 +346,7 @@ class SortMergeBucketDumper(BucketDumper):
                     inputs = [get_serializer(self.rddconf).load_stream(open(p))
                               for p in in_path]
                     rddconf = self.rddconf.dup(op=dpark.conf.OP_GROUPBY)
-                    merger = Merger.get(rddconf, aggregator=aggregator, call_site=self.__class__.__name__)
+                    merger = Merger.get(rddconf, aggregator=aggregator, api_callsite=self.__class__.__name__)
                     merger.merge(inputs)
                     with open(tmp, 'w') as f:
                         get_serializer(self.rddconf).dump_stream(merger, f)

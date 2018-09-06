@@ -24,35 +24,41 @@ class Frame(object):
         return self.path, self.lineno, self.lasti
 
 
+def frame_tuple(f):
+    return f.f_code.co_filename, f.f_lineno,  f.f_lasti
+
+
 class Scope(object):
 
     scopes_by_id = {}
-    scopes_by_callsite = {}
+    scopes_by_stackhash = {}
+    api_callsites = {}
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
 
-    def __init__(self, caller, call_site, dpark_func_name):
+    def __init__(self, name, stack, api, api_callsite):
         self.id = Scope.gid
         Scope.gid += 1
-        self.caller = caller
-        self.call_site = call_site
-        self.dpark_func_name = dpark_func_name
+        self.name = name
+        self.stack = stack
+        self.api = api
+        self.api_callsite = api_callsite
+        self.key = "{}@{}".format(name, self.api_callsite)
+        self.api_callsite_id = self.api_callsites.get(api_callsite)
+        if self.api_callsite_id is None:
+            self.api_callsite_id = self.api_callsites[api_callsite] = len(self.api_callsites)
+        print(api_callsite, self.api_callsite_id)
 
     @classmethod
-    def get(cls):
-        callee = inspect.currentframe()
-        caller = callee.f_back
+    def get_callsite(cls, caller, callee):
+        """
+        Deal with usage like  "rdd.map(_).map(_)", distinguish same dpark api called in one line by lasti.
+        To be comprehensible, replace lasti with order of calling of same api in this line , starts with 0.
+        """
 
-        while src_dir == os.path.dirname(get_path(caller.f_code.co_filename)):
-            callee = caller
-            caller = caller.f_back
-
-        caller = Frame(caller)  # the first callsite out of dpark package, where user call dpark api
         callee = Frame(callee)  # the dpark api called by user, DparkContext.xxx() or RDD.xxx()
+        caller = Frame(caller)  # the first callsite out of dpark package, where user call dpark api
 
-        # deal with usage like  "rdd.map(_).map(_)"
-        # distinguish same dpark api called in one line by lasti
-        # to be comprehensible, replace lasti with order or appearance of same api in this line , starts with 0
         key = caller.path, caller.lineno, callee.func_name
         calls = cls.calls_in_oneline.setdefault(key, [])
         i = -1
@@ -64,11 +70,38 @@ class Scope(object):
             seq = i + 1
             calls.append(caller.lasti)
 
-        dpark_func_name = callee.func_name
-        call_site = "{}:{}@{}:{}".format(callee.func_name, seq, caller.path, caller.lineno)
-        scope = cls.scopes_by_callsite.get(call_site)
+        api = callee.func_name
+        api_callsite = "{}:{}@{}:{}".format(callee.func_name, seq, caller.path, caller.lineno)
+        return api, api_callsite
+
+    @classmethod
+    def get(cls, name):
+        callee = inspect.currentframe()
+        caller = callee.f_back
+        stack = []
+
+        api_caller = None
+        api_callee = None
+
+        while caller is not None:
+            stack.append(frame_tuple(caller))
+            if api_callee is None and src_dir != os.path.dirname(get_path(caller.f_code.co_filename)):
+                api_callee = callee  # the dpark api called by user, DparkContext.xxx() or RDD.xxx()
+                api_caller = caller  # the first callsite out of dpark package, where user call dpark api
+            callee = caller
+            caller = caller.f_back
+
+        stack = tuple(stack)
+        stackhash = hash(stack)
+        scope = cls.scopes_by_stackhash.get(stackhash)
         if scope is None:
-            scope = Scope(caller, call_site, dpark_func_name)
-            cls.scopes_by_callsite[call_site] = scope
+            api, api_callsite = cls.get_callsite(api_caller, api_callee)
+            scope = Scope(name, stack, api, api_callsite)
+            cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope
+
+
+
+
+

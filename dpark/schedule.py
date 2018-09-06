@@ -166,7 +166,7 @@ class Stage:
             'id': self.id,
             'parents': [p.id for p in self.parents],
             'class': self.root_rdd.__class__.__name__,
-            'call_site': self.root_rdd.scope.call_site,
+            'api_callsite': self.root_rdd.scope.api_callsite,
             'start_time': self.submit_time,
             'finish_time': self.finish_time,
             'stats': d,
@@ -334,11 +334,11 @@ class DAGScheduler(Scheduler):
             visited.add(r.id)
             for dep in r.dependencies:
                 to_visit.append(dep.rdd)
-                if dep.rdd.scope.id != r.scope.id:
-                    edges[(dep.rdd.scope.id, r.scope.id)] += 1
+                if dep.rdd.scope.api_callsite_id != r.scope.api_callsite_id:
+                    edges[(dep.rdd.scope.api_callsite_id, r.scope.api_callsite_id)] += 1
         nodes = set()
-        run_scope = Scope.get()
-        edges[(final_rdd.scope.id, run_scope.id)] = 1
+        run_scope = Scope.get("runJob")
+        edges[(final_rdd.scope.api_callsite_id, run_scope.api_callsite_id)] = 1
         for s, d in edges.keys():
             nodes.add(s)
             nodes.add(d)
@@ -352,7 +352,7 @@ class DAGScheduler(Scheduler):
                  for ((parent, child), count) in edges0.items()]
 
         for n in nodes0:
-            nodes.append({"id": n, "name": Scope.scopes_by_id[n].call_site})
+            nodes.append({"id": n, "name": Scope.scopes_by_id[n].api_callsite})
 
         return {"nodes": nodes, "edges": edges}
 
@@ -582,7 +582,7 @@ class DAGScheduler(Scheduler):
 
     def _get_stats(self, final_rdd):
 
-        callsite = Scope.get().call_site
+        callsite = Scope.get().api_callsite
         call_graph = self.fmt_call_graph(self.get_call_graph(final_rdd))
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
@@ -592,7 +592,7 @@ class DAGScheduler(Scheduler):
         run = {'framework': self.frameworkId,
                'scheduler': self.id,
                "run": self.runJobTimes,
-               'call_site': callsite,
+               'api_callsite': callsite,
                'stages': stages,
                "call_graph": call_graph,
                }
@@ -990,7 +990,7 @@ class MesosScheduler(DAGScheduler):
         stage_scope = ''
         try:
             from dpark.web.ui.views.rddopgraph import StageInfo
-            stage_scope = StageInfo.idToRDDNode[tasks[0].rdd.id].scope.call_site
+            stage_scope = StageInfo.idToRDDNode[tasks[0].rdd.id].scope.api_callsite
         except:
             pass
         stage = self.idToStage[tasks[0].stage_id]

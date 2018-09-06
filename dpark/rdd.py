@@ -88,7 +88,7 @@ class RDD(object):
         self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
-        self.scope = Scope.get()
+        self.scope = Scope.get(self.__class__.__name__,)
         self.rddconf = None
 
     nextId = 0
@@ -225,7 +225,7 @@ class RDD(object):
             if num_map > limit:
                 logger.warning("%s: too many split (%d > %d) in parents stages,"
                                " sort merge will use disk",
-                               self.scope.call_site, num_map, limit)
+                               self.scope.api_callsite, num_map, limit)
                 rddconf.disk_merge = True
         self.rddconf = rddconf
 
@@ -1075,7 +1075,7 @@ class ShuffledRDD(RDD):
         return d
 
     def compute(self, split):
-        merger = Merger.get(self.rddconf, aggregator=self.aggregator, size=0, call_site=self.scope.call_site)
+        merger = Merger.get(self.rddconf, aggregator=self.aggregator, size=0, api_callsite=self.scope.api_callsite)
         if self.rddconf.sort_merge:
             fetcher = SortShuffleFetcher()
             iters = fetcher.get_iters(self.shuffleId, split.index)
@@ -1288,14 +1288,14 @@ class CoGroupedRDD(RDD):
             elif isinstance(dep, ShuffleCoGroupSplitDep):
                 its = fetcher.get_iters(dep.shuffleId, split.index)
                 rddconf = self.rddconf.dup(op=dpark.conf.OP_GROUPBY)
-                m = Merger.get(rddconf, size=self.size, call_site=self.scope.call_site)
+                m = Merger.get(rddconf, size=self.size, api_callsite=self.scope.api_callsite)
                 m.merge(its)
                 iters.append(m)
         merger.merge(iters)
 
     def compute(self, split):
         rddconf = self.rddconf
-        merger = Merger.get(rddconf, size=self.size, call_site=self.scope.call_site)
+        merger = Merger.get(rddconf, size=self.size, api_callsite=self.scope.api_callsite)
         if rddconf.sort_merge:
             if rddconf.iter_group:
                 self._compute_sort_merge_iter(split, merger)
