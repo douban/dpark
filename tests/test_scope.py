@@ -101,6 +101,9 @@ def test_lineage():
     assert sorted(list(stage.pipelines.keys())) == [rdd5.id]
     assert sorted(stage.pipeline_edges) == sorted([((s.id, s.rdd.id), (-1, rdd5.id)) for s in stage.parents])
 
+    print('-' * 100)
+    pprint(stage.get_pipeline_graph())
+
     for s in stage.parents:
         if s.rdd.id == rdd4.id:
             assert list(s.pipelines.keys()) == [rdd4.id]
@@ -111,3 +114,5 @@ def test_lineage():
                                         ((-1, rdd2.id), (-1, rdd3.id))]
         else:
             assert False
+
+        pprint(s.get_pipeline_graph())

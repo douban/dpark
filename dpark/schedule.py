@@ -144,6 +144,36 @@ class Stage(object):
                     d[attr] = _summary(list([getattr(s, attr) for s in stats]))
         return d
 
+    def _get_node_id(self, stage_id, pipeline_id):
+        if stage_id == -1:
+            stage_id = self.id
+        return "PIPELINE_{}.{}".format(stage_id, pipeline_id)
+
+    def _fmt_node(self, stage_id, pipeline_id):
+        if stage_id == -1:
+            stage_id = self.id
+        rdds = [(rdd.__class__.__name__, rdd.id, rdd.scope.id) for rdd in self.pipelines[pipeline_id]]
+        n = {
+            KW_ID: self._get_node_id(stage_id, pipeline_id),
+            KW_NAME: str(stage_id),
+            "rdds": rdds,
+        }
+        return n
+
+    def _fmt_edge(self, e):
+        src, dst = [self._get_node_id(*n) for n in e]
+        return {
+            KW_ID: "{}_{}".format(src, dst),
+            KW_SRC: src,
+            KW_DST: dst
+        }
+
+    def get_pipeline_graph(self):
+        nodes = [self._fmt_node(self.id, pipeline_id) for pipeline_id in self.pipelines.keys()]
+        edges = [self._fmt_edge(e) for e in self.pipeline_edges]
+        g = {KW_NODES: nodes, KW_EDGES: edges}
+        return g
+
     def fmt_stats(self):
         n = self.numPartitions
         stats = self._summary_stats()
@@ -169,19 +199,25 @@ class Stage(object):
                 msg += unit_s
         return msg
 
-    def get_stats(self):
-        d = self._summary_stats()
+    def get_prof(self):
+        stats = self._summary_stats()
+        graph = self.get_pipeline_graph()
 
-        res = {
+        info = {
             'id': self.id,
             'parents': [p.id for p in self.parents],
-            'class': self.root_rdd.__class__.__name__,
-            'api_callsite': self.root_rdd.scope.api_callsite,
+            'output_rdd': self.rdd.__class__.__name__,
+            'output_pipeline': self._get_node_id(self.id, self.rdd.id),
+            'api_callsite': self.rdd.scope.api_callsite,
             'start_time': self.submit_time,
             'finish_time': self.finish_time,
-            'stats': d,
             'num_partition': self.numPartitions,
             'mem': self.rdd.mem,
+        }
+        res = {
+            "info": info,
+            "stats": stats,
+            'graph': graph
         }
         return res
 
@@ -302,6 +338,7 @@ class DAGScheduler(Scheduler):
 
         to_visit = [output_rdd]
         visited = set()
+        dep_filter = set()
 
         while to_visit:
             r = to_visit.pop(0)
@@ -331,9 +368,10 @@ class DAGScheduler(Scheduler):
                 else:
                     to_visit.append(dep.rdd)
                     from dpark.rdd import UnionRDD
-                    if isinstance(r, UnionRDD) and (dep.rdd.id not in r.lineage_ids):
-                        continue
-                    dep_rdds.append(dep.rdd)
+                    if r.id in dep_filter or (isinstance(r, UnionRDD) and (dep.rdd.id not in r.lineage_ids)):
+                        dep_filter.add(dep.rdd.id)
+                    else:
+                        dep_rdds.append(dep.rdd)
 
             if my_pipeline is None:
                 continue
@@ -632,7 +670,7 @@ class DAGScheduler(Scheduler):
             if self.loghub_dir:
                 self._dump_stats(stats)
         except Exception as e:
-            logger.error("Fail to dump job stats: %s.", e)
+            logger.exception("Fail to dump job stats: %s.", e)
 
     def _dump_stats(self, stats):
         name = "_".join(map(str, ['sched', self.id, "job", self.runJobTimes])) + ".json"
@@ -642,14 +680,13 @@ class DAGScheduler(Scheduler):
             json.dump(stats, f, indent=4)
 
     def _get_stats(self, final_rdd):
-
-        callsite = Scope.get().api_callsite
+        callsite = Scope.get("runJob").api_callsite
         call_graph = self.fmt_call_graph(self.get_call_graph(final_rdd))
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
-        stages = sorted([s.get_stats() for s in self.idToStage.values()],
-                        key=lambda x: x['start_time'])
+        stages = sorted([s.get_prof() for s in self.idToStage.values()],
+                        key=lambda x: x['info']['start_time'])
         run = {'framework': self.frameworkId,
                'scheduler': self.id,
                "run": self.runJobTimes,

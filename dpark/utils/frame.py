@@ -48,7 +48,7 @@ class Scope(object):
         self.api_callsite_id = self.api_callsites.get(api_callsite)
         if self.api_callsite_id is None:
             self.api_callsite_id = self.api_callsites[api_callsite] = len(self.api_callsites)
-        print(api_callsite, self.api_callsite_id)
+        # print(self.id, self.api_callsite_id, api_callsite)
 
     @classmethod
     def get_callsite(cls, caller, callee):
@@ -101,8 +101,3 @@ class Scope(object):
             cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope
-
-
-
-
-
