@@ -41,6 +41,14 @@ RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
 
 
+KW_NODES = "nodes"
+KW_EDGES = "egdes"
+KW_SRC = "source"
+KW_DST = "target"
+KW_ID  = "id"
+KW_NAME = "name"
+
+
 class Stage(object):
 
     def __init__(self, rdd, shuffleDep, parents, pipelines, pipeline_edges):
@@ -401,13 +409,13 @@ class DAGScheduler(Scheduler):
     def fmt_call_graph(cls, g0):
         nodes0, edges0 = g0
         nodes = []
-        edges = [{'id': "{}_{}".format(parent, child), "source": parent, "target": child, "count": count}
+        edges = [{KW_ID: "{}_{}".format(parent, child), KW_SRC: parent, KW_DST: child, "count": count}
                  for ((parent, child), count) in edges0.items()]
 
         for n in nodes0:
-            nodes.append({"id": n, "name": Scope.scopes_by_id[n].api_callsite})
+            nodes.append({KW_ID: n, KW_NAME: Scope.scopes_by_id[n].api_callsite})
 
-        return {"nodes": nodes, "edges": edges}
+        return {KW_NODES: nodes, KW_EDGES: edges}
 
     def runJob(self, finalRdd, func, partitions, allowLocal):
         self.runJobTimes += 1
