@@ -470,7 +470,7 @@ class DAGScheduler(Scheduler):
                 if dep.rdd.scope.api_callsite_id != r.scope.api_callsite_id:
                     edges[(dep.rdd.scope.api_callsite_id, r.scope.api_callsite_id)] += 1
         nodes = set()
-        run_scope = Scope.get("runJob")
+        run_scope = Scope.get(None)
         edges[(final_rdd.scope.api_callsite_id, run_scope.api_callsite_id)] = 1
         for s, d in edges.keys():
             nodes.add(s)

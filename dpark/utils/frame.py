@@ -39,6 +39,8 @@ class Scope(object):
     def __init__(self, name, stack, stackhash, api, api_callsite):
         self.id = Scope.gid
         Scope.gid += 1
+        if name is None:
+            name = api
         self.name = name
         self.stack = stack
         self.stackhash = stackhash
