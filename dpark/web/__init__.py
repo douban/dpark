@@ -6,8 +6,8 @@ from gevent.pywsgi import WSGIServer
 _apps = {}
 
 
-def run(app, port):
-    server = WSGIServer(('0.0.0.0', port), app, log=None)
+def run(app, port, log=None):
+    server = WSGIServer(('0.0.0.0', port), app, log=log)
     if port not in _apps:
         _apps[port] = server
     server.serve_forever()

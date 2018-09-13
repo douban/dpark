@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Stages with G6 DAGRE</title>
+    <script src="https://gw.alipayobjects.com/os/antv/assets/g6/1.2.8/g6.min.js"></script>
+    <script src="https://gw.alipayobjects.com/os/antv/assets/lib/jquery-3.2.1.min.js"></script>
+    <script src="https://gw.alipayobjects.com/os/antv/assets/g6-plugins/1.0.9/g6-plugins.min.js"></script>
+
+    {#    <script type="text/javascript" src="../static/js/stage.js"></script>#}
+    <script src="{{ url_for('static', filename='js/stage.js', version='1205sff33332fs1') }}"></script>
+
+    <style type="text/css">
+        .row {
+            margin-bottom: 5px;
+        }
+
+        .col {
+            /*background-color: #00fcff;*/
+            display: inline-block;
+            border: 1px solid seagreen;
+        }
+    </style>
+</head>
+<body>
+
+<button id="Zoom">缩放</button>
+
+<div id="top" style="height: 200px" class="row">
+    <div id="explain" class="col" style="width:30%;"> 图例</div>
+    <div id="details" class="col" style="width:68%; float: right;"> details</div>
+</div>
+
+<div id="dags" style="height: 1200px" class="row">
+    <div id="stages" class="col" style="width:66%;"> RDDS</div>
+    <div id="calls" class="col" style="width:30%; float: right;"> Callers</div>
+</div>
+
+<script type="text/javascript">
+    "use strict";
+    var zooming = false;
+
+    // layout
+    var dagre1 = new G6.Plugins['layout.dagre']({
+        rankdir: 'LR',
+        nodesep: 100,
+        ranksep: 100
+    });
+
+    var dagre2 = new G6.Plugins['layout.dagre']({
+        rankdir: 'UD',
+        nodesep: 20,
+        ranksep: 20
+    });
+
+    G6.registNode('stage', stageNode);
+    G6.registNode('call', {
+        afterDraw: function (cfg, group) {
+            group.addShape('text', {
+                attrs: {
+                    x: cfg.x - cfg.size[0] / 2,
+                    y: cfg.y - cfg.size[1] / 2,
+                    fill: 'red',
+                    text: cfg.model.call_id
+                }
+            });
+        }
+    });
+
+    // net
+    var explain_net = new G6.Net({
+        id: 'explain',
+        mode: "none",
+        fitView: 'autoZoom',
+        height: 180
+    });
+
+    var explain_node = {
+        "type": "stage",
+        "id": "<stage_id>",
+        "label": "<stage_id>",
+        "rdds": [
+            {
+                "k": "<RDDName>",
+                "v": "<caller id>"
+            }
+        ],
+        "prof_summary": [
+            ["task", "#all = #done + #running + #to_run"],
+            ["fail", "#all = #error + #oom  + #timeout"],
+            ['mem', 'init || [min, median, max] (of real used)'],
+            ['time', ' time_of_stage || [min, median, max] (of finished tasks) |  '],
+            ['speedup', 'speedup (of finished tasks)']
+        ],
+        "prof": {
+            'counters': {
+                "task": {
+                    "all": 100,
+                    "running": 20,
+                    "finished": 70
+                }
+            }
+        },
+        "is_output": true,
+    };
+
+    explain_net.source([explain_node], []);
+    explain_net.node().shape("stage");
+    explain_net.render();
+
+    // net
+    var stages_net = new G6.Net({
+        id: 'stages',
+        mode: "none",
+        fitView: 'autoZoom',
+        plugins: [dagre1]
+    });
+
+    var call_net = new G6.Net({
+        id: 'calls',
+        mode: "none",
+        fitView: 'autoZoom',
+        plugins: [dagre2]
+    });
+
+    $("#Zoom").on('click', function () {
+        if (zooming) {
+            stages_net.changeMode('none');
+            call_net.changeMode('none');
+            zooming = false;
+        } else {
+            stages_net.changeMode('drag');
+            call_net.changeMode('drag');
+            zooming = true;
+        }
+    });
+
+
+    var data = {};
+
+
+    function on_load_fail(jqXHR, textStatus, errorThrown) {
+        alert("fail " + errorThrown);
+    }
+
+    function on_load_success(data_) {
+
+        data = data_;
+        reRenderStageNet();
+        reRenderCallNet();
+    }
+
+    selected_call = "-1";
+
+    function onClickCall(ev) {
+        // reset
+        if (selected_call != "-1") {
+            var last = call_net.find(selected_call);
+            call_net.update(last, {
+                color: node_color
+            });
+        }
+        // change var
+        var model = ev.item.get('model');
+        selected_call = model.id;
+
+        // up detail
+        $("#details").html(model.detail);
+
+        // up call net
+
+        call_net.update(ev.item, {
+            color: node_color_selected
+        });
+        call_net.refresh();
+
+        // up stage net
+        reRenderStageNet();
+    }
+
+    var node_color = "gray";
+    var node_color_selected = "blue";
+
+    function reRenderCallNet() {
+        call_net.clear()
+
+        var calls = data.calls;
+        call_net.source(calls.nodes, calls.edges);
+        call_net.node().label("label").shape("call").color('gray');
+
+        call_net.on('itemclick', onClickCall);
+
+        call_net.render();
+    }
+
+
+    function reRenderStageNet() {
+        stages_net.clear();
+
+        var stages = data.stages;
+
+        stages_net.source(stages.nodes, stages.edges);
+
+        stages_net.node().color('call_id', function (v) {
+            if (v === selected_call) {
+                return node_color_selected
+            } else {
+                return node_color
+            }
+        }).shape('type', function (v) {
+            if (v === "stage") {
+                return "stage"
+            } else {
+                return "call"
+            }
+        });
+        stages_net.edge().label('io').shape('arrow');
+        stages_net.render();
+    }
+
+    //$.getJSON("../../../../examples/ui/dag.json", on_load_success).fail(on_load_fail);
+    $.getJSON("data", on_load_success).fail(on_load_fail);
+
+
+</script>
+
+</body>
+</html>

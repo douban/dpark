@@ -8,7 +8,15 @@ bp = Blueprint('index', __name__)
 @bp.route('/index/')
 @bp.route('/stages/')
 def stages():
-    return tmpl('jobs.html', stage_infos=app.context.scheduler.idToRunJob)
+    if hasattr(app.context, "scheduler"):
+        return tmpl('jobs.html', stage_infos=app.context.scheduler.idToRunJob)
+    else:
+        return tmpl('dag.html')
+
+
+@bp.route('/data/')
+def data():
+    return app.context
 
 
 @bp.route('/stages/<stage_id>/')
