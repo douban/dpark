@@ -65,6 +65,7 @@ class Stage(object):
         self.num_finished = 0  # for final stage
         self.outputLocs = [[] for _ in range(self.numPartitions)]
         self.task_stats = [[] for _ in range(self.numPartitions)]
+        self.taskcounters = []
         self.submit_time = 0
         self.finish_time = 0
         self.pipelines = pipelines
@@ -208,8 +209,24 @@ class Stage(object):
                 msg += unit_s
         return msg
 
+    def _summary_counters(self):
+        counters = {
+            "task": {
+                "all": len(self),
+                "running": self.num_task_running,
+                "finished": self.num_task_finished,
+            },
+            "fail": {
+                'all': sum([c.fail for c in self.taskcounters]),
+                'oom': sum([c.oom for c in self.taskcounters]),
+                'timeout': sum([c.run_timeout for c in self.taskcounters]),
+            },
+        }
+        return counters
+
     def get_prof(self):
         stats = self._summary_stats()
+        counters = self._summary_counters()
         graph = self.get_pipeline_graph()
 
         info = {
@@ -226,6 +243,7 @@ class Stage(object):
         res = {
             "info": info,
             "stats": stats,
+            "counters": counters,
             'graph': graph
         }
         return res
@@ -1101,8 +1119,10 @@ class MesosScheduler(DAGScheduler):
             stage_scope = StageInfo.idToRDDNode[tasks[0].rdd.id].scope.api_callsite
         except:
             pass
+
         stage = self.idToStage[tasks[0].stage_id]
         stage.num_try += 1
+        stage.taskcounters.append(taskset.counter)
         logger.info(
             'Got taskset %s with %d tasks for stage: %d '
             'at scope[%s] and rdd:%s',
