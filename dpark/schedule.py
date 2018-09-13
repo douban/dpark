@@ -161,7 +161,8 @@ class Stage(object):
     def _fmt_node(self, stage_id, pipeline_id):
         if stage_id == -1:
             stage_id = self.id
-        rdds = [(rdd.__class__.__name__, rdd.id, rdd.scope.id) for rdd in self.pipelines[pipeline_id]]
+        rdds = [{"rdd_name": rdd.__class__.__name__, "rdd_id": rdd.id, "scope_id": rdd.scope.id}
+                for rdd in self.pipelines[pipeline_id]]
         n = {
             KW_TYPE: "stage",
             KW_ID: self.get_node_id(stage_id, pipeline_id),
