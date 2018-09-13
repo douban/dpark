@@ -108,7 +108,10 @@ class ResultTask(DAGTask):
 
     def _run(self, task_id):
         logger.debug("run task %s: %s", task_id, self)
-        return self.func(self.rdd.iterator(self.split))
+        t0 = time.time()
+        res = self.func(self.rdd.iterator(self.split))
+        env.task_stats.secs_all = time.time() - t0
+        return res
 
     def preferredLocations(self):
         return self.locs
