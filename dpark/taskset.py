@@ -30,6 +30,23 @@ MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
 
 
+class TaskCounter(object):
+
+    def __init__(self, n):
+        self.n = n
+        self.launched = 0
+        self.finished = 0
+
+        self.oom = 0
+        self.run_timeout = 0
+        self.staging_timeout = 0
+        self.fail = 0
+
+    @property
+    def running(self):
+        return self.launched - self.finished
+
+
 class TaskSet(object):
     """ A TaskSet runs a set of tasks of a Stage with retry.
 
@@ -60,9 +77,8 @@ class TaskSet(object):
         self.numFailures = [0] * len(tasks)
         self.running_hosts = [[] for _ in range(len(tasks))]
         self.tidToIndex = {}
-        self.numTasks = len(tasks)
-        self.tasksLaunched = 0
-        self.tasksFinished = 0
+        self.counter = TaskCounter(len(tasks))
+
         self.total_time_used = 0
 
         self.lastPreferredLaunchTime = time.time()
@@ -86,11 +102,12 @@ class TaskSet(object):
         self.mem_digest = TDigest()
         self.mem90 = 0  # TODO: move to stage
 
+
     @property
     def taskEverageTime(self):
-        if not self.tasksFinished:
+        if not self.counter.finished:
             return 10
-        return max(self.total_time_used / self.tasksFinished, 5)
+        return max(self.total_time_used / self.counter.finished, 5)
 
     def _addPendingTask(self, i):
         loc = self.tasks[i].preferredLocations()
@@ -172,7 +189,7 @@ class TaskSet(object):
                          t.try_id, o.hostname)
             self.tidToIndex[t.id] = task_idx
             self.launched[task_idx] = True
-            self.tasksLaunched += 1
+            self.counter.launched += 1
             self.running_hosts[task_idx].append(o.hostname)
             host_set = set(self.tasks[task_idx].preferredLocations())
             if o.hostname in host_set:
@@ -197,7 +214,7 @@ class TaskSet(object):
         # when checking, task been masked as not launched
         if not self.launched[i]:
             self.launched[i] = True
-            self.tasksLaunched += 1
+            self.counter.launched += 1
 
         if status == TaskState.running:
             task.start = time.time()
@@ -208,23 +225,22 @@ class TaskSet(object):
         else:  # failed, killed, lost, error
             self._task_lost(task_id, num_try, status, reason, message, exception=result)
 
-
     def progress(self, ending=''):
-        n = self.numTasks
-        ratio = self.tasksFinished * 1. / n
+        n = self.counter.n
+        ratio = self.counter.finished * 1. / n
         bar = make_progress_bar(ratio)
-        if self.tasksFinished:
+        if self.counter.finished:
             elasped = time.time() - self.start
-            avg = self.total_time_used / self.tasksFinished
-            eta = (n - self.tasksFinished) * elasped / self.tasksFinished
+            avg = self.total_time_used / self.counter.finished
+            eta = (n - self.counter.finished) * elasped / self.counter.finished
             m, s = divmod(int(eta), 60)
             h, m = divmod(m, 60)
 
             tmpl = 'taskset:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:% 2d:%02d:%02d AVG:%.1fs\x1b[K%s'
-            fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
+            fmt = tmpl.format(width=int(math.log10(self.counter.n)) + 1)
 
             msg = fmt % (
-                self.id, bar, ratio * 100, self.tasksFinished, n, h, m, s,
+                self.id, bar, ratio * 100, self.counter.finished, n, h, m, s,
                 avg, ending
             )
             msg = msg.ljust(80)
@@ -232,16 +248,16 @@ class TaskSet(object):
         else:
 
             tmpl = 'taskset:%4s {{GREEN}}%s{{RESET}}%5.1f%% (% {width}s/% {width}s) ETA:--:--:-- AVG:N/A\x1b[K%s'
-            fmt = tmpl.format(width=int(math.log10(self.numTasks)) + 1)
+            fmt = tmpl.format(width=int(math.log10(self.counter.n)) + 1)
 
-            msg = fmt % (self.id, bar, ratio * 100, self.tasksFinished, n, ending)
+            msg = fmt % (self.id, bar, ratio * 100, self.counter.finished, n, ending)
             msg = msg.ljust(80)
             logger.info(msg)
 
     def _task_finished(self, task_id, num_try, result, update, stats):
         i = self.tidToIndex[task_id]
         self.finished[i] = True
-        self.tasksFinished += 1
+        self.counter.finished += 1
         task = self.tasks[i]
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
@@ -249,7 +265,7 @@ class TaskSet(object):
         self.total_time_used += task.time_used
         if getattr(self.sched, 'color', False):
             title = 'taskset %s: task %s finished in %.1fs (%d/%d)     ' % (
-                self.id, task_id, task.time_used, self.tasksFinished, self.numTasks)
+                self.id, task_id, task.time_used, self.counter.finished, self.counter.n)
             msg = '\x1b]2;%s\x07\x1b[1A' % title
             logger.info(msg)
 
@@ -262,7 +278,7 @@ class TaskSet(object):
             if t + 1 != num_try:
                 self.sched.killTask(task.id, t + 1)
 
-        if self.tasksFinished == self.numTasks:
+        if self.counter.finished == self.counter.n:
             ts = [t.time_used for t in self.tasks]
             num_try = [t.num_try for t in self.tasks]
             elasped = time.time() - self.start
@@ -284,14 +300,14 @@ class TaskSet(object):
             # cancel tasks
             if not self.finished[index]:
                 self.finished[index] = True
-                self.tasksFinished += 1
+                self.counter.finished += 1
             for i in range(len(self.finished)):
                 if not self.launched[i]:
                     self.launched[i] = True
-                    self.tasksLaunched += 1
+                    self.counter.launched += 1
                     self.finished[i] = True
-                    self.tasksFinished += 1
-            if self.tasksFinished == self.numTasks:
+                    self.counter.finished += 1
+            if self.counter.finished == self.counter.n:
                 self.sched.tasksetFinished(self)  # cancel taskset
             return
 
@@ -300,6 +316,7 @@ class TaskSet(object):
             if (task.id, num_try) in self.id_retry_host else task.host
 
         if reason in (TaskEndReason.task_oom, TaskEndReason.mesos_cgroup_oom):
+            self.counter.oom += 1
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
             logger.info("task %s oom, enlarge memory limit to %d, origin %d", task.id, task.mem, task.rdd.mem)
 
@@ -331,6 +348,7 @@ class TaskSet(object):
         elif status == TaskState.lost:
             logger.warning('Lost Task %s try %s at %s, reason %s',
                            task_id, num_try, task.host, reason)
+        self.counter.fail += 1
 
         self.numFailures[index] += 1
         if self.numFailures[index] > MAX_TASK_FAILURES:
@@ -339,10 +357,10 @@ class TaskSet(object):
             self._abort('Task %s failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
         self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
-        if self.tasksLaunched == self.numTasks:
+        if self.counter.launched == self.counter.n:
             self.sched.requestMoreResources()
         self.running_hosts[index] = []
-        self.tasksLaunched -= 1
+        self.counter.launched -= 1
 
     def check_task_timeout(self):
         now = time.time()
@@ -351,24 +369,26 @@ class TaskSet(object):
         self.last_check = now
 
         n = self.launched.count(True)
-        if n != self.tasksLaunched:
+        if n != self.counter.launched:
             logger.warning(
-                'bug: tasksLaunched(%d) != %d',
-                self.tasksLaunched,
+                'bug: counter.launched(%d) != %d',
+                self.counter.launched,
                 n)
-            self.tasksLaunched = n
+            self.counter.launched = n
 
-        for i in range(self.numTasks):
+        for i in range(self.counter.n):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TaskState.staging
                     and task.start + WAIT_FOR_RUNNING < now):
                 logger.warning('task %s timeout %.1f (at %s), re-assign it',
                                task.id, now - task.start, task.host)
-                self.launched[i] = False
-                self.tasksLaunched -= 1
+                self.counter.staging_timeout += 1
 
-        if self.tasksFinished > self.numTasks * 2.0 / 3:
-            scale = 1.0 * self.numTasks / self.tasksFinished
+                self.launched[i] = False
+                self.counter.launched -= 1
+
+        if self.counter.finished > self.counter.n * 2.0 / 3:
+            scale = 1.0 * self.counter.n / self.counter.finished
             avg = max(self.taskEverageTime, 10)
             tasks = sorted((task.start, i, task)
                            for i, task in enumerate(self.tasks)
@@ -377,20 +397,21 @@ class TaskSet(object):
                 time_used = now - task.start
                 if time_used > avg * (2 ** task.num_try) * scale:
                     # re-submit timeout task
+                    self.counter.run_timeout += 1
                     if task.num_try <= MAX_TASK_FAILURES:
                         logger.info('re-submit task %s for timeout %.1f, '
                                     'try %d', task.id, time_used, task.num_try)
                         task.time_used += time_used
                         task.start = now
                         self.launched[idx] = False
-                        self.tasksLaunched -= 1
+                        self.counter.launched -= 1
                     else:
                         logger.error('task %s timeout, aborting taskset %s',
                                      task, self.id)
                         self._abort('task %s timeout' % task)
                 else:
                     break
-        return self.tasksLaunched < n
+        return self.counter.launched < n
 
     def _abort(self, message):
         logger.error('abort the taskset: %s', message)

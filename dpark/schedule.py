@@ -1122,7 +1122,7 @@ class MesosScheduler(DAGScheduler):
     def resourceOffers(self, driver, offers):
         rf = Dict()
         now = time.time()
-        if not self.active_tasksets or (all(taskset.tasksLaunched == taskset.numTasks
+        if not self.active_tasksets or (all(taskset.counter.launched == taskset.counter.n
                                             for taskset in self.active_tasksets.values())
                                         and self.last_task_launch_time is not None
                                         and self.last_task_launch_time + conf.TIME_TO_SUPPRESS < now):
@@ -1333,7 +1333,7 @@ class MesosScheduler(DAGScheduler):
 
         if state == TaskState.running:
             taskset.statusUpdate(ttid.task_id, ttid.task_try, state)
-            if taskset.tasksFinished == 0:
+            if taskset.counter.finished == 0:
                 plot_progresses()
             return
 
