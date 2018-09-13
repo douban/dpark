@@ -65,7 +65,6 @@ class Stage(object):
         self.task_stats = [[] for _ in range(self.numPartitions)]
         self.submit_time = 0
         self.finish_time = 0
-        self.root_rdd = self._get_root_rdd()
         self.pipelines = pipelines
         self.pipeline_edges = pipeline_edges
 
@@ -114,19 +113,6 @@ class Stage(object):
     def finish(self):
         if not self.finish_time:
             self.finish_time = time.time()
-
-    def _get_root_rdd(self):
-        roots = []
-
-        def _(r):
-            if isinstance(r, (ShuffledRDD, CoGroupedRDD)) or not r.dependencies:
-                roots.append(r)
-                return False
-            return True
-
-        walk_dependencies(self.rdd, node_func=_)
-        # TODO: maybe multi roots, e.g. union().mergeSplits()
-        return roots[0]
 
     def _summary_stats(self):
         stats = [x[-1] for x in self.task_stats if x]
