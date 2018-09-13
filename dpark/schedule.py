@@ -42,11 +42,14 @@ MAX_IDLE_TIME = 60 * 30
 
 
 KW_NODES = "nodes"
-KW_EDGES = "egdes"
+KW_ID = "id"  # uniq, use in edges
+KW_LABEL = "label"  # short name
+KW_DETAIL = "detail"  # show when hover
+KW_TYPE = "type"
+
+KW_EDGES = "edges"
 KW_SRC = "source"
 KW_DST = "target"
-KW_ID  = "id"
-KW_NAME = "name"
 
 
 class Stage(object):
@@ -154,16 +157,17 @@ class Stage(object):
             stage_id = self.id
         rdds = [(rdd.__class__.__name__, rdd.id, rdd.scope.id) for rdd in self.pipelines[pipeline_id]]
         n = {
-            KW_ID: self._get_node_id(stage_id, pipeline_id),
-            KW_NAME: str(stage_id),
-            "rdds": rdds,
+            KW_TYPE: "stage",
+            KW_ID: self.get_node_id(stage_id, pipeline_id),
+            KW_LABEL: str(stage_id),
+            "rdds": rdds
         }
         return n
 
     def _fmt_edge(self, e):
         src, dst = [self._get_node_id(*n) for n in e]
         return {
-            KW_ID: "{}_{}".format(src, dst),
+            # KW_ID: "{}_{}".format(src, dst),
             KW_SRC: src,
             KW_DST: dst
         }
@@ -451,7 +455,8 @@ class DAGScheduler(Scheduler):
                  for ((parent, child), count) in edges0.items()]
 
         for n in nodes0:
-            nodes.append({KW_ID: n, KW_NAME: Scope.scopes_by_id[n].api_callsite})
+            scope = Scope.scopes_by_id[n]
+            nodes.append({KW_ID: n, KW_LABEL: scope.api, KW_DETAIL: scope.api_callsite})
 
         return {KW_NODES: nodes, KW_EDGES: edges}
 
