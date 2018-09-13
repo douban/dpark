@@ -59,8 +59,10 @@ class Stage(object):
         self.num_try = 0
         self.rdd = rdd
         self.shuffleDep = shuffleDep
+        self.is_final = (shuffleDep is None)
         self.parents = parents
         self.numPartitions = len(rdd)
+        self.num_finished = 0  # for final stage
         self.outputLocs = [[] for _ in range(self.numPartitions)]
         self.task_stats = [[] for _ in range(self.numPartitions)]
         self.submit_time = 0
@@ -74,6 +76,16 @@ class Stage(object):
     def __getstate__(self):
         raise Exception('should not pickle stage')
 
+    def __len__(self):
+        return self.numPartitions
+
+    nextId = 0
+
+    @classmethod
+    def new_id(cls):
+        cls.nextId += 1
+        return cls.nextId
+
     @property
     def try_id(self):
         return TTID.make_taskset_id(self.id, self.num_try + 1)  # incr num_try After create TaskSet
@@ -83,6 +95,20 @@ class Stage(object):
         if not self.parents and self.shuffleDep is None:
             return True
         return all(self.outputLocs)
+
+    @property
+    def num_task_finished(self):
+        if self.is_final:
+            return self.num_finished
+        else:
+            return len([i for i in self.outputLocs if i])
+
+    @property
+    def num_task_running(self):
+        if self.taskcounters:
+            return self.taskcounters[-1].running
+        else:
+            return 0
 
     def addOutputLoc(self, partition, host):
         self.outputLocs[partition].append(host)
@@ -102,13 +128,6 @@ class Stage(object):
                    "postpone resubmit until %d secs later "
                    "to wait for futher fetch failure")
             logger.info(msg, self, host, RESUBMIT_TIMEOUT)
-
-    nextId = 0
-
-    @classmethod
-    def new_id(cls):
-        cls.nextId += 1
-        return cls.nextId
 
     def finish(self):
         if not self.finish_time:
@@ -471,7 +490,7 @@ class DAGScheduler(Scheduler):
         results = [None] * numOutputParts
         finished = [None] * numOutputParts
         last_finished = 0
-        num_finished = 0
+        finalStage.num_finished = 0
 
         waiting = set()
         running = set()
@@ -551,7 +570,7 @@ class DAGScheduler(Scheduler):
 
         submitStage(finalStage)
 
-        while num_finished != numOutputParts:
+        while finalStage.num_finished != numOutputParts:
             try:
                 evt = self.completionEvents.get(False)
             except queue.Empty:
@@ -583,7 +602,7 @@ class DAGScheduler(Scheduler):
                 stage.task_stats[task.partition].append(evt.stats)
                 if isinstance(task, ResultTask):
                     finished[task.outputId] = True
-                    num_finished += 1
+                    finalStage.num_finished += 1
                     results[task.outputId] = evt.result
 
                     while last_finished < numOutputParts and finished[last_finished]:
