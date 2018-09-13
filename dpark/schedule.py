@@ -54,7 +54,12 @@ KW_DST = "target"
 
 class Stage(object):
 
-    def __init__(self, rdd, shuffleDep, parents, pipelines, pipeline_edges):
+    def __init__(self, rdd, shuffleDep, parents, pipelines, pipeline_edges, rdd_pipelines):
+        """
+
+        :param rdd: output rdd of this stage
+        :param shuffleDep: for mapOutputStage, determine how computing result will be aggregated, partitioned
+        """
         self.id = self.new_id()
         self.num_try = 0
         self.rdd = rdd
@@ -70,6 +75,7 @@ class Stage(object):
         self.finish_time = 0
         self.pipelines = pipelines
         self.pipeline_edges = pipeline_edges
+        self.rdd_pipelines = rdd_pipelines
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -153,7 +159,7 @@ class Stage(object):
                     d[attr] = _summary(list([getattr(s, attr) for s in stats]))
         return d
 
-    def _get_node_id(self, stage_id, pipeline_id):
+    def get_node_id(self, stage_id, pipeline_id):
         if stage_id == -1:
             stage_id = self.id
         return "PIPELINE_{}.{}".format(stage_id, pipeline_id)
@@ -172,7 +178,7 @@ class Stage(object):
         return n
 
     def _fmt_edge(self, e):
-        src, dst = [self._get_node_id(*n) for n in e]
+        src, dst = [self.get_node_id(*n) for n in e]
         return {
             # KW_ID: "{}_{}".format(src, dst),
             KW_SRC: src,
@@ -234,7 +240,7 @@ class Stage(object):
             'id': self.id,
             'parents': [p.id for p in self.parents],
             'output_rdd': self.rdd.__class__.__name__,
-            'output_pipeline': self._get_node_id(self.id, self.rdd.id),
+            'output_pipeline': self.get_node_id(self.id, self.rdd.id),
             'api_callsite': self.rdd.scope.api_callsite,
             'start_time': self.submit_time,
             'finish_time': self.finish_time,
@@ -362,7 +368,7 @@ class DAGScheduler(Scheduler):
         pipelines = {output_rdd.id: [output_rdd]}
         pipeline_edges = []
 
-        rdd_pipelines = {output_rdd.id: output_rdd.id}  # tmp
+        rdd_pipelines = {output_rdd.id: output_rdd.id}
 
         to_visit = [output_rdd]
         visited = set()
@@ -418,7 +424,7 @@ class DAGScheduler(Scheduler):
                     rdd_pipelines[did] = did
                     pipeline_edges.append(((-1, did), (-1, my_pipeline_id)))  # -1 : current_stage
 
-        stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, pipeline_edges)
+        stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, pipeline_edges, rdd_pipelines)
         self.idToStage[stage.id] = stage
         logger.debug('new stage: %s', stage)
         return stage
@@ -684,17 +690,17 @@ class DAGScheduler(Scheduler):
         onStageFinished(finalStage)
 
         if not self.is_dstream:
-            self._keep_stats(finalRdd)
+            self._keep_stats(finalRdd, finalStage)
         assert all(finished)
         return
 
     def getPreferredLocs(self, rdd, partition):
         return rdd.preferredLocations(rdd.splits[partition])
 
-    def _keep_stats(self, final_rdd):
+    def _keep_stats(self, final_rdd, final_stage):
         try:
 
-            stats = self._get_stats(final_rdd)
+            stats = self._get_stats(final_rdd, final_stage)
             self.jobstats.append(stats)
             if self.loghub_dir:
                 self._dump_stats(stats)
@@ -708,26 +714,46 @@ class DAGScheduler(Scheduler):
         with open(path, 'w') as f:
             json.dump(stats, f, indent=4)
 
-    def _get_stats(self, final_rdd):
-        callsite = Scope.get("runJob").api_callsite
+    def _get_stats(self, final_rdd, final_stage):
         call_graph = self.fmt_call_graph(self.get_call_graph(final_rdd))
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
         stages = sorted([s.get_prof() for s in self.idToStage.values()],
                         key=lambda x: x['info']['start_time'])
+
+        sink_scope = Scope.get(None)
+        sink_id = "SINK_{}_{}".format(self.id, self.runJobTimes)
+        sink_node = {
+            KW_TYPE: "sink",
+            KW_ID: sink_id,
+            KW_LABEL: sink_scope.name,
+            "call_id": sink_scope.api_callsite_id
+        }
+
+        sink_edge = {
+            "source": final_stage.get_node_id(final_stage.id, final_stage.rdd_pipelines[final_rdd.id]),
+            "target": sink_id,
+        }
         run = {'framework': self.frameworkId,
                'scheduler': self.id,
                "run": self.runJobTimes,
-               'api_callsite': callsite,
+               'sink': {
+                   "call_site": sink_scope.api_callsite,
+                   "node": sink_node,
+                   "edges": sink_edge,
+               },
                'stages': stages,
                "call_graph": call_graph,
                }
 
-        ret = {'script': {
-            'cmd': cmd,
-            'env': {'PWD': os.getcwd()}},
-            'run': run}
+        ret = {
+            'script': {
+                'cmd': cmd,
+                'env': {'PWD': os.getcwd()}
+            },
+            'run': run
+        }
         return ret
 
 
@@ -1412,7 +1438,6 @@ class MesosScheduler(DAGScheduler):
             for mesos_task_id in taskset.ttids:
                 self.driver.killTask(Dict(value=mesos_task_id))
             del self.active_tasksets[taskset.id]
-
             if not self.active_tasksets:
                 self.agent_id_to_ttids.clear()
 
