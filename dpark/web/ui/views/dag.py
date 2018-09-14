@@ -77,7 +77,7 @@ def trans(runs):
                 if n['id'] in stage_nodes:
                     continue
                 rdds = n['rdds']
-                n['rdds'] = list(reversed([{"k": rdd["rdd_name"], "v": str(rdd["scope_id"])}
+                n['rdds'] = list(reversed([{"k": rdd["rdd_name"], "v": str(rdd["api_callsite_id"])}
                                            for rdd in rdds]))
                 if n['id'] == s['info']['output_pipeline']:
                     p = n['prof'] = {
