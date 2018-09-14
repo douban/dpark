@@ -255,6 +255,20 @@ class Stage(object):
         }
         return res
 
+    def get_tree_stages(self):
+        stages = []
+        to_visit = [self]
+        seen = set()
+        while to_visit:
+            s = to_visit.pop()
+            stages.append(s)
+            for ss in s.parents:
+                if ss.id not in seen:
+                    to_visit.append(ss)
+                    seen.add(ss.id)
+
+        return stages
+
 
 class Scheduler:
 
@@ -719,7 +733,7 @@ class DAGScheduler(Scheduler):
         cmd = '[dpark] ' + \
               os.path.abspath(sys.argv[0]) + ' ' + ' '.join(sys.argv[1:])
 
-        stages = sorted([s.get_prof() for s in self.idToStage.values()],
+        stages = sorted([s.get_prof() for s in final_stage.get_tree_stages()],
                         key=lambda x: x['info']['start_time'])
 
         sink_scope = Scope.get(None)
