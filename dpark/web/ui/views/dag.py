@@ -1,3 +1,14 @@
+"""
+TODO:
+
+- show size/time info for input/output/shuffle.
+- show broadcast cache, checkpoint.
+- show src file content on click (in a new tab).
+- Try to get failed job/stage dag.
+- Make struct of .prof more stable, decouple it from view.
+
+"""
+
 import os.path
 import glob
 import json
