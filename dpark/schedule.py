@@ -499,7 +499,7 @@ class DAGScheduler(Scheduler):
                  for ((parent, child), count) in edges0.items()]
 
         for n in nodes0:
-            scope = Scope.scopes_by_id[n]
+            scope = Scope.scopes_by_api_callsite_id[n][0]
             nodes.append({KW_ID: n, KW_LABEL: scope.api, KW_DETAIL: scope.api_callsite})
 
         return {KW_NODES: nodes, KW_EDGES: edges}

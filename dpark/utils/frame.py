@@ -32,6 +32,8 @@ class Scope(object):
 
     scopes_by_id = {}
     scopes_by_stackhash = {}
+    scopes_by_api_callsite_id = {}
+
     api_callsites = {}
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
@@ -50,6 +52,9 @@ class Scope(object):
         self.api_callsite_id = self.api_callsites.get(api_callsite)
         if self.api_callsite_id is None:
             self.api_callsite_id = self.api_callsites[api_callsite] = len(self.api_callsites)
+            self.scopes_by_api_callsite_id[self.api_callsite_id] = [self]
+        else:
+            self.scopes_by_api_callsite_id[self.api_callsite_id].append(self)
         # print(self.id, self.api_callsite_id, api_callsite)
 
     @classmethod
