@@ -1,3 +1,6 @@
+#!/usr/bin/env python
+
+
 from argparse import ArgumentParser
 import sys
 import json
