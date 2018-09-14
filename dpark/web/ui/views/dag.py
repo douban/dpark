@@ -66,14 +66,16 @@ def summary_prof(p):
 
 
 def trans(runs):
-    api_nodes = []
-    api_edges = []
-    stage_nodes = []
-    stage_edges = []
+    api_nodes = {}
+    api_edges = {}
+    stage_nodes = {}
+    stage_edges = {}
     for r in runs:
         r = r["run"]
         for s in r['stages']:
             for n in s['graph']['nodes']:
+                if n['id'] in stage_nodes:
+                    continue
                 rdds = n['rdds']
                 n['rdds'] = list(reversed([{"k": rdd["rdd_name"], "v": str(rdd["scope_id"])}
                                            for rdd in rdds]))
@@ -88,31 +90,36 @@ def trans(runs):
                 else:
                     n['is_output'] = False
 
-                stage_nodes.append(n)
+                stage_nodes[n['id']] = n
             for e in s['graph']['edges']:
-                e['IO'] = "1M"
-                stage_edges.append(e)
+                id_ = e['source'], e['target']
+                if id_ not in stage_edges:
+                    e['IO'] = "1M"
+                    stage_edges[id_] = e
         sink_node = r["sink"]['node']
         sink_node['call_id'] = str(sink_node['call_id'])
-        stage_nodes.append(sink_node)
-        stage_edges.append(r['sink']['edges'])
+        stage_nodes[sink_node['id']] = sink_node
+        sink_edge = r['sink']['edges']
+        stage_edges[(sink_edge['source'], sink_edge['target'])] = sink_edge
 
         c = r['call_graph']
         for n in c['nodes']:
-            n['id'] = n['call_id'] = str(n['id'])
-            api_nodes.append(n)
+            id_ = n['id'] = n['call_id'] = str(n['id'])
+            api_nodes[id_] = n
         for e in c['edges']:
-            e['source'] = str(e['source'])
-            e['target'] = str(e['target'])
-            api_edges.append(e)
+            s, r = str(e['source']), str(e['target'])
+            if (s, r) not in api_edges:
+                e['source'] = s
+                e['target'] = r
+                api_edges[(s, r)] = e
     res = {
         "stages": {
-            "nodes": stage_nodes,
-            "edges": stage_edges,
+            "nodes": list(stage_nodes.values()),
+            "edges": list(stage_edges.values()),
         },
         "calls": {
-              "nodes": api_nodes,
-              "edges": api_edges,
+              "nodes": list(api_nodes.values()),
+              "edges": list(api_edges.values()),
         }
     }
 
