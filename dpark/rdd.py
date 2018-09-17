@@ -91,6 +91,7 @@ class RDD(object):
         self.scope = Scope.get(self.__class__.__name__)
         self.rddconf = None
         self.lineage = self.scope.stackhash
+        self._dep_lineage_counts = None  # map "dep rdd id with uniq lineages" to their counts
 
     nextId = 0
 
@@ -105,9 +106,20 @@ class RDD(object):
         d.pop('_dependencies', None)
         d.pop('_splits', None)
         d.pop('_preferred_locs', None)
+        d.pop('_dep_lineage_counts', None)
         d.pop('ctx', None)
         d['_split_size'] = len(self.splits)
         return d
+
+    @property
+    def dep_lineage_counts(self):
+        if self._dep_lineage_counts is None:
+            lineages = collections.defaultdict(list)
+            for dep in self._dependencies:
+                rdd = dep.rdd
+                lineages[rdd.lineage].append(rdd)
+            self._dep_lineage_counts = dict([(rs[0].id, len(rs)) for rs in lineages.values()])
+        return self._dep_lineage_counts
 
     def __len__(self):
         if hasattr(self, '_split_size'):
@@ -1384,13 +1396,6 @@ class UnionRDD(RDD):
         self._preferred_locs = {}
         for split in self._splits:
             self._preferred_locs[split] = split.rdd.preferredLocations(split.split)
-
-        lineages = {}
-        for rdd in rdds:
-            if rdd.lineage not in lineages:
-                lineages[rdd.lineage] = rdd
-        self.lineages = list(lineages.values())
-        self.lineage_ids = set([r.id for r in self.lineages])
 
     def compute(self, split):
         return split.rdd.iterator(split.split)

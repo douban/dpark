@@ -95,6 +95,7 @@ def trans(runs):
                 id_ = e['source'], e['target']
                 if id_ not in stage_edges:
                     e['IO'] = "1M"
+                    e['info'] = ",".join(["{}={}".format(str(k), str(v)) for k, v in e["info"].items()])
                     stage_edges[id_] = e
         sink_node = r["sink"]['node']
         sink_node['call_id'] = str(sink_node['call_id'])

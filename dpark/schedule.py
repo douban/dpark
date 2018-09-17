@@ -21,7 +21,6 @@ from dpark.accumulator import Accumulator
 from dpark.dependency import ShuffleDependency
 from dpark.env import env
 from dpark.taskset import TaskSet
-from dpark.rdd import ShuffledRDD, CoGroupedRDD
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask, TTID, TaskState, TaskEndReason
 from dpark.hostatus import TaskHostManager
@@ -178,16 +177,22 @@ class Stage(object):
         return n
 
     def _fmt_edge(self, e):
+        e, nrdd = e
         src, dst = [self.get_node_id(*n) for n in e]
+        info = {}
+        if nrdd > 1:
+            info['#rdd'] = nrdd
+
         return {
             # KW_ID: "{}_{}".format(src, dst),
             KW_SRC: src,
-            KW_DST: dst
+            KW_DST: dst,
+            "info": info
         }
 
     def get_pipeline_graph(self):
         nodes = [self._fmt_node(self.id, pipeline_id) for pipeline_id in self.pipelines.keys()]
-        edges = [self._fmt_edge(e) for e in self.pipeline_edges]
+        edges = [self._fmt_edge(e) for e in six.iteritems(self.pipeline_edges)]
         g = {KW_NODES: nodes, KW_EDGES: edges}
         return g
 
@@ -380,7 +385,7 @@ class DAGScheduler(Scheduler):
         parent_stages = set()
 
         pipelines = {output_rdd.id: [output_rdd]}
-        pipeline_edges = []
+        pipeline_edges = Counter()
 
         rdd_pipelines = {output_rdd.id: output_rdd.id}
 
@@ -410,16 +415,15 @@ class DAGScheduler(Scheduler):
                     parent_stages.add(stage)
                     dep_stages.append(stage)
                     if my_pipeline_id is not None:
-                        pipeline_edges.append(((stage.id, stage.rdd.id), (-1, my_pipeline_id)))  # -1 : current_stage
+                        pipeline_edges[(stage.id, stage.rdd.id), (-1, my_pipeline_id)] += 1  # -1 : current_stage
                     else:
                         logger.warning("miss pipeline: {} {}".format(r.scope.key, dep.rdd.scope.key))
                 else:
                     to_visit.append(dep.rdd)
-                    from dpark.rdd import UnionRDD
-                    if r.id in dep_filter or (isinstance(r, UnionRDD) and (dep.rdd.id not in r.lineage_ids)):
-                        dep_filter.add(dep.rdd.id)
-                    else:
+                    if r.id not in dep_filter and dep.rdd.id in r.dep_lineage_counts:
                         dep_rdds.append(dep.rdd)
+                    else:
+                        dep_filter.add(dep.rdd.id)
 
             if my_pipeline is None:
                 continue
@@ -434,9 +438,10 @@ class DAGScheduler(Scheduler):
             else:
                 for dep_rdd in dep_rdds:
                     did = dep_rdd.id
+                    nrdd = r.dep_lineage_counts[did]
                     pipelines[did] = [dep_rdd]  # create a new pipeline/branch
                     rdd_pipelines[did] = did
-                    pipeline_edges.append(((-1, did), (-1, my_pipeline_id)))  # -1 : current_stage
+                    pipeline_edges[((-1, did), (-1, my_pipeline_id))] = nrdd  # -1 : current_stage
 
         stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, pipeline_edges, rdd_pipelines)
         self.idToStage[stage.id] = stage

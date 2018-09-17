@@ -8,7 +8,7 @@
     <script src="https://gw.alipayobjects.com/os/antv/assets/g6-plugins/1.0.9/g6-plugins.min.js"></script>
 
     {#    <script type="text/javascript" src="../static/js/stage.js"></script>#}
-    <script src="{{ url_for('static', filename='js/stage.js', version='1205sff33332fs1') }}"></script>
+    <script src="{{ url_for('static', filename='js/stage.js', version='1') }}"></script>
 
     <style type="text/css">
         .row {
@@ -81,7 +81,7 @@
         "label": "<stage_id>",
         "rdds": [
             {
-                "k": "<RDDName>",
+                "k": "<RDDName>[#split](#rdd)",
                 "v": "<caller id>"
             }
         ],
@@ -187,7 +187,7 @@
         var calls = data.calls;
         call_net.source(calls.nodes, calls.edges);
         call_net.node().label("label").shape("call").color('gray');
-
+        call_net.edge().shape('arrow');
         call_net.on('itemclick', onClickCall);
 
         call_net.render();
@@ -214,7 +214,7 @@
                 return "call"
             }
         });
-        stages_net.edge().label('io').shape('arrow');
+        stages_net.edge().label('info').shape('arrow');
         stages_net.render();
     }
 
