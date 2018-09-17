@@ -88,7 +88,7 @@ class RDD(object):
         self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
-        self.scope = Scope.get(self.__class__.__name__,)
+        self.scope = Scope.get(self.__class__.__name__)
         self.rddconf = None
         self.lineage = self.scope.stackhash
 
@@ -149,6 +149,11 @@ class RDD(object):
     @property
     def partitioner(self):
         return self._partitioner
+
+
+    @property
+    def ui_label(self):
+        return "{}[{}]".format(self.__class__.__name__, len(self))
 
     def cache(self):
         self.shouldCache = True
@@ -1362,6 +1367,7 @@ class UnionSplit(Split):
 
 
 class UnionRDD(RDD):
+
     def __init__(self, ctx, rdds):
         RDD.__init__(self, ctx)
         if rdds:
@@ -1388,6 +1394,10 @@ class UnionRDD(RDD):
 
     def compute(self, split):
         return split.rdd.iterator(split.split)
+
+    @property
+    def ui_label(self):
+        return "{}[{}]({})".format(self.__class__.__name__, len(self), len(self._dependencies))
 
 
 class SliceRDD(RDD):
