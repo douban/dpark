@@ -25,6 +25,11 @@ MOOSEFS_MOUNT_POINTS = {
 # dup log to $LOGHUB/2012/03/04/05/06/$FRAMEWORK_ID.log
 LOGHUB = None
 
+ENABLE_ES_LOGHUB = False
+ES_HOST = None
+ES_INDEX = None
+ES_TYPE = None
+
 # consistant dir cache in client, need patched mfsmaster
 MOOSEFS_DIR_CACHE = False
 

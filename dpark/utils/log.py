@@ -1,6 +1,8 @@
 import os
 import sys
+import json
 import logging
+import logging.handlers
 import re
 from datetime import datetime
 
@@ -132,7 +134,7 @@ def add_loghub(framework_id):
     logger = get_logger('dpark')
     try:
         import dpark
-        from dpark.conf import LOGHUB
+        from dpark.conf import LOGHUB, ENABLE_ES_LOGHUB, ES_HOST, ES_INDEX, ES_TYPE
         from dpark.utils import getuser
         date_str = datetime.now().strftime("%Y/%m/%d/%H")
         date_dir_path = os.path.join(LOGHUB, date_str)
@@ -162,6 +164,12 @@ def add_loghub(framework_id):
             logger.exception("fail to write loghub: %s", log_path)
             return
 
+        if ENABLE_ES_LOGHUB:
+            es_handler = ElasticSearchHandler(ES_HOST, ES_INDEX, ES_TYPE,
+                                              infos, log_path)
+            es_handler.setLevel(logging.WARNING)
+            logger.addHandler(es_handler)
+
         file_handler = logging.FileHandler(filename=log_path)
         file_handler.setFormatter(ColoredFormatter(LOG_FORMAT, DATE_FORMAT, True))
         file_handler.setLevel(logging.INFO)
@@ -183,3 +191,39 @@ def create_logger(stream, handler=None):
         logger.addHandler(handler)
 
     return logger
+
+
+class ElasticSearchHandler(logging.handlers.HTTPHandler):
+
+    def __init__(self, host, base_index, _type, infos, loghub_file, timeout=2):
+        logging.Handler.__init__(self)
+        self.host = host
+        self.url = '/{}-{:%Y-%m-%d}/{}'.format(base_index, datetime.today(), _type)
+        self.base_record = dict(infos)
+        self.base_record['loghub_file'] = loghub_file
+        self.timeout = timeout
+
+    def mapLogRecord(self, record):
+        m = self.base_record.copy()
+        m['timestamp'] = datetime.utcnow().isoformat()
+        m['level'] = record.levelname
+        m['msg'] = record.getMessage()
+        return m
+
+    def emit(self, record):
+        try:
+            if sys.version_info[0] < 3:
+                from httplib import HTTPConnection
+            else:
+                from http.client import HTTPConnection
+            host = self.host
+            data = json.dumps(self.mapLogRecord(record))
+            h = HTTPConnection(host, timeout=self.timeout)
+            h.putrequest('POST', self.url)
+            h.putheader('Content-type', 'application/json')
+            h.putheader("Content-length", str(len(data)))
+            h.endheaders()
+            h.send(data.encode('utf-8'))
+            h.getresponse()
+        except Exception:
+            self.handleError(record)
