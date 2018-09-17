@@ -57,6 +57,12 @@ FLAG_COMPRESS = 0x00010000  # by beansdb
 
 PADDING = 256
 BEANSDB_MAX_KEY_LENGTH = 250
+BEANSDB_MAX_VALUE_LENGTH = 500 << 20
+
+
+def check_size(ksz, vsz):
+    if not (0 < ksz <= BEANSDB_MAX_KEY_LENGTH and 0 <= vsz <= BEANSDB_MAX_VALUE_LENGTH):
+        return 'bad key/value size len(key)={} len(value)={}'.format(ksz, vsz)
 
 
 def is_valid_key(key):
@@ -116,8 +122,9 @@ def read_record(f, check_crc=False):
     if len(block) < 24:  #
         return None, "EOF"
     crc, tstamp, flag, ver, ksz, vsz = struct.unpack("IiiiII", block[:24])
-    if not (0 < ksz < 255 and 0 <= vsz < (100 << 20)):
-        return None, 'bad key/value size %d %d' % (ksz, vsz)
+    err = check_size(ksz, vsz)
+    if err:
+        return None, err
 
     rsize = 24 + ksz + vsz
     if rsize & 0xff:
@@ -138,6 +145,10 @@ def read_record(f, check_crc=False):
 
 
 def write_record(f, key, flag, value, version, ts):
+    err = check_size(len(key), len(value))
+    if err:
+        raise Exception(err)
+
     header = struct.pack('IIiII', ts, flag, version, len(key), len(value))
     crc32 = binascii.crc32(header)
     crc32 = binascii.crc32(key, crc32)
@@ -356,8 +367,6 @@ class BeansdbWriter(object):
 
             hint[i].append(struct.pack("IIH", pos[i] + len(key), 1, 0) + key + b'\x00')
             pos[i] += self.write_record(f[i], key, value, now)
-            if pos[i] > (4000 << 20):
-                raise Exception("beansdb data file is larger than 4000M")
         for i in f:
             i.close()
 
