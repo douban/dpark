@@ -1203,6 +1203,9 @@ class MesosScheduler(DAGScheduler):
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
                     gpus[i] -= t.gpus
+                # wait for all tasks created prevent task's start time affect each other
+                for _, _, t in assigned_list:
+                    t.start = time.time()
 
         used = time.time() - start
         if used > 10:

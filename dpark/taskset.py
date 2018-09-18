@@ -164,7 +164,7 @@ class TaskSet(object):
         t = self.tasks[task_idx]
         if t.cpus <= cpus[i] + 1e-4 and t.mem <= mem[i] and t.gpus <= gpus[i]:
             t.status = TaskState.staging
-            t.start = time.time()
+            t.start = time.time()  # no need for online, just for tests.
             t.host = o.hostname
             t.num_try += 1
             self.id_retry_host[(t.id, t.num_try)] = o.hostname
@@ -362,8 +362,8 @@ class TaskSet(object):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TaskState.staging
                     and task.start + WAIT_FOR_RUNNING < now):
-                logger.info('task %s timeout %.1f (at %s), re-assign it',
-                            task.id, now - task.start, task.host)
+                logger.warning('task %s timeout %.1f (at %s), re-assign it',
+                               task.id, now - task.start, task.host)
                 self.launched[i] = False
                 self.tasksLaunched -= 1
 
