@@ -38,17 +38,15 @@ class Scope(object):
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
 
-    def __init__(self, name, stack, stackhash, api, api_callsite):
+    def __init__(self, name_fmt, stack, stackhash, api, api_callsite):
         self.id = Scope.gid
         Scope.gid += 1
-        if name is None:
-            name = api
-        self.name = name
+        self.name = name_fmt.format(api=api)
         self.stack = stack
         self.stackhash = stackhash
         self.api = api
         self.api_callsite = api_callsite
-        self.key = "{}@{}".format(name, self.api_callsite)
+        self.key = "{}@{}".format(api, self.api_callsite)
         self.api_callsite_id = self.api_callsites.get(api_callsite)
         if self.api_callsite_id is None:
             self.api_callsite_id = self.api_callsites[api_callsite] = len(self.api_callsites)
@@ -83,7 +81,7 @@ class Scope(object):
         return api, api_callsite
 
     @classmethod
-    def get(cls, name):
+    def get(cls, name_fmt):
         callee = inspect.currentframe()
         caller = callee.f_back
         stack = []
@@ -104,7 +102,7 @@ class Scope(object):
         scope = cls.scopes_by_stackhash.get(stackhash)
         if scope is None:
             api, api_callsite = cls.get_callsite(api_caller, api_callee)
-            scope = Scope(name, stack, stackhash, api, api_callsite)
+            scope = Scope(name_fmt, stack, stackhash, api, api_callsite)
             cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope

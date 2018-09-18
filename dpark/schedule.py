@@ -331,6 +331,7 @@ class DAGScheduler(Scheduler):
         self.loghub_dir = None
         self.jobstats = []
         self.is_dstream = False
+        self.current_scope = None
 
     nextId = 0
 
@@ -473,8 +474,7 @@ class DAGScheduler(Scheduler):
         walk_dependencies(stage.rdd, _)
         return list(missing)
 
-    @classmethod
-    def get_call_graph(cls, final_rdd):
+    def get_call_graph(self, final_rdd):
         edges = Counter()  # <parent, child > : count
         visited = set()
         to_visit = [final_rdd]
@@ -489,7 +489,7 @@ class DAGScheduler(Scheduler):
                 if dep.rdd.scope.api_callsite_id != r.scope.api_callsite_id:
                     edges[(dep.rdd.scope.api_callsite_id, r.scope.api_callsite_id)] += 1
         nodes = set()
-        run_scope = Scope.get(None)
+        run_scope = self.current_scope
         edges[(final_rdd.scope.api_callsite_id, run_scope.api_callsite_id)] = 1
         for s, d in edges.keys():
             nodes.add(s)
@@ -505,12 +505,13 @@ class DAGScheduler(Scheduler):
 
         for n in nodes0:
             scope = Scope.scopes_by_api_callsite_id[n][0]
-            nodes.append({KW_ID: n, KW_LABEL: scope.api, KW_DETAIL: scope.api_callsite})
+            nodes.append({KW_ID: n, KW_LABEL: scope.name, KW_DETAIL: scope.api_callsite})
 
         return {KW_NODES: nodes, KW_EDGES: edges}
 
     def runJob(self, finalRdd, func, partitions, allowLocal):
         self.runJobTimes += 1
+        self.current_scope = Scope.get("Job %d:{api}" % (self.runJobTimes, ))
         outputParts = list(partitions)
         numOutputParts = len(partitions)
         finalStage = self.newStage(finalRdd, None)
@@ -718,7 +719,6 @@ class DAGScheduler(Scheduler):
 
     def _keep_stats(self, final_rdd, final_stage):
         try:
-
             stats = self._get_stats(final_rdd, final_stage)
             self.jobstats.append(stats)
             if self.loghub_dir:
@@ -741,7 +741,7 @@ class DAGScheduler(Scheduler):
         stages = sorted([s.get_prof() for s in final_stage.get_tree_stages()],
                         key=lambda x: x['info']['start_time'])
 
-        sink_scope = Scope.get(None)
+        sink_scope = self.current_scope
         sink_id = "SINK_{}_{}".format(self.id, self.runJobTimes)
         sink_node = {
             KW_TYPE: "sink",
