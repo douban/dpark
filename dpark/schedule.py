@@ -69,12 +69,12 @@ class Stage(object):
         self.num_finished = 0  # for final stage
         self.outputLocs = [[] for _ in range(self.numPartitions)]
         self.task_stats = [[] for _ in range(self.numPartitions)]
-        self.taskcounters = []
+        self.taskcounters = []  # a TaskCounter object for each run/retry
         self.submit_time = 0
         self.finish_time = 0
-        self.pipelines = pipelines
-        self.pipeline_edges = pipeline_edges
-        self.rdd_pipelines = rdd_pipelines
+        self.pipelines = pipelines  # each pipeline is a list of rdds
+        self.pipeline_edges = pipeline_edges  # ((src_stage_id, src_pipeline_id), (dst_stage_id, dst_pipeline_id)): N
+        self.rdd_pipelines = rdd_pipelines  # rdd_id: pipeline_id
 
     def __str__(self):
         return '<Stage(%d) for %s>' % (self.id, self.rdd)
@@ -382,6 +382,12 @@ class DAGScheduler(Scheduler):
                 1. a pipeline start from a source RDD (TextFileRDD, Collection)
                 2. a root pipeline of a parent stage .
             Unioned rdds with same lineage  keep only one by add it to dep_rdds and assign a pipeline_id.
+
+            ---
+
+            Be careful:
+                - On one hand, logic for ui should not risk mixing newStage, the latter is much more important.
+                - On the other hand, input pipeline need to link to parent stages.
         """
         parent_stages = set()
 
