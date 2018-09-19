@@ -323,6 +323,10 @@ class DAGScheduler(Scheduler):
         self.is_dstream = False
         self.current_scope = None
 
+        self.final_lock = threading.RLock()
+        self.final_stage = None
+        self.final_rdd = None
+
     nextId = 0
 
     @classmethod
@@ -505,12 +509,27 @@ class DAGScheduler(Scheduler):
 
         return {dag.KW_NODES: nodes, dag.KW_EDGES: edges}
 
+    def get_profs(self):
+        res = [marshal.loads(j) for j in self.jobstats]
+        running = self.get_running_prof()
+        if running:
+            res.append(marshal.loads(marshal.dumps(running)))
+        return res
+
+    def get_running_prof(self):
+        if self.final_stage:
+            with self.final_lock:
+                return self._get_stats(self.final_rdd, self.final_stage)
+
     def runJob(self, finalRdd, func, partitions, allowLocal):
         self.runJobTimes += 1
         self.current_scope = Scope.get("Job %d:{api}" % (self.runJobTimes, ))
         outputParts = list(partitions)
         numOutputParts = len(partitions)
         finalStage = self.newStage(finalRdd, None)
+        with self.final_lock:
+            self.final_rdd = finalRdd
+            self.final_stage = finalStage
         try:
             from dpark.web.ui.views.rddopgraph import StageInfo
             stage_info = StageInfo()
@@ -708,6 +727,9 @@ class DAGScheduler(Scheduler):
         if not self.is_dstream:
             self._keep_stats(finalRdd, finalStage)
         assert all(finished)
+        with self.final_lock:
+            self.final_stage = None
+            self.final_rdd = None
         return
 
     def getPreferredLocs(self, rdd, partition):
@@ -716,7 +738,7 @@ class DAGScheduler(Scheduler):
     def _keep_stats(self, final_rdd, final_stage):
         try:
             stats = self._get_stats(final_rdd, final_stage)
-            self.jobstats.append(stats)
+            self.jobstats.append(marshal.dumps(stats))
             if self.loghub_dir:
                 self._dump_stats(stats)
         except Exception as e:

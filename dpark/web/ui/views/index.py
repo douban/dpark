@@ -1,22 +1,34 @@
 from __future__ import absolute_import
 from flask import Blueprint, current_app as app, render_template as tmpl, abort
+from dpark.web.ui.views.dag import trans
+import json
 
 bp = Blueprint('index', __name__)
 
 
 @bp.route('/')
 @bp.route('/index/')
+def index():
+    return tmpl('dag.html')
+
+
+@bp.route('/data/')
+def data():
+    if hasattr(app.context, "scheduler"):  # online
+        profs = app.context.scheduler.get_profs()
+        dag = trans(profs)
+        context = json.dumps(dag, indent=4)
+        return context
+    else:  # offline
+        return app.context
+
+
 @bp.route('/stages/')
 def stages():
     if hasattr(app.context, "scheduler"):
         return tmpl('jobs.html', stage_infos=app.context.scheduler.idToRunJob)
     else:
         return tmpl('dag.html')
-
-
-@bp.route('/data/')
-def data():
-    return app.context
 
 
 @bp.route('/stages/<stage_id>/')
