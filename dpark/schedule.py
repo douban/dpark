@@ -29,6 +29,7 @@ from dpark.utils import (
     sec2nanosec)
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
+from dpark.web.ui.views import dag
 
 
 logger = get_logger(__name__)
@@ -38,17 +39,6 @@ EXECUTOR_MEMORY = 128  # cache
 POLL_TIMEOUT = 0.1
 RESUBMIT_TIMEOUT = 60
 MAX_IDLE_TIME = 60 * 30
-
-
-KW_NODES = "nodes"
-KW_ID = "id"  # uniq, use in edges
-KW_LABEL = "label"  # short name
-KW_DETAIL = "detail"  # show when hover
-KW_TYPE = "type"
-
-KW_EDGES = "edges"
-KW_SRC = "source"
-KW_DST = "target"
 
 
 class Stage(object):
@@ -169,9 +159,9 @@ class Stage(object):
         rdds = [{"rdd_name": rdd.ui_label, "rdd_id": rdd.id, "api_callsite_id": rdd.scope.api_callsite_id}
                 for rdd in self.pipelines[pipeline_id]]
         n = {
-            KW_TYPE: "stage",
-            KW_ID: self.get_node_id(stage_id, pipeline_id),
-            KW_LABEL: str(stage_id),
+            dag.KW_TYPE: "stage",
+            dag.KW_ID: self.get_node_id(stage_id, pipeline_id),
+            dag.KW_LABEL: str(stage_id),
             "rdds": rdds
         }
         return n
@@ -184,16 +174,16 @@ class Stage(object):
             info['#rdd'] = nrdd
 
         return {
-            # KW_ID: "{}_{}".format(src, dst),
-            KW_SRC: src,
-            KW_DST: dst,
+            # dag.KW_ID: "{}_{}".format(src, dst),
+            dag.KW_SRC: src,
+            dag.KW_DST: dst,
             "info": info
         }
 
     def get_pipeline_graph(self):
         nodes = [self._fmt_node(self.id, pipeline_id) for pipeline_id in self.pipelines.keys()]
         edges = [self._fmt_edge(e) for e in six.iteritems(self.pipeline_edges)]
-        g = {KW_NODES: nodes, KW_EDGES: edges}
+        g = {dag.KW_NODES: nodes, dag.KW_EDGES: edges}
         return g
 
     def fmt_stats(self):
@@ -506,14 +496,14 @@ class DAGScheduler(Scheduler):
     def fmt_call_graph(cls, g0):
         nodes0, edges0 = g0
         nodes = []
-        edges = [{KW_ID: "{}_{}".format(parent, child), KW_SRC: parent, KW_DST: child, "count": count}
+        edges = [{dag.KW_ID: "{}_{}".format(parent, child), dag.KW_SRC: parent, dag.KW_DST: child, "count": count}
                  for ((parent, child), count) in edges0.items()]
 
         for n in nodes0:
             scope = Scope.scopes_by_api_callsite_id[n][0]
-            nodes.append({KW_ID: n, KW_LABEL: scope.name, KW_DETAIL: scope.api_callsite})
+            nodes.append({dag.KW_ID: n, dag.KW_LABEL: scope.name, dag.KW_DETAIL: scope.api_callsite})
 
-        return {KW_NODES: nodes, KW_EDGES: edges}
+        return {dag.KW_NODES: nodes, dag.KW_EDGES: edges}
 
     def runJob(self, finalRdd, func, partitions, allowLocal):
         self.runJobTimes += 1
@@ -750,9 +740,9 @@ class DAGScheduler(Scheduler):
         sink_scope = self.current_scope
         sink_id = "SINK_{}_{}".format(self.id, self.runJobTimes)
         sink_node = {
-            KW_TYPE: "sink",
-            KW_ID: sink_id,
-            KW_LABEL: sink_scope.name,
+            dag.KW_TYPE: "sink",
+            dag.KW_ID: sink_id,
+            dag.KW_LABEL: sink_scope.name,
             "call_id": sink_scope.api_callsite_id
         }
 

@@ -3,6 +3,17 @@ import glob
 import json
 
 
+KW_NODES = "nodes"
+KW_ID = "id"  # uniq, use in edges
+KW_LABEL = "label"  # short name
+KW_DETAIL = "detail"  # show when hover
+KW_TYPE = "type"
+
+KW_EDGES = "edges"
+KW_SRC = "source"
+KW_DST = "target"
+
+
 def from_loghub(path):
     files = glob.glob(os.path.join(path, "sched*"))
     jsons = []
@@ -73,13 +84,13 @@ def trans(runs):
     for r in runs:
         r = r["run"]
         for s in r['stages']:
-            for n in s['graph']['nodes']:
-                if n['id'] in stage_nodes:
+            for n in s['graph'][KW_NODES]:
+                if n[KW_ID] in stage_nodes:
                     continue
                 rdds = n['rdds']
                 n['rdds'] = list(reversed([{"k": rdd["rdd_name"], "v": str(rdd["api_callsite_id"])}
                                            for rdd in rdds]))
-                if n['id'] == s['info']['output_pipeline']:
+                if n[KW_ID] == s['info']['output_pipeline']:
                     p = n['prof'] = {
                         'info': s['info'],
                         'stats': s['stats'],
@@ -90,37 +101,36 @@ def trans(runs):
                 else:
                     n['is_output'] = False
 
-                stage_nodes[n['id']] = n
-            for e in s['graph']['edges']:
-                id_ = e['source'], e['target']
+                stage_nodes[n[KW_ID]] = n
+            for e in s['graph'][KW_EDGES]:
+                id_ = e[KW_SRC], e[KW_DST]
                 if id_ not in stage_edges:
-                    e['IO'] = "1M"
                     e['info'] = ",".join(["{}={}".format(str(k), str(v)) for k, v in e["info"].items()])
                     stage_edges[id_] = e
         sink_node = r["sink"]['node']
         sink_node['call_id'] = str(sink_node['call_id'])
-        stage_nodes[sink_node['id']] = sink_node
-        sink_edge = r['sink']['edges']
-        stage_edges[(sink_edge['source'], sink_edge['target'])] = sink_edge
+        stage_nodes[sink_node[KW_ID]] = sink_node
+        sink_edge = r['sink'][KW_EDGES]
+        stage_edges[(sink_edge[KW_SRC], sink_edge[KW_DST])] = sink_edge
 
         c = r['call_graph']
-        for n in c['nodes']:
-            id_ = n['id'] = n['call_id'] = str(n['id'])
+        for n in c[KW_NODES]:
+            id_ = n[KW_ID] = n['call_id'] = str(n[KW_ID])
             api_nodes[id_] = n
-        for e in c['edges']:
-            s, r = str(e['source']), str(e['target'])
+        for e in c[KW_EDGES]:
+            s, r = str(e[KW_SRC]), str(e[KW_DST])
             if (s, r) not in api_edges:
-                e['source'] = s
-                e['target'] = r
+                e[KW_SRC] = s
+                e[KW_DST] = r
                 api_edges[(s, r)] = e
     res = {
         "stages": {
-            "nodes": list(stage_nodes.values()),
-            "edges": list(stage_edges.values()),
+            KW_NODES: list(stage_nodes.values()),
+            KW_EDGES: list(stage_edges.values()),
         },
         "calls": {
-              "nodes": list(api_nodes.values()),
-              "edges": list(api_edges.values()),
+            KW_NODES: list(api_nodes.values()),
+            KW_EDGES: list(api_edges.values()),
         }
     }
 
