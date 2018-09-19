@@ -24,8 +24,6 @@
 </head>
 <body>
 
-<button id="Zoom">缩放</button>
-
 <div id="top" style="height: 200px" class="row">
     <div id="explain" class="col" style="width:30%;"> 图例</div>
     <div id="details" class="col" style="width:68%; float: right;"> details</div>
@@ -38,7 +36,6 @@
 
 <script type="text/javascript">
     "use strict";
-    var zooming = false;
 
     // layout
     var dagre1 = new G6.Plugins['layout.dagre']({
@@ -123,18 +120,8 @@
         plugins: [dagre2]
     });
 
-    $("#Zoom").on('click', function () {
-        if (zooming) {
-            stages_net.changeMode('none');
-            call_net.changeMode('none');
-            zooming = false;
-        } else {
-            stages_net.changeMode('drag');
-            call_net.changeMode('drag');
-            zooming = true;
-        }
-    });
-
+    stages_net.changeMode('drag');
+    call_net.changeMode('drag');
 
     var data = {};
 
