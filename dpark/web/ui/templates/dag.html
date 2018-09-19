@@ -8,31 +8,40 @@
     <script src="https://gw.alipayobjects.com/os/antv/assets/g6-plugins/1.0.9/g6-plugins.min.js"></script>
 
     {#    <script type="text/javascript" src="../static/js/stage.js"></script>#}
-    <script src="{{ url_for('static', filename='js/stage.js', version='1') }}"></script>
+    <script src="{{ url_for('static', filename='js/stage.js', version='9') }}"></script>
 
     <style type="text/css">
         .row {
             margin-bottom: 5px;
+            border: 1px solid seagreen;
+
         }
 
         .col {
-            /*background-color: #00fcff;*/
             display: inline-block;
-            border: 1px solid seagreen;
         }
     </style>
 </head>
 <body>
 
 <div id="top" style="height: 200px" class="row">
-    <div id="explain" class="col" style="width:30%;"> 图例</div>
-    <div id="details" class="col" style="width:68%; float: right;"> details</div>
+    <div id="explain_div" class="col" style="width:30%;"> 图例</div>
+    <div class="col" style="width:68%; float: right;">
+        callsite detail:
+        <div id="callsite_detail" class="row" style="height:10%; float: top; border-color: blue"> click a call node
+        </div>
+        stage detail:
+        <pre id="stage_detail" class="row"
+             style="height:80%; float: bottom;  height: 6pc; overflow-y: scroll; border-color: violet; "> click a call node </pre>
+    </div>
 </div>
 
+
 <div id="dags" style="height: 1200px" class="row">
-    <div id="stages" class="col" style="width:66%;"> RDDS</div>
-    <div id="calls" class="col" style="width:30%; float: right;"> Callers</div>
+    <div id="stage_div" class="col" style="width:66%;"> stages</div>
+    <div id="call_div" class="col" style="width:30%; float: right;"> Dpark API callsites</div>
 </div>
+
 
 <script type="text/javascript">
     "use strict";
@@ -50,8 +59,8 @@
         ranksep: 20
     });
 
-    G6.registNode('stage', stageNode);
-    G6.registNode('call', {
+    G6.registNode('stageNode', stageNode);
+    G6.registNode('callNode', {
         afterDraw: function (cfg, group) {
             group.addShape('text', {
                 attrs: {
@@ -66,7 +75,7 @@
 
     // net
     var explain_net = new G6.Net({
-        id: 'explain',
+        id: 'explain_div',
         mode: "none",
         fitView: 'autoZoom',
         height: 180
@@ -98,111 +107,108 @@
                 }
             }
         },
-        "is_output": true,
+        "is_output": true
     };
 
     explain_net.source([explain_node], []);
-    explain_net.node().shape("stage");
+    explain_net.node().shape("stageNode");
     explain_net.render();
 
     // net
-    var stages_net = new G6.Net({
-        id: 'stages',
+    var stage_net = new G6.Net({
+        id: 'stage_div',
         mode: "none",
         fitView: 'autoZoom',
         plugins: [dagre1]
     });
 
     var call_net = new G6.Net({
-        id: 'calls',
+        id: 'call_div',
         mode: "none",
         fitView: 'autoZoom',
         plugins: [dagre2]
     });
 
-    stages_net.changeMode('drag');
+    stage_net.changeMode('drag');
     call_net.changeMode('drag');
 
     var data = {};
-
 
     function on_load_fail(jqXHR, textStatus, errorThrown) {
         alert("fail " + errorThrown);
     }
 
     function on_load_success(data_) {
-
         data = data_;
-        reRenderStageNet();
-        reRenderCallNet();
+        reRender();
     }
 
     selected_call = "-1";
+    selected_stage = "-1";
 
     function onClickCall(ev) {
-        // reset
-        if (selected_call != "-1") {
-            var last = call_net.find(selected_call);
-            call_net.update(last, {
-                color: node_color
-            });
-        }
         // change var
         var model = ev.item.get('model');
         selected_call = model.id;
+        $("#callsite_detail").html(model.detail);
+        reRender();
 
-        // up detail
-        $("#details").html(model.detail);
+    }
 
-        // up call net
-
-        call_net.update(ev.item, {
-            color: node_color_selected
-        });
-        call_net.refresh();
-
-        // up stage net
-        reRenderStageNet();
+    function onClickStage(ev) {
+        var model = ev.item.get('model');
+        selected_stage = model.id;
+        $("#stage_detail").html(JSON.stringify(model, undefined, 4));
+        reRender();
     }
 
     var node_color = "gray";
-    var node_color_selected = "blue";
+    var call_node_color_selected = "blue";
+    var stage_node_color_selected = "violet";
+
 
     function reRenderCallNet() {
         call_net.clear()
-
         var calls = data.calls;
         call_net.source(calls.nodes, calls.edges);
-        call_net.node().label("label").shape("call").color('gray');
+        call_net.node().label("label").shape("callNode").color('id', function (v) {
+            if (v === selected_call) {
+                return call_node_color_selected
+            } else {
+                return node_color
+            }
+        });
         call_net.edge().shape('arrow');
         call_net.on('itemclick', onClickCall);
-
         call_net.render();
     }
 
 
     function reRenderStageNet() {
-        stages_net.clear();
-
+        stage_net.clear();
         var stages = data.stages;
-
-        stages_net.source(stages.nodes, stages.edges);
-
-        stages_net.node().color('call_id', function (v) {
-            if (v === selected_call) {
-                return node_color_selected
+        stage_net.source(stages.nodes, stages.edges);
+        stage_net.node().color('id', function (v) {
+            if (v === selected_stage) {
+                return stage_node_color_selected
             } else {
                 return node_color
             }
         }).shape('type', function (v) {
             if (v === "stage") {
-                return "stage"
+                return "stageNode"
             } else {
-                return "call"
+                return "callNode"
             }
         });
-        stages_net.edge().label('info').shape('arrow');
-        stages_net.render();
+        stage_net.edge().label('info').shape('arrow');
+        stage_net.on('itemclick', onClickStage);
+        stage_net.render();
+    }
+
+    function reRender() {
+        reRenderStageNet();
+        reRenderCallNet();
     }
 
     //$.getJSON("../../../../examples/ui/dag.json", on_load_success).fail(on_load_fail);

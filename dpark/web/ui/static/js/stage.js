@@ -1,7 +1,7 @@
 var Util = G6.Util;
 
 var selected_call = "-1";
-// var selected_stage = "-1";
+var selected_stage = "-1";
 
 
 var stageNode = {
