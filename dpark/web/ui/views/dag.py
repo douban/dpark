@@ -49,11 +49,21 @@ def summary_prof(p):
 
     task = counters['task']
     fail = counters['fail']
-    mem = stats['bytes_max_rss']
-    t = stats['secs_all']
+
     task_torun = task['all'] - task['running'] - task['finished']
     fail_error = fail['all'] - fail['oom'] - fail['timeout']
     finished = task['finished']
+    res = [
+        ["task", "{} = {} + {} + {}".format(task['all'], task['finished'], task['running'], task_torun)],
+        ["fail", "{} = {} + {} + {}".format(fail['all'], fail['oom'], fail_error, fail['timeout'])],
+    ]
+
+    if not stats:
+        return res
+
+    mem = stats['bytes_max_rss']
+    t = stats['secs_all']
+
     if info['finish_time'] > 0:
         time_stage = info['finish_time'] - info['start_time']
     else:
@@ -67,13 +77,12 @@ def summary_prof(p):
         avg_time = 0
         speedup = 0
 
-    return [
-        ["task", "{} = {} + {} + {}".format(task['all'], task['finished'], task['running'], task_torun)],
-        ["fail", "{} = {} + {} + {}".format(fail['all'], fail['oom'],  fail_error, fail['timeout'])],
+    res2 = [
         ['mem',  "{} || [{}, {}, {}]".format(info['mem'], M(mem['min']), M(avg_mem), M(mem['max']))],
         ['time', "{} || [{}, {}, {}]".format(*[fmt_duraion(s) for s in [time_stage, t['min'], avg_time, t['max']]])],
         ['speedup',  "{:.2f}".format(speedup)]
     ]
+    return res + res2
 
 
 def trans(runs):
