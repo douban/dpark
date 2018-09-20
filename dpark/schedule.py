@@ -448,7 +448,7 @@ class DAGScheduler(Scheduler):
                     rdd_pipelines[did] = did
                     pipeline_edges[((-1, did), (-1, my_pipeline_id))] = nrdd  # -1 : current_stage
 
-        stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, pipeline_edges, rdd_pipelines)
+        stage = Stage(output_rdd, shuffleDep, list(parent_stages), pipelines, dict(pipeline_edges), rdd_pipelines)
         self.idToStage[stage.id] = stage
         logger.debug('new stage: %s', stage)
         return stage
@@ -510,7 +510,7 @@ class DAGScheduler(Scheduler):
         for n in nodes0:
             scope = Scope.scopes_by_api_callsite_id[n][0]
             nodes.append({dag.KW_ID: n,
-                          dag.KW_LABEL: scope.name,
+                          dag.KW_LABEL: scope.api,
                           dag.KW_DETAIL: [scope.api_callsite, scope.stack_above_api]})
 
         return {dag.KW_NODES: nodes, dag.KW_EDGES: edges}

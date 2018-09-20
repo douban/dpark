@@ -88,7 +88,7 @@ class RDD(object):
         self.gpus = 0
         self._preferred_locs = {}
         self.repr_name = '<%s>' % (self.__class__.__name__,)
-        self.scope = Scope.get("{api}")
+        self.scope = Scope.get(self.__class__.__name__)
         self.rddconf = None
         self.lineage = self.scope.stackhash
         self._dep_lineage_counts = None  # map "dep rdd id with uniq lineages" to their counts

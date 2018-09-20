@@ -75,7 +75,7 @@ class Scope(object):
             self.scopes_by_api_callsite_id[self.api_callsite_id] = [self]
         else:
             self.scopes_by_api_callsite_id[self.api_callsite_id].append(self)
-        # print(self.id, self.api_callsite_id, api_callsite)
+        # print(self.id, self.api_callsite_id, api_callsite, self.name)
 
     @classmethod
     def get_callsite(cls, caller, callee):
