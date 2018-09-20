@@ -156,7 +156,10 @@ class Stage(object):
     def _fmt_node(self, stage_id, pipeline_id):
         if stage_id == -1:
             stage_id = self.id
-        rdds = [{"rdd_name": rdd.ui_label, "rdd_id": rdd.id, "api_callsite_id": rdd.scope.api_callsite_id}
+        rdds = [{"rdd_name": rdd.ui_label,
+                 "rdd_id": rdd.id,
+                 "api_callsite_id": rdd.scope.api_callsite_id,
+                 "params": rdd.params}
                 for rdd in self.pipelines[pipeline_id]]
         n = {
             dag.KW_TYPE: "stage",

@@ -97,7 +97,9 @@ def trans(runs):
                 if n[KW_ID] in stage_nodes:
                     continue
                 rdds = n['rdds']
-                n['rdds'] = list(reversed([{"k": rdd["rdd_name"], "v": str(rdd["api_callsite_id"])}
+                n['rdds'] = list(reversed([{"k": rdd["rdd_name"],
+                                            "v": str(rdd["api_callsite_id"]),
+                                            "params": rdd.params}
                                            for rdd in rdds]))
                 if n[KW_ID] == s['info']['output_pipeline']:
                     p = n['prof'] = {

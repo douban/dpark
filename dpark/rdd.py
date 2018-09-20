@@ -40,7 +40,7 @@ from dpark.utils import (
     masked_crc32c
 )
 from dpark.utils.log import get_logger
-from dpark.utils.frame import Scope
+from dpark.utils.frame import Scope, func_info
 from dpark.shuffle import SortShuffleFetcher, Merger
 from dpark.env import env
 from dpark.file_manager import open_file, CHUNKSIZE
@@ -120,6 +120,10 @@ class RDD(object):
                 lineages[rdd.lineage].append(rdd)
             self._dep_lineage_counts = dict([(rs[0].id, len(rs)) for rs in lineages.values()])
         return self._dep_lineage_counts
+
+    @property
+    def params(self):
+        return None
 
     def __len__(self):
         if hasattr(self, '_split_size'):
@@ -870,6 +874,10 @@ class MappedRDD(DerivedRDD):
     def __init__(self, prev, func=lambda x: x):
         DerivedRDD.__init__(self, prev)
         self.func = func
+
+    @property
+    def params(self):
+        return func_info(self.func)
 
     def compute(self, split):
         if self.err < 1e-8:
@@ -1643,6 +1651,11 @@ class TextFileRDD(RDD):
                     hostnames.append(host)
                 self._preferred_locs[split] = hostnames
         self.repr_name = '<%s %s>' % (self.__class__.__name__, path)
+
+
+    @property
+    def params(self):
+        return self.path
 
     def open_file(self):
         return open_file(self.path)

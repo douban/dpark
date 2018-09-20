@@ -28,6 +28,11 @@ def frame_tuple(f):
     return f.f_code.co_filename, f.f_lineno,  f.f_lasti
 
 
+def func_info(f):
+    c = f.__code__
+    return "{}@{}:{}".format(c.co_name, c.co_filename, c.co_firstlineno)
+
+
 class Scope(object):
 
     scopes_by_id = {}
