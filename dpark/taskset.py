@@ -40,7 +40,7 @@ class TaskCounter(object):
         self.oom = 0
         self.run_timeout = 0
         self.staging_timeout = 0
-        self.fail = 0
+        self.fail = 0  # include oom, not include timeout
 
     @property
     def running(self):

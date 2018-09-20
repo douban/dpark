@@ -224,7 +224,8 @@ class Stage(object):
             "fail": {
                 'all': sum([c.fail for c in self.taskcounters]),
                 'oom': sum([c.oom for c in self.taskcounters]),
-                'timeout': sum([c.run_timeout for c in self.taskcounters]),
+                'run_timeout': sum([c.run_timeout for c in self.taskcounters]),
+                'staging_timeout': sum([c.staging_timeout for c in self.taskcounters]),
             },
         }
         return counters
