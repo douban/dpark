@@ -1,6 +1,7 @@
 import os
 import inspect
 from collections import defaultdict
+import linecache
 
 
 def get_path(p):
@@ -33,6 +34,21 @@ def func_info(f):
     return "{}@{}:{}".format(c.co_name, c.co_filename, c.co_firstlineno)
 
 
+def summary_stack(frames):
+    result = []
+    for f in frames:
+        co = f.f_code
+        pos = '{}:{}, in {}'.format(co.co_filename, f.f_lineno, co.co_name)
+        line = linecache.getline(co.co_filename, f.f_lineno).strip()
+        if line:
+            line = line.strip()
+        # if f.f_locals:
+        #     for name, value in sorted(f.f_locals.items()):
+        #         row.append('    {name} = {value}\n'.format(name=name, value=value))
+        result.append({"pos": pos, "line": line})
+    return result
+
+
 class Scope(object):
 
     scopes_by_id = {}
@@ -43,7 +59,7 @@ class Scope(object):
     calls_in_oneline = defaultdict(dict)  # (path, line_no, fname) -> [lasti...]
     gid = 0
 
-    def __init__(self, name_fmt, stack, stackhash, api, api_callsite):
+    def __init__(self, name_fmt, stack, stackhash, api, api_callsite, stack_above_api):
         self.id = Scope.gid
         Scope.gid += 1
         self.name = name_fmt.format(api=api)
@@ -53,6 +69,7 @@ class Scope(object):
         self.api_callsite = api_callsite
         self.key = "{}@{}".format(api, self.api_callsite)
         self.api_callsite_id = self.api_callsites.get(api_callsite)
+        self.stack_above_api = stack_above_api
         if self.api_callsite_id is None:
             self.api_callsite_id = self.api_callsites[api_callsite] = len(self.api_callsites)
             self.scopes_by_api_callsite_id[self.api_callsite_id] = [self]
@@ -90,15 +107,20 @@ class Scope(object):
         callee = inspect.currentframe()
         caller = callee.f_back
         stack = []
+        stack_above_api = []
 
         api_caller = None
         api_callee = None
 
         while caller is not None:
             stack.append(frame_tuple(caller))
-            if api_callee is None and src_dir != os.path.dirname(get_path(caller.f_code.co_filename)):
-                api_callee = callee  # the dpark api called by user, DparkContext.xxx() or RDD.xxx()
-                api_caller = caller  # the first callsite out of dpark package, where user call dpark api
+            if api_callee is None:
+                if src_dir != os.path.dirname(get_path(caller.f_code.co_filename)):
+                    api_callee = callee  # the dpark api called by user, DparkContext.xxx() or RDD.xxx()
+                    api_caller = caller  # the first callsite out of dpark package, where user call dpark api
+                    stack_above_api.append(caller)
+            else:
+                stack_above_api.append(caller)
             callee = caller
             caller = caller.f_back
 
@@ -106,8 +128,9 @@ class Scope(object):
         stackhash = hash(stack)
         scope = cls.scopes_by_stackhash.get(stackhash)
         if scope is None:
+            stack_above_api = summary_stack(stack_above_api)
             api, api_callsite = cls.get_callsite(api_caller, api_callee)
-            scope = Scope(name_fmt, stack, stackhash, api, api_callsite)
+            scope = Scope(name_fmt, stack, stackhash, api, api_callsite, stack_above_api)
             cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope

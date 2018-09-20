@@ -508,7 +508,9 @@ class DAGScheduler(Scheduler):
 
         for n in nodes0:
             scope = Scope.scopes_by_api_callsite_id[n][0]
-            nodes.append({dag.KW_ID: n, dag.KW_LABEL: scope.name, dag.KW_DETAIL: scope.api_callsite})
+            nodes.append({dag.KW_ID: n,
+                          dag.KW_LABEL: scope.name,
+                          dag.KW_DETAIL: [scope.api_callsite, scope.stack_above_api]})
 
         return {dag.KW_NODES: nodes, dag.KW_EDGES: edges}
 

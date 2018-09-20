@@ -20,20 +20,32 @@
         .col {
             display: inline-block;
         }
+
+        .detail {
+            overflow-y: scroll;
+            border: 1px solid ;
+            height: 15pc;
+            float: top;
+        }
     </style>
 </head>
 <body>
 
-<div id="top" style="height: 200px" class="row">
-    <div id="explain_div" class="col" style="width:30%;"> 图例</div>
-    <div class="col" style="width:68%; float: right;">
-        callsite detail:
-        <div id="callsite_detail" class="row" style="height:10%; float: top; border-color: blue"> click a call node
-        </div>
-        stage detail:
-        <pre id="stage_detail" class="row"
-             style="height:80%; float: bottom;  height: 6pc; overflow-y: scroll; border-color: violet; "> click a call node </pre>
+<div id="top" style="height: 300px" class="row">
+    <div class="col" style="width:31%; float: left;">
+        stage detail
+        <pre id="stage_detail" class="detail" style="border-color: violet; ">
+            click a call node
+        </pre>
     </div>
+     <div class="col" style="width:31%; float: left;">
+        callsite detail
+        <pre id="callsite_detail" class="detail" style=" border-color: blue">
+            click a call node
+        </pre>
+    </div>
+    <div id="explain_div" class="col" style="width:30%;"> 图例</div>
+
 </div>
 
 
@@ -149,8 +161,9 @@
     function onClickCall(ev) {
         // change var
         var model = ev.item.get('model');
+        console.log(model);
         selected_call = model.id;
-        $("#callsite_detail").html(model.detail);
+        $("#callsite_detail").html(JSON.stringify(model.detail, undefined, 4));
         reRender();
 
     }

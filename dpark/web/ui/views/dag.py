@@ -1,6 +1,7 @@
 import os.path
 import glob
 import json
+import time
 
 
 KW_NODES = "nodes"
@@ -64,14 +65,15 @@ def summary_prof(p):
     mem = stats['bytes_max_rss']
     t = stats['secs_all']
 
-    if info['finish_time'] > 0:
-        time_stage = info['finish_time'] - info['start_time']
-    else:
-        time_stage = "None"
+    end_time = info['finish_time']
+    if end_time <= 0:
+        end_time = time.time()
+
+    stage_time = end_time - info['start_time']
     if finished > 0:
         avg_mem = mem['sum'] / finished
         avg_time = t['sum'] / finished
-        speedup = avg_time * finished / time_stage
+        speedup = avg_time * finished / stage_time
     else:
         avg_mem = 0
         avg_time = 0
@@ -79,7 +81,7 @@ def summary_prof(p):
 
     res2 = [
         ['mem',  "{} || [{}, {}, {}]".format(info['mem'], M(mem['min']), M(avg_mem), M(mem['max']))],
-        ['time', "{} || [{}, {}, {}]".format(*[fmt_duraion(s) for s in [time_stage, t['min'], avg_time, t['max']]])],
+        ['time', "{} || [{}, {}, {}]".format(*[fmt_duraion(s) for s in [stage_time, t['min'], avg_time, t['max']]])],
         ['speedup',  "{:.2f}".format(speedup)]
     ]
     return res + res2
@@ -99,7 +101,7 @@ def trans(runs):
                 rdds = n['rdds']
                 n['rdds'] = list(reversed([{"k": rdd["rdd_name"],
                                             "v": str(rdd["api_callsite_id"]),
-                                            "params": rdd.params}
+                                            "params": rdd['params']}
                                            for rdd in rdds]))
                 if n[KW_ID] == s['info']['output_pipeline']:
                     p = n['prof'] = {
