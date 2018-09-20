@@ -253,8 +253,8 @@ def fetch_with_retry(f):
                 self.url, self.num_retry, MAX_RETRY, e)
                 fail_fast = False
                 emsg = str(e)
-                if not any([emsg.find(s) >= 0 for s in ["Connection refused", ]]):
-                    # ["many open file", "404"]
+                if any([emsg.find(s) >= 0 for s in ["404"]]):
+                    # "many open file",
                     fail_fast = True
                     msg += "no need to retry."
                 if fail_fast or self.num_retry >= MAX_RETRY:
