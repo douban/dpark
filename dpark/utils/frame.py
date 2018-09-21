@@ -134,3 +134,19 @@ class Scope(object):
             cls.scopes_by_stackhash[stackhash] = scope
             cls.scopes_by_id[scope.id] = scope
         return scope
+
+
+def get_stacks_of_threads():
+    import threading, sys, traceback
+    threads = {}
+    for t in threading.enumerate():
+        f = sys._current_frames()[t.ident]
+        k = t.name
+        stack = traceback.format_stack()
+        v = {
+            "stack": stack,
+            "f_locals": "{}".format(f.f_locals),
+            "f_back.f_locals": "{}".format(f.f_back.f_locals)
+        }
+        threads[k] = v
+    return threads

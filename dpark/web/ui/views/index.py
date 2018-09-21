@@ -1,9 +1,11 @@
 from __future__ import absolute_import
-from flask import Blueprint, current_app as app, render_template as tmpl, abort
+from flask import Blueprint, current_app as app, render_template as tmpl, abort, jsonify
 from dpark.web.ui.views.dag import trans
+from dpark.utils.log import get_logger
 import json
 
 bp = Blueprint('index', __name__)
+logger = get_logger(__name__)
 
 
 @bp.route('/')
@@ -23,6 +25,13 @@ def data():
         return context
     else:  # offline
         return app.context
+
+
+@bp.route('/threads/')
+def threads():
+    from dpark.utils.frame import get_stacks_of_threads
+    res = jsonify(get_stacks_of_threads())
+    return res
 
 
 @bp.route('/stages/')
