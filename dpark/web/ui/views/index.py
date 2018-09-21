@@ -9,6 +9,8 @@ bp = Blueprint('index', __name__)
 @bp.route('/')
 @bp.route('/index/')
 def index():
+    if hasattr(app.context, "scheduler") and app.context.is_dstream:  # online
+        return "dstream not support ui for now."
     return tmpl('dag.html')
 
 
