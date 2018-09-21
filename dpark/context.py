@@ -399,6 +399,9 @@ class DparkContext(object):
             gc.disable()
             for it in self.scheduler.runJob(rdd, func, partitions, allowLocal):
                 yield it
+        except Exception as e:
+            logger.critical('Framework failed %r', e)
+            raise e
         finally:
             gc.collect()
             gc.enable()
