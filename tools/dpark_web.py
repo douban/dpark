@@ -7,7 +7,7 @@ import json
 
 from dpark.web import run
 from dpark.web.ui import create_app
-from dpark.web.ui.views import dag
+from dpark.utils import dag
 
 
 def main():

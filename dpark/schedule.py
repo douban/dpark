@@ -29,7 +29,7 @@ from dpark.utils import (
     sec2nanosec)
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope
-from dpark.web.ui.views import dag
+from dpark.utils import dag
 
 
 logger = get_logger(__name__)

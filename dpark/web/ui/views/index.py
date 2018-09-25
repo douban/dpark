@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 from flask import Blueprint, current_app as app, render_template as tmpl, abort, jsonify
-from dpark.web.ui.views.dag import trans
+from dpark.utils.dag import trans
 from dpark.utils.log import get_logger
 import json
 
