@@ -1309,7 +1309,7 @@ class MesosScheduler(DAGScheduler):
 
         used = time.time() - start
         if used > 10:
-            logger.error('use too much time in resourceOffers: %.2fs', used)
+            logger.warning('use too much time in resourceOffers: %.2fs', used)
 
         for o in offers:
             if o.id.value in tasks:
