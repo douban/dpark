@@ -30,8 +30,11 @@ def frame_tuple(f):
 
 
 def func_info(f):
-    c = f.__code__
-    return "{}@{}:{}".format(c.co_name, c.co_filename, c.co_firstlineno)
+    co = getattr(f, "__code__", None)
+    if co:
+        return "{}@{}:{}".format(co.co_name, co.co_filename, co.co_firstlineno)
+    else:
+        return "{}".format(f)  # builtin_function_or_method
 
 
 def summary_stack(frames):
