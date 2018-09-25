@@ -748,7 +748,7 @@ class DAGScheduler(Scheduler):
             if self.loghub_dir:
                 self._dump_stats(stats)
         except Exception as e:
-            logger.exception("Fail to dump job stats: %s.", e)
+            logger.warning("Fail to dump job stats: %s.", e)
 
     def _dump_stats(self, stats):
         name = "_".join(map(str, ['sched', self.id, "job", self.runJobTimes])) + ".json"
