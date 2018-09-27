@@ -141,7 +141,7 @@ class DparkContext(object):
                 socket.gethostname(),
                 self.web_port
             )
-            logger.info('start listening on Web UI with port: %d', self.web_port)
+            logger.info('start listening on Web UI: %s', self.webui_url)
         except ImportError as e:
             self.webui_url = None
             logger.info('no web server created as %s', e)
