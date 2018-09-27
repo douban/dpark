@@ -134,9 +134,9 @@ def add_loghub(framework_id):
     logger = get_logger('dpark')
     try:
         import dpark
-        from dpark.conf import LOGHUB, ENABLE_ES_LOGHUB, ES_HOST, ES_INDEX, ES_TYPE
+        from dpark.conf import LOGHUB, ENABLE_ES_LOGHUB, ES_HOST, ES_INDEX, ES_TYPE, LOGHUB_PATH_FORMAT
         from dpark.utils import getuser
-        date_str = datetime.now().strftime("%Y/%m/%d/%H")
+        date_str = datetime.now().strftime(LOGHUB_PATH_FORMAT)
         date_dir_path = os.path.join(LOGHUB, date_str)
         if not os.path.exists(date_dir_path):
             logger.error("loghub dir not ready: %s", date_dir_path)

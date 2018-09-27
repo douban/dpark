@@ -2,6 +2,8 @@ from __future__ import absolute_import
 import os
 from dpark.utils.log import get_logger
 
+# override configs use python file at path given by env var $DPARK_CONF, see the end of this file
+
 logger = get_logger(__name__)
 
 # workdir used in slaves for internal files
@@ -22,8 +24,10 @@ MESOS_MPI_ROLE = "mpi"
 MOOSEFS_MOUNT_POINTS = {
 }
 
-# dup log to $LOGHUB/2012/03/04/05/06/$FRAMEWORK_ID.log
+# dup log to path lick $LOGHUB/$LOGHUB_PATH_FORMAT/$FRAMEWORK_ID/log
+# $LOGHUB/$LOGHUB_PATH_FORMAT should exists before run
 LOGHUB = None
+LOGHUB_PATH_FORMAT = "%Y/%m/%d/%H"
 
 ENABLE_ES_LOGHUB = False
 ES_HOST = None
