@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 import sys
 import time
-import math
 import unittest
 import logging
 
@@ -63,10 +62,10 @@ class TestTaskSet(unittest.TestCase):
         # description of Task
         ts = sum([taskset.taskOffer(host_offers, cpus, mems, gpus) for i in range(10)], [])
         assert len(ts) == 10
-        assert taskset.tasksLaunched == 10
+        assert taskset.counter.launched == 10
         assert not taskset.taskOffer(host_offers, cpus, mems, gpus)
         [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts]
-        assert taskset.tasksFinished == 10
+        assert taskset.counter.finished == 10
 
     def test_retry(self):
         sched = MockSchduler()
@@ -83,7 +82,7 @@ class TestTaskSet(unittest.TestCase):
         ts = sum([taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                                 mems=mems, gpus=gpus) for i in range(10)], [])
         [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts[1:]]
-        assert taskset.tasksFinished == 9
+        assert taskset.counter.finished == 9
         taskset.statusUpdate(ts[0][2].id, 0, TaskState.failed)
         t = taskset.taskOffer(host_offers=host_offers, cpus=cpus,
                           mems=mems, gpus=gpus)[0]
@@ -91,9 +90,9 @@ class TestTaskSet(unittest.TestCase):
         assert not taskset.taskOffer(
             host_offers=host_offers, cpus=cpus, mems=mems, gpus=gpus
         )
-        assert taskset.tasksLaunched == 10
+        assert taskset.counter.launched == 10
         taskset.statusUpdate(t[2].id, 1, TaskState.finished)
-        assert taskset.tasksFinished == 10
+        assert taskset.counter.finished == 10
 
 
 class TestHostStatus(unittest.TestCase):

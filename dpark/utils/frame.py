@@ -81,6 +81,16 @@ class Scope(object):
         # print(self.id, self.api_callsite_id, api_callsite, self.name)
 
     @classmethod
+    def reset(cls):
+        cls.scopes_by_id = {}
+        cls.scopes_by_stackhash = {}
+        cls.scopes_by_api_callsite_id = {}
+
+        cls.api_callsites = {}
+        cls.calls_in_oneline = defaultdict(dict)
+        cls.gid = 0
+
+    @classmethod
     def get_callsite(cls, caller, callee):
         """
         Deal with usage like  "rdd.map(_).map(_)", distinguish same dpark api called in one line by lasti.
