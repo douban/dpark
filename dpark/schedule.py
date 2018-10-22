@@ -655,6 +655,9 @@ class DAGScheduler(Scheduler):
                 for taskset in self.active_tasksets.values():
                     self.tasksetFinished(taskset)
 
+                if not self.is_dstream:
+                    self._keep_stats(finalRdd, finalStage)
+
                 raise RuntimeError('TaskSet aborted!')
 
             task, reason = evt.task, evt.reason
