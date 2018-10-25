@@ -65,6 +65,7 @@ setup(name='DPark',
           'tools/scheduler.py',
           'tools/dquery',
           'tools/dpark_web.py',
+          'tools/dpark_mfs.py',
           'examples/dgrep',
       ]
       )
