@@ -20,9 +20,11 @@ class ProtocolError(Exception):
 
 class Chunk:
 
-    def __init__(self, id_, length, version, csdata, ele_width=6):
+    def __init__(self, index, id_, file_length, version, csdata, ele_width=6):
+        self.index = index
         self.id = id_
-        self.length = length
+        self.file_length = file_length
+        self.length = min(file_length - index * CHUNKSIZE, CHUNKSIZE)
         self.version = version
         self.ele_width = ele_width
         self.addrs = self._parse(csdata)
@@ -220,14 +222,14 @@ class ProxyConn(object):
 
             # self.version is master`s version, not mfsmount`s
             if self.version >= (1, 7, 32) and ((n - 21) % 14 == 0 or (n - 21) % 10 == 0):
-                protocolid, length, id_, version = unpack('BQQI', ans)
+                protocolid, flength, id_, version = unpack('BQQI', ans)
                 if protocolid == 2:
                     assert (n - 21) % 14 == 0, n
-                    return Chunk(id_, length, version, ans[21:], ele_width=14)
+                    return Chunk(index, id_, flength, version, ans[21:], ele_width=14)
                 elif protocolid == 1:
                     assert (n - 21) % 10 == 0, n
-                    return Chunk(id_, length, version, ans[21:], ele_width=10)
+                    return Chunk(index, id_, flength, version, ans[21:], ele_width=10)
 
             assert (n - 20) % 6 == 0, n
-            length, id_, version = unpack("QQI", ans)
-            return Chunk(id_, length, version, ans[20:])
+            flength, id_, version = unpack("QQI", ans)
+            return Chunk(index, id_, flength, version, ans[20:])
