@@ -58,7 +58,7 @@ class TaskSet(object):
 
     def __init__(self, sched, tasks, cpus=1, mem=100, gpus=0,
                  task_host_manager=None):
-        self.start = time.time()
+        self.start_time = time.time()
         self.sched = sched
         self.tasks = tasks
         self.id = tasks[0].taskset_id
@@ -80,6 +80,7 @@ class TaskSet(object):
         self.counter = TaskCounter(len(tasks))
 
         self.total_time_used = 0
+        self.max_task_time = 0
 
         self.lastPreferredLaunchTime = time.time()
 
@@ -101,7 +102,6 @@ class TaskSet(object):
         self.task_local_set = set()
         self.mem_digest = TDigest()
         self.mem90 = 0  # TODO: move to stage
-
 
     @property
     def taskEverageTime(self):
@@ -181,7 +181,6 @@ class TaskSet(object):
         t = self.tasks[task_idx]
         if t.cpus <= cpus[i] + 1e-4 and t.mem <= mem[i] and t.gpus <= gpus[i]:
             t.status = TaskState.staging
-            t.start = time.time()  # no need for online, just for tests.
             t.host = o.hostname
             t.num_try += 1
             self.id_retry_host[(t.id, t.num_try)] = o.hostname
@@ -217,7 +216,7 @@ class TaskSet(object):
             self.counter.launched += 1
 
         if status == TaskState.running:
-            task.start = time.time()
+            task.start_time = time.time()
         elif status == TaskState.finished:
             if stats:
                 self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
@@ -230,7 +229,7 @@ class TaskSet(object):
         ratio = self.counter.finished * 1. / n
         bar = make_progress_bar(ratio)
         if self.counter.finished:
-            elasped = time.time() - self.start
+            elasped = time.time() - self.start_time
             avg = self.total_time_used / self.counter.finished
             eta = (n - self.counter.finished) * elasped / self.counter.finished
             m, s = divmod(int(eta), 60)
@@ -261,8 +260,9 @@ class TaskSet(object):
         task = self.tasks[i]
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
-        task.time_used += time.time() - task.start
+        task.time_used += time.time() - task.start_time
         self.total_time_used += task.time_used
+        self.max_task_time = max(self.max_task_time, task.time_used)
         if getattr(self.sched, 'color', False):
             title = 'taskset %s: task %s finished in %.1fs (%d/%d)     ' % (
                 self.id, task_id, task.time_used, self.counter.finished, self.counter.n)
@@ -281,7 +281,7 @@ class TaskSet(object):
         if self.counter.finished == self.counter.n:
             ts = [t.time_used for t in self.tasks]
             num_try = [t.num_try for t in self.tasks]
-            elasped = time.time() - self.start
+            elasped = time.time() - self.start_time
             logger.info('taskset %s finished in %.1fs: min=%.1fs, '
                         'avg=%.1fs, max=%.1fs, maxtry=%d, speedup=%.1f, local=%.1f%%',
                         self.id, elasped, min(ts), sum(ts) / len(ts), max(ts),
@@ -379,9 +379,9 @@ class TaskSet(object):
         for i in range(self.counter.n):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TaskState.staging
-                    and task.start + WAIT_FOR_RUNNING < now):
+                    and task.stage_time + WAIT_FOR_RUNNING < now):
                 logger.warning('task %s timeout %.1f (at %s), re-assign it',
-                               task.id, now - task.start, task.host)
+                               task.id, now - task.stage_time, task.host)
                 self.counter.staging_timeout += 1
 
                 self.launched[i] = False
@@ -389,20 +389,19 @@ class TaskSet(object):
 
         if self.counter.finished > self.counter.n * 2.0 / 3:
             scale = 1.0 * self.counter.n / self.counter.finished
-            avg = max(self.taskEverageTime, 10)
-            tasks = sorted((task.start, i, task)
+            tasks = sorted((task.start_time, i, task)
                            for i, task in enumerate(self.tasks)
                            if self.launched[i] and not self.finished[i])
             for _t, idx, task in tasks:
-                time_used = now - task.start
-                if time_used > avg * (2 ** task.num_try) * scale:
+                time_used = now - task.start_time
+                if time_used > self.max_task_time * (2 ** task.num_try) * scale:
                     # re-submit timeout task
                     self.counter.run_timeout += 1
                     if task.num_try <= MAX_TASK_FAILURES:
                         logger.info('re-submit task %s for timeout %.1f, '
                                     'try %d', task.id, time_used, task.num_try)
                         task.time_used += time_used
-                        task.start = now
+                        task.start_time = now
                         self.launched[idx] = False
                         self.counter.launched -= 1
                     else:

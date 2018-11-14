@@ -34,6 +34,7 @@ class MockTask:
         self.id = id
         self.taskset_id = "1.1_{}".format(id)
         self.try_id = 0
+        self.start_time = 0
 
     def preferredLocations(self):
         return []

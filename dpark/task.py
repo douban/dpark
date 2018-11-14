@@ -66,6 +66,9 @@ class DAGTask(object):
         self.cpus = 0
         self.gpus = 0
 
+        self.stage_time = 0
+        self.start_time = 0
+
     def __repr__(self):
         return '<task %s>'.format(self.id)
 

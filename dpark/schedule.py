@@ -1278,7 +1278,9 @@ class MesosScheduler(DAGScheduler):
         # logger.debug('get %d offers (%s cpus, %s mem, %s gpus), %d tasksets',
         #             len(offers), sum(cpus), sum(mems), sum(gpus), len(self.active_tasksets))
 
+        mesos_tasks = {}
         tasks = {}
+        max_create_time = 0
         for taskset in self.active_tasksets.values():
             while True:
                 host_offers = {}
@@ -1294,11 +1296,15 @@ class MesosScheduler(DAGScheduler):
                 assigned_list = taskset.taskOffer(host_offers, cpus, mems, gpus)
                 if not assigned_list:
                     break
+
                 for i, o, t in assigned_list:
-                    task = self.createTask(o, t)
-                    tasks.setdefault(o.id.value, []).append(task)
+                    t0 = time.time()
+                    mesos_task = self.createTask(o, t)
+                    max_create_time = max(max_create_time, time.time() - t0)
+                    mesos_tasks.setdefault(o.id.value, []).append(mesos_task)
+                    tasks.setdefault(o.id.value, []).append(t)
                     logger.debug('dispatch %s into %s', t, o.hostname)
-                    ttid = task.task_id.value
+                    ttid = mesos_task.task_id.value
                     agent_id = o.agent_id.value
                     taskset.ttids.add(ttid)
                     self.ttid_to_agent_id[ttid] = agent_id
@@ -1306,19 +1312,25 @@ class MesosScheduler(DAGScheduler):
                     cpus[i] -= min(cpus[i], t.cpus)
                     mems[i] -= t.mem
                     gpus[i] -= t.gpus
-                # wait for all tasks created prevent task's start time affect each other
-                for _, _, t in assigned_list:
-                    t.start = time.time()
 
         used = time.time() - start
         if used > 10:
-            logger.warning('use too much time in resourceOffers: %.2fs', used)
+            logger.warning('use too much time in resourceOffers: %.2fs, %d offers,'
+                           'assigned %d tasks, max_create_time = %ds',
+                           used,
+                           len(offers),
+                           len(mesos_tasks),
+                           max_create_time)
 
         for o in offers:
-            if o.id.value in tasks:
-                driver.launchTasks(o.id, tasks[o.id.value])
+            oid = o.id.value
+            if oid in mesos_tasks:
+                driver.launchTasks(o.id, mesos_tasks[oid])
+                for task in tasks[oid]:
+                    task.stage_time = time.time()
             else:
                 driver.declineOffer(o.id)
+
         if tasks:
             self.last_task_launch_time = time.time()
 
