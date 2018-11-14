@@ -396,10 +396,15 @@ class TaskEndReason:
     fetch_failed = 'FAILED_FETCH_FAILED'
     task_oom = 'FAILED_TASK_OOM'
     recv_sig = 'FAILED_RECV_SIG'
+    recv_sig_kill = 'FAILED_RECV_SIG_KILL'
     launch_failed = 'FAILED_LAUNCH_FAILED'
 
     # generated on the agent
     mesos_cgroup_oom = 'REASON_CONTAINER_LIMITATION_MEMORY'
+
+    @classmethod
+    def maybe_oom(cls, reason):
+        return reason in (cls.task_oom, cls.recv_sig_kill, cls.mesos_cgroup_oom)
 
 
 class FetchFailed(Exception):

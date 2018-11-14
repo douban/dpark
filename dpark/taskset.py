@@ -315,7 +315,7 @@ class TaskSet(object):
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
 
-        if reason in (TaskEndReason.task_oom, TaskEndReason.mesos_cgroup_oom):
+        if TaskEndReason.maybe_oom(reason):
             self.counter.oom += 1
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
             logger.info("task %s oom, enlarge memory limit to %d, origin %d", task.id, task.mem, task.rdd.mem)

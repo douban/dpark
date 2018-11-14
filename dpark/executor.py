@@ -323,7 +323,7 @@ class MyExecutor(Executor):
 
         idle_since = time.time()
 
-        kill_ecs = [-signal.SIGKILL, -signal.SIGTERM]
+        kill_ecs = [-signal.SIGTERM]
 
         while True:
             with self.lock:
@@ -353,6 +353,8 @@ class MyExecutor(Executor):
                         msg = 'exitcode: {}'.format(ec)
                         if ec in kill_ecs:
                             reason = TaskEndReason.recv_sig
+                        elif ec == -signal.SIGKILL:
+                            reason = TaskEndReason.recv_sig_kill
                         elif ec == ERROR_TASK_OOM:
                             reason = TaskEndReason.task_oom
                         else:
