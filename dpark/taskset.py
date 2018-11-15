@@ -25,7 +25,7 @@ def readable(size):
 
 
 LOCALITY_WAIT = 0
-WAIT_FOR_RUNNING = 10
+WAIT_FOR_RUNNING = 15
 MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
 
@@ -101,6 +101,7 @@ class TaskSet(object):
         self.id_retry_host = {}
         self.task_local_set = set()
         self.mem_digest = TDigest()
+        self.max_stage_time = 0
         self.mem90 = 0  # TODO: move to stage
 
     @property
@@ -217,6 +218,7 @@ class TaskSet(object):
 
         if status == TaskState.running:
             task.start_time = time.time()
+            self.max_stage_time = max(self.max_stage_time, task.start_time - task.stage_time)
         elif status == TaskState.finished:
             if stats:
                 self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
@@ -363,6 +365,8 @@ class TaskSet(object):
         self.counter.launched -= 1
 
     def check_task_timeout(self):
+        """In lock, so be fast!"""
+
         now = time.time()
         if self.last_check + 5 > now:
             return False
@@ -376,22 +380,30 @@ class TaskSet(object):
                 n)
             self.counter.launched = n
 
+        # staged but not run for too long
+        # mesos may be busy.
+        num_resubmit = 0
         for i in range(self.counter.n):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TaskState.staging
-                    and task.stage_time + WAIT_FOR_RUNNING < now):
+                    and task.stage_time + self.max_stage_time + WAIT_FOR_RUNNING < now):
                 logger.warning('task %s timeout %.1f (at %s), re-assign it',
                                task.id, now - task.stage_time, task.host)
                 self.counter.staging_timeout += 1
 
                 self.launched[i] = False
                 self.counter.launched -= 1
+                num_resubmit += 1
+                if num_resubmit > 3:
+                    break
 
+        # running for too long
+        num_resubmit = 0
         if self.counter.finished > self.counter.n * 2.0 / 3:
             scale = 1.0 * self.counter.n / self.counter.finished
             tasks = sorted((task.start_time, i, task)
                            for i, task in enumerate(self.tasks)
-                           if self.launched[i] and not self.finished[i])
+                           if self.launched[i] and not self.finished[i] and task.status == TaskState.running)
             for _t, idx, task in tasks:
                 time_used = now - task.start_time
                 if time_used > self.max_task_time * (2 ** task.num_try) * scale:
@@ -401,7 +413,8 @@ class TaskSet(object):
                         logger.info('re-submit task %s for timeout %.1f, '
                                     'try %d', task.id, time_used, task.num_try)
                         task.time_used += time_used
-                        task.start_time = now
+                        task.stage_time = 0
+                        task.start_time = 0
                         self.launched[idx] = False
                         self.counter.launched -= 1
                     else:
@@ -409,6 +422,9 @@ class TaskSet(object):
                                      task, self.id)
                         self._abort('task %s timeout' % task)
                 else:
+                    break
+                num_resubmit += 1
+                if num_resubmit > 3:
                     break
         return self.counter.launched < n
 
