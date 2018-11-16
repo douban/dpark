@@ -393,16 +393,17 @@ class DparkContext(object):
     def runJob(self, rdd, func, partitions=None, allowLocal=False):
         self.start()
 
+        success = False
         if partitions is None:
             partitions = list(range(len(rdd)))
         try:
             gc.disable()
             for it in self.scheduler.runJob(rdd, func, partitions, allowLocal):
                 yield it
-        except Exception as e:
-            logger.critical('Framework failed %r', e)
-            raise e
+            success = True
         finally:
+            if not success:
+                logger.critical('Framework failed')
             gc.collect()
             gc.enable()
 
