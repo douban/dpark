@@ -10,6 +10,7 @@ import socket
 import logging
 import threading
 import subprocess
+import json
 
 import zmq
 import six
@@ -36,6 +37,8 @@ class Task:
         self.tried = 0
         self.state = -1
         self.state_time = 0
+        self.submit_time = 0
+        self.finish_time = 0
 
 
 REFUSE_FILTER = Dict()
@@ -91,11 +94,25 @@ class BaseScheduler(object):
         self.lock = threading.RLock()
         self.last_offer_time = time.time()
         self.task_launched = {}
+        self.task_finished = {}
         self.agentTasks = {}
 
         # threads
         self.stdout_t = None
         self.stderr_t = None
+
+        self.loghub_dir = None
+        self.stats = {'success': False,
+                      'resource_times': [],
+                      'sum_wait_time': 0,
+                      'num_task': options.tasks,
+                      'mem_mb': options.mem,
+                      'scheduler': self.short_name}
+        self.init_time = time.time()
+
+    @property
+    def short_name(self):
+        return None
 
     def getExecutorInfo(self):
         frameworkDir = os.path.abspath(os.path.dirname(sys.argv[0]))
@@ -232,11 +249,17 @@ class BaseScheduler(object):
         task_id.value = '%s-%s' % (t.id, t.tried)
         driver.killTask(task_id)
 
+    def finish_task(self, tid):
+        t = self.task_launched[tid]
+        t.finish_time = time.time()
+        self.task_finished[tid] = t
+        del self.task_launched[tid]
+
     @safe
     def registered(self, driver, fid, master_info):
         logger.debug('Registered with Mesos, FID = %s' % fid.value)
         self.framework_id = fid.value
-        f_handler, _ = add_loghub(self.framework_id)
+        f_handler, self.loghub_dir = add_loghub(self.framework_id)
         self.executor = self.getExecutorInfo()
         self.logger_stdout = create_logger(sys.stdout)
         self.logger_stderr = create_logger(sys.stderr, f_handler)
@@ -331,6 +354,25 @@ class BaseScheduler(object):
         # no need in dpark now, just for compatibility with pymesos
         pass
 
+    def get_stats(self, succeed):
+        st = self.stats
+        now = time.time()
+        resource_times = []
+        for t in self.task_finished.values():
+            resource_times.append(t.finish_time - t.submit_time)
+        for t in self.task_launched.values():
+            resource_times.append(now - t.submit_time)
+        st['resource_times'] = resource_times
+        st['succeed'] = succeed
+        st['stop_time'] = time.time()
+
+    def dump_stats(self, succeed):
+        self.get_stats(succeed)
+
+        path = os.path.join(self.loghub_dir, "stats.json")
+        with open(path, 'w') as f:
+            json.dump(self.stats, f, indent=4)
+
 
 class SubmitScheduler(BaseScheduler):
 
@@ -344,6 +386,10 @@ class SubmitScheduler(BaseScheduler):
             Task(i)
             for i in range(options.start, options.tasks)
         ]))
+
+    @property
+    def short_name(self):
+        return "drun"
 
     @safe
     def resourceOffers(self, driver, offers):
@@ -475,7 +521,7 @@ class SubmitScheduler(BaseScheduler):
             self.started = True
             return
 
-        del self.task_launched[tid]
+        self.finish_task(tid)
         sid = next(
             (sid for sid in self.agentTasks if tid in self.agentTasks[sid]),
             None)
@@ -519,6 +565,19 @@ class MPIScheduler(BaseScheduler):
         host = socket.gethostname()
         self.publisher_port = 'tcp://%s:%d' % (host, port)
         self.mpiout_t = None
+        self.mpi_start_time = -1
+
+    @property
+    def short_name(self):
+        return "mrun"
+
+    def get_stats(self, succeed):
+        super(MPIScheduler, self).get_stats(succeed)
+        start_time = self.mpi_start_time
+        start_time = start_time if start_time > 0 else time.time()
+        wait_time = sum([start_time - t.submit_time
+                         for t in (self.task_launched.values() + self.task_finished.values())])
+        self.stats['sum_wait_time'] = wait_time
 
     def start_task(self, driver, offer, k):
         t = Task(self.id)
@@ -624,7 +683,8 @@ class MPIScheduler(BaseScheduler):
 
             return
 
-        del self.task_launched[tid]
+        self.finish_task(tid)
+
         sid = next(
             (sid for sid in self.agentTasks if tid in self.agentTasks[sid]),
             None)
@@ -689,6 +749,7 @@ class MPIScheduler(BaseScheduler):
 
     def start_mpi(self):
         try:
+            self.mpi_start_time = time.time()
             commands = self.try_to_start_mpi(
                 self.command, self.options.tasks, list(self.used_tasks.values()))
         except Exception:
@@ -919,6 +980,7 @@ if __name__ == '__main__':
     spawn_rconsole(locals())
 
     try:
+        succeed = False
         driver.start()
         sched.run(driver)
     except KeyboardInterrupt:
@@ -931,6 +993,10 @@ if __name__ == '__main__':
                        traceback.format_exc())
         sched.stop(EXIT_EXCEPTION)
     finally:
+        try:
+            sched.dump_stats(succeed)
+        except:
+            logger.exception("dump stats fail, ignore it.")
         # sched.lock may be in WRONG status.
         # if any thread of sched may use lock or call driver, join it first
         driver.stop(False)
