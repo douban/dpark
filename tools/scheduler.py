@@ -44,6 +44,7 @@ REFUSE_FILTER.refuse_seconds = 10 * 60  # 10 mins
 EXECUTOR_CPUS = 0.01
 EXECUTOR_MEMORY = 64  # cache
 
+EXIT_UNEXPECTED = -1
 EXIT_NOMAL = 0
 EXIT_TASKFAIL = 1
 EXIT_TIMEOUT = 2
@@ -87,7 +88,7 @@ class BaseScheduler(object):
         self.command = command
         self.started = False
         self.stopped = False
-        self.status = 0
+        self.ec = EXIT_UNEXPECTED
         self.next_try = 0
         self.lock = threading.RLock()
         self.last_offer_time = time.time()
@@ -99,7 +100,7 @@ class BaseScheduler(object):
         self.stderr_t = None
 
         self.loghub_dir = None
-        self.stats = {'success': False,
+        self.stats = {'ec': EXIT_UNEXPECTED,
                       'init_time': time.time(),
                       'submit_times': {},  # bind offers
                       'start_time': None,  # mrun only: get all resources
@@ -315,11 +316,11 @@ class BaseScheduler(object):
                 logger.warning('task %d lauched failed, assign again', t.id)
                 self.kill_task(driver, t)
 
-    def stop(self, status):
+    def stop(self, ec):
         if self.stopped:
             return
         self.stopped = True
-        self.status = status  # my be overwrote
+        self.ec = ec
         logger.debug('scheduler stopped')
 
     def cleanup(self):
@@ -354,9 +355,9 @@ class BaseScheduler(object):
         # no need in dpark now, just for compatibility with pymesos
         pass
 
-    def dump_stats(self, succeed):
+    def dump_stats(self):
         st = self.stats
-        st['succeed'] = succeed
+        st['ec'] = self.ec
         st['stop_time'] = time.time()
         path = os.path.join(self.loghub_dir, "stats.json")
         with open(path, 'w') as f:
@@ -962,10 +963,8 @@ if __name__ == '__main__':
     spawn_rconsole(locals())
 
     try:
-        succeed = False
         driver.start()
         sched.run(driver)
-        succeed = True
     except KeyboardInterrupt:
         logger.warning('stopped by KeyboardInterrupt')
         sched.stop(EXIT_KEYBORAD)
@@ -977,7 +976,7 @@ if __name__ == '__main__':
         sched.stop(EXIT_EXCEPTION)
     finally:
         try:
-            sched.dump_stats(succeed)
+            sched.dump_stats()
         except:
             logger.exception("dump stats fail, ignore it.")
         # sched.lock may be in WRONG status.
@@ -987,4 +986,4 @@ if __name__ == '__main__':
         # mesos resourses are released, and no racer for lock any more
         sched.cleanup()
         ctx.term()
-        sys.exit(sched.status)
+        sys.exit(sched.ec)
