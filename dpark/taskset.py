@@ -317,6 +317,8 @@ class TaskSet(object):
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
 
+        abort = (self.numFailures[index] >= MAX_TASK_FAILURES)
+
         if TaskEndReason.maybe_oom(reason):
             self.counter.oom += 1
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
@@ -332,31 +334,25 @@ class TaskSet(object):
                         if not self.launched[i]:
                             t.mem = max(mem90, t.mem)
 
-        elif status == TaskState.failed:
-            _logger = logger.error if self.numFailures[index] == MAX_TASK_FAILURES \
-                else logger.warning
-            if reason not in self.reasons:
-                _logger(
-                    'task %s failed @ %s: %s : %s : %s',
-                    task.id,
-                    hostname,
-                    task,
-                    reason,
-                    message)
-                self.reasons.add(reason)
-            else:
-                _logger('task %s failed @ %s: %s', task.id, hostname, task)
+        else:
+            _logger = logger.error if abort else logger.warning
 
-        elif status == TaskState.lost:
-            logger.warning('Lost Task %s try %s at %s, reason %s',
-                           task_id, num_try, task.host, reason)
+            err_msg_simple = '{} id: {}, host: {}, reason: {}'.format(status, task.id, hostname, reason)
+            err_msg = "{} message: {}".format(err_msg_simple, message)
+
+            if status == TaskState.failed:
+                if reason not in self.reasons:
+                    self.reasons.add(reason)
+                elif not abort:
+                    err_msg = err_msg_simple
+            _logger(err_msg)
+
         self.counter.fail += 1
-
         self.numFailures[index] += 1
-        if self.numFailures[index] > MAX_TASK_FAILURES:
-            logger.error('Task %s failed more than %d times; aborting taskset',
-                         self.tasks[index].id, MAX_TASK_FAILURES)
+
+        if abort:
             self._abort('Task %s failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
+
         self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
         if self.counter.launched == self.counter.n:
