@@ -426,14 +426,30 @@ class RDD(object):
         return self.collect()
 
     def take(self, n):
-        if n == 0: return []
+        if n == 0:
+            return []
         r = []
         p = 0
+        n_splits = 1
+        last = 0
         while len(r) < n and p < len(self):
-            res = list(self.ctx.runJob(self, lambda x: list(itertools.islice(x, n - len(r))), [p], True))[0]
+            left = n - len(r)
+            if p > 0:
+                # assume we has only 10 but take(11), and get the 10 early, we need to run remaining splits fast.
+                n_splits = 2 * n_splits
+                if last > 0:
+                    n_splits = min(int(math.ceil(float(left) * p / len(r))), n_splits)
+            max_ = min((p + n_splits), len(self))
+            splits = list(range(p, max_))
+
+            logger.info("try to TAKE remaining %d of %d results, from %d/%d splits: [%d, %d)",
+                        left, n, len(splits), len(self), p, max_)
+            list_list = list(self.ctx.runJob(self, lambda x: list(itertools.islice(x, left)), splits, True))
+            res = [item for sublist in list_list for item in sublist][:left]
+            last = len(res)
             if res:
                 r.extend(res)
-            p += 1
+            p = max_
 
         return r
 
