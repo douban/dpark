@@ -39,6 +39,7 @@ from dpark.utils import (
     AbortFileReplacement, portable_hash,
     masked_crc32c
 )
+from dpark.utils import DparkUserFatalError
 from dpark.utils.log import get_logger
 from dpark.utils.frame import Scope, func_info
 from dpark.shuffle import SortShuffleFetcher, Merger
@@ -82,7 +83,6 @@ class RDD(object):
         self.checkpoint_path = None
         self._checkpoint_rdd = None
         ctx.init()
-        self.err = ctx.options.err
         self.mem = ctx.options.mem
         self.cpus = 0
         self.gpus = 0
@@ -92,6 +92,10 @@ class RDD(object):
         self.rddconf = None
         self.lineage = self.scope.stackhash
         self._dep_lineage_counts = None  # map "dep rdd id with uniq lineages" to their counts
+
+        self.err_ratio = ctx.options.err
+        self.allow_err = self.err_ratio > 1e-8
+        self.exc_info = (None, None, None)
 
     nextId = 0
 
@@ -346,7 +350,7 @@ class RDD(object):
     def reduce(self, f):
         def reducePartition(it):
             logger = get_logger(__name__)
-            if self.err < 1e-8:
+            if not self.allow_err:
                 try:
                     return [reduce(f, it)]
                 except TypeError as e:
@@ -368,11 +372,9 @@ class RDD(object):
                 except Exception as e:
                     logger.warning("skip bad record %s: %s", v, e)
                     err += 1
-                    if total > 100 and err > total * self.err * 10:
-                        raise Exception("too many error occured: %s" % (float(err) / total))
 
-            if err > total * self.err:
-                raise Exception("too many error occured: %s" % (float(err) / total))
+                    self.check_err_rate(total, err, False)
+            self.check_err_rate(total, err, True)
 
             return [s] if s is not None else []
 
@@ -858,6 +860,19 @@ class RDD(object):
         self.mem = mem
         return self
 
+    def check_err_rate(self, total, err, end=False):
+        if not self.exc_info:
+            self.exc_info = sys.exc_info()
+        threshold = total * self.err_ratio
+        if not end:
+            fail = total > 100 and err > threshold * 10
+        else:
+            fail = err > threshold
+        if fail:
+            msg_tmpl = "too many error occured: %s/%s=%s, %s"
+            msg = msg_tmpl % (err, total, float(err) / total, self.exc_info[1])
+            raise (DparkUserFatalError, DparkUserFatalError(msg), self.exc_info[2])
+
 
 class DerivedRDD(RDD):
     def __init__(self, rdd):
@@ -896,7 +911,7 @@ class MappedRDD(DerivedRDD):
         return func_info(self.func)
 
     def compute(self, split):
-        if self.err < 1e-8:
+        if not self.allow_err:
             return (self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
@@ -909,11 +924,9 @@ class MappedRDD(DerivedRDD):
             except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
-                if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s" % (float(err) / total))
+                self.check_err_rate(total, err, False)
 
-        if err > total * self.err:
-            raise Exception("too many error occured: %s" % (float(err) / total))
+        self.check_err_rate(total, err, True)
 
     @cached
     def __getstate__(self):
@@ -931,7 +944,7 @@ class MappedRDD(DerivedRDD):
 
 class FlatMappedRDD(MappedRDD):
     def compute(self, split):
-        if self.err < 1e-8:
+        if not self.allow_err:
             return chain(self.func(v) for v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
@@ -945,16 +958,13 @@ class FlatMappedRDD(MappedRDD):
             except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
-                if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s, %s" % ((float(err) / total), e))
-
-        if err > total * self.err:
-            raise Exception("too many error occured: %s, %s" % ((float(err) / total), e))
+                self.check_err_rate(total, err, False)
+        self.check_err_rate(total, err, True)
 
 
 class FilteredRDD(MappedRDD):
     def compute(self, split):
-        if self.err < 1e-8:
+        if not self.allow_err:
             return (v for v in self.prev.iterator(split) if self.func(v))
         return self._compute_with_error(split)
 
@@ -968,11 +978,8 @@ class FilteredRDD(MappedRDD):
             except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
-                if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s" % (float(err) / total))
-
-        if err > total * self.err:
-            raise Exception("too many error occured: %s" % (float(err) / total))
+                self.check_err_rate(total, err, False)
+        self.check_err_rate(total, err, True)
 
 
 class GlommedRDD(DerivedRDD):
@@ -1051,7 +1058,7 @@ class MappedValuesRDD(MappedRDD):
 
     def compute(self, split):
         func = self.func
-        if self.err < 1e-8:
+        if not self.allow_err:
             return ((k, func(v)) for k, v in self.prev.iterator(split))
         return self._compute_with_error(split)
 
@@ -1065,11 +1072,9 @@ class MappedValuesRDD(MappedRDD):
             except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
-                if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s" % (float(err) / total))
 
-        if err > total * self.err:
-            raise Exception("too many error occured: %s" % (float(err) / total))
+                self.check_err_rate(total, err, False)
+        self.check_err_rate(total, err, True)
 
 
 class FlatMappedValuesRDD(MappedValuesRDD):
@@ -1083,11 +1088,9 @@ class FlatMappedValuesRDD(MappedValuesRDD):
             except Exception as e:
                 logger.warning("ignored record %r: %s", v, e)
                 err += 1
-                if total > 100 and err > total * self.err * 10:
-                    raise Exception("too many error occured: %s" % (float(err) / total))
 
-        if err > total * self.err:
-            raise Exception("too many error occured: %s" % (float(err) / total))
+                self.check_err_rate(total, err, False)
+        self.check_err_rate(total, err, True)
 
 
 class ShuffledRDDSplit(Split):
@@ -1877,12 +1880,13 @@ class GZipFileRDD(TextFileRDD):
             while start < end:
                 d = f.read(min(64 << 10, end - start))
                 start += len(d)
-                if not d: break
+                if not d:
+                    break
 
                 try:
                     io = BytesIO(dz.decompress(d))
                 except Exception:
-                    if self.err < 1e-6:
+                    if self.err_ratio < 1e-6:
                         logger.error("failed to decompress file: %s", self.path)
                         raise
                     old = start
