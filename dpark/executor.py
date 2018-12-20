@@ -105,7 +105,7 @@ def run_task(task_data):
         import traceback
         msg = traceback.format_exc()
         ename = e.__class__.__name__
-        fatal_exceptions = [DparkUserFatalError]
+        fatal_exceptions = (DparkUserFatalError, ArithmeticError, ValueError)
         prefix = "FATAL" if isinstance(e, fatal_exceptions) else "FAILED"
         return TaskState.failed, '{}_EXCEPTION_{}'.format(prefix, ename), msg, cPickle.dumps(e)
     finally:
