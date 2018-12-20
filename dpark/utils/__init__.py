@@ -37,6 +37,10 @@ except:
 COMPRESS = 'zlib'
 
 
+class DparkUserFatalError(Exception):
+    pass
+
+
 def compress(s):
     return _compress(s, 1)
 

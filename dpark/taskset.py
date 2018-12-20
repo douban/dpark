@@ -341,6 +341,9 @@ class TaskSet(object):
             err_msg = "{} message: {}".format(err_msg_simple, message)
 
             if status == TaskState.failed:
+                if reason is not None:  # for tests with master=local
+                    if reason.startswith("FATAL_EXCEPTION"):
+                        self._abort('Job abort without retry for {}.'.format(reason))
                 if reason not in self.reasons:
                     self.reasons.add(reason)
                 elif not abort:

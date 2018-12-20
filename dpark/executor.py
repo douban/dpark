@@ -23,7 +23,7 @@ from pymesos import Executor, MesosExecutorDriver, encode_data, decode_data
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from dpark.utils import (
-    compress, decompress, spawn, mkdir_p
+    compress, decompress, spawn, mkdir_p, DparkUserFatalError
 )
 from dpark.utils.log import get_logger, init_dpark_logger, formatter_message
 from dpark.utils.memory import ERROR_TASK_OOM, set_oom_score
@@ -105,7 +105,9 @@ def run_task(task_data):
         import traceback
         msg = traceback.format_exc()
         ename = e.__class__.__name__
-        return TaskState.failed, 'FAILED_EXCEPTION_{}'.format(ename), msg, cPickle.dumps(e)
+        fatal_exceptions = [DparkUserFatalError]
+        prefix = "FATAL" if isinstance(e, fatal_exceptions) else "FAILED"
+        return TaskState.failed, '{}_EXCEPTION_{}'.format(prefix, ename), msg, cPickle.dumps(e)
     finally:
         gc.collect()
         gc.enable()
