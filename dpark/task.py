@@ -8,7 +8,7 @@ import os.path
 
 import dpark.conf
 from dpark.env import env
-from dpark.utils import compress
+from dpark.utils import compress, DparkUserFatalError
 from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
@@ -189,7 +189,11 @@ class ShuffleMapTask(DAGTask):
         last_i = 0
         for i, item in enumerate(rdd.iterator(self.split)):
             try:
-                k, v = item
+                try:
+                    k, v = item
+                except:
+                    raise DparkUserFatalError("item of {} should be (k, v) pair, got: {}".format(rdd.scope.key, item))
+
                 bucket = buckets[get_partition(k)]
                 r = bucket.get(k, None)
                 if r is not None:
