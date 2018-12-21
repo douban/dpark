@@ -25,7 +25,7 @@ def readable(size):
 
 
 LOCALITY_WAIT = 0
-WAIT_FOR_RUNNING = 15
+WAIT_FOR_RUNNING = 30
 MAX_TASK_FAILURES = 4
 MAX_TASK_MEMORY = 20 << 10  # 20GB
 
@@ -386,7 +386,7 @@ class TaskSet(object):
             task = self.tasks[i]
             if (self.launched[i] and task.status == TaskState.staging
                     and task.stage_time + self.max_stage_time + WAIT_FOR_RUNNING < now):
-                logger.warning('task %s timeout %.1f (at %s), re-assign it',
+                logger.warning('task %s staging timeout %.1f (at %s), re-assign it',
                                task.id, now - task.stage_time, task.host)
                 self.counter.staging_timeout += 1
 
@@ -409,7 +409,7 @@ class TaskSet(object):
                     # re-submit timeout task
                     self.counter.run_timeout += 1
                     if task.num_try <= MAX_TASK_FAILURES:
-                        logger.info('re-submit task %s for timeout %.1f, '
+                        logger.info('re-submit task %s for run timeout %.1f, '
                                     'try %d', task.id, time_used, task.num_try)
                         task.time_used += time_used
                         task.stage_time = 0
