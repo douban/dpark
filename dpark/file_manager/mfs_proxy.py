@@ -99,14 +99,17 @@ class ProxyConn(object):
     def _connect(self):
         if self.conn is not None:
             return
-        for i in range(10):
+        N = 8
+        for i in range(N):
             try:
                 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 conn.connect((self.host, self.port))
                 self.conn = conn
                 return
-            except socket.error:
-                time.sleep(1.5 ** i)
+            except socket.error as e:
+                if i == N - 1:
+                    raise Exception("Fail to connect to mfs proxy %s:%s, %s", self.host, self.port, e)
+                time.sleep(1.5 ** i)  # 1.5**8 = 25.6
 
     def _recv_cmd(self, cmd):
         d = self.recv_full(12)
