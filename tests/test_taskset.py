@@ -6,7 +6,7 @@ import logging
 
 from dpark.taskset import TaskSet
 from dpark.hostatus import HostStatus, TaskHostManager
-from dpark.task import TaskState, OtherFailure, TaskEndReason
+from dpark.task import TaskState, OtherFailure, TaskEndReason, DAGTask
 from six.moves import range
 from addict import Dict
 
@@ -28,13 +28,10 @@ class MockSchduler:
         pass
 
 
-class MockTask:
+class MockTask(DAGTask):
 
     def __init__(self, id):
-        self.id = id
-        self.taskset_id = "1.1_{}".format(id)
-        self.try_id = 0
-        self.start_time = 0
+        DAGTask.__init__(self, 1, 1, id)
 
     def preferredLocations(self):
         return []
@@ -65,7 +62,7 @@ class TestTaskSet(unittest.TestCase):
         assert len(ts) == 10
         assert taskset.counter.launched == 10
         assert not taskset.taskOffer(host_offers, cpus, mems, gpus)
-        [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts]
+        [taskset.statusUpdate(t[2].id, 1, TaskState.finished) for t in ts]
         assert taskset.counter.finished == 10
 
     def test_retry(self):
@@ -81,13 +78,13 @@ class TestTaskSet(unittest.TestCase):
         mems = [10]
         gpus = [0]
         ts = sum([taskset.taskOffer(host_offers=host_offers, cpus=cpus,
-                                mems=mems, gpus=gpus) for i in range(10)], [])
-        [taskset.statusUpdate(t[2].id, 0, TaskState.finished) for t in ts[1:]]
+                                   mems=mems, gpus=gpus) for i in range(10)], [])
+        [taskset.statusUpdate(t[2].id, 1, TaskState.finished) for t in ts[1:]]
         assert taskset.counter.finished == 9
-        taskset.statusUpdate(ts[0][2].id, 0, TaskState.failed)
+        taskset.statusUpdate(ts[0][2].id, 1, TaskState.failed)
         t = taskset.taskOffer(host_offers=host_offers, cpus=cpus,
-                          mems=mems, gpus=gpus)[0]
-        assert t[2].id == 0
+                              mems=mems, gpus=gpus)[0]
+        assert t[2].id == "1_0"
         assert not taskset.taskOffer(
             host_offers=host_offers, cpus=cpus, mems=mems, gpus=gpus
         )

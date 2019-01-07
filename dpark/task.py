@@ -51,6 +51,19 @@ class TTID(object):
         return "{}.{}".format(task_id, task_num_try)
 
 
+class TaskTry(object):
+
+    def __init__(self, reason):
+        self.reason = reason
+        self.status = [(TaskState.staging, time.time())]
+
+    def append(self, st):
+        self.status.append((st, time.time()))
+
+    def __str__(self):
+        return self.reason + ":" + ",".join(list(map(lambda x: "%s@%s" % (x[0], int(x[1])), self.status)))
+
+
 class DAGTask(object):
     def __init__(self, stage_id, taskset_id, partition):
         self.id = TTID.make_task_id(taskset_id, partition)
@@ -58,6 +71,8 @@ class DAGTask(object):
         self.taskset_id = taskset_id
         self.partition = partition
         self.num_try = 0
+        self.reason_next = TaskReason.first
+        self.tries = {}
 
         self.status = None
         self.time_used = 0  # sum up time of mulity retry
@@ -75,6 +90,14 @@ class DAGTask(object):
     @property
     def try_id(self):
         return TTID.make_ttid(self.id, self.num_try)
+
+    def try_next(self):
+        self.num_try += 1
+        self.tries[self.num_try] = TaskTry(self.reason_next)
+
+    def update_status(self, status, num_try):
+        self.status = status
+        self.tries[num_try].append(status)
 
     def run(self, task_try_id):
         try:
@@ -412,6 +435,13 @@ class TaskEndReason:
     @classmethod
     def maybe_oom(cls, reason):
         return reason in (cls.task_oom, cls.recv_sig_kill, cls.mesos_cgroup_oom)
+
+
+class TaskReason:
+    first = "first"
+    run_timeout = "run_timeout"
+    stage_timeout = "stage_timout"
+    fail = "fail"
 
 
 class FetchFailed(Exception):

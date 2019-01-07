@@ -9,7 +9,7 @@ from dpark.utils.log import (
     get_logger, make_progress_bar
 )
 from dpark.hostatus import TaskHostManager
-from dpark.task import TaskState, TaskEndReason
+from dpark.task import TaskState, TaskEndReason, TaskReason
 from six.moves import range
 
 logger = get_logger(__name__)
@@ -183,7 +183,7 @@ class TaskSet(object):
         if t.cpus <= cpus[i] + 1e-4 and t.mem <= mem[i] and t.gpus <= gpus[i]:
             t.status = TaskState.staging
             t.host = o.hostname
-            t.num_try += 1
+            t.try_next()
             self.id_retry_host[(t.id, t.num_try)] = o.hostname
             logger.debug('Starting task %s on slave %s',
                          t.try_id, o.hostname)
@@ -204,13 +204,14 @@ class TaskSet(object):
             logger.error('invalid task_id: %s, status %s, reason %s', task_id, status, reason)
             return
         i = self.tidToIndex[task_id]
+        task = self.tasks[i]
+        task.update_status(status, num_try)
+
         if self.finished[i]:
             if status == TaskState.finished:
                 logger.debug('Task %s is already finished, ignore it', task_id)
             return
 
-        task = self.tasks[i]
-        task.status = status
         # when checking, task been masked as not launched
         if not self.launched[i]:
             self.launched[i] = True
@@ -222,6 +223,10 @@ class TaskSet(object):
         elif status == TaskState.finished:
             if stats:
                 self.mem_digest.add(stats.bytes_max_rss / (1024. ** 2))
+            if task.tries[num_try].reason in (TaskReason.run_timeout, TaskReason.stage_timeout):
+                logger.warning("task timeout works: try %s finshed. History: %s",
+                               num_try, ". ".join(map(str, task.tries.values())))
+
             self._task_finished(task_id, num_try, result, update, stats)
         else:  # failed, killed, lost, error
             self._task_lost(task_id, num_try, status, reason, message, exception=result)
@@ -356,6 +361,8 @@ class TaskSet(object):
         if abort:
             self._abort('Task %s failed more than %d times' % (self.tasks[index].id, MAX_TASK_FAILURES))
 
+        task.reason_next = "fail"
+
         self.task_host_manager.task_failed(task.id, hostname, reason)
         self.launched[index] = False
         if self.counter.launched == self.counter.n:
@@ -389,7 +396,7 @@ class TaskSet(object):
                 logger.warning('task %s staging timeout %.1f (at %s), re-assign it',
                                task.id, now - task.stage_time, task.host)
                 self.counter.staging_timeout += 1
-
+                task.reason_next = TaskReason.stage_timeout
                 self.launched[i] = False
                 self.counter.launched -= 1
                 num_resubmit += 1
@@ -398,24 +405,25 @@ class TaskSet(object):
 
         # running for too long
         num_resubmit = 0
-        if self.counter.finished > self.counter.n * 2.0 / 3:
+        if self.counter.finished > self.counter.n * 0.8:
             scale = 1.0 * self.counter.n / self.counter.finished
             tasks = sorted((task.start_time, i, task)
                            for i, task in enumerate(self.tasks)
                            if self.launched[i] and not self.finished[i] and task.status == TaskState.running)
             for _t, idx, task in tasks:
                 time_used = now - task.start_time
-                if time_used > self.max_task_time * (2 ** task.num_try) * scale:
+                if time_used > self.max_task_time * (4 ** task.num_try) * scale:  # num_try starts from 1
                     # re-submit timeout task
                     self.counter.run_timeout += 1
                     if task.num_try <= MAX_TASK_FAILURES:
-                        logger.info('re-submit task %s for run timeout %.1f, '
-                                    'try %d', task.id, time_used, task.num_try)
+                        logger.info('re-submit task %s for run timeout %.1f, max finished = %d, try %d',
+                                    task.id, time_used, int(self.max_task_time), task.num_try)
                         task.time_used += time_used
                         task.stage_time = 0
                         task.start_time = 0
                         self.launched[idx] = False
                         self.counter.launched -= 1
+                        task.reason_next = TaskReason.run_timeout
                     else:
                         logger.error('task %s timeout, aborting taskset %s',
                                      task, self.id)
