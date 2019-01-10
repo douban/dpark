@@ -590,7 +590,8 @@ class DAGScheduler(Scheduler):
             return
 
         def submitStage(stage):
-            stage.submit_time = time.time()
+            if not stage.submit_time:
+                stage.submit_time = time.time()
             logger.debug('submit stage %s', stage)
             if stage not in waiting and stage not in running:
                 missing = self.getMissingParentStages(stage)
