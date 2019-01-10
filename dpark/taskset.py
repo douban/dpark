@@ -37,14 +37,19 @@ class TaskCounter(object):
         self.launched = 0
         self.finished = 0
 
-        self.oom = 0
-        self.run_timeout = 0
-        self.staging_timeout = 0
-        self.fail = 0  # include oom, not include timeout
+        self.fail_oom = 0
+        self.fail_fetch = 0
+        self.fail_run_timeout = 0
+        self.fail_staging_timeout = 0
+        self.fail_all = 0  # include oom, not include timeout
 
     @property
     def running(self):
         return self.launched - self.finished
+
+    def get_fail_types(self):
+        prefix = "fail"
+        return [a for a in self.__dict__ if a.startswith(prefix)]
 
 
 class TaskSet(object):
@@ -299,8 +304,10 @@ class TaskSet(object):
 
     def _task_lost(self, task_id, num_try, status, reason, message, exception=None):
         index = self.tidToIndex[task_id]
+        task = self.tasks[index]
 
         if reason == TaskEndReason.fetch_failed and self.numFailures[index] >= 1:
+            self.counter.fail_fetch += 1
             logger.warning('Cancel task %s after fetch fail twice from %s',
                            task_id, exception.serverUri)
             self.sched.taskEnded(self.tasks[index], reason, exception, None)
@@ -318,14 +325,13 @@ class TaskSet(object):
                 self.sched.tasksetFinished(self)  # cancel taskset
             return
 
-        task = self.tasks[index]
         hostname = self.id_retry_host[(task.id, num_try)] \
             if (task.id, num_try) in self.id_retry_host else task.host
 
         abort = (self.numFailures[index] >= MAX_TASK_FAILURES)
 
         if TaskEndReason.maybe_oom(reason):
-            self.counter.oom += 1
+            self.counter.fail_oom += 1
             task.mem = min(task.mem * 2, MAX_TASK_MEMORY)
             logger.info("task %s oom, enlarge memory limit to %d, origin %d", task.id, task.mem, task.rdd.mem)
 
@@ -355,7 +361,7 @@ class TaskSet(object):
                     err_msg = err_msg_simple
             _logger(err_msg)
 
-        self.counter.fail += 1
+        self.counter.fail_all += 1
         self.numFailures[index] += 1
 
         if abort:
@@ -395,7 +401,7 @@ class TaskSet(object):
                     and task.stage_time + self.max_stage_time + WAIT_FOR_RUNNING < now):
                 logger.warning('task %s staging timeout %.1f (at %s), re-assign it',
                                task.id, now - task.stage_time, task.host)
-                self.counter.staging_timeout += 1
+                self.counter.fail_staging_timeout += 1
                 task.reason_next = TaskReason.stage_timeout
                 self.launched[i] = False
                 self.counter.launched -= 1
@@ -414,7 +420,7 @@ class TaskSet(object):
                 time_used = now - task.start_time
                 if time_used > self.max_task_time * (4 ** task.num_try) * scale:  # num_try starts from 1
                     # re-submit timeout task
-                    self.counter.run_timeout += 1
+                    self.counter.fail_run_timeout += 1
                     if task.num_try <= MAX_TASK_FAILURES:
                         logger.info('re-submit task %s for run timeout %.1f, max finished = %d, try %d',
                                     task.id, time_used, int(self.max_task_time), task.num_try)

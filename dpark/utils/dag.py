@@ -63,16 +63,17 @@ def summary_prof(p):
     fail = counters['fail']
 
     task_torun = task['all'] - task['running'] - task['finished']
-    fail_error = fail['all'] - fail['oom']
+    other_error = fail['all'] - fail['oom'] - fail['run_timeout'] - fail['staging_timeout'] - fail['fetch']
     finished = task['finished']
     res = [
         ["task", "{} = {} + {} + {}".format(task['all'], task['finished'], task['running'], task_torun)],
-        ["fail", "{} = {} + {} + {} + {} ".format(fail['all'],
-                                                  fail['oom'],
-                                                  fail_error,
-                                                  fail['run_timeout'],
-                                                  fail['staging_timeout'],
-                                                  )],
+        ["fail", "{} = {} + {} + {} + {} + {} ".format(fail['all'],
+                                                       fail['oom'],
+                                                       fail['fetch'],
+                                                       fail['run_timeout'],
+                                                       fail['staging_timeout'],
+                                                       other_error
+                                                       )],
     ]
 
     if not stats:

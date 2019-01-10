@@ -20,7 +20,7 @@ import dpark.conf as conf
 from dpark.accumulator import Accumulator
 from dpark.dependency import ShuffleDependency
 from dpark.env import env
-from dpark.taskset import TaskSet
+from dpark.taskset import TaskSet, TaskCounter
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask, TTID, TaskState, TaskEndReason
 from dpark.hostatus import TaskHostManager
@@ -215,18 +215,17 @@ class Stage(object):
         return msg
 
     def _summary_counters(self):
+
+        def _sum(attr):
+            return sum([getattr(counter, attr) for counter in self.taskcounters])
+
         counters = {
             "task": {
                 "all": len(self),
                 "running": self.num_task_running,
                 "finished": self.num_task_finished,
             },
-            "fail": {
-                'all': sum([c.fail for c in self.taskcounters]),
-                'oom': sum([c.oom for c in self.taskcounters]),
-                'run_timeout': sum([c.run_timeout for c in self.taskcounters]),
-                'staging_timeout': sum([c.staging_timeout for c in self.taskcounters]),
-            },
+            "fail": dict([(attr[5:], _sum(attr)) for attr in TaskCounter(0).get_fail_types()])
         }
         return counters
 
@@ -751,7 +750,7 @@ class DAGScheduler(Scheduler):
             if self.loghub_dir:
                 self._dump_stats(stats)
         except Exception as e:
-            logger.warning("Fail to dump job stats: %s.", e)
+            logger.exception("Fail to dump job stats: %s.", e)
 
     def _dump_stats(self, stats):
         name = "_".join(map(str, ['sched', self.id, "job", self.runJobTimes])) + ".json"
