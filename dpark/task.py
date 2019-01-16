@@ -12,7 +12,7 @@ from dpark.utils import compress, DparkUserFatalError
 from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.serialize import marshalable, load_func, dump_func, dumps, loads
-from dpark.shuffle import LocalFileShuffle, get_serializer, Merger, pack_header
+from dpark.shuffle import get_serializer, Merger, pack_header, ShuffleWorkDir
 
 logger = get_logger(__name__)
 
@@ -251,76 +251,82 @@ class ShuffleMapTask(DAGTask):
         env.task_stats.secs_dump += t - t1
         env.task_stats.secs_all = t - t0
 
-        return LocalFileShuffle.getServerUri()
+        return env.server_uri
 
 
-class BucketDumper(object):
+class BucketDumperBase(object):
 
     def __init__(self, shuffle_id, map_id, num_reduce, rddconf):
         self.shuffle_id = shuffle_id
         self.map_id = map_id
         self.num_reduce = n = num_reduce
         self.rddconf = rddconf
-        self.paths = [None for _ in range(n)]
+        self.paths = [ShuffleWorkDir(self.shuffle_id, self.map_id, i) for i in range(num_reduce)]
 
+        self.tmp_paths = [[] for _ in range(n)]  # last one is used for export
         # stats
         self.sizes = [0 for _ in range(n)]
         self.num_dump = 0
 
-    def _get_path(self, i, size):
-        return LocalFileShuffle.getOutputFile(self.shuffle_id, self.map_id, i, size)
-
-    def _get_path_check_mem(self, i, size):
-        if size > 0:
-            if env.meminfo.rss + size > env.meminfo.mem_limit_soft:
-                p = self._get_path(i, -1)
-            else:
-                p = self._get_path(i, size)
-                if p.startswith("/dev/shm"):
-                    env.meminfo.add(size)
-        else:
-            p = self._get_path(i, size)
-        return p
-
     def get_size(self):
         return sum(self.sizes)
 
-    @staticmethod
-    def _mk_tmp(s, seq=None):
-        if seq is not None:
-            return "%s.tmp.%d" % (s, seq)
-        else:
-            return "%s.tmp" % (s,)
+    def dump(self, buckets, is_final):
+        t = time.time()
+        for i, bucket_dict in enumerate(buckets):
+            if not bucket_dict:
+                continue
+            items = six.iteritems(bucket_dict)
+            data, exp_size = self._prepare(items)
+            tmppath = self._get_tmp(i, is_final, exp_size)
+            logger.debug("dump %s", tmppath)
+            size = self._dump_bucket(data, tmppath)
+            self.sizes[i] += size
 
-    def _get_next_tmp(self, reduce_id, is_final, size):
-        i = reduce_id
-        if is_final and self.num_dump == 0:
-            # check memory
-            self.paths[i] = p = self._get_path_check_mem(i, size)
-        else:
-            # dump to disk!
-            p = self.paths[i]
-            if not p:
-                self.paths[i] = p = self._get_path(i, -1)
-        return self._mk_tmp(p)
-
-    def _pre_commit(self, aggregator):
-        pass
-
-    def _dump_empty_bucket(self, i):
-        p = self._get_path(i, 1)
-        logger.debug("dump empty %s", p)
-        self._dump_bucket(self._prepare([])[0], p)
+        self.num_dump += 1
+        t = time.time() - t
+        env.task_stats.secs_dump += t
+        env.task_stats.num_dump_rotate += 1
 
     def commit(self, aggregator):
         self._pre_commit(aggregator)
         for i in range(self.num_reduce):
-            path = self.paths[i]
-            if path:
-                old = self._mk_tmp(path)
-                os.rename(old, path)  # comment it to test fetch (404)
+            tmppaths = self.tmp_paths[i]
+            if tmppaths:
+                self.paths[i].export(tmppaths[-1])
             else:
                 self._dump_empty_bucket(i)
+
+    def _dump_empty_bucket(self, i):
+        tmppath = self.paths[i].alloc_tmp()
+        self._dump_bucket(self._prepare([])[0], tmppath)
+        self.paths[i].export(tmppath)
+
+    def _get_tmp(self, reduce_id, is_final, size):
+        pass
+
+
+class BucketDumper(BucketDumperBase):
+
+    def _get_tmp(self, reduce_id, is_final, size):
+        # each reduce has one tmp
+        # each tmp may be opened and appended multi times
+
+        i = reduce_id
+        tmp_paths = self.tmp_paths[i]
+        if tmp_paths:
+            tmp_path = tmp_paths[0]
+        else:
+            if is_final and self.num_dump == 0:
+                tmp_path = ShuffleWorkDir.alloc_tmp(datasize=size)
+            else:
+                tmp_path = ShuffleWorkDir.alloc_tmp(mem_first=False)
+            tmp_paths.append(tmp_path)
+
+        return tmp_path
+
+    def _pre_commit(self, aggregator):
+        pass
 
     def _prepare(self, items):
         items = list(items)
@@ -345,56 +351,35 @@ class BucketDumper(object):
             f.write(data)
         return len(data)
 
-    def dump(self, buckets, is_final):
-        t = time.time()
-        for i, bucket_dict in enumerate(buckets):
-            if not bucket_dict:
-                continue
-            items = six.iteritems(bucket_dict)
-            data, exp_size = self._prepare(items)
-            path = self._get_next_tmp(i, is_final, exp_size)
-            logger.debug("dump %s", path)
-            size = self._dump_bucket(data, path)
-            self.sizes[i] += size
 
-        self.num_dump += 1
-        t = time.time() - t
-        env.task_stats.secs_dump += t
-        env.task_stats.num_dump_rotate += 1
-
-
-class SortMergeBucketDumper(BucketDumper):
+class SortMergeBucketDumper(BucketDumperBase):
 
     def _pre_commit(self, aggregator):
         for i in range(self.num_reduce):
-            out_path = self.paths[i]
-            if out_path:
-                tmp = self._mk_tmp(out_path)
-
-                in_path = [self._mk_tmp(out_path, i) for i in range(self.num_dump + 1)]
-                in_path = [p for p in in_path if os.path.exists(p)]
-                if len(in_path) == 1:
-                    os.rename(in_path[0], tmp)
+            tmp_paths = self.tmp_paths[i]
+            if tmp_paths:
+                if len(tmp_paths) == 1:
+                    self.paths[i].export(tmp_paths[0])
                 else:
                     inputs = [get_serializer(self.rddconf).load_stream(open(p))
-                              for p in in_path]
+                              for p in tmp_paths]
                     rddconf = self.rddconf.dup(op=dpark.conf.OP_GROUPBY)
                     merger = Merger.get(rddconf, aggregator=aggregator, api_callsite=self.__class__.__name__)
                     merger.merge(inputs)
-                    with open(tmp, 'w') as f:
+                    final_tmp = self._get_tmp(i, True, 0)
+                    with open(final_tmp, 'wb') as f:
                         get_serializer(self.rddconf).dump_stream(merger, f)
             else:
                 self._dump_empty_bucket(i)
 
-    def _get_next_tmp(self, i, is_final, size):
-        p = self.paths[i]
-        if not p:
-            self.paths[i] = p = self._get_path(i, -1)
-
-        return self._mk_tmp(p, self.num_dump)
+    def _get_tmp(self, i, is_final, size):
+        # each dump write to a new tmp file for each reduce
+        p = ShuffleWorkDir.alloc_tmp(mem_first=False)
+        self.tmp_paths[i].append(p)
+        return p
 
     def _prepare(self, items):
-        return items, -1
+        return items, None
 
     def _dump_bucket(self, items, path):
         serializer = get_serializer(self.rddconf)

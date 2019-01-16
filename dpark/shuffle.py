@@ -9,7 +9,6 @@ import marshal
 import struct
 import time
 import heapq
-import uuid
 import itertools
 from operator import itemgetter
 from itertools import islice
@@ -21,7 +20,7 @@ except ImportError:
     from six import BytesIO as StringIO
 
 import dpark.conf
-from dpark.utils import compress, decompress, spawn, mkdir_p, atomic_file
+from dpark.utils import compress, decompress, spawn, atomic_file
 from dpark.utils.memory import ERROR_TASK_OOM
 from dpark.utils.log import get_logger
 from dpark.env import env
@@ -56,53 +55,6 @@ def unpack_header(head):
     is_marshal, is_sorted = F_MAPPING_R[flag]
     length, = struct.unpack("I", head[1:5])
     return length, is_marshal, is_sorted
-
-
-class LocalFileShuffle:
-
-    @classmethod
-    def get_tmp(cls):
-        dirs = env.get('WORKDIR')
-        d = random.choice(dirs[1:]) if dirs[1:] else dirs[0]
-        mkdir_p(d)
-        return os.path.join(d, 'shuffle-%s.tmp' % uuid.uuid4().hex)
-
-    @classmethod
-    def getOutputFile(cls, shuffle_id, input_id, output_id, datasize=0):
-        """
-            datasize < 0: disk first
-            datasize > 0: memfirst
-            datasize = 0: read only, use link
-        """
-        shuffleDir = env.get('WORKDIR')
-        path = os.path.join(shuffleDir[0], str(shuffle_id), str(input_id))
-        mkdir_p(path)
-        p = os.path.join(path, str(output_id))
-        if datasize != 0 and len(shuffleDir) > 1:
-            use_disk = datasize < 0
-            if datasize > 0:
-                st = os.statvfs(path)
-                free = st.f_bfree * st.f_bsize
-                ratio = st.f_bfree * 1.0 / st.f_blocks
-                use_disk = free < max(datasize, 1 << 30) or ratio < 0.66
-
-            if use_disk:
-                d2 = os.path.join(
-                    random.choice(shuffleDir[1:]),
-                    str(shuffle_id), str(input_id))
-                mkdir_p(d2)
-                p2 = os.path.join(d2, str(output_id))
-                if os.path.exists(p):
-                    os.remove(p)
-                os.symlink(p2, p)
-                if os.path.islink(p2):
-                    os.unlink(p2)  # p == p2
-                return p2
-        return p
-
-    @classmethod
-    def getServerUri(cls):
-        return env.get('SERVER_URI')
 
 
 def write_buf(stream, buf, is_marshal):
@@ -278,12 +230,7 @@ class RemoteFile(object):
         self.sid = shuffle_id
         self.mid = map_id
         self.rid = reduce_id
-        if uri == LocalFileShuffle.getServerUri():
-            # urllib can open local file
-            self.url = 'file://' + LocalFileShuffle.getOutputFile(shuffle_id, map_id, reduce_id)
-        else:
-            self.url = "%s/%d/%d/%d" % (uri, shuffle_id, map_id, reduce_id)
-        # self.url = self.url.replace("5055", "5075")  # test fetch retry
+        self.url = ShuffleWorkDir(shuffle_id, map_id, reduce_id).restore(uri)
         logger.debug("fetch %s", self.url)
 
         self.num_retry = 0
@@ -363,7 +310,7 @@ class ShuffleFetcher(object):
 
     @classmethod
     def _get_uris(cls, shuffle_id):
-        uris = env.mapOutputTracker.getServerUris(shuffle_id)
+        uris = MapOutputTracker.get_locs(shuffle_id)
         mapid_uris = list(zip(list(range(len(uris))), uris))
         random.shuffle(mapid_uris)
         return mapid_uris
@@ -517,7 +464,7 @@ def heap_merged(items_lists, combiner):
 class SortedItemsOnDisk(object):
 
     def __init__(self, items, rddconf):
-        self.path = path = LocalFileShuffle.get_tmp()
+        self.path = path = env.workdir.alloc_tmp("sorted_items")
         with atomic_file(path, bufsize=4096) as f:
             if not isinstance(items, list):
                 items = list(items)
@@ -823,7 +770,7 @@ class SortMerger(Merger):
             batch = list(islice(iters, 100))
             if not batch:
                 break
-            path = LocalFileShuffle.get_tmp()
+            path = env.workdir.alloc_tmp_file("sort_merger")
             with open(path, 'wb') as f:
                 s.dump_stream(self._merge_sorted(batch), f)
             self.paths.append(path)
@@ -859,64 +806,45 @@ class IterCoGroupSortMerger(SortMerger):
         return cogroup_no_dup(list(map(iter, iters)))
 
 
-class BaseMapOutputTracker(object):
+class MapOutputTracker(object):
 
-    def registerMapOutputs(self, shuffle_id, locs):
-        pass
+    @classmethod
+    def get_key(cls, shuffle_id):
+        return 'shuffle:{}'.format(shuffle_id)
 
-    def getServerUris(self):
-        pass
+    @classmethod
+    def set_locs(cls, shuffle_id, locs):
+        key = cls.get_key(shuffle_id)
+        env.trackerServer.set(key, locs)
 
-    def stop(self):
-        pass
-
-
-class MapOutputTracker(BaseMapOutputTracker):
-
-    def __init__(self):
-        self.client = env.trackerClient
-        logger.debug("MapOutputTracker started")
-
-    def registerMapOutputs(self, shuffle_id, locs):
-        self.client.call(SetValueMessage('shuffle:%s' % shuffle_id, locs))
-
-    def getServerUris(self, shuffle_id):
-        locs = self.client.call(GetValueMessage('shuffle:%s' % shuffle_id))
-        logger.debug("Fetch done: %s", locs)
-        return locs
+    @classmethod
+    def get_locs(cls, shuffle_id):
+        key = cls.get_key(shuffle_id)
+        if env.trackerServer:
+            return env.trackerServer.get(key)
+        else:
+            return env.trackerClient.call(GetValueMessage(key))
 
 
-def test():
-    from dpark.utils import compress
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-    from dpark.env import env
-    env.start()
+class ShuffleWorkDir(object):
 
-    path = LocalFileShuffle.getOutputFile(1, 0, 0)
-    d = compress(pickle.dumps({'key': 'value'}, -1))
-    f = open(path, 'w')
-    f.write(pack_header(len(d), False, False) + d)
-    f.close()
+    def __init__(self, shuffle_id, input_id, output_id):
+        self.subpath = os.path.join(str(shuffle_id), str(input_id), str(output_id))
 
-    uri = LocalFileShuffle.getServerUri()
-    env.mapOutputTracker.registerMapOutputs(1, [uri])
-    fetcher = SimpleShuffleFetcher()
+    def get(self):
+        return env.workdir.get_path(self.subpath)
 
-    def func(it):
-        k, v = next(it)
-        assert k == 'key'
-        assert v == 'value'
+    @classmethod
+    def alloc_tmp(cls, mem_first=True, datasize=0):
+        return env.workdir.alloc_tmp_file("shuffle", mem_first, datasize)
 
-    fetcher.fetch(1, 0, func)
+    def export(self, tmppath):
+        return env.workdir.export(tmppath, self.subpath)
 
-    tracker = MapOutputTracker()
-    tracker.registerMapOutputs(2, [None, uri, None, None, None])
-    assert tracker.getServerUris(2) == [None, uri, None, None, None]
-    tracker.stop()
-
-
-if __name__ == '__main__':
-    from dpark.shuffle import test
-
-    test()
+    def restore(self, uri):
+        if uri == env.server_uri:
+            # urllib can open local file
+            url = 'file://' + self.get()
+        else:
+            url = "%s/%s" % (uri, self.subpath)
+        return url

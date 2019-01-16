@@ -24,6 +24,7 @@ from dpark.taskset import TaskSet, TaskCounter
 from dpark.mutable_dict import MutableDict
 from dpark.task import ResultTask, ShuffleMapTask, TTID, TaskState, TaskEndReason
 from dpark.hostatus import TaskHostManager
+from dpark.shuffle import MapOutputTracker
 from dpark.utils import (
     compress, decompress, spawn, getuser,
     sec2nanosec)
@@ -341,15 +342,6 @@ class DAGScheduler(Scheduler):
         self.idToStage.clear()
         self.shuffleToMapStage.clear()
         self.cacheLocs.clear()
-        self.cacheTracker.clear()
-
-    @property
-    def cacheTracker(self):
-        return env.cacheTracker
-
-    @property
-    def mapOutputTracker(self):
-        return env.mapOutputTracker
 
     def submitTasks(self, tasks):
         raise NotImplementedError
@@ -370,7 +362,7 @@ class DAGScheduler(Scheduler):
         return self.cacheLocs.get(rdd.id, [[] for _ in range(len(rdd))])
 
     def updateCacheLocs(self):
-        self.cacheLocs = self.cacheTracker.getLocationsSnapshot()
+        self.cacheLocs = env.cacheTrackerServer.getLocationsSnapshot()
 
     def newStage(self, output_rdd, shuffleDep):
         """ A stage may contain multi data pipeline, which form a tree with one final output pipline as root.
@@ -409,7 +401,7 @@ class DAGScheduler(Scheduler):
                     logger.warning("miss pipeline: {} ".format(r.scope.key))
 
             if r.shouldCache:
-                self.cacheTracker.registerRDD(r.id, len(r))
+                env.cacheTrackerServer.registerRDD(r.id, len(r))
 
             dep_rdds = []
             dep_stages = []
@@ -699,7 +691,7 @@ class DAGScheduler(Scheduler):
                         onStageFinished(stage)
                         running.remove(stage)
                         if stage.shuffleDep is not None:
-                            self.mapOutputTracker.registerMapOutputs(
+                            MapOutputTracker.set_locs(
                                 stage.shuffleDep.shuffleId,
                                 [l[-1] for l in stage.outputLocs])
                         self.updateCacheLocs()

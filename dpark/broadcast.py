@@ -13,7 +13,7 @@ from multiprocessing import Manager, Condition
 from mmap import ACCESS_WRITE, ACCESS_READ
 
 from dpark.utils.log import get_logger
-from dpark.utils import compress, decompress, spawn, mkdir_p
+from dpark.utils import compress, decompress, spawn
 from dpark.cache import Cache
 from dpark.serialize import marshalable
 from dpark.env import env
@@ -132,19 +132,6 @@ def check_memory(location):
         logger.warning('import psutil failed')
 
 
-def decide_dir(work_dirs):
-    return work_dirs[-1]
-
-
-def gen_broadcast_path(work_dirs, uuid):
-    work_dir = decide_dir(work_dirs)
-    broadcast_dir = os.path.join(work_dir, 'broadcast')
-    mkdir_p(broadcast_dir)
-    uuid_path = '%s_%d' % (uuid, os.getpid())
-    broadcast_path = os.path.join(broadcast_dir, uuid_path)
-    return broadcast_path
-
-
 class DownloadManager(object):
     def __init__(self):
         self._started = False
@@ -157,7 +144,6 @@ class DownloadManager(object):
         self.host = None
         self.ctx = None
         self.random_inst = None
-        self.work_dirs = []
         self.master_broadcast_blocks = {}
 
     def start(self):
@@ -181,7 +167,6 @@ class DownloadManager(object):
         self.server_addr, self.server_thread = self.start_server()
         self.uuid_state_dict = {}
         self.uuid_map_dict = {}
-        self.work_dirs = env.get('WORKDIR')
         self.master_broadcast_blocks = {}
         env.register(DOWNLOAD_ADDR, self.server_addr)
 
@@ -361,8 +346,8 @@ class DownloadManager(object):
             finally:
                 sock.close()
 
-        final_path = gen_broadcast_path(self.work_dirs, uuid)
-        self.uuid_state_dict[uuid] = final_path, False
+        final_path = env.workdir.alloc_tmp_file("broadcast")
+        self.uuid_state_dict[uuid] = (final_path, False)
         fp = open(final_path, 'wb')
         fp.truncate(compressed_size)
         fp.close()

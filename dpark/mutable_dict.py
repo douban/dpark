@@ -5,7 +5,7 @@ import struct
 import glob
 import uuid as uuid_pkg
 from dpark.env import env
-from dpark.utils import compress, decompress, mkdir_p, atomic_file
+from dpark.utils import compress, decompress, atomic_file
 from dpark.tracker import GetValueMessage, AddItemMessage
 from dpark.dependency import HashPartitioner
 from collections import OrderedDict
@@ -88,7 +88,9 @@ class MutableDict(object):
             return
 
         updated_keys = {}
-        path = self._get_path()
+        dirname = "mutable_dict"
+        tmppath = env.workdir.alloc_tmp_dir(dirname)
+        path = env.workdir.export(tmppath, dirname)
         uri = env.get('SERVER_URI')
         server_uri = '%s/%s' % (uri, os.path.basename(path))
 
@@ -187,33 +189,6 @@ class MutableDict(object):
     def _get_key(self, key):
         return '%s-%s' % (self.uuid,
                           self.partitioner.getPartition(key))
-
-    def _get_path(self):
-        dirs = env.get('WORKDIR')
-        if not dirs:
-            raise RuntimeError('No available workdir')
-
-        path = os.path.join(dirs[0], 'mutable_dict')
-        if os.path.exists(path):
-            return path
-
-        st = os.statvfs(dirs[0])
-        ratio = st.f_bfree * 1.0 / st.f_blocks
-        if ratio >= 0.66:
-            mkdir_p(path)
-            return path
-
-        for d in dirs[1:]:
-            p = os.path.join(d, 'mutable_dict')
-            try:
-                os.makedirs(p)
-                os.symlink(p, path)
-            except OSError:
-                pass
-
-            return path
-
-        raise RuntimeError('Cannot find suitable workdir')
 
     _all_mutable_dicts = {}
 

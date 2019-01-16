@@ -20,7 +20,7 @@ from six.moves import urllib
 logger = get_logger(__name__)
 
 
-class Cache:
+class Cache(object):
     data = {}
 
     def get(self, key):
@@ -134,15 +134,6 @@ class DiskCache(Cache):
 class BaseCacheTracker(object):
     cache = None
 
-    def registerRDD(self, rddId, numPartitions):
-        pass
-
-    def getLocationsSnapshot(self):
-        pass
-
-    def getCachedLocs(self, rdd_id, index):
-        pass
-
     def getCacheUri(self, rdd_id, index):
         pass
 
@@ -178,32 +169,9 @@ class BaseCacheTracker(object):
 
 class CacheTracker(BaseCacheTracker):
     def __init__(self):
-        cachedir = os.path.join(env.get('WORKDIR')[0], 'cache')
+        cachedir = env.workdir.get_path('cache')
         self.cache = DiskCache(self, cachedir)
         self.client = env.trackerClient
-        if env.trackerServer is not None:
-            self.locs = env.trackerServer.locs
-        self.rdds = {}
-
-    def registerRDD(self, rddId, numPartitions):
-        self.rdds[rddId] = numPartitions
-
-    def getLocationsSnapshot(self):
-        result = {}
-        for rdd_id, partitions in self.rdds.items():
-            result[rdd_id] = [self.locs.get('cache:%s-%s' % (rdd_id, index), [])
-                              for index in range(partitions)]
-
-        return result
-
-    def getCachedLocs(self, rdd_id, index):
-        def parse_hostname(uri):
-            if uri.startswith('http://'):
-                h = uri.split(':')[1].rsplit('/', 1)[-1]
-                return h
-            return ''
-
-        return list(map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), [])))
 
     def getCacheUri(self, rdd_id, index):
         return self.client.call(GetValueMessage('cache:%s-%s' % (rdd_id, index)))
@@ -235,21 +203,31 @@ class CacheTracker(BaseCacheTracker):
         raise Exception("!!!")
 
 
-def test():
-    import logging
-    logging.basicConfig(level=logging.DEBUG)
-    from dpark.context import DparkContext
-    dc = DparkContext("local")
-    dc.start()
-    nums = dc.parallelize(list(range(100)), 10)
-    tracker = CacheTracker()
-    tracker.registerRDD(nums.id, len(nums))
-    split = nums.splits[0]
-    print(list(tracker.getOrCompute(nums, split)))
-    print(list(tracker.getOrCompute(nums, split)))
-    print(tracker.getLocationsSnapshot())
-    tracker.stop()
+class CacheTrackerServer(object):
 
+    def __init__(self):
+        self.locs = env.trackerServer.locs
+        self.rdds = {}
 
-if __name__ == '__main__':
-    test()
+    def registerRDD(self, rddId, numPartitions):
+        self.rdds[rddId] = numPartitions
+
+    def getCachedLocs(self, rdd_id, index):
+        def parse_hostname(uri):
+            if uri.startswith('http://'):
+                h = uri.split(':')[1].rsplit('/', 1)[-1]
+                return h
+            return ''
+
+        return list(map(parse_hostname, self.locs.get('cache:%s-%s' % (rdd_id, index), [])))
+
+    def getLocationsSnapshot(self):
+        result = {}
+        for rdd_id, partitions in self.rdds.items():
+            result[rdd_id] = [self.locs.get('cache:%s-%s' % (rdd_id, index), [])
+                              for index in range(partitions)]
+
+        return result
+
+    def __getstate__(self):
+        raise Exception("!!!")

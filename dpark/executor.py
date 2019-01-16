@@ -5,7 +5,6 @@ import sys
 import time
 import errno
 import fcntl
-import shutil
 import signal
 import socket
 import logging
@@ -30,11 +29,11 @@ from dpark.utils.memory import ERROR_TASK_OOM, set_oom_score
 from dpark.serialize import marshalable
 from dpark.accumulator import Accumulator
 from dpark.env import env
-from dpark.shuffle import LocalFileShuffle
 from dpark.mutable_dict import MutableDict
 from dpark.serialize import loads
 from dpark.task import TTID, TaskState, TaskEndReason, FetchFailed
 from dpark.utils.debug import spawn_rconsole
+from dpark.shuffle import ShuffleWorkDir
 
 logger = get_logger('dpark.executor')
 
@@ -89,12 +88,15 @@ def run_task(task_data):
         data = compress(data)
 
         if len(data) > TASK_RESULT_LIMIT:
-            path = LocalFileShuffle.getOutputFile(0, task.id, ttid.task_try, len(data))
-            f = open(path, 'wb')
-            f.write(data)
-            f.close()
+            # shuffle_id start from 1
+            swd = ShuffleWorkDir(0, task.id, ttid.task_try)
+            tmppath = swd.alloc_tmp(len(data))
+            with open(tmppath, 'wb') as f:
+                f.write(data)
+                f.close()
+            path = swd.export(tmppath)
             data = '/'.join(
-                [LocalFileShuffle.getServerUri()] + path.split('/')[-3:]
+                [env.server_uri] + path.split('/')[-3:]
             )
             flag += 2
 
@@ -180,33 +182,6 @@ def safe(f):
         return r
 
     return _
-
-
-def setup_cleaner_process(workdir):
-    ppid = os.getpid()
-    pid = os.fork()
-    if pid == 0:
-        os.setsid()
-        pid = os.fork()
-        if pid == 0:
-            try:
-                import psutil
-            except ImportError:
-                os._exit(1)
-            try:
-                psutil.Process(ppid).wait()
-                os.killpg(ppid, signal.SIGKILL)  # kill workers
-            except Exception:
-                pass  # make sure to exit
-            finally:
-                for d in workdir:
-                    while os.path.exists(d):
-                        try:
-                            shutil.rmtree(d, True)
-                        except:
-                            pass
-        os._exit(0)
-    os.wait()
 
 
 class Redirect(object):
@@ -299,8 +274,6 @@ class Redirect(object):
 class MyExecutor(Executor):
 
     def __init__(self):
-        self.workdir = []
-
         # task_id.value -> (task, process)
         self.tasks = {}
 
@@ -408,6 +381,7 @@ class MyExecutor(Executor):
             except Exception:
                 pass
             raise e
+
         self._fd_for_locks.append(fd)
 
     @safe
@@ -416,7 +390,7 @@ class MyExecutor(Executor):
             global Script
             (
                 Script, cwd, python_path, osenv, self.parallel,
-                out_logger, err_logger, logLevel, use_color, args
+                out_logger, err_logger, logLevel, use_color, dpark_env
             ) = marshal.loads(decode_data(executorInfo.data))
 
             sys.path = python_path
@@ -447,25 +421,16 @@ class MyExecutor(Executor):
             else:
                 logger.warning('cwd (%s) not exists', cwd)
 
-            self.workdir = args['WORKDIR']
-            main_workdir = self.workdir[0]
-
-            root = os.path.dirname(main_workdir)
-            if not os.path.exists(root):
-                os.mkdir(root)
-                os.chmod(root, 0o777)  # because umask
-
-            mkdir_p(main_workdir)
-            self._try_flock(main_workdir)
-
-            args['SERVER_URI'] = startWebServer(main_workdir)
+            env.workdir.init(dpark_env.get(env.DPARK_ID))
+            self._try_flock(env.workdir.main)
+            dpark_env['SERVER_URI'] = startWebServer(env.workdir.main)
             if 'MESOS_SLAVE_PID' in os.environ:  # make unit test happy
-                setup_cleaner_process(self.workdir)
+                env.workdir.setup_cleaner_process()
 
             spawn(self.check_alive, driver)
             spawn(self.replier, driver)
 
-            env.environ.update(args)
+            env.environ.update(dpark_env)
             from dpark.broadcast import start_download_manager
             start_download_manager()
 
@@ -513,7 +478,7 @@ class MyExecutor(Executor):
             threading.current_thread().name = task_id_str
             setproctitle(procname)
             set_oom_score(100)
-            env.start()
+            env.start_slave()
             q.put((task_id_value, run_task(task_data)))
 
         try:
@@ -546,18 +511,8 @@ class MyExecutor(Executor):
             terminate(tid, proc)
         self.tasks = {}
         self.result_queue.put(None)
-        from dpark.broadcast import stop_manager
-        stop_manager()
-
-        # clean work files
         for fd in self._fd_for_locks:
             os.close(fd)
-        for d in self.workdir:
-            try:
-                shutil.rmtree(d, True)
-            except:
-                pass
-
         if self.stdout_redirect:
             sys.stdout = self.stdout_redirect.reset()
         if self.stderr_redirect:

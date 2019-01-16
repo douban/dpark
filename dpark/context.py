@@ -383,7 +383,10 @@ class DparkContext(object):
 
         self.init()
 
-        env.start()
+        env.start_master()
+        if not isinstance(self.scheduler, MesosScheduler):
+            env.start_slave()
+
         self.scheduler.start()
         self.started = True
         _shutdown_handlers.append(shutdown)

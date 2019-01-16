@@ -185,7 +185,7 @@ class RDD(object):
             return self._checkpoint_rdd._preferred_locs.get(split, [])
 
         if self.shouldCache:
-            locs = env.cacheTracker.getCachedLocs(self.id, split.index)
+            locs = env.cacheTrackerServer.getCachedLocs(self.id, split.index)
             if locs:
                 return locs
         return self._preferred_locs.get(split, [])
@@ -1198,8 +1198,7 @@ class CartesianRDD(RDD):
     def compute(self, split):
         saved = False
         _cached = None
-        basedir = os.path.join(env.workdir[-1], 'temp')
-        mkdir_p(basedir)
+        basedir = env.workdir.alloc_tmp_dir("cartesian")
         with tempfile.SpooledTemporaryFile(self.cache_memory << 20, dir=basedir) as f:
             for i in self.rdd1.iterator(split.s1):
                 if not saved:
