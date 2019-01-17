@@ -1072,6 +1072,7 @@ class MesosScheduler(DAGScheduler):
         )
         info.executor_id.value = env.get('DPARK_ID', 'default')
         info.command.environment.variables = variables = []
+        info.shutdown_grace_period.nanoseconds = 5 * (10 ** 9)
 
         v = Dict()
         variables.append(v)
