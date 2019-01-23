@@ -214,8 +214,9 @@ class ShuffleMapTask(DAGTask):
             try:
                 try:
                     k, v = item
-                except:
-                    raise DparkUserFatalError("item of {} should be (k, v) pair, got: {}".format(rdd.scope.key, item))
+                except (TypeError, ValueError) as e:
+                    msg = "item of {} should be (k, v) pair, got: {}, exception: {}".format(rdd.scope.key, item, e)
+                    raise DparkUserFatalError(msg)
 
                 bucket = buckets[get_partition(k)]
                 r = bucket.get(k, None)
