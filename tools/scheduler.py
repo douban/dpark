@@ -983,7 +983,7 @@ if __name__ == '__main__':
         # if any thread of sched may use lock or call driver, join it first
         driver.stop(False)
         driver.join()
-        # mesos resourses are released, and no racer for lock any more
+        # mesos resources are released, and no racer for lock any more
         sched.cleanup()
         ctx.term()
         sys.exit(sched.ec)
